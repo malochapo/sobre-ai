@@ -206,3 +206,93 @@ fn small_output_stays_verbatim() {
         "output under 200 tokens must stay verbatim, got: {compressed}"
     );
 }
+
+/// A successful build's warnings reach the agent: every distinct one, with
+/// its location.
+#[cfg(test)]
+mod build_warning_tests {
+    use super::super::engine::compress_for_outcome;
+
+    #[test]
+    fn dotnet_build_keeps_every_warning() {
+        let warning = |i: usize| {
+            format!(
+                "/home/u/app/Services/Service{i}.cs({i},7): warning CS0168: The variable 'unused{i}' is declared but never used [/home/u/app/app.csproj]"
+            )
+        };
+        let mut out = String::from(
+            "  Determining projects to restore...\n  All projects are up-to-date for restore.\n",
+        );
+        for i in 0..40 {
+            out.push_str(&warning(i));
+            out.push('\n');
+        }
+        out.push_str("  app -> /home/u/app/bin/Debug/net8.0/app.dll\n\nBuild succeeded.\n\n");
+        for i in 0..40 {
+            out.push_str(&warning(i));
+            out.push('\n');
+        }
+        out.push_str("    40 Warning(s)\n    0 Error(s)\n\nTime Elapsed 00:00:04.12\n");
+
+        let result = compress_for_outcome("dotnet build", &out, 0);
+        for i in 0..40 {
+            assert!(
+                result.contains(&format!("Service{i}.cs({i},7): warning CS0168")),
+                "warning {i} lost:\n{result}"
+            );
+        }
+    }
+
+    #[test]
+    fn cargo_doc_keeps_its_warnings() {
+        let mut out = String::new();
+        for i in 0..150 {
+            out.push_str(&format!(" Documenting dep{i} v0.1.{i}\n"));
+        }
+        for i in 0..30 {
+            out.push_str(&format!(
+                "warning: unresolved link to `Missing{i}`\n --> src/lib.rs:{i}:5\n  |\n{i} | /// See [`Missing{i}`].\n  |            ^^^^^^^^ no item named `Missing{i}` in scope\n\n"
+            ));
+        }
+        out.push_str("warning: `app` (lib doc) generated 30 warnings\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.87s\n   Generated /home/u/app/target/doc/app/index.html\n");
+
+        let result = compress_for_outcome("cargo doc --no-deps", &out, 0);
+        for i in 0..30 {
+            assert!(
+                result.contains(&format!("unresolved link to `Missing{i}`"))
+                    && result.contains(&format!("src/lib.rs:{i}:5")),
+                "warning {i} lost:\n{result}"
+            );
+        }
+    }
+
+    #[test]
+    fn eslint_warnings_keep_their_locations() {
+        let rules = ["no-unused-vars", "eqeqeq", "no-console", "prefer-const"];
+        let mut out = String::new();
+        for f in 0..6 {
+            out.push_str(&format!("\n/home/u/app/src/module{f}.js\n"));
+            for l in 0..5 {
+                let rule = rules[(f + l) % rules.len()];
+                out.push_str(&format!(
+                    "  {}:{}  warning  Problem number {l} in module {f}  {rule}\n",
+                    l * 10 + 1,
+                    l + 3
+                ));
+            }
+        }
+        out.push_str("\n✖ 30 problems (0 errors, 30 warnings)\n");
+
+        let result = compress_for_outcome("eslint src/", &out, 0);
+        for f in 0..6 {
+            for l in 0..5 {
+                assert!(
+                    result.contains(&format!("module{f}.js"))
+                        && result.contains(&format!("{}:{}", l * 10 + 1, l + 3))
+                        && result.contains(&format!("Problem number {l} in module {f}")),
+                    "warning {f}/{l} lost:\n{result}"
+                );
+            }
+        }
+    }
+}

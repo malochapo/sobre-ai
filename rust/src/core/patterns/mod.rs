@@ -469,22 +469,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |_c, output| json_schema::compress(output),
     ),
     (
-        |c| c.starts_with("hadolint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("yamllint") || c.starts_with("npx yamllint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("markdownlint") || c.starts_with("npx markdownlint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("oxlint") || c.starts_with("npx oxlint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
         |c| c.starts_with("pyright") || c.starts_with("basedpyright"),
         |c, output| mypy::compress(c, output),
     ),
@@ -859,8 +843,6 @@ mod tests {
     #[test]
     fn routes_linting_tools() {
         let lint_output = "src/main.py:10: error: Missing return\nsrc/main.py:20: error: Unused var\nFound 2 errors";
-        assert!(try_specific_pattern("hadolint Dockerfile", lint_output).is_some());
-        assert!(try_specific_pattern("oxlint src/", lint_output).is_some());
         assert!(try_specific_pattern("pyright src/", lint_output).is_some());
         assert!(try_specific_pattern("basedpyright src/", lint_output).is_some());
     }
