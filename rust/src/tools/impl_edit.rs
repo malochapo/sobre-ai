@@ -254,27 +254,6 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
         }
     }
 
-    let normalized_content = trim_trailing_per_line(content);
-    let normalized_old = trim_trailing_per_line(old_str);
-    if !normalized_old.is_empty() && normalized_content.contains(&normalized_old) {
-        let line_sep = if uses_crlf { "\r\n" } else { "\n" };
-        let adapted_new = adapt_new_string_to_line_sep(new_str, line_sep);
-        let adapted_old = find_original_span(content, &normalized_old);
-        if let Some(original_match) = adapted_old {
-            let occ = content.matches(&original_match).count();
-            let args = ReplaceArgs {
-                content,
-                old_str: &original_match,
-                new_str: &adapted_new,
-                occurrences: occ,
-                replace_all: params.replace_all,
-                old_tokens: count_tokens(&params.old_string),
-                new_tokens: count_tokens(&params.new_string),
-            };
-            return do_replace(path, &pre, params, cap, &args);
-        }
-    }
-
     if content.contains(new_str) {
         return (
             format!(
@@ -346,15 +325,14 @@ fn find_closest_line_hint(content: &str, old_str: &str) -> String {
 
     match best_line {
         Some((line_num, line_content)) => {
-            let trimmed = line_content.trim();
-            let preview = if trimmed.len() > 100 {
-                format!("{}...", &trimmed[..trimmed.floor_char_boundary(97)])
+            let preview = if line_content.len() > 100 {
+                format!("{}…", &line_content[..line_content.floor_char_boundary(97)])
             } else {
-                trimmed.to_string()
+                line_content.to_string()
             };
             format!(
-                "\nClosest match at line {line_num}: `{preview}`\n\
-                 Hint: check indentation/whitespace differences."
+                "\nClosest match at line {line_num}, quoted with its whitespace (\\t is a tab): {preview:?}\n\
+                 Hint: old_string must match exactly, indentation and trailing spaces included."
             )
         }
         None => String::new(),
@@ -625,48 +603,6 @@ fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String
     (out, CacheEffect::Invalidate)
 }
 
-fn trim_trailing_per_line(s: &str) -> String {
-    s.lines().map(str::trim_end).collect::<Vec<_>>().join("\n")
-}
-
-fn adapt_new_string_to_line_sep(s: &str, sep: &str) -> String {
-    let normalized = s.replace("\r\n", "\n");
-    if sep == "\r\n" {
-        normalized.replace('\n', "\r\n")
-    } else {
-        normalized
-    }
-}
-
-/// Find the original (un-trimmed) span in `content` that matches `normalized_needle`
-/// after trailing-whitespace trimming per line.
-fn find_original_span(content: &str, normalized_needle: &str) -> Option<String> {
-    let needle_lines: Vec<&str> = normalized_needle.lines().collect();
-    if needle_lines.is_empty() {
-        return None;
-    }
-
-    let content_lines: Vec<&str> = content.lines().collect();
-
-    'outer: for start in 0..content_lines.len() {
-        if start + needle_lines.len() > content_lines.len() {
-            break;
-        }
-        for (i, nl) in needle_lines.iter().enumerate() {
-            if content_lines[start + i].trim_end() != *nl {
-                continue 'outer;
-            }
-        }
-        let sep = if content.contains("\r\n") {
-            "\r\n"
-        } else {
-            "\n"
-        };
-        return Some(content_lines[start..start + needle_lines.len()].join(sep));
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     /// The three-call sequence production runs inline (`run_io` ->
@@ -875,50 +811,37 @@ mod tests {
         );
     }
 
+    /// Decision 2: no whitespace-insensitive match. The error shows the
+    /// nearest line quoted, trailing spaces visible, and nothing is written.
     #[test]
-    fn trailing_whitespace_tolerance() {
-        let f = make_temp("  let x = 1;  \n  let y = 2;\n");
-        let mut cache = SessionCache::new();
-        let result = handle(
-            &mut cache,
-            &mk_params(
-                f.path(),
+    fn trailing_whitespace_is_not_ignored() {
+        for (content, old, new) in [
+            (
+                "  let x = 1;  \n  let y = 2;\n",
                 "  let x = 1;\n  let y = 2;",
                 "  let x = 10;\n  let y = 20;",
-                false,
-                false,
             ),
-        );
-        assert!(
-            result.contains("✓"),
-            "trailing whitespace tolerance should work: {result}"
-        );
-        let content = std::fs::read_to_string(f.path()).unwrap();
-        assert!(content.contains("let x = 10;"));
-        assert!(content.contains("let y = 20;"));
-    }
-
-    #[test]
-    fn crlf_with_trailing_whitespace() {
-        let f = make_temp("  const a = 1;  \r\n  const b = 2;\r\n");
-        let mut cache = SessionCache::new();
-        let result = handle(
-            &mut cache,
-            &mk_params(
-                f.path(),
+            (
+                "  const a = 1;  \r\n  const b = 2;\r\n",
                 "  const a = 1;\n  const b = 2;",
                 "  const a = 10;\n  const b = 20;",
-                false,
-                false,
             ),
-        );
-        assert!(
-            result.contains("✓"),
-            "CRLF + trailing whitespace should work: {result}"
-        );
-        let content = std::fs::read_to_string(f.path()).unwrap();
-        assert!(content.contains("const a = 10;"));
-        assert!(content.contains("const b = 20;"));
+        ] {
+            let f = make_temp(content);
+            for replace_all in [false, true] {
+                let mut cache = SessionCache::new();
+                let result = handle(
+                    &mut cache,
+                    &mk_params(f.path(), old, new, replace_all, false),
+                );
+                assert!(result.starts_with("ERROR"), "{result}");
+                assert!(
+                    result.contains("1;  \""),
+                    "the nearest line must show its trailing spaces: {result}"
+                );
+                assert_eq!(std::fs::read_to_string(f.path()).unwrap(), content);
+            }
+        }
     }
 
     #[test]
