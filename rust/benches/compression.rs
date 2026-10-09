@@ -1,3 +1,6 @@
+//! Latency of the shell-output pattern compressor and of the token counter.
+//! It measures time per call only, not how much output is saved.
+
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -11,7 +14,7 @@ fn bench_compress_git_status(c: &mut Criterion) {
 }
 
 fn bench_compress_cargo_build(c: &mut Criterion) {
-    let output = "   Compiling sobre v3.4.3\n   Compiling serde v1.0.200\n   Compiling tokio v1.38.0\n   Compiling anyhow v1.0.86\n    Finished `release` profile in 45.2s";
+    let output = "   Compiling myapp v0.1.0\n   Compiling serde v1.0.200\n   Compiling tokio v1.38.0\n   Compiling anyhow v1.0.86\n    Finished `release` profile in 45.2s";
     c.bench_function("compress_cargo_build", |b| {
         b.iter(|| {
             sobre::core::patterns::compress_output(black_box("cargo build"), black_box(output))
