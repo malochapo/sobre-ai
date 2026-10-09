@@ -1,15 +1,19 @@
-//! Homeostatic Memory Guard — Proactive multi-level resource management.
+//! Graduated eviction controller for the read cache, driven by how full the
+//! cache is against its token budget (the BM25 index counted in).
 //!
-//! Scientific basis: Homeostasis (biological systems) — maintains equilibrium by
-//! continuously monitoring internal state and applying graduated corrective responses.
-//! Unlike reactive systems that only respond to crisis, homeostasis proactively
-//! maintains optimal operating conditions through negative feedback loops.
+//! The eviction orchestrator asks it what to do when the memory guard reports
+//! RSS pressure; the RSS level sets a floor under its answer.
 //!
-//! 4 escalation levels based on memory pressure:
-//! Level 1 (70%): Trim cached outputs (soft pressure)
-//! Level 2 (80%): Evict probationary cache entries
-//! Level 3 (90%): Unload indices (BM25, embeddings)
-//! Level 4 (95%): Aggressive eviction of protected entries
+//! Levels by budget utilization:
+//! - < 70%: nothing.
+//! - 70–80%: drop the cached `map`/`signatures` renders.
+//! - 80–90%: evict entries read only once.
+//! - 90–95%: unload the search indices.
+//! - ≥ 95%: clear the cache and every index.
+//!
+//! When the level held for three evaluations and the last action did not
+//! lower the pressure, 70–80% escalates to evicting single-read entries and
+//! 90–95% to evicting entries down to 75% of the budget.
 
 /// Pressure levels as fraction of budget consumed (0.0 - 1.0).
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -37,18 +41,18 @@ impl PressureLevel {
     }
 }
 
-/// Actions the homeostasis system can recommend.
+/// Actions the controller can recommend.
 #[derive(Debug, Clone, PartialEq)]
 pub enum HomeostasisAction {
     /// No action needed.
     None,
-    /// Trim compressed outputs in cache (max 2 per entry instead of 3).
+    /// Drop every cached `map`/`signatures` render; the files stay cached.
     TrimOutputs,
-    /// Evict probationary cache entries (read_count <= 1).
-    EvictProbationary { target_tokens: usize },
+    /// Evict cache entries read only once.
+    EvictProbationary,
     /// Unload heavy indices from memory.
     UnloadIndices,
-    /// Evict protected cache entries with lowest Boltzmann energy.
+    /// Evict cache entries, lowest eviction score first, down to `target_tokens`.
     EvictProtected { target_tokens: usize },
     /// Emergency: drop all non-essential structures.
     EmergencyDrop,
@@ -104,16 +108,12 @@ impl HomeostasisController {
             PressureLevel::Nominal => HomeostasisAction::None,
             PressureLevel::Elevated => {
                 if escalate {
-                    HomeostasisAction::EvictProbationary {
-                        target_tokens: self.target_free(0.60),
-                    }
+                    HomeostasisAction::EvictProbationary
                 } else {
                     HomeostasisAction::TrimOutputs
                 }
             }
-            PressureLevel::High => HomeostasisAction::EvictProbationary {
-                target_tokens: self.target_free(0.70),
-            },
+            PressureLevel::High => HomeostasisAction::EvictProbationary,
             PressureLevel::Critical => {
                 if escalate {
                     HomeostasisAction::EvictProtected {
@@ -160,10 +160,7 @@ mod tests {
     fn high_pressure_evicts_probationary() {
         let mut ctrl = HomeostasisController::new(100_000);
         let action = ctrl.evaluate(85_000); // 85% utilization
-        assert!(matches!(
-            action,
-            HomeostasisAction::EvictProbationary { .. }
-        ));
+        assert!(matches!(action, HomeostasisAction::EvictProbationary));
     }
 
     #[test]

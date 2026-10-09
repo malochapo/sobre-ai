@@ -147,7 +147,7 @@ impl EvictionOrchestrator {
                 trimmed > 0
             }
 
-            HomeostasisAction::EvictProbationary { .. } => {
+            HomeostasisAction::EvictProbationary => {
                 let evicted = self.try_write_cache(|cache| {
                     let n = cache.evict_probationary();
                     cache.trim_shared_blocks();
@@ -251,7 +251,7 @@ fn floor_action_for_rss(
     let rank = |a: &HomeostasisAction| match a {
         HomeostasisAction::None => 0u8,
         HomeostasisAction::TrimOutputs => 1,
-        HomeostasisAction::EvictProbationary { .. } => 2,
+        HomeostasisAction::EvictProbationary => 2,
         HomeostasisAction::UnloadIndices => 3,
         HomeostasisAction::EvictProtected { .. } => 4,
         HomeostasisAction::EmergencyDrop => 5,
@@ -441,10 +441,7 @@ mod tests {
             token_budget: 100_000,
         };
 
-        let result = orch.execute_action(
-            &HomeostasisAction::EvictProbationary { target_tokens: 0 },
-            0,
-        );
+        let result = orch.execute_action(&HomeostasisAction::EvictProbationary, 0);
         assert!(result);
         let c = cache.blocking_read();
         assert!(c.get("/once.rs").is_none());
