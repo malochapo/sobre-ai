@@ -339,7 +339,7 @@ pub fn handle_with_task_resolved(
     )
 }
 
-/// Like [`handle_with_task_resolved`] but with an explicit per-call
+/// Like `handle_with_task_resolved` but with an explicit per-call
 /// aggressiveness (the `sobre_read` `aggressiveness` arg). `None` falls back
 /// to the config field.
 pub fn handle_with_task_resolved_tuned(

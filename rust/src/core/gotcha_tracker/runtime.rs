@@ -68,9 +68,8 @@ fn process_session_id() -> &'static str {
 
 /// Shell-layer hook: learn from a finished command's outcome.
 ///
-/// Gated to build/test/run command families via
-/// [`is_correlatable_command`](super::detect::is_correlatable_command) so
-/// ordinary commands never touch disk. Resolves the project root and a stable
+/// Gated to build/test/run command families via `is_correlatable_command`
+/// so ordinary commands never touch disk. Resolves the project root and a stable
 /// session id internally, keeping the call site (a single line in `shell::exec`)
 /// minimal. Never panics and never blocks the shell on lock contention.
 pub fn record_shell_outcome(command: &str, output: &str, exit_code: i32) {
