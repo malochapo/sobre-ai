@@ -14,18 +14,8 @@ autobins = false
 description = "sobre: a local context layer for AI coding agents — 15 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
 license = "Apache-2.0"
 repository = "https://github.com/malochapo/sobre-ai"
-readme = "README.md"
-keywords = ["mcp", "llm", "tokens", "compression", "ai"]
-categories = ["command-line-utilities", "development-tools"]
-exclude = ["tests/", "crates/"]
-
-[package.metadata.binstall]
-bin-dir = "{ bin }{ binary-ext }"
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-fmt = "zip"
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.zip"
+# Distributed as release binaries from the repository only: never on crates.io.
+publish = false
 
 [lib]
 name = "sobre"
@@ -53,8 +43,8 @@ default = [
 ]
 
 # Local dense retrieval: ONNX embeddings + in-process HNSW. Opt-in rather
-# than default so `cargo install sobre` needs no model download and no ORT
-# runtime preflight before the tool is useful. Invariant: everything under
+# than default so a plain build needs no model download and no ORT runtime
+# preflight before the tool is useful. Invariant: everything under
 # `dense` runs on the user's machine — no external service.
 dense = [
     "dep:ort",

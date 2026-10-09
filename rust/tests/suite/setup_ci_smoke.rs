@@ -353,7 +353,7 @@ fn init_agent_leaves_agent_instruction_files_untouched() {
 /// rather than `USERPROFILE`, so env-var overrides in the subprocess don't
 /// control where files land. We can only verify file creation on Unix.
 #[test]
-#[cfg_attr(windows, ignore)]
+#[cfg_attr(windows, ignore = "dirs::home_dir ignores a HOME override on Windows")]
 fn init_claude_installs_the_skill_and_no_rules_file() {
     let bin = env!("CARGO_BIN_EXE_sobre");
 

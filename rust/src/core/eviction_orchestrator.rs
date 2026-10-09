@@ -70,6 +70,7 @@ pub fn on_memory_pressure(level: memory_guard::PressureLevel) {
     // These caches are process-global rather than owned by a server target.
     if level >= memory_guard::PressureLevel::Hard {
         super::content_cache::clear();
+        #[cfg(feature = "dense")]
         super::ann_cache::clear();
         super::search_index::clear_resident();
     }
@@ -168,8 +169,14 @@ impl EvictionOrchestrator {
                 // materialized graph indexes were invisible to eviction — on
                 // embedding-heavy sessions they dominated RSS while the
                 // guardian could only trim the (small) session cache.
-                let ann_freed = super::ann_cache::memory_usage_bytes();
-                super::ann_cache::clear();
+                #[cfg(feature = "dense")]
+                let ann_freed = {
+                    let bytes = super::ann_cache::memory_usage_bytes();
+                    super::ann_cache::clear();
+                    bytes
+                };
+                #[cfg(not(feature = "dense"))]
+                let ann_freed = 0usize;
                 super::search_index::clear_resident();
                 let trimmed = self.try_write_cache(SessionCache::trim_compressed_outputs);
                 memory_guard::jemalloc_purge();
@@ -197,6 +204,7 @@ impl EvictionOrchestrator {
                 super::bm25_cache::unload(&self.bm25_cache);
                 super::content_cache::clear();
                 // Emergency must reach every resident structure.
+                #[cfg(feature = "dense")]
                 super::ann_cache::clear();
                 super::search_index::clear_resident();
                 memory_guard::jemalloc_purge();
@@ -282,6 +290,7 @@ mod tests {
         // on_pressure(Critical) floors to EmergencyDrop, which
         // clears the process-wide ann_cache — hold its cross-module test lock
         // so a concurrent ann_cache test can't observe a wiped cache mid-assertion.
+        #[cfg(feature = "dense")]
         let _ann_lock = crate::core::ann_cache::test_lock();
         let first = Arc::new(make_orchestrator());
         let second = Arc::new(make_orchestrator());
@@ -320,6 +329,7 @@ mod tests {
     fn emergency_clears_cache() {
         // See `registry_fans_out_and_prunes_dropped_targets` above: EmergencyDrop
         // clears the shared ann_cache, so hold its cross-module test lock.
+        #[cfg(feature = "dense")]
         let _ann_lock = crate::core::ann_cache::test_lock();
         let cache = Arc::new(tokio::sync::RwLock::new(SessionCache::new()));
         {

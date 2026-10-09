@@ -8,7 +8,7 @@
 //!
 //! Short-lived sobre processes that *do* run inside the agent environment —
 //! the hook handlers (`sobre hook …`) and the `sobre -c` shell wrapper —
-//! [`capture`] the relevant variables into a small file in the data dir. The MCP
+//! [`capture`] the relevant variables into a small file in the state dir. The MCP
 //! server then [`load`]s them when constructing the child environment for
 //! `sobre_shell` (see `crate::server::execute`).
 

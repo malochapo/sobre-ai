@@ -110,7 +110,7 @@ impl ServerHandler for SobreServer {
             if maintenance.is_some() {
                 // Prune accumulated quarantined BM25 indexes. Silent
                 // (tracing only) so it never corrupts the MCP stdio protocol.
-                let _ = crate::core::storage_maintenance::run_quiet();
+                crate::core::storage_maintenance::run_quiet();
             }
             drop(maintenance);
         });

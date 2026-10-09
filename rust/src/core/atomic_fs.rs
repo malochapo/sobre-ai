@@ -111,6 +111,8 @@ fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
     let tmp_w = to_wide(tmp);
     let path_w = to_wide(path);
 
+    // SAFETY: both buffers are NUL-terminated UTF-16 strings that outlive the
+    // call; MoveFileExW only reads them.
     let ok = unsafe { MoveFileExW(tmp_w.as_ptr(), path_w.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
     if ok == 0 {
         return Err(std::io::Error::last_os_error());

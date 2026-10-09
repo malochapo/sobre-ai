@@ -50,7 +50,7 @@ pub struct LifecyclePolicy {
     /// never retrieved — dead weight regardless of confidence. Defaults to
     /// a conservative 90 days: genuinely cold facts are archived (and
     /// rehydrate on recall), so a store self-curates instead of only churning at
-    /// its cap. Set `None`/`off` to disable.
+    /// its cap.
     pub prune_unretrieved_after_days: Option<i64>,
     /// Proactive headroom on a capacity reclaim: when a store reaches its
     /// cap, settle it at `1 - reclaim_headroom_pct` (e.g. `0.25` → 75%) instead

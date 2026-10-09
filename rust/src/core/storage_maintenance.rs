@@ -7,10 +7,6 @@
 
 use std::path::PathBuf;
 
-/// Result of a quiet maintenance pass.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct MaintenanceResult {}
-
 const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
 
 /// Remove accumulated quarantined BM25 index files. These are dead weight: an
@@ -47,7 +43,7 @@ fn prune_quarantined_bm25() -> (u32, u64) {
 
 /// Run a silent maintenance pass: prune quarantined BM25 indexes. Safe to call
 /// from the MCP server.
-pub fn run_quiet() -> MaintenanceResult {
+pub fn run_quiet() {
     let (quarantined_removed, bytes_freed) = prune_quarantined_bm25();
     if quarantined_removed > 0 {
         tracing::info!(
@@ -55,7 +51,6 @@ pub fn run_quiet() -> MaintenanceResult {
              (freed {bytes_freed} bytes)"
         );
     }
-    MaintenanceResult {}
 }
 
 #[cfg(test)]

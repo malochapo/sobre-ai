@@ -80,8 +80,8 @@ was added.
 | J | Editing and shell tools | done (#59, #60) |
 | K | Reading and search tools | done (#61, #62) |
 | L | Graph, session, knowledge, review, `gain` | done (#63, #64) |
-| M | Code: dense-only code in the default build, leftovers, Windows lints | open |
-| P | CI and release | open |
+| M | Code: dense-only code in the default build, leftovers, Windows lints | done (#59, #65) |
+| P | CI and release | done (#65) but P1, which needs the GitHub account |
 | N | Documentation: complete reference and architecture, written last | open |
 
 Three findings went first, in their own PR (#51): H12 (a local user
@@ -1026,19 +1026,26 @@ documented:
 
 ## Lot M — code
 
-- [ ] **M1 The default build compiles about 2,400 lines only the dense
+- [x] **M1 The default build compiles about 2,400 lines only the dense
   build can reach.** The oracle (every `pub` made `pub(crate)`) on the
   default build flags about 62 items: `core/hnsw.rs` (516 lines),
   `core/embedding_index.rs` (778), `core/splade_retrieval.rs` (331),
   `core/search_reranking.rs` (520), `core/ann_cache.rs` (298), parts of
   `core/hybrid_search.rs`, and the BM25 `shrink_resident*` functions. They
   are `pub`, so `dead_code` misses them. Fix: gate them behind `dense`.
-- [ ] **M2 Windows-only code fails `clippy -D warnings`.** 13 lints, none
+  Done in #65: `hnsw`, `embedding_index`, `splade_retrieval`,
+  `search_reranking` and `ann_cache` compile only with `dense`, with the
+  BM25 resident shrink; the default build's `hybrid_search` function, which
+  nothing called, is gone.
+- [x] **M2 Windows-only code fails `clippy -D warnings`.** (#65) 13 lints, none
   seen by CI, which runs clippy on Linux only: `core/atomic_fs.rs:114`,
   `core/pathutil.rs:298`, `ipc/process.rs:117` (`borrow_as_ptr`) and
   `:291`, `shell/platform.rs:291-293,322-324` (`collapsible_if`),
   `core/cloud_files.rs:23`, `core/home.rs:48`, `core/walk_filter.rs:34`.
   macOS is clean.
+  Done: the 13 lints are fixed, and each test ignored on Windows says why
+  (`clippy --all-targets` for Windows is clean). CI now runs clippy on
+  macOS and Windows (P3).
 - [x] **M3 `SobreEditTool` still implements an MCP tool named
   `sobre_edit`** (#59), with a stale `tool_def`, never registered; only
   `.handle()` is used (`tools/registered/impl_edit.rs:10-38`). Comments still
@@ -1053,13 +1060,17 @@ documented:
   Done: the preimage/postimage lines are gone from `sobre_patch`'s
   output (nothing reads them now that `expected_hash` is gone), and the
   other labels say hash or BLAKE3.
-- [ ] **M5 `SOBRE_DISABLE_SEARCH_INDEX`** is set by `benches/efficiency.rs`
-  and read nowhere.
-- [ ] **M6 Tests that assert nothing.** `core/task_briefing.rs:152-157,159-172`
-  evaluate a bare `matches!`.
-- [ ] **M7 `MaintenanceResult` is an empty struct**, returned and discarded
+- [x] **M5 `SOBRE_DISABLE_SEARCH_INDEX`** is set by `benches/efficiency.rs`
+  and read nowhere. (#65) Done: removed; the walk path is measured
+  before the index is warmed.
+- [x] **M6 Tests that assert nothing.** `core/task_briefing.rs:152-157,159-172`
+  evaluate a bare `matches!`. (#65) Done: they assert it.
+- [x] **M7 `MaintenanceResult` is an empty struct**, returned and discarded
   (`core/storage_maintenance.rs:10-12,50-58`, `server/server_handler.rs:113`).
-- [ ] **M8 Stale comments and contracts.**
+  (#65) Done: removed.
+- [x] **M8 Stale comments and contracts.** (#65) Done: every one below is
+  corrected; `SOBRE_WRAPPED` is now described as a variable any process can
+  set.
   - `docs/contracts/knowledge-policy-contract-v1.md:47-48` names removed sub-policies;
     `:90` cites an upstream ticket.
   - Removed features still described: auto-consolidation
@@ -1093,18 +1104,25 @@ documented:
     alone. For this audit, fix PRs should target `chore/audit-2` as before,
     and the macOS and Windows checks run locally by cross-compiling until
     CI runs again.
-- [ ] **P2 A release does not wait for CI.** `release.yml` publishes an
+- [x] **P2 A release does not wait for CI.** (#65) `release.yml` publishes an
   `-rc.N` on every push to `main`, in parallel with CI and without running
-  a test.
-- [ ] **P3 What CI does not cover.** No test or clippy run of the `dense`
+  a test. Done: `release.yml` first runs CI (`ci.yml` is a reusable
+  workflow): lint, then the tests on Linux, macOS and Windows; nothing is
+  built or published unless it passes.
+- [x] **P3 What CI does not cover.** No test or clippy run of the `dense`
   build except clippy through the preflight; clippy on Linux only (M2);
-  pull requests test on Linux only.
-- [ ] **P4 `rust/Cargo.toml` can be published.** It has no `publish =
+  pull requests test on Linux only. (#65) Done: the `dense` build's
+  library tests run on Linux, and clippy runs on macOS and Windows with
+  their tests. Pull requests still test on Linux only, for cost; macOS and
+  Windows run before every release (P2).
+- [x] **P4 `rust/Cargo.toml` can be published.** (#65) It has no `publish =
   false` and carries crates.io metadata (keywords, categories, a binstall
   section, a "cargo install sobre" comment). `cargo publish` would put the
   README on crates.io and docs.rs. Fix: `publish = false`, metadata out.
-- [ ] **P5 The release notes are written inside `release.yml`.** Fix: keep
-  them in a `.md` file in the repository that the workflow reads.
+  Done.
+- [x] **P5 The release notes are written inside `release.yml`.** Fix: keep
+  them in a `.md` file in the repository that the workflow reads. (#65)
+  Done: `docs/release-notes.md`.
 
 ## Lot N — documentation
 

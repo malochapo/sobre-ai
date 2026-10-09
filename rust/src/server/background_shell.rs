@@ -325,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn foreground_run_finishing_within_cap_returns_inline() {
         let result = run_foreground_or_detach(
             "printf FG_OK".to_string(),
@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn foreground_run_exceeding_cap_detaches_to_pollable_job() {
         let result = run_foreground_or_detach(
             "sleep 5; printf SLOW_OK".to_string(),
@@ -369,7 +369,7 @@ mod tests {
     /// what stranded results behind an unresolvable task id; the caller must
     /// still get a real `shell_*` job id at the cap.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn large_timeout_ms_still_detaches_at_the_soft_cap() {
         let result = run_foreground_or_detach(
             "sleep 5; printf NEVER_INLINE".to_string(),
@@ -390,7 +390,7 @@ mod tests {
     /// command is distinguishable from a hang. Deliberately slower than the
     /// other tests here — it has to outlive one real [`TICK`].
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn foreground_run_reports_progress_while_waiting() {
         let ticks = std::sync::atomic::AtomicUsize::new(0);
         let tick = |elapsed: Duration| {
@@ -417,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn background_job_runs_past_request_and_can_be_observed() {
         let id = start(
             "sleep 0.1; printf BG_JOB_OK".to_string(),
@@ -439,7 +439,7 @@ mod tests {
 
     /// J9: the same command started twice is two jobs.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn each_launch_gets_its_own_job() {
         let launch = || {
             start(
@@ -455,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn cancelling_background_job_returns_cancelled_state() {
         let id = start(
             "sleep 5".to_string(),
