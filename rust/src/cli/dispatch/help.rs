@@ -126,7 +126,7 @@ SETUP AND MAINTENANCE:
     proxy cleanup                  Remove proxy URLs left in agent configs while it is off
     proxy token                    Print the proxy's bearer token
     hook <name>                    Internal: run by the hooks init installs
-    uninstall [--keep-config] [--keep-binary] [--dry-run]
+    uninstall [--keep-config] [--keep-binary]
                                    Remove hooks, MCP configs, the skill, autostart,
                                    data and the binary
 

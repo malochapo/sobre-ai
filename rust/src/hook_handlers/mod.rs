@@ -23,6 +23,21 @@ pub use observe::*;
 pub use read_dedup::handle_read_dedup;
 pub use rewrite::{handle_cursor, handle_gemini};
 
+/// The directory hook processes share: `<state dir>/hooks/<name>`, owner-only
+/// like the rest of sobre's state, so another user cannot plant what a hook
+/// later reads back. `None` when it cannot be made; the hooks then work
+/// without it.
+fn shared_dir(name: &str) -> Option<std::path::PathBuf> {
+    let state = crate::core::paths::state_dir().ok()?;
+    let hooks = state.join("hooks");
+    let dir = hooks.join(name);
+    std::fs::create_dir_all(&dir).ok()?;
+    for d in [&state, &hooks, &dir] {
+        crate::core::data_dir::ensure_dir_permissions(d);
+    }
+    Some(dir)
+}
+
 /// Arms a watchdog that force-exits the process after the given duration.
 /// Prevents hook processes from becoming zombies when stdin pipes break or
 /// the IDE cancels the call. Since hooks MUST NOT spawn child processes
@@ -133,4 +148,27 @@ fn is_shell_tool(tool_name: &str) -> bool {
 /// Git Bash, so it is the correct universal form for executed commands.
 fn resolve_binary() -> String {
     crate::core::portable_binary::resolve_portable_binary()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn shared_dir_is_owner_only_under_the_state_dir() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let state = crate::core::paths::state_dir().unwrap();
+        for name in ["dedup", "read"] {
+            let dir = super::shared_dir(name).unwrap();
+            assert!(
+                dir.starts_with(&state),
+                "{} is outside the state dir",
+                dir.display()
+            );
+            for d in [&dir, &state.join("hooks")] {
+                let mode = std::fs::metadata(d).unwrap().permissions().mode() & 0o777;
+                assert_eq!(mode, 0o700, "{} is mode {mode:o}", d.display());
+            }
+        }
+    }
 }

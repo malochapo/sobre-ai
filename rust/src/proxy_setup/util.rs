@@ -6,6 +6,32 @@ pub fn is_local_sobre_url(url: &str) -> bool {
     url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
 }
 
+/// Where the port of the last proxy started from the CLI is kept, so
+/// `proxy status`, `stop`, `restart` and `uninstall` find a proxy started on
+/// another port.
+fn started_port_file() -> Option<std::path::PathBuf> {
+    crate::core::paths::state_dir()
+        .ok()
+        .map(|d| d.join("proxy.port"))
+}
+
+/// Records `port` as the one the last proxy was started on.
+pub(crate) fn remember_started_port(port: u16) {
+    if let Some(path) = started_port_file() {
+        if let Some(dir) = path.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(path, port.to_string());
+    }
+}
+
+/// The port the last proxy was started on, if one was.
+pub(crate) fn last_started_port() -> Option<u16> {
+    started_port_file()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| s.trim().parse().ok())
+}
+
 /// Proxy reachability timeout (200 ms).
 pub fn proxy_timeout() -> std::time::Duration {
     std::time::Duration::from_millis(200)

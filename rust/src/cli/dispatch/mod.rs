@@ -113,10 +113,13 @@ pub fn run() {
                     uninstall::print_help();
                     return;
                 }
-                let dry_run = rest.iter().any(|a| a == "--dry-run");
-                let keep_config = rest.iter().any(|a| a == "--keep-config");
-                let keep_binary = rest.iter().any(|a| a == "--keep-binary");
-                uninstall::run(dry_run, keep_config, keep_binary);
+                match uninstall::parse_args(&rest) {
+                    Ok(options) => uninstall::run(&options),
+                    Err(e) => {
+                        eprintln!("{e}");
+                        std::process::exit(2);
+                    }
+                }
                 return;
             }
             // `raw` runs the command with its output passed through unchanged.

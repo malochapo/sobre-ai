@@ -264,7 +264,7 @@ fn hash_file(path: &str) -> Option<String> {
     Some(blake3::hash(&bytes).to_hex().to_string())
 }
 
-/// `<tmp>/sobre-hook/rd/<session-hash>/<read-key>.rdx`, creating the session
+/// `<state>/hooks/read/<session-hash>/<read-key>.rdx`, creating the session
 /// dir. Session-scoped so [`purge_session`] and the TTL sweep stay O(1) dirs.
 fn record_path(
     session_id: &str,
@@ -283,14 +283,7 @@ fn record_path(
 }
 
 fn read_dedup_root() -> Option<std::path::PathBuf> {
-    let dir = std::env::temp_dir().join("sobre-hook").join("rd");
-    std::fs::create_dir_all(&dir).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    }
-    Some(dir)
+    super::shared_dir("read")
 }
 
 /// Record format: `<blake3-hex> <tool_use_id>` on a single line.

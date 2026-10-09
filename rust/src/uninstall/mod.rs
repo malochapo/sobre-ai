@@ -26,7 +26,6 @@ USAGE:
     sobre uninstall [OPTIONS]
 
 OPTIONS:
-    --dry-run        List every change and make none
     --keep-config    Keep config.toml, for a later reinstall
     --keep-binary    Leave the sobre binary in place
     -h, --help       Show this help and exit (does NOT uninstall)
@@ -42,10 +41,7 @@ WHAT IT REMOVES:
       `cargo uninstall`)
 
     Agents that are running keep their sobre server until they restart.
-
-EXAMPLES:
-    sobre uninstall --dry-run     # see exactly what would change
-    sobre uninstall"
+    Every change is listed as it is made."
     );
 }
 
@@ -53,40 +49,54 @@ EXAMPLES:
 // Main entry
 // ---------------------------------------------------------------------------
 
-pub fn run(dry_run: bool, keep_config: bool, keep_binary: bool) {
+/// What `sobre uninstall` was asked to keep.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Options {
+    pub keep_config: bool,
+    pub keep_binary: bool,
+}
+
+/// Parses `uninstall`'s arguments. Anything it does not know is an error:
+/// uninstall removes everything, so a typo must never run it.
+pub fn parse_args(args: &[String]) -> Result<Options, String> {
+    let mut options = Options::default();
+    for arg in args {
+        match arg.as_str() {
+            "--keep-config" => options.keep_config = true,
+            "--keep-binary" => options.keep_binary = true,
+            other => {
+                return Err(format!(
+                    "uninstall: unknown argument '{other}' (it takes --keep-config and --keep-binary; see sobre uninstall --help)"
+                ));
+            }
+        }
+    }
+    Ok(options)
+}
+
+pub fn run(options: &Options) {
     let Some(home) = dirs::home_dir() else {
         eprintln!("uninstall: cannot determine the home directory");
         return;
     };
 
-    if dry_run {
-        println!("\n  sobre uninstall --dry-run (nothing is changed)\n");
-    } else {
-        println!("\n  sobre uninstall\n");
-    }
+    println!("\n  sobre uninstall\n");
 
     // Stop the proxy first, so it cannot rewrite what is removed next.
-    binary::stop_proxy(dry_run);
-    if dry_run {
-        crate::proxy_setup::preview_proxy_cleanup(&home);
-        println!("  Would remove the proxy autostart unit");
-    } else {
-        crate::proxy_setup::uninstall_proxy_env(&home, false);
-        crate::proxy_autostart::uninstall(true);
-    }
+    binary::stop_proxy();
+    crate::proxy_setup::uninstall_proxy_env(&home, false);
+    crate::proxy_autostart::uninstall(true);
 
-    let mut removed_any = agents::remove_agent_files(&home, dry_run);
-    removed_any |= remove_data_dirs(&home, dry_run, keep_config);
+    let mut removed_any = agents::remove_agent_files(&home);
+    removed_any |= remove_data_dirs(&home, options.keep_config);
     // The binary goes last: on Unix the running process keeps working.
-    removed_any |= binary::remove_binary(&home, dry_run, keep_binary);
+    removed_any |= binary::remove_binary(&home, options.keep_binary);
 
     println!();
-    if !removed_any {
-        println!("  Nothing to remove: sobre is not installed here.\n");
-    } else if dry_run {
-        println!("  Run `sobre uninstall` to apply.\n");
-    } else {
+    if removed_any {
         println!("  sobre is removed. Restart your agents so they drop its server.\n");
+    } else {
+        println!("  Nothing to remove: sobre is not installed here.\n");
     }
 }
 
@@ -117,7 +127,7 @@ fn data_dirs() -> Vec<(PathBuf, &'static str)> {
     dirs
 }
 
-fn remove_data_dirs(home: &Path, dry_run: bool, keep_config: bool) -> bool {
+fn remove_data_dirs(home: &Path, keep_config: bool) -> bool {
     let config_dir = crate::core::paths::config_dir().ok();
     let mut removed = false;
     for (dir, what) in data_dirs() {
@@ -130,10 +140,6 @@ fn remove_data_dirs(home: &Path, dry_run: bool, keep_config: bool) -> bool {
             continue;
         }
         removed = true;
-        if dry_run {
-            println!("  Would delete {short} ({what})");
-            continue;
-        }
         match fs::remove_dir_all(&dir) {
             Ok(()) => {
                 println!("  ✓ Deleted {short} ({what})");

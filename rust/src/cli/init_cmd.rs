@@ -171,7 +171,7 @@ Options:
 init exits non-zero when an agent could not be connected.
 
 Edits keep your comments and key order; a file sobre edits for the first
-time is copied to <file>.sobre.bak.
+time is copied to <file>.sobre.bak (an empty one for a file sobre creates).
 Undo it all: sobre uninstall"
     );
 }

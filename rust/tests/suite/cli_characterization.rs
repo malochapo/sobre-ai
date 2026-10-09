@@ -298,21 +298,6 @@ fn proxy_status_exits_cleanly() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Uninstall (dry-run only — safe)
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn uninstall_dry_run_exits_zero() {
-    let out = run(&["uninstall", "--dry-run"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    let s = stdout(&out);
-    assert!(
-        s.contains("dry") || s.contains("Would") || s.contains("sobre") || !s.is_empty(),
-        "uninstall --dry-run should describe what it would do"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════
 // Machine-facing entry points
 // ═══════════════════════════════════════════════════════════════════
 

@@ -50,11 +50,12 @@ Most findings were reproduced; the rest say "likely" and why.
   unless the path says otherwise. They point at `4be6afd` and drift as the
   fixes land.
 
-## Decisions needed
+## Decisions
 
-Pending. Each line gives the recommendation.
+Taken on 2026-10-09: every recommendation was accepted, and decision 13
+was added.
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 |---|---|---|
 | 1 | A stale anchor in `sobre_patch` is moved to another line with the same hash, silently (J2) | Refuse with CONFLICT and show the current lines. |
 | 2 | `replace_unique`/`replace_all` fall back to a whitespace-insensitive match (G4) | Remove the fallback. On no exact match, the error shows the nearest candidate with its whitespace visible. |
@@ -68,13 +69,14 @@ Pending. Each line gives the recommendation.
 | 10 | `proxy enable` on Windows wires nothing and reports success (H4) | Say so: on Windows `proxy enable` refuses with a clear message and the README says the proxy is started by hand there. Autostart waits for someone who can test it. |
 | 11 | `docs/phase1-audit*.md` are private notes in the repository, which the process rules forbid | Keep them until phase 1 closes, then delete them in the release PR; history keeps them. |
 | 12 | `doctor --fix` rewrites MCP entries in the user's repository (H13) | Report only: `doctor` names the project file and the entry; the user edits it. sobre writes nothing into a repository. |
+| 13 | Does `uninstall` need `--dry-run` (H1)? | No: it is removed. Someone who runs `uninstall` means it; it lists each change as it makes it. Any argument it does not know is still an error, since `sobre uninstall claude`, by analogy with `init claude`, would remove everything. |
 
 ## Plan
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | open |
-| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | open |
+| G | Regressions and half-done phase-1 fixes | in progress (#51) |
+| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
@@ -82,10 +84,10 @@ Pending. Each line gives the recommendation.
 | P | CI and release | open |
 | N | Documentation: complete reference and architecture, written last | open |
 
-Three findings go first, before any decision, in their own PR: H12 (a
-local user can get commands run through the hooks' shared `/tmp`
-directory), H1 (`uninstall --dryrun` uninstalls) and G1 (`uninstall`
-leaves debris).
+Three findings went first, in their own PR (#51): H12 (a local user
+could get commands run through the hooks' shared `/tmp` directory), H1
+(`uninstall --dryrun` uninstalled) and G1 (`uninstall` left debris), with
+G15 (`uninstall` left a proxy running), which sat in the same code.
 
 E20 from the first audit stays open (see [below](#e20-still-open)).
 
@@ -141,7 +143,7 @@ documented:
 
 ## Lot G — regressions and half-done fixes
 
-- [ ] **G1 `uninstall` leaves debris again after a second `init`.**
+- [x] **G1 `uninstall` leaves debris again after a second `init`.** (#51)
   *Regression: A4.*
   - `config_io::write_atomic_with_backup` (`config_io.rs:18-41`) keeps a
     `.sobre.bak` of any file it rewrites, including one sobre created on the
@@ -154,6 +156,12 @@ documented:
   - The round-trip test runs `init` once.
   - Fix: no backup of a file sobre created; a round-trip test that runs
     `init` twice and with a moved binary.
+  - Done. A file sobre creates gets an empty `.sobre.bak`, so the next
+    `init` keeps it and `uninstall` knows it may delete the file. The
+    backup goes before the empty `hooks/` directory is pruned, which left
+    `~/.copilot/hooks` behind. `tests/suite/init_uninstall_round_trip.rs`
+    runs `init` twice, once more from a moved binary, then `uninstall`,
+    over nine agents, and compares the whole HOME.
 - [ ] **G2 The observe-hook refresh takes over other tools' hooks.**
   *Regression: E19.*
   - `refresh_command` (`hooks/agents/mod.rs:13-26`) points every hook
@@ -254,23 +262,31 @@ documented:
   - `core/session_token.rs:19` is a second hex encoder.
   - `proxy_autostart.rs:473` imports something unused in the Windows test
     build.
-- [ ] **G15 `uninstall` leaves a proxy running on a port other than the
-  default.** *Regression: C12 left this path.* `uninstall` stops the proxy
+  - Found while fixing H12: the proxy's log directory falls back to
+    `<tmp>/sobre` when the state dir cannot be resolved
+    (`proxy_autostart.rs:285`, `cli/dispatch/network/proxy.rs:325`).
+- [x] **G15 `uninstall` leaves a proxy running on a port other than the
+  default.** (#51) *Regression: C12 left this path.* `uninstall` stops the proxy
   on `default_port()` (`uninstall/binary.rs:13-24`), not on the port
   recorded in `proxy.port` that `proxy stop` reads
   (`cli/dispatch/network/proxy.rs:28-52`), then deletes that file with the
   state dir. Reproduced: after `proxy start --port 18778 -d` and
   `uninstall`, `:18778/health` still answers.
+  - Done. `uninstall` stops the proxy on the configured port and on the
+    port the last proxy was started on; `proxy_setup` owns that record.
 
 ## Lot H — the user's machine
 
-- [ ] **H1 `uninstall` ignores arguments it does not know.**
+- [x] **H1 `uninstall` ignores arguments it does not know.** (#51)
   - `sobre uninstall --dryrun`, `-n`, `uninstall claude` or any typo runs a
     real uninstall and exits 0 (`cli/dispatch/mod.rs:109-120`).
   - `doctor bogus` and `doctor --bogus` run the full doctor and exit 0
     (`doctor/mod.rs:432-437`). `index`, `embeddings`, `proxy` and `config`
     also ignore unknown flags.
   - Decision 8. `uninstall` gets the fix first, whatever the decision.
+  - Done for `uninstall` (the other commands follow decision 8): any
+    argument but `--keep-config`, `--keep-binary` and `--help` exits 2
+    and removes nothing. `--dry-run` is gone (decision 13).
 - [ ] **H2 Any localhost URL is taken for sobre's proxy.**
   - `is_local_sobre_url` (`proxy_setup/util.rs:5`,
     `proxy_setup/codex.rs:207-210`) matches every `localhost`/`127.0.0.1`
@@ -367,7 +383,8 @@ documented:
     `sobre embeddings provision`, which that build refuses (exit 1).
   - `sobre` with stdin closed before `initialize` exits 1 with an ERROR
     line.
-- [ ] **H12 The hooks trust a shared directory in `/tmp`.** *Security.*
+- [x] **H12 The hooks trust a shared directory in `/tmp`.** *Security.*
+  (#51)
   - The Cursor and Gemini rewrite dedup and the read dedup keep their state
     in `<tmp>/sobre-hook/` (`hook_handlers/dedup.rs:146`,
     `hook_handlers/read_dedup.rs:286-291`). `create_dir_all` succeeds on a
@@ -384,6 +401,9 @@ documented:
     `uninstall`.
   - Fix: keep it under sobre's state dir (owner-only, like the rest), and
     remove it on uninstall.
+  - Done. The hooks share `<state dir>/hooks/dedup` and
+    `<state dir>/hooks/read`, mode 0700; `uninstall` removes them with the
+    state dir.
 - [ ] **H13 `doctor --fix` rewrites files in the user's repository.**
   - Reproduced on a repo with a committed JSONC `.cursor/mcp.json`
     (comments, a `team-db` entry and `sobre`) and `.vscode/mcp.json`:
