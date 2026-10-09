@@ -53,14 +53,6 @@ fn dir_marker_detects_each_project_type() {
 }
 
 #[test]
-fn test_short_hash_deterministic() {
-    let h1 = short_hash("/Users/test/project");
-    let h2 = short_hash("/Users/test/project");
-    assert_eq!(h1, h2);
-    assert_eq!(h1.len(), 8);
-}
-
-#[test]
 fn test_make_relative() {
     assert_eq!(
         make_relative("/foo/bar/src/main.rs", "/foo/bar"),

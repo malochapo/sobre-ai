@@ -386,36 +386,20 @@ impl SessionState {
         std::fs::read_to_string(&path).ok()
     }
 
-    /// Loads the most recently modified compaction snapshot from disk.
-    ///
-    /// When a project root can be derived from CWD, only snapshots whose
-    /// embedded session data matches the project root are considered. This
-    /// prevents cross-project snapshot leakage.
-    pub fn load_latest_snapshot() -> Option<String> {
+    /// Loads the most recently written compaction snapshot of a session of
+    /// `project_root`: only the snapshots of that project's own sessions are
+    /// considered, never another project's.
+    pub fn load_latest_snapshot(project_root: &str) -> Option<String> {
         let dir = sessions_dir()?;
-        let project_root = std::env::current_dir()
-            .ok()
-            .map(|p| p.to_string_lossy().to_string());
-
-        let mut snapshots: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&dir)
-            .ok()?
-            .filter_map(std::result::Result::ok)
-            .filter(|e| e.path().to_string_lossy().ends_with("_snapshot.txt"))
-            .filter_map(|e| {
-                let meta = e.metadata().ok()?;
-                let modified = meta.modified().ok()?;
-
-                if let Some(ref root) = project_root {
-                    let content = std::fs::read_to_string(e.path()).ok()?;
-                    if !content.contains(root) {
-                        return None;
-                    }
-                }
-
-                Some((modified, e.path()))
-            })
-            .collect();
-
+        let mut snapshots: Vec<(std::time::SystemTime, PathBuf)> =
+            Self::all_for_project_root(project_root)
+                .into_iter()
+                .filter_map(|session| {
+                    let path = dir.join(format!("{}_snapshot.txt", session.id));
+                    let modified = std::fs::metadata(&path).ok()?.modified().ok()?;
+                    Some((modified, path))
+                })
+                .collect();
         snapshots.sort_by_key(|x| std::cmp::Reverse(x.0));
         snapshots
             .first()

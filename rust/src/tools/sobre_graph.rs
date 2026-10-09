@@ -100,17 +100,17 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
     if related.is_empty() {
         return format!(
             "No related files found for {}",
-            crate::core::protocol::shorten_path(target)
+            crate::core::protocol::display_path(&rel_target)
         );
     }
 
     let mut result = format!(
         "Files related to {} ({}):\n",
-        crate::core::protocol::shorten_path(target),
+        crate::core::protocol::display_path(&rel_target),
         related.len()
     );
     for r in &related {
-        result.push_str(&format!("  {}\n", crate::core::protocol::shorten_path(r)));
+        result.push_str(&format!("  {}\n", crate::core::protocol::display_path(r)));
     }
 
     let tokens = count_tokens(&result);
@@ -214,7 +214,7 @@ fn resolve_bare_symbol(
     for s in shortlist.iter().take(15) {
         lines.push(format!(
             "  {}::{} ({}, {}:{})",
-            crate::core::protocol::shorten_path(&s.file),
+            crate::core::protocol::display_path(&s.file),
             s.name,
             s.kind,
             s.start_line,
@@ -248,7 +248,7 @@ fn render_symbol_snippet(
 
     let mut result = format!(
         "{}::{} ({}:{}-{})\n",
-        crate::core::protocol::shorten_path(rel_display),
+        crate::core::protocol::display_path(rel_display),
         symbol.name,
         symbol.kind,
         symbol.start_line,

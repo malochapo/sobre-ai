@@ -27,19 +27,15 @@ pub use sync::{mirror_index, parse_symbol_metadata};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
-/// Resolve the directory for graph.db and graph.meta.json.
-///
-/// Uses `$SOBRE_DATA_DIR/graphs/<project_hash>/` (consistent with
-/// `ProjectIndex::index_dir`).  Falls back to `<project>/.sobre/`
-/// only when the global data directory cannot be resolved.
-pub fn graph_dir(project_root: &str) -> PathBuf {
-    if let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() {
-        let normalized = crate::core::index_paths::normalize_project_root(project_root);
-        let hash = crate::core::project_hash::hash_project_root(&normalized);
-        data_dir.join("graphs").join(hash)
-    } else {
-        Path::new(project_root).join(".sobre")
-    }
+/// Resolve the directory for graph.db and graph.meta.json:
+/// `$SOBRE_DATA_DIR/graphs/<project_hash>/` (consistent with
+/// `ProjectIndex::index_dir`). `None` when the data directory cannot be
+/// resolved: the graph is never written into the user's project.
+pub fn graph_dir(project_root: &str) -> Option<PathBuf> {
+    let data_dir = crate::core::data_dir::sobre_data_dir().ok()?;
+    let normalized = crate::core::index_paths::normalize_project_root(project_root);
+    let hash = crate::core::project_hash::hash_project_root(&normalized);
+    Some(data_dir.join("graphs").join(hash))
 }
 
 /// Property-graph engine generation, stamped into `graph.meta.json` on every
@@ -81,7 +77,8 @@ pub struct CodeGraph {
 
 impl CodeGraph {
     pub fn open(project_root: &str) -> anyhow::Result<Self> {
-        let db_dir = graph_dir(project_root);
+        let db_dir = graph_dir(project_root)
+            .ok_or_else(|| anyhow::anyhow!("cannot resolve sobre's data directory"))?;
         std::fs::create_dir_all(&db_dir)?;
         let db_path = db_dir.join("graph.db");
 
@@ -456,7 +453,7 @@ mod tests {
         let _guard = test_env_lock();
         crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
-        let dir = graph_dir(project.to_str().unwrap());
+        let dir = graph_dir(project.to_str().unwrap()).unwrap();
         assert!(dir.starts_with(&data_dir));
         assert!(dir.to_string_lossy().contains("graphs"));
 
@@ -475,8 +472,8 @@ mod tests {
         let _guard = test_env_lock();
         crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
-        let dir1 = graph_dir(project.to_str().unwrap());
-        let dir2 = graph_dir(project.to_str().unwrap());
+        let dir1 = graph_dir(project.to_str().unwrap()).unwrap();
+        let dir2 = graph_dir(project.to_str().unwrap()).unwrap();
         assert_eq!(dir1, dir2, "graph_dir should be deterministic");
         assert!(dir1.to_string_lossy().contains("graphs"));
 
@@ -514,7 +511,7 @@ mod tests {
         let _guard = test_env_lock();
         crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
-        let mp = meta::meta_path(project.to_str().unwrap());
+        let mp = meta::meta_path(project.to_str().unwrap()).unwrap();
         assert!(mp.starts_with(&data_dir));
         assert!(mp.to_string_lossy().contains("graph.meta.json"));
 

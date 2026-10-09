@@ -221,9 +221,20 @@ stale_files: {}\n",
         }
 
         "list" => {
-            let sessions = SessionState::list_sessions();
+            // This project's sessions only, as `load` and `restore` see them.
+            let same_root = |root: Option<&str>| match (root, session.project_root.as_deref()) {
+                (Some(a), Some(b)) => {
+                    crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(a))
+                        == crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(b))
+                }
+                _ => false,
+            };
+            let sessions: Vec<_> = SessionState::list_sessions()
+                .into_iter()
+                .filter(|s| same_root(s.project_root.as_deref()))
+                .collect();
             if sessions.is_empty() {
-                return "No sessions found.".to_string();
+                return "No sessions found for this project.".to_string();
             }
             let mut lines = vec![format!("Sessions ({}):", sessions.len())];
             for s in sessions.iter().take(10) {
@@ -259,7 +270,10 @@ stale_files: {}\n",
             let snapshot = if let Some(id) = session_id {
                 SessionState::load_compaction_snapshot(id)
             } else {
-                SessionState::load_latest_snapshot()
+                session
+                    .project_root
+                    .as_deref()
+                    .and_then(SessionState::load_latest_snapshot)
             };
             match snapshot {
                 Some(s) => format!("Session restored from compaction snapshot:\n{s}"),

@@ -231,7 +231,7 @@ fn compress_apply(output: &str) -> String {
 
     let total = configured + created + unchanged + deleted;
     if total == 0 {
-        return compact_output(trimmed, 5);
+        return super::compact_lines(trimmed, 5);
     }
 
     let mut summary = Vec::new();
@@ -260,7 +260,7 @@ fn compress_delete(output: &str) -> String {
     let deleted: Vec<&str> = trimmed.lines().filter(|l| l.contains("deleted")).collect();
 
     if deleted.is_empty() {
-        return compact_output(trimmed, 3);
+        return super::compact_lines(trimmed, 3);
     }
     format!("deleted {} resources", deleted.len())
 }
@@ -283,7 +283,7 @@ fn compress_top(output: &str) -> String {
 }
 
 fn compress_rollout(output: &str) -> String {
-    compact_output(output, 5)
+    super::compact_lines(output, 5)
 }
 
 fn compress_simple(output: &str) -> String {
@@ -291,7 +291,7 @@ fn compress_simple(output: &str) -> String {
     if trimmed.is_empty() {
         return "ok".to_string();
     }
-    compact_output(trimmed, 3)
+    super::compact_lines(trimmed, 3)
 }
 
 fn compact_table(text: &str) -> String {
@@ -303,18 +303,6 @@ fn compact_table(text: &str) -> String {
         "{}\n... ({} more rows)",
         lines[..15].join("\n"),
         lines.len() - 15
-    )
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
     )
 }
 

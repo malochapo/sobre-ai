@@ -886,9 +886,9 @@ impl SobreReadTool {
         // related issues/PRs/schemas without a separate tool call. Only
         // touch the DB when it already exists — never create graph.db on a read.
         let hints_suffix = {
-            let graph_db =
-                crate::core::property_graph::graph_dir(&ctx.project_root).join("graph.db");
-            let edges = if graph_db.exists() {
+            let graph_db = crate::core::property_graph::graph_dir(&ctx.project_root)
+                .map(|d| d.join("graph.db"));
+            let edges = if graph_db.is_some_and(|db| db.exists()) {
                 crate::core::property_graph::CodeGraph::open(&ctx.project_root)
                     .map(|g| g.all_cross_source_edges())
                     .unwrap_or_default()
@@ -922,17 +922,6 @@ impl SobreReadTool {
             output
         } else {
             format!("{output}{hints_suffix}")
-        };
-        let proactive_query = format!(
-            "sobre_read path={path} mode={resolved_mode} task={}",
-            task_ref.unwrap_or_default()
-        );
-        let final_output = if let Some(block) =
-            crate::core::relevance_tracker::proactive_context_for_path(&proactive_query, path)
-        {
-            format!("{final_output}{block}")
-        } else {
-            final_output
         };
 
         Ok(ToolOutput {

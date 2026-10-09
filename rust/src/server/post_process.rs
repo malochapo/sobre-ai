@@ -6,48 +6,67 @@
 //! orchestrator. Each function mirrors exactly one concern of the original
 //! pipeline; behaviour is unchanged.
 
-use serde_json::{Map, Value};
-
 use crate::core::config::{CompressionLevel, Config};
 
-/// The tools whose text the terse stage may condense: prose about what was
-/// recorded (`sobre_knowledge`, `sobre_session`) and shell output, whose original
-/// stays reachable through the footer's `sobre_expand` id. Every other tool
-/// returns content the agent acts on — file text, search hits, signatures,
-/// diffs, paths, the original `sobre_expand` returns — where the dictionary and
-/// line-dropping layers would change what the agent reads.
-const TERSE_TOOLS: [&str; 3] = ["sobre_shell", "sobre_knowledge", "sobre_session"];
+/// The tools whose text the terse stage condenses here: prose about what was
+/// recorded (`sobre_knowledge`, `sobre_session`). Shell output is condensed
+/// inside `sobre_shell` ([`condense_shell_output`]), before it decides whether
+/// to keep the full output, so a condensed answer always carries its
+/// `sobre_expand` id. Every other tool returns content the agent acts on —
+/// file text, search hits, signatures, diffs, paths, the original
+/// `sobre_expand` returns — where the dictionary and line-dropping layers
+/// would change what the agent reads.
+const TERSE_TOOLS: [&str; 2] = ["sobre_knowledge", "sobre_session"];
 
 /// Whether the terse stage must leave this call's output alone: any tool not
-/// in [`TERSE_TOOLS`], raw shell, and shell output with structure
-/// (`git diff`, tables) that line scoring would break.
-fn skip_terse(name: &str, args: Option<&Map<String, Value>>, is_raw_shell: bool) -> bool {
+/// in [`TERSE_TOOLS`].
+fn skip_terse(name: &str) -> bool {
     !TERSE_TOOLS.contains(&name)
-        || is_raw_shell
-        || (name == "sobre_shell"
-            && crate::server::helpers::get_str(args, "command")
-                .is_some_and(|c| crate::shell::compress::has_structural_output(&c)))
+}
+
+/// Condenses a shell command's (already pattern-compressed) output with the
+/// terse stage, labelled. Output the command's policy protects
+/// (`passthrough_commands`, the built-in passthrough and verbatim commands)
+/// and output with structure (`git diff`, tables) is returned as it is.
+/// `sobre_shell` runs this before deciding whether to keep the full output,
+/// so whatever this cuts stays reachable through `sobre_expand`.
+pub(crate) fn condense_shell_output(command: &str, text: String, config: &Config) -> String {
+    let protected =
+        crate::shell::output_policy::classify(command, &config.passthrough_commands).is_protected();
+    if protected || crate::shell::compress::has_structural_output(command) {
+        return text;
+    }
+    let condensed = condense(&text, config);
+    if condensed != text
+        && crate::core::output_verification::verify_output(&text, &condensed)
+            .warnings
+            .is_empty()
+    {
+        condensed
+    } else {
+        text
+    }
 }
 
 /// Apply the session terse-compression stage. Returns the (possibly) compressed
 /// text; the original is returned untouched when compression is inactive, must
 /// be skipped, or fails the quality/savings gate. Condensed output ends with a
 /// one-line label, so the agent knows it is not reading the tool's raw text.
-pub(super) fn compress_terse(
-    text: String,
-    name: &str,
-    args: Option<&Map<String, Value>>,
-    config: &Config,
-    is_raw_shell: bool,
-) -> String {
-    if skip_terse(name, args, is_raw_shell) {
+pub(super) fn compress_terse(text: String, name: &str, config: &Config) -> String {
+    if skip_terse(name) {
         return text;
     }
+    condense(&text, config)
+}
+
+/// The terse stage at the configured compression, labelled; `text` itself
+/// when compression is off, the result loses quality, or it saves under 3%.
+fn condense(text: &str, config: &Config) -> String {
     let compression = CompressionLevel::effective(config);
     if !compression.is_active() {
-        return text;
+        return text.to_string();
     }
-    let terse_result = crate::core::terse::pipeline::compress(&text, &compression, None);
+    let terse_result = crate::core::terse::pipeline::compress(text, &compression, None);
     if terse_result.quality_passed && terse_result.savings_pct >= 3.0 {
         format!(
             "{}\n[sobre: condensed at compression {}, {:.0}% smaller]",
@@ -56,7 +75,7 @@ pub(super) fn compress_terse(
             terse_result.savings_pct
         )
     } else {
-        text
+        text.to_string()
     }
 }
 
@@ -79,9 +98,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn terse_reaches_only_prose_and_shell_output() {
-        for tool in ["sobre_shell", "sobre_knowledge", "sobre_session"] {
-            assert!(!skip_terse(tool, None, false), "{tool} is condensable");
+    fn terse_reaches_only_prose_here() {
+        for tool in ["sobre_knowledge", "sobre_session"] {
+            assert!(!skip_terse(tool), "{tool} is condensable");
         }
         // Content the agent acts on stays as the tool returned it: file text,
         // the original sobre_expand returns, edit evidence, search hits,
@@ -99,12 +118,28 @@ mod tests {
             "sobre_tree",
             "sobre_glob",
             "sobre_graph",
+            // condensed inside the tool, before it keeps the full output
+            "sobre_shell",
         ] {
-            assert!(skip_terse(tool, None, false), "{tool} must stay verbatim");
+            assert!(skip_terse(tool), "{tool} must stay as the tool returned it");
         }
-        assert!(
-            skip_terse("sobre_shell", None, true),
-            "raw shell skips terse"
+    }
+
+    /// G8: output of a command the user listed in `passthrough_commands`
+    /// is never condensed.
+    #[test]
+    fn passthrough_commands_are_never_condensed() {
+        let config = Config {
+            compression_level: 0.7,
+            passthrough_commands: vec!["mytool".to_string()],
+            ..Config::default()
+        };
+        let text = "the execution of the command completed and the command returned \
+                    the result of the execution of the command\n"
+            .repeat(20);
+        assert_eq!(
+            condense_shell_output("mytool --report", text.clone(), &config),
+            text
         );
     }
 
@@ -118,7 +153,7 @@ mod tests {
             compression_level: 0.7,
             ..Config::default()
         };
-        let out = compress_terse(content.to_string(), "sobre_read", None, &cfg, false);
+        let out = compress_terse(content.to_string(), "sobre_read", &cfg);
         assert_eq!(out, content, "sobre_read output must be byte-identical");
     }
 
@@ -136,7 +171,7 @@ mod tests {
             compression_level: 0.7,
             ..Config::default()
         };
-        let out = compress_terse(text.clone(), "sobre_shell", None, &cfg, false);
+        let out = condense_shell_output("my-report", text.clone(), &cfg);
         assert_ne!(out, text, "this input is expected to condense");
         assert!(
             out.ends_with("% smaller]"),

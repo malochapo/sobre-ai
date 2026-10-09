@@ -1109,23 +1109,10 @@ fn extract_summary(content: &str) -> String {
     String::new()
 }
 
+/// A file's content hash, stored in the index and compared on the next
+/// build: stable across Rust toolchains.
 fn compute_hash(content: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
-
-#[cfg(test)]
-fn short_hash(input: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    input.hash(&mut hasher);
-    format!("{:08x}", hasher.finish() & 0xFFFF_FFFF)
+    crate::core::hasher::hash_short(content)
 }
 
 fn make_relative(path: &str, root: &str) -> String {

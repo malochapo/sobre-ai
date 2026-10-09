@@ -70,7 +70,7 @@ fn compress_eslint(output: &str) -> String {
         if trimmed.lines().count() <= 5 {
             return trimmed.to_string();
         }
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     let mut parts = Vec::new();
@@ -115,7 +115,7 @@ fn compress_biome(output: &str) -> String {
     }
 
     if errors == 0 && warnings == 0 {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     format!(
@@ -130,16 +130,4 @@ fn compress_stylelint(output: &str) -> String {
         return "clean".to_string();
     }
     compress_eslint(output)
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
 }

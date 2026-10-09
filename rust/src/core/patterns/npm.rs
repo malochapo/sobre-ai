@@ -192,7 +192,7 @@ fn compress_test(output: &str) -> String {
         return format!("tests: {passed} pass, {failed} fail");
     }
 
-    compact_output(output, 10)
+    super::compact_lines(output, 10)
 }
 
 fn compress_audit(output: &str) -> String {
@@ -227,7 +227,7 @@ fn compress_audit(output: &str) -> String {
         if output.to_lowercase().contains("no vulnerabilities") || output.trim().is_empty() {
             return "ok (0 vulnerabilities)".to_string();
         }
-        return compact_output(output, 5);
+        return super::compact_lines(output, 5);
     }
 
     let mut parts = Vec::new();
@@ -286,7 +286,7 @@ fn compress_list(output: &str) -> String {
         .collect();
 
     if top_level.is_empty() {
-        return compact_output(output, 10);
+        return super::compact_lines(output, 10);
     }
 
     let cleaned: Vec<String> = top_level
@@ -302,16 +302,4 @@ fn compress_list(output: &str) -> String {
         .collect();
 
     format!("{} packages:\n{}", cleaned.len(), cleaned.join("\n"))
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
 }

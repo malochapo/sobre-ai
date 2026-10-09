@@ -842,7 +842,9 @@ fn disk_status_for_bm25(project_root: &str) -> DiskStatus {
 }
 
 fn disk_status_for_code_graph(project_root: &str) -> DiskStatus {
-    let dir = crate::core::property_graph::graph_dir(project_root);
+    let Some(dir) = crate::core::property_graph::graph_dir(project_root) else {
+        return DiskStatus::default();
+    };
     let db_path = dir.join("graph.db");
     if !db_path.exists() {
         return DiskStatus::default();

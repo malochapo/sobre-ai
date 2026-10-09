@@ -1,7 +1,5 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 pub(crate) const MAX_GOTCHAS: usize = 100;
 pub(super) const MAX_SESSION_LOGS: usize = 20;
@@ -249,9 +247,8 @@ impl GotchaStore {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// A gotcha's id, stored with it and matched again later: a stable hash,
+/// the same with any Rust toolchain.
 pub(super) fn gotcha_id(trigger: &str, category: &GotchaCategory) -> String {
-    let mut hasher = DefaultHasher::new();
-    trigger.hash(&mut hasher);
-    category.short_label().hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    crate::core::hasher::hash_short(&format!("{trigger}\0{}", category.short_label()))
 }

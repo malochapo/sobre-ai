@@ -55,8 +55,6 @@ impl SobreServer {
             return Ok(result);
         }
 
-        let is_raw_shell = name == "sobre_shell" && helpers::get_bool(args, "raw").unwrap_or(false);
-
         let pre_terse_len = result_text.len();
         let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
@@ -99,7 +97,7 @@ impl SobreServer {
         };
 
         let pre_compression = result_text.clone();
-        result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
+        result_text = post_process::compress_terse(result_text, name, &config);
 
         // A condensed text that lost a path, an identifier or structure is
         // not sent: the agent gets the tool's own output instead.

@@ -77,7 +77,7 @@ fn compress_test(output: &str) -> String {
     }
 
     if results.is_empty() {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     let mut parts = results;
@@ -112,7 +112,7 @@ fn compress_bench(output: &str) -> String {
     }
 
     if benchmarks.is_empty() {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
     format!(
         "{} benchmarks:\n{}",
@@ -135,7 +135,7 @@ fn compress_build(output: &str) -> String {
     }
 
     if errors.is_empty() {
-        return compact_output(trimmed, 5);
+        return super::compact_lines(trimmed, 5);
     }
     format!("{} errors:\n{}", errors.len(), errors.join("\n"))
 }
@@ -158,7 +158,7 @@ fn compress_golint(output: &str) -> String {
     }
 
     if by_linter.is_empty() {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     let total: u32 = by_linter.values().sum();
@@ -182,7 +182,7 @@ fn compress_vet(output: &str) -> String {
     if trimmed.is_empty() {
         return "ok (vet clean)".to_string();
     }
-    compact_output(trimmed, 10)
+    super::compact_lines(trimmed, 10)
 }
 
 fn compress_mod(output: &str) -> String {
@@ -190,7 +190,7 @@ fn compress_mod(output: &str) -> String {
     if trimmed.is_empty() {
         return "ok".to_string();
     }
-    compact_output(trimmed, 10)
+    super::compact_lines(trimmed, 10)
 }
 
 fn compress_fmt(output: &str) -> String {
@@ -201,16 +201,4 @@ fn compress_fmt(output: &str) -> String {
 
     let files: Vec<&str> = trimmed.lines().filter(|l| !l.trim().is_empty()).collect();
     format!("{} files reformatted:\n{}", files.len(), files.join("\n"))
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
 }

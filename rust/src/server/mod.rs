@@ -25,7 +25,7 @@ use rmcp::service::{RequestContext, RoleServer};
 use crate::tools::SobreServer;
 mod call_tool;
 mod post_dispatch;
-mod post_process;
+pub(crate) mod post_process;
 mod server_handler;
 
 fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {

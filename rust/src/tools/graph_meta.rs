@@ -31,7 +31,9 @@ pub(crate) fn project_meta(root: &str) -> Value {
 /// call sites work unchanged.
 pub(crate) fn graph_summary<P: AsRef<Path>>(project_root: P) -> Value {
     let root_str = project_root.as_ref().to_string_lossy();
-    let graph_dir = crate::core::property_graph::graph_dir(root_str.as_ref());
+    let Some(graph_dir) = crate::core::property_graph::graph_dir(root_str.as_ref()) else {
+        return json!({ "exists": false, "db_path": null, "nodes": null, "edges": null });
+    };
     let db_path = graph_dir.join("graph.db");
     let db_path_display = db_path.display().to_string();
     if !db_path.exists() {

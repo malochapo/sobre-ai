@@ -40,13 +40,6 @@ pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 /// is checked against this in `doctor overhead` and `gain`.
 pub const CONTEXT_BUDGET_TOKENS: usize = 8000;
 
-/// Proactive CCR expansion: maximum archive content injected per tool response.
-pub const PROACTIVE_EXPANSION_BUDGET_TOKENS: usize = 2000;
-/// Proactive CCR expansion: minimum normalized BM25 score for an injection.
-pub const PROACTIVE_EXPANSION_THRESHOLD: f64 = 0.6;
-/// Proactive CCR expansion: archived content older than this is ignored.
-pub const PROACTIVE_EXPANSION_MAX_AGE_SECS: u64 = 3600;
-
 /// Graph indexes untouched for longer than this are purged.
 pub const GRAPH_INDEX_MAX_AGE_HOURS: u64 = 48;
 

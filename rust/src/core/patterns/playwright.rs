@@ -57,7 +57,7 @@ fn compress_playwright(output: &str) -> String {
 
     let total = passed + failed + skipped;
     if total == 0 {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     let mut parts = Vec::new();
@@ -107,7 +107,7 @@ fn compress_cypress(output: &str) -> String {
 
     let total = passed + failed + pending;
     if total == 0 {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     format!("{total} tests: {passed} passed, {failed} failed, {pending} pending")
@@ -126,16 +126,4 @@ fn extract_first_number(line: &str) -> u32 {
         }
     }
     0
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
 }

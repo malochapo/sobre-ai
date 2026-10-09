@@ -95,7 +95,7 @@ fn compress_pr_list(output: &str) -> String {
     }
 
     if prs.is_empty() {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
     format!("{} PRs:\n{}", prs.len(), prs.join("\n"))
 }
@@ -146,7 +146,7 @@ fn compress_pr_view(output: &str) -> String {
     }
 
     if parts.is_empty() {
-        return compact_output(output, 10);
+        return super::compact_lines(output, 10);
     }
     parts.join("\n")
 }
@@ -163,7 +163,7 @@ fn compress_pr_create(output: &str) -> String {
             }
         }
     }
-    compact_output(trimmed, 3)
+    super::compact_lines(trimmed, 3)
 }
 
 fn compress_issue_list(output: &str) -> String {
@@ -187,14 +187,14 @@ fn compress_issue_list(output: &str) -> String {
     }
 
     if issues.is_empty() {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
     format!("{} issues:\n{}", issues.len(), issues.join("\n"))
 }
 
 fn compress_issue_view(output: &str) -> String {
     // An issue's body is the payload; the metadata fields above it are
-    // boilerplate. Head-only truncation (`compact_output`) dropped the body
+    // boilerplate. Head-only truncation (`compact_lines`) dropped the body
     // wholesale on any issue longer than the field block, forcing a second
     // `--json body` call. Keep head AND tail so the body survives.
     compact_head_tail(output, 40, 40)
@@ -223,7 +223,7 @@ fn compress_run_list(output: &str) -> String {
     }
 
     if runs.is_empty() {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
     format!("{} runs:\n{}", runs.len(), runs.join("\n"))
 }
@@ -235,11 +235,11 @@ fn compress_run_view(output: &str) -> String {
 }
 
 fn compress_repo(output: &str) -> String {
-    compact_output(output, 10)
+    super::compact_lines(output, 10)
 }
 
 fn compress_release(output: &str) -> String {
-    compact_output(output, 10)
+    super::compact_lines(output, 10)
 }
 
 fn compress_simple_action(output: &str, action: &str) -> String {
@@ -255,20 +255,8 @@ fn compress_simple_action(output: &str, action: &str) -> String {
     action.to_string()
 }
 
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
-}
-
 /// Head+tail compaction: keep the first `head` and last `tail` non-empty
-/// lines, eliding only the middle. Unlike [`compact_output`] (head-only), this
+/// lines, eliding only the middle. Unlike `compact_lines` (head-only), this
 /// never drops the tail — used for single-record `view` output whose payload (an
 /// issue/PR body, a run's failure summary) follows the metadata header.
 fn compact_head_tail(text: &str, head: usize, tail: usize) -> String {
@@ -291,7 +279,7 @@ mod tests {
     #[test]
     fn issue_view_keeps_body_not_just_metadata() {
         // gh issue view: a metadata field block then the body. Head-only
-        // truncation (`compact_output(_, 15)`) dropped the body entirely.
+        // truncation (`compact_lines(_, 15)`) dropped the body entirely.
         let mut out = String::new();
         for f in [
             "title:\tSomething broke",
