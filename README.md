@@ -12,10 +12,12 @@ It works with Claude Code, Codex, Copilot CLI, Cursor, Gemini CLI, OpenCode,
 VS Code, Windsurf and Zed.
 
 ```bash
-tar xzf sobre-<target>.tar.gz -C ~/.local/bin   # a release binary, see Install
-sobre init                                      # connect every agent it finds
-sobre doctor                                    # check the wiring
+curl -fsSL https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.sh | sh
+sobre init    # connect every agent it finds
 ```
+
+On Windows, in PowerShell, the first line is
+`irm https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.ps1 | iex`.
 
 Then restart your agent.
 
@@ -379,10 +381,10 @@ hooks changed; `sobre doctor` prints where.
 
 ## Upgrade
 
-Replace the binary at the same path — download the new release, or
-`make install` again — and restart your agents. With the proxy on, also run
-`sobre proxy restart`. If the binary's path changed, run `sobre doctor --fix`
-from the new one.
+Re-run the install command (with the same options), or `make install` for a
+source build: the new binary replaces the old one at the same path. Then
+restart your agents, and with the proxy on, run `sobre proxy restart`. If the
+binary's path changed, run `sobre doctor --fix` from the new one.
 
 ## Uninstall
 
@@ -405,22 +407,28 @@ sobre uninstall
 `--keep-config` keeps `config.toml`, `--keep-binary` keeps the binary. Any
 other argument is an error, and nothing is removed.
 
+On Windows, `uninstall` cannot delete the `sobre.exe` it runs from. Afterwards,
+delete it by hand and, after an install with `install.ps1`, its folder
+(`%LOCALAPPDATA%\Programs\sobre` by default) and that folder's entry in your
+user `PATH`.
+
 ## Platform notes
 
 - **Linux.** The builds without embeddings are static and run on any
   distribution. The `sobre-dense-…` builds need glibc 2.28 or later, which rules
   out Alpine and other musl distributions: ONNX Runtime has to be loaded at run
   time, which a static binary cannot do.
-- **macOS.** The binaries are neither signed nor notarized. If Gatekeeper
-  refuses to run one, clear the download flag:
-  `xattr -d com.apple.quarantine ~/.local/bin/sobre`. Intel Macs have no
+- **macOS.** The binaries are neither signed nor notarized. `install.sh`
+  downloads with `curl`, which sets no quarantine flag. An archive downloaded
+  with a browser does get one: if Gatekeeper refuses to run that binary, clear
+  it with `xattr -d com.apple.quarantine ~/.local/bin/sobre`. Intel Macs have no
   `sobre-dense` build because Microsoft ships no ONNX Runtime 1.24 for them: build
   from source with `--features dense`, install ONNX Runtime with
   `brew install onnxruntime`, and point `ORT_DYLIB_PATH` at its
   `libonnxruntime.dylib`.
 - **Windows.** No `make` and no proxy login service (see [Proxy](#proxy)).
-  `uninstall` cannot delete the `sobre.exe` it runs from: delete it by hand
-  afterwards.
+  `uninstall` leaves the binary and the installer's folder and `PATH` entry
+  (see [Uninstall](#uninstall)).
 
 ## Reference
 
