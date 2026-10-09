@@ -8,8 +8,8 @@ use crate::server::tool_trait::{ToolContext, ToolOutput, get_bool, get_str, get_
 /// Batch read behind `sobre_read(paths=…)`: reads multiple files in one
 /// call.
 ///
-/// Panic guard (mirrors sobre_read): a panic in tree-sitter / compression must
-/// never unwind through the dispatch `block_in_place` and kill the MCP server.
+/// Panic guard (as in sobre_read): a panic in tree-sitter or compression
+/// becomes an error answer naming the batch.
 pub(crate) fn batch_read(
     args: &Map<String, Value>,
     ctx: &ToolContext,
@@ -69,11 +69,9 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
     let cap = crate::core::limits::max_read_bytes() as u64;
 
-    // Resolve + filter paths and capture the active task under one short read lock.
-    // `bounded_lock` uses `Handle::block_on` directly — NOT a nested
-    // `block_in_place` — because the dispatch layer already wraps this handler in
-    // `block_in_place`. The previous nested `block_in_place` calls could exhaust the
-    // 32-thread blocking pool under concurrent reads and freeze the server.
+    // Resolve + filter paths and capture the active task under one short read
+    // lock. `bounded_lock` waits with `Handle::block_on`: the handler already
+    // runs on the blocking pool.
     let (paths, current_task, skipped) = {
         let Some(session) = crate::server::bounded_lock::read(session_lock, "batch_read:session")
         else {
@@ -113,10 +111,8 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         ));
     }
 
-    // Default to auto and let sobre_read resolve the optimal mode per file.
-    // Previously this forced auto→full, which is exactly the "everything comes
-    // back as full" complaint: batch reads must honour auto like single
-    // sobre_read does.
+    // Default to auto and let sobre_read resolve the mode per file, as a
+    // single read does.
     let mode = get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
     let fresh = get_bool(args, "fresh").unwrap_or(false);
 

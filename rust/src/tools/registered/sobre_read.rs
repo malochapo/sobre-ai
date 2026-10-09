@@ -40,7 +40,7 @@ impl McpTool for SobreReadTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Absolute path" },
+                    "path": { "type": "string", "description": "File path" },
                     "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch read" },
                     "mode": {
                         "type": "string",
@@ -404,9 +404,8 @@ impl SobreReadTool {
             });
         }
 
-        // Cross-source hints: if the property graph has cross-source edges
-        // pointing to this file, append compact hints so the agent knows about
-        // related issues/PRs/schemas without a separate tool call. Only
+        // Cross-source hints: the property graph's cross-source edges for this
+        // file (the code-health hotspots) are appended as compact hints. Only
         // touch the DB when it already exists — never create graph.db on a read.
         let hints_suffix = {
             let graph_db = crate::core::property_graph::graph_dir(&ctx.project_root)
@@ -437,8 +436,8 @@ impl SobreReadTool {
         if let Some(ref w) = mode_override_note {
             warnings.push(w.as_str());
         }
-        // Notices (mode override, budget, degradation, delta) go BEFORE the
-        // payload so client-side truncation of large outputs cannot hide them.
+        // Notices (mode override, delta) go BEFORE the payload so client-side
+        // truncation of large outputs cannot hide them.
         let final_output = if !warnings.is_empty() {
             format!("{}\n\n{output}{hints_suffix}", warnings.join("\n"))
         } else if hints_suffix.is_empty() {
