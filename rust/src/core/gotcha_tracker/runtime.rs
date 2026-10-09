@@ -1,23 +1,18 @@
-//! Runtime wiring: learn gotchas from real shell outcomes.
+//! Learning gotchas from real shell outcomes.
 //!
-//! `detect_error` / `try_resolve_pending` were fully implemented and unit-tested
-//! but never called on a live path — the engine that learns "error X was fixed
-//! by Y" sat dormant. This module hooks them into the shell layer at the exact
-//! point the diagnostics store uses (`shell::exec`), so a failing
-//! build/test pushes a pending error and the next green run of the same command
-//! base correlates the fix into a persisted [`Gotcha`] — automatic, no agent
-//! action required.
+//! `shell::exec` reports every finished build/test/run command here: a
+//! failure pushes a pending error, and the next green run of the same command
+//! base correlates the fix into a persisted [`Gotcha`], with no agent action.
 //!
-//! ## State model
-//! Pending errors are in-memory by design (`GotchaStore.pending_errors` is
-//! `#[serde(skip)]`). A process-global active store keeps them alive across
-//! calls, so in the long-lived MCP server a fail→fix spanning two `sobre_shell` calls
-//! correlates. Durable gotchas / error logs / stats are persisted to
-//! `gotchas.json`, so the injection block and CLI see them across processes.
+//! Each outcome loads the project's `gotchas.json`, learns and saves it under
+//! the project's knowledge lock. Pending errors are persisted with the rest,
+//! so a fail→fix spanning two processes (the MCP server, `sobre -c`)
+//! correlates, and no process keeps a copy that would overwrite what another
+//! one saved.
 //!
 //! [`Gotcha`]: super::Gotcha
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
 
 use super::GotchaStore;
 
@@ -25,9 +20,9 @@ impl GotchaStore {
     /// Learn from one finished command: push a pending error on failure, or
     /// correlate a fix when a prior pending of the same command base now passes.
     ///
-    /// Returns `true` when durable state (gotchas / error log / stats) changed
-    /// and the caller should persist. Pure — no globals, no I/O — so the
-    /// correlation logic is unit-testable in isolation.
+    /// Returns `true` when the store changed and the caller should persist.
+    /// Pure — no globals, no I/O — so the correlation logic is unit-testable
+    /// in isolation.
     pub fn learn_from_shell(
         &mut self,
         command: &str,
@@ -45,19 +40,6 @@ impl GotchaStore {
     }
 }
 
-/// Active per-project store, kept in memory so pending errors survive across
-/// shell calls within a process (the MCP server's whole lifetime).
-struct Active {
-    project_hash: String,
-    store: GotchaStore,
-}
-
-static ACTIVE: OnceLock<Mutex<Option<Active>>> = OnceLock::new();
-
-fn active() -> &'static Mutex<Option<Active>> {
-    ACTIVE.get_or_init(|| Mutex::new(None))
-}
-
 /// Stable per-process session id. Each MCP server run / CLI invocation counts as one
 /// "session" for cross-session correlation — semantically correct without
 /// coupling the shell layer to the MCP session store.
@@ -69,9 +51,9 @@ fn process_session_id() -> &'static str {
 /// Shell-layer hook: learn from a finished command's outcome.
 ///
 /// Gated to build/test/run command families via `is_correlatable_command`
-/// so ordinary commands never touch disk. Resolves the project root and a stable
-/// session id internally, keeping the call site (a single line in `shell::exec`)
-/// minimal. Never panics and never blocks the shell on lock contention.
+/// so ordinary commands never touch disk. Resolves the project root and a
+/// stable session id internally, keeping the call site (a single line in
+/// `shell::exec`) minimal. Never fails the command: an error is dropped.
 pub fn record_shell_outcome(command: &str, output: &str, exit_code: i32) {
     if !super::detect::is_correlatable_command(command) {
         return;
@@ -81,30 +63,9 @@ pub fn record_shell_outcome(command: &str, output: &str, exit_code: i32) {
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_default();
     let project_root = crate::core::protocol::detect_project_root_or_cwd(&cwd);
-    let hash = crate::core::project_hash::hash_project_root(&project_root);
-
-    let Ok(mut guard) = active().try_lock() else {
-        return;
-    };
-
-    let needs_load = guard.as_ref().is_none_or(|a| a.project_hash != hash);
-    if needs_load {
-        *guard = Some(Active {
-            project_hash: hash,
-            store: GotchaStore::load(&project_root),
-        });
-    }
-
-    let Some(entry) = guard.as_mut() else {
-        return;
-    };
-    let changed =
-        entry
-            .store
-            .learn_from_shell(command, output, exit_code, &[], process_session_id());
-    if changed {
-        let _ = entry.store.save(&project_root);
-    }
+    let _ = GotchaStore::update(&project_root, |store| {
+        store.learn_from_shell(command, output, exit_code, &[], process_session_id())
+    });
 }
 
 #[cfg(test)]
@@ -141,6 +102,32 @@ mod tests {
             GotchaSource::AutoDetected { .. }
         ));
         assert_eq!(store.pending_errors.len(), 0, "pending consumed by the fix");
+    }
+
+    /// A gotcha another writer saved between two shell outcomes survives the
+    /// second one: each outcome starts from what is on disk.
+    #[test]
+    fn shell_outcomes_keep_gotchas_saved_in_between() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = "/tmp/sobre-gotcha-no-lost-update";
+        let fail = |store: &mut GotchaStore| {
+            store.learn_from_shell(
+                "cargo build",
+                "error[E0382]: borrow of moved value",
+                1,
+                &[],
+                "s1",
+            )
+        };
+        assert!(GotchaStore::update(root, fail).unwrap());
+
+        let mut other = GotchaStore::load(root);
+        other.report_gotcha("flaky port", "use port 0", "convention", "warning", "s2");
+        other.save(root).unwrap();
+
+        assert!(GotchaStore::update(root, fail).unwrap());
+        let store = GotchaStore::load(root);
+        assert!(store.gotchas.iter().any(|g| g.trigger == "flaky port"));
     }
 
     #[test]

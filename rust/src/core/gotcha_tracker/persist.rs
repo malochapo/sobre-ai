@@ -24,6 +24,21 @@ impl GotchaStore {
         Self::new(&hash)
     }
 
+    /// Loads the project's store, runs `f` on it and saves it when `f`
+    /// returns `true`, under the project's knowledge lock, so concurrent
+    /// writers (threads or processes) never overwrite each other's gotchas.
+    /// Returns what `f` returned.
+    pub fn update(project_root: &str, f: impl FnOnce(&mut Self) -> bool) -> Result<bool, String> {
+        crate::core::knowledge::ProjectKnowledge::with_project_lock(project_root, || {
+            let mut store = Self::load(project_root);
+            let changed = f(&mut store);
+            if changed {
+                store.save(project_root)?;
+            }
+            Ok(changed)
+        })
+    }
+
     pub fn save(&self, project_root: &str) -> Result<(), String> {
         let hash = crate::core::project_hash::hash_project_root(project_root);
         let path = gotcha_path(&hash).ok_or("no data dir")?;
