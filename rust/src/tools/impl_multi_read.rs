@@ -89,7 +89,7 @@ pub fn handle_with_task_fresh(
 
 #[cfg(test)]
 mod tests {
-    /// K17: every section of a batch read names its file.
+    /// Every section of a batch read names its file.
     #[test]
     fn each_section_names_its_file() {
         let dir = tempfile::tempdir().unwrap();

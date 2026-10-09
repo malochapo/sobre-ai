@@ -1,4 +1,4 @@
-//! Resident line-search index for `sobre_search` (Phase 1 of the efficiency epic).
+//! Resident line-search index for `sobre_search`.
 //!
 //! Historically `sobre_search` walked the filesystem, read every file, and ran a
 //! regex on every line on *every* call — `O(files × lines)`. That is the

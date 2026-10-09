@@ -13,7 +13,7 @@ impl McpTool for SobreGraphTool {
     }
 
     /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
-    /// or `Unknown action` (B29).
+    /// or `Unknown action`.
     fn text_reports_failures(&self) -> bool {
         true
     }
@@ -276,7 +276,7 @@ mod tests {
         assert!(trace.contains("→ gamma"), "{trace}");
     }
 
-    /// L1: a path-qualified call (`util::helper()`) is a call to `helper`,
+    /// A path-qualified call (`util::helper()`) is a call to `helper`,
     /// and `Type::method` names a symbol, not a file.
     #[test]
     fn path_qualified_calls_and_names_resolve() {
@@ -302,7 +302,7 @@ mod tests {
         assert!(load.contains("pub fn load()"), "{load}");
     }
 
-    /// L2: an edit after the build is in the next answer.
+    /// An edit after the build is in the next answer.
     #[test]
     fn an_edit_after_the_build_is_seen() {
         let (_iso, _tmp, root) = chain_fixture();

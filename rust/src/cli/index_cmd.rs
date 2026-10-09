@@ -74,7 +74,7 @@ fn build(project_root: &str, force: bool) {
         if let Some(path) = crate::core::bm25_index::BM25Index::index_file_path(root) {
             let _ = std::fs::remove_file(path);
         }
-        // C4: purge the property graph (graph.db + wal/shm + meta) and
+        // Purge the property graph (graph.db + wal/shm + meta) and
         // the call-graph cache so the rebuild starts clean.
         crate::core::graph_index::purge_index(project_root);
         if let Some(dir) = crate::core::index_namespace::vectors_dir(root) {

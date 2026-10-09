@@ -125,7 +125,7 @@ mod tests {
         }
     }
 
-    /// G8: output of a command the user listed in `passthrough_commands`
+    /// Output of a command the user listed in `passthrough_commands`
     /// is never condensed.
     #[test]
     fn passthrough_commands_are_never_condensed() {

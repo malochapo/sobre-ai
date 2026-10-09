@@ -1,4 +1,4 @@
-//! Multi-store, lossless memory archive (Phase 1).
+//! Multi-store, lossless memory archive.
 //!
 //! Every memory store — facts, history, patterns — archives the
 //! items it evicts here *before* dropping them, so capacity management is never

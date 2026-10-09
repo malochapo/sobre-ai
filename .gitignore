@@ -3,21 +3,16 @@ rust/target/
 **/*.rs.bk
 *.pdb
 
-# --- Internal working documents ---
-# Fork-time reasoning: removal log, tool audit, working rules, publication
-# checklist. Useful to the maintainers, not part of the product.
-docs/removals.md
-docs/tools-audit.md
-docs/working-rules.md
-docs/pre-publication.md
-docs/cli-audit.md
-docs/next-session.md
-docs/next-session-old.md
-docs/removed-tools-gap-audit.md
-docs/retrospective-1.md
-docs/retrospective-2.md
-docs/assessment-profils.md
-docs/investigation-tests-build.md
+# --- Maintainers' local notes ---
+# Notes kept beside the docs stay on the maintainer's machine; only the pages
+# below are part of the repository.
+/docs/*.md
+!/docs/architecture.md
+!/docs/release-notes.md
+
+# --- Editor settings ---
+.vscode/
+.idea/
 
 # --- Local scratch ---
 check*.txt
@@ -33,8 +28,6 @@ rename*.txt
 _scratch/
 *.buildlog.txt
 
-# Un test a cree ce repertoire avec la variable non developpee.
+# A Windows test run can create this directory when the variable is not
+# expanded.
 %SystemDrive%/
-
-# Repertoire d'etat que sobre cree dans le projet courant.
-.sobre/

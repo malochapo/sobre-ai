@@ -67,7 +67,7 @@ pub fn refresh_if_stale(root: &str, index: &ProjectIndex) {
     let threshold = crate::core::code_health::COGNITIVE_THRESHOLD;
     let health = scan_project(Path::new(root), threshold, None, TOP_HOTSPOTS);
 
-    // Phase 3: fan the (top-N) hotspots out across BM25 / property graph /
+    // Fan the (top-N) hotspots out across BM25 / property graph /
     // knowledge as a replace-source, so health is queryable + cross-linked and
     // resolved hotspots are pruned. Done before the score is moved below.
     super::fabric::apply(root, &health);

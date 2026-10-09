@@ -92,7 +92,7 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
 
     // The capability guards above plus the deterministic heuristic below make
     // `auto` a function of the file and of this conversation's reads and
-    // edits — never of the session's task or of knowledge (decision 4).
+    // edits — never of the session's task or of knowledge.
 
     // Deterministic cold-read fallback. Every read that reaches here missed the
     // session cache (a warm hit returns `full`/`diff` above). Structure-first is

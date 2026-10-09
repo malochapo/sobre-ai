@@ -390,7 +390,7 @@ fn uninstall_leaves_an_endpoint_the_user_set() {
     );
 }
 
-/// H2: a local endpoint of the user's (Ollama, LiteLLM) is not the proxy:
+/// A local endpoint of the user's (Ollama, LiteLLM) is not the proxy:
 /// `init`'s wiring leaves it without `--force`, and neither the cleanup nor
 /// `uninstall` removes it.
 #[test]
@@ -420,7 +420,7 @@ fn a_local_endpoint_of_the_users_is_never_taken_for_the_proxy() {
     );
 }
 
-/// H3: an upstream configured for the proxy is not what Claude Code had:
+/// An upstream configured for the proxy is not what Claude Code had:
 /// undoing the wiring removes sobre's URL and writes nothing in its place.
 #[test]
 fn undoing_the_wiring_never_writes_the_configured_upstream() {

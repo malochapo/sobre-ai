@@ -46,7 +46,7 @@ fn knowledge_search_and_execute_require_mode_specific_inputs() {
     let knowledge = validator(&SobreKnowledgeTool);
     assert!(knowledge.is_valid(&json!({"action":"remember","category":"decision","value":"v"})));
     assert!(knowledge.is_valid(&json!({"action":"recall"})));
-    // B19: `value` alone is the documented form; the value is what is required.
+    // `value` alone is the documented form; the value is what is required.
     assert!(knowledge.is_valid(&json!({"action":"remember","value":"v"})));
     assert!(!knowledge.is_valid(&json!({"action":"remember","category":"decision"})));
     assert!(!knowledge.is_valid(&json!({"action":"gotcha","trigger":"t"})));

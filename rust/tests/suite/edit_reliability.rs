@@ -4,8 +4,8 @@
 //! ## What this proves
 //!
 //! `replace_unique` is a `str_replace` tool: to change a line the agent must hand it an
-//! `old_text` that (a) matches the bytes on disk and (b) is **unique**. The
-//! epic's thesis is that requirement (b) — positional ambiguity — is a
+//! `old_text` that (a) matches the bytes on disk and (b) is **unique**.
+//! Requirement (b) — positional ambiguity — is a
 //! model-independent failure: the line the agent wants to fix is frequently not
 //! unique (`acc += 1;`, `return a - b`, `}` …), so a minimal, natural edit
 //! attempt is rejected and the agent must recall extra surrounding context.
@@ -336,7 +336,7 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
         "sobre_patch must achieve 100% — anchors are immune to the ambiguity tax"
     );
     // The minimal (natural) str_replace attempt is strictly worse: it loses
-    // every ambiguity case. This is the regression guard for the epic's claim.
+    // every ambiguity case.
     assert!(
         str_replace_minimal_ok < anchored_ok,
         "replace_unique minimal recall ({str_replace_minimal_ok}) must trail sobre_patch ({anchored_ok})"

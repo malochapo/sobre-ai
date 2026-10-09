@@ -1,4 +1,4 @@
-//! `sobre_compose` — task composer (Phase 2 of the efficiency epic).
+//! `sobre_compose` — task composer.
 //!
 //! The biggest agent win is a single "rich per call" tool that returns ranked
 //! files *with* inline bodies, replacing the typical search → read → outline →

@@ -277,7 +277,7 @@ fn dir_json_is_deterministic_and_sorted() {
     assert_eq!(files[1]["path"], "z.rs");
 }
 
-/// K13: the `match` filter applies before the file cap: a symbol in the
+/// The `match` filter applies before the file cap: a symbol in the
 /// 651st file is found.
 #[test]
 fn a_match_past_the_file_cap_is_found() {

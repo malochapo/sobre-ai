@@ -344,7 +344,7 @@ fn main() {
         assert!(fns.contains(&"calculate"));
     }
 
-    /// L1: a path-qualified call is stored under the bare name symbols use.
+    /// A path-qualified call is stored under the bare name symbols use.
     #[test]
     fn rust_path_calls_use_the_last_segment() {
         let src = r"
@@ -360,7 +360,7 @@ fn main() {
         assert_eq!(callees, ["helper", "load", "helper", "parse"]);
     }
 
-    /// L1: `use a::b::{c, d}` imports from `a::b`, not from `a`.
+    /// `use a::b::{c, d}` imports from `a::b`, not from `a`.
     #[test]
     fn rust_brace_use_keeps_its_full_base() {
         let analysis = analyze(

@@ -387,7 +387,7 @@ mod tests {
         );
     }
 
-    /// J15: the totals come from the `--stat` summary lines; a commit
+    /// The totals come from the `--stat` summary lines; a commit
     /// message's `- bullet` lines are not deletions.
     #[test]
     fn git_log_stat_totals_are_the_summary_lines() {

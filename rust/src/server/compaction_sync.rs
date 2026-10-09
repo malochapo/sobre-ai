@@ -121,7 +121,7 @@ mod tests {
         assert!(cache.is_full_delivered("/tmp/a.rs"));
     }
 
-    /// L10: a new process does not empty the stub index again for a
+    /// A new process does not empty the stub index again for a
     /// compaction an earlier process already handled.
     #[test]
     #[serial]

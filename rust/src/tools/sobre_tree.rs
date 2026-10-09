@@ -205,7 +205,7 @@ mod tests {
         }
     }
 
-    /// K12: a directory at the depth limit says its contents were not
+    /// A directory at the depth limit says its contents were not
     /// walked; a directory of only dotfiles is not "empty"; what was left
     /// out is said.
     #[test]
@@ -231,7 +231,7 @@ mod tests {
         assert!(out.contains("none listed at depth=0"), "{out}");
     }
 
-    /// K11: the original is the same entries as a plain list, not a walk
+    /// The original is the same entries as a plain list, not a walk
     /// that also counts what was filtered out.
     #[test]
     fn the_original_counts_only_the_listed_entries() {

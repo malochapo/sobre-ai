@@ -742,7 +742,7 @@ mod tests {
         assert_eq!(run(), run(), "search output must be deterministic");
     }
 
-    /// K3: line 1 of a file with a UTF-8 BOM is anchored without the BOM,
+    /// Line 1 of a file with a UTF-8 BOM is anchored without the BOM,
     /// as `sobre_read` and `sobre_patch` hash it.
     #[test]
     fn anchored_search_hashes_line_one_without_the_bom() {
@@ -1057,7 +1057,7 @@ mod tests {
         );
     }
 
-    /// G12: a search that stops at `max_results` says so and counts against
+    /// A search that stops at `max_results` says so and counts against
     /// every candidate file; a complete one does not, and both name what the
     /// walk never looks at.
     #[test]

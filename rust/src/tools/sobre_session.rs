@@ -140,7 +140,7 @@ mod tests {
         handle(session, action, value, None)
     }
 
-    /// L18: an empty value is refused, never stored as a placeholder.
+    /// An empty value is refused, never stored as a placeholder.
     #[test]
     fn a_record_without_a_value_is_refused() {
         let mut session = SessionState::new();

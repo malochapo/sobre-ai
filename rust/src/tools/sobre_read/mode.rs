@@ -1,4 +1,4 @@
-//! Type-safe `sobre_read` modes (Phase 2).
+//! Type-safe `sobre_read` modes.
 //!
 //! Historically the read mode travelled through the whole pipeline as a bare
 //! `&str` (`"full"`, `"map"`, `"lines:5-10"`, `"density:0.40"`, …) and the
@@ -411,7 +411,7 @@ mod tests {
             "lines:5-999999".parse::<ReadMode>().unwrap(),
             ReadMode::Lines(LineRange::to_eof(5))
         );
-        // K15: a bare `lines:5` is line 5 alone, as everywhere else; `5-`
+        // A bare `lines:5` is line 5 alone, as everywhere else; `5-`
         // runs to the end.
         assert_eq!(
             "lines:5".parse::<ReadMode>().unwrap(),

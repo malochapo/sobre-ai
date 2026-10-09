@@ -1,4 +1,4 @@
-//! Integration tests for the hardening sprint: the logging channel invariant.
+//! Integration tests for the logging channel invariant.
 
 // =============================================================================
 // Contracts KV Block Integrity

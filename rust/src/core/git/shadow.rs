@@ -256,7 +256,7 @@ fn shadow_git_dir(project: &Path) -> Result<PathBuf, String> {
         .join("git"))
 }
 
-/// The per-project directory name every store uses (decision 6).
+/// The per-project directory name every store uses.
 fn project_hash(project: &Path) -> String {
     crate::core::project_hash::hash_project_root(&project.to_string_lossy())
 }
@@ -335,7 +335,7 @@ mod tests {
 
         // Restore the first checkpoint and confirm the content reverts.
         // An unsaved change is checkpointed first, so the restore can be
-        // undone (J10).
+        // undone.
         std::fs::write(project.join("a.txt"), "v3, unsaved\n").unwrap();
         let answer = restore(&project, &c1.sha, Some("a.txt")).expect("restore");
         let restored = std::fs::read_to_string(project.join("a.txt")).unwrap();

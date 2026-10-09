@@ -305,7 +305,7 @@ pub(crate) const PATH_LIKE_KEYS: &[&str] = &["path", "to", "project_root"];
 mod tests {
     use super::*;
 
-    /// L5: a call whose absolute path re-roots the session says so.
+    /// A call whose absolute path re-roots the session says so.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_reroot_is_said_in_the_output() {
         let _iso = crate::core::data_dir::isolated_data_dir();
@@ -467,7 +467,7 @@ mod tests {
         );
     }
 
-    /// B29: a tool whose text reports a failure comes back as a failure, so
+    /// A tool whose text reports a failure comes back as a failure, so
     /// the client sets `isError` instead of reading an error as a success.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn failure_text_marks_the_call_failed() {

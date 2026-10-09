@@ -59,7 +59,7 @@ impl McpTool for SobreSearchTool {
     }
 
     /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
-    /// or `Unknown action` (B29).
+    /// or `Unknown action`.
     fn text_reports_failures(&self) -> bool {
         true
     }
@@ -697,7 +697,7 @@ mod tests {
         assert_eq!(SearchAction::resolve(&args(&[])), Ok(SearchAction::Regex));
     }
 
-    /// K7: the top-level `include` applies to every query that sets none.
+    /// The top-level `include` applies to every query that sets none.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn top_level_include_applies_to_each_query() {
         let dir = tempfile::tempdir().unwrap();
@@ -721,7 +721,7 @@ mod tests {
         assert!(!out.contains("b.py"), "{out}");
     }
 
-    /// K16: a file inside the session's project keeps that project even when
+    /// A file inside the session's project keeps that project even when
     /// the session root is spelled through a symlink.
     #[cfg(unix)]
     #[test]

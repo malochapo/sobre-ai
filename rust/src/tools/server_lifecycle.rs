@@ -36,7 +36,7 @@ impl SobreServer {
 
         let startup = detect_startup_context(project_root, startup_cwd);
         // Every process starts an empty session; `sobre_session load` restores
-        // a saved one when the agent asks (decision 4).
+        // a saved one when the agent asks.
         let mut session = SessionState::new();
         if let Some(ref root) = startup.project_root {
             session.project_root = Some(root.clone());

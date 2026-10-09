@@ -101,7 +101,7 @@ fn run_consolidation_locked(
 
 /// Preview a consolidation on a throwaway clone: identical math, zero writes to
 /// knowledge, archives or the session. Reuses the real lifecycle/import code so
-/// the counts match what a non-dry run would produce (Phase 6).
+/// the counts match what a non-dry run would produce.
 fn dry_run_report(
     project_root: &str,
     session: Option<&SessionState>,

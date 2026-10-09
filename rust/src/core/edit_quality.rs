@@ -19,7 +19,7 @@
 //! `0.15` — two thresholds so one lucky edit doesn't flap the decision.
 //!
 //! Storage: memory only, for the life of the process. Nothing is written to
-//! disk, so one run's edits never change how a later run reads (decision 3).
+//! disk, so one run's edits never change how a later run reads.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};

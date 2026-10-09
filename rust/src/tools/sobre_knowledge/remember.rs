@@ -22,7 +22,7 @@ pub(crate) fn handle_remember(
     confidence: Option<f32>,
 ) -> String {
     // The documented form is `value` alone: an uncategorised fact goes to
-    // `general` (B19).
+    // `general`.
     let cat = category.unwrap_or(DEFAULT_CATEGORY);
     let Some(v) = value else {
         return "Error: value is required for remember".to_string();
@@ -744,7 +744,7 @@ mod tests {
         assert!(!out.starts_with("Error"), "must not error: {out}");
     }
 
-    /// B19: the documented form, `value` alone, is accepted and filed under
+    /// The documented form, `value` alone, is accepted and filed under
     /// the default category.
     #[test]
     fn remember_with_value_only_uses_the_default_category() {

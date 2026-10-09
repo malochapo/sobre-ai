@@ -171,7 +171,7 @@ fn write_compaction_marker(data_dir: &std::path::Path, ts: u64) {
 mod tests {
     use super::*;
 
-    /// L18: `gemini` is a model name, not a `mini` background model.
+    /// `gemini` is a model name, not a `mini` background model.
     #[test]
     fn background_models_are_matched_on_name_parts() {
         assert!(is_background_model("gpt-4o-mini"));

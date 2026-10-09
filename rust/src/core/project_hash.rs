@@ -3,7 +3,7 @@ use std::path::Path;
 /// The key of every per-project store (knowledge, gotchas, graphs, search
 /// indexes, co-occurrence, checkpoints): a short hash of the project's
 /// canonical root. Two clones are two projects, and adding or changing a git
-/// remote or a package name moves nothing (decision 6).
+/// remote or a package name moves nothing.
 ///
 /// The root is canonicalized (symlinks resolved), then normalized so the same
 /// directory always gives the same key whichever interface named it: on
