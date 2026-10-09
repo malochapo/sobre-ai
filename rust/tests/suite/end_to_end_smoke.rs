@@ -57,9 +57,6 @@ mod session_features {
         assert!(resume.contains("Build Context OS"), "task in resume");
         assert!(resume.contains("SSE"), "decision in resume");
 
-        let snapshot = session.build_compaction_snapshot();
-        assert!(!snapshot.is_empty(), "snapshot is non-empty");
-
         let json = serde_json::to_string(&session).unwrap();
         let restored: SessionState = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.findings.len(), 5);

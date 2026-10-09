@@ -92,37 +92,26 @@ For understanding code use sobre_compose FIRST.
 
 ## `sobre_knowledge`
 
-Facts that outlive the session: decisions, patterns, pitfalls.
-remember value= saves one (key derived when omitted); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; status lists categories. consolidate imports this session's findings and decisions. category groups facts; mode=semantic|exact for recall.
+Facts that outlive the session: decisions, conventions, pitfalls.
+remember value= saves one (key derived when omitted; a new value for a key replaces the old); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; remove deletes one; status lists categories. consolidate imports this session's findings and decisions. gotcha trigger= resolution= records a pitfall, recalled for matching tasks.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `action` | one of `remember`, `recall`, `search`, `status`, `rooms`, `timeline`, `wakeup`, `remove`, `feedback`, `pattern`, `gotcha`, `relate`, `unrelate`, `relations`, `relations_diagram`, `consolidate`, `restore`, `health`, `lifecycle_report`, `policy`, `export`, `import`, `embeddings_status`, `embeddings_reset`, `embeddings_reindex` | yes | wakeup=briefing; rooms=categories; feedback value=up\|down; relate value=kind, query=category/key; restore=archived items; embeddings_*=dense build |
-| `as_of` | string |  | YYYY-MM-DD date filter |
-| `category` | string |  | Fact category (remember: default general) |
-| `confidence` | number |  | 0.0-1.0 |
+| `action` | one of `remember`, `recall`, `search`, `status`, `remove`, `consolidate`, `gotcha` | yes |  |
+| `as_of` | string |  | recall: the facts valid at this date (YYYY-MM-DD) |
+| `category` | string |  | Groups facts (remember: default general) |
+| `confidence` | number |  | remember: 0.0-1.0 (default 0.8) |
 | `dry_run` | boolean |  | consolidate: preview only |
-| `examples` | array of string |  |  |
-| `format` | string |  | export: json\|okf (Markdown) |
 | `key` | string |  |  |
-| `limit` | number |  | restore: max items (default 50) |
-| `merge` | string |  | import: replace\|append\|skip-existing (default skip-existing) |
-| `mode` | string |  | auto\|exact\|semantic\|hybrid |
-| `path` | string |  | export/import: file, or OKF directory |
-| `pattern_type` | string |  |  |
-| `query` | string |  | recall, search, restore filter |
+| `mode` | string |  | recall: auto\|exact\|semantic\|hybrid |
+| `query` | string |  |  |
 | `resolution` | string |  | gotcha: the fix |
 | `severity` | string |  | gotcha: critical\|warning\|info |
-| `store` | string |  | restore: facts\|history\|patterns (default: all) |
 | `trigger` | string |  | gotcha: when it bites |
 | `value` | string |  |  |
 
 - When `action` is `remember`: requires `value`.
-- When `action` is `pattern`: requires `pattern_type` and `value`.
-- When `action` is `remove`, `feedback`, `relations` or `relations_diagram`: requires `category` and `key`.
-- When `action` is `relate` or `unrelate`: requires `category`, `key` and `query`.
-- When `action` is `timeline`: requires `category`.
-- When `action` is `import`: requires `path`.
+- When `action` is `remove`: requires `category` and `key`.
 - When `action` is `search`: requires `query`.
 - When `action` is `gotcha`: requires `trigger` and `resolution`.
 
@@ -260,16 +249,13 @@ Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | r
 
 ## `sobre_session`
 
-This session's task, findings and decisions; status shows them, save/load keep them across processes. export returns a redacted JSON bundle (write=true or path= also saves it); import path= loads one. Lasting facts: sobre_knowledge.
+This session's task, findings and decisions, saved as they change. status shows them; load brings back a saved session, list names them; resume is a short block to continue from after the host compacts its context. Lasting facts: sobre_knowledge.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `action` | one of `status`, `task`, `finding`, `decision`, `save`, `load`, `list`, `reset`, `cleanup`, `resume`, `snapshot`, `restore`, `diff`, `export`, `import`, `output_stats` | yes | task\|finding\|decision record value. reset=save, start anew. cleanup=drop sessions >7 days. snapshot/restore=compaction snapshot. diff value='id_a id_b [json]' |
-| `format` | string |  | export: json\|summary |
-| `path` | string |  | export: file to write; import: bundle to read |
-| `session_id` | string |  | load, restore: omit for this project's latest |
+| `action` | one of `status`, `task`, `finding`, `decision`, `load`, `list`, `resume` | yes | task\|finding\|decision record value |
+| `session_id` | string |  | load: omit for this project's latest |
 | `value` | string |  |  |
-| `write` | boolean |  | export: also save it in the data directory |
 
 ## `sobre_shell`
 

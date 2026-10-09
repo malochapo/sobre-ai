@@ -122,7 +122,7 @@ impl ServerHandler for SobreServer {
                 std::time::Duration::from_mins(2),
             );
             if maintenance.is_some() {
-                // Prune accumulated quarantined BM25 indexes. Silent
+                // Prune quarantined BM25 indexes and week-old sessions. Silent
                 // (tracing only) so it never corrupts the MCP stdio protocol.
                 crate::core::storage_maintenance::run_quiet();
             }

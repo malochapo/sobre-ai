@@ -86,7 +86,6 @@ pub struct PreparedSave {
     pub(crate) dir: PathBuf,
     pub(crate) id: String,
     pub(crate) json: String,
-    pub(crate) compaction_snapshot: Option<String>,
 }
 
 /// Lightweight summary of a session for listing purposes.

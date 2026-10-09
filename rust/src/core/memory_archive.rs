@@ -26,12 +26,11 @@ const DEFAULT_MAX_ARCHIVE_FILES: usize = 16;
 
 /// Which memory store an archive belongs to. Drives the on-disk path only — the
 /// archive is generic over the item type, so this stays decoupled from the
-/// concrete fact/insight/pattern structs.
+/// concrete fact and insight structs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryStore {
     Facts,
     History,
-    Patterns,
 }
 
 impl MemoryStore {
@@ -39,33 +38,20 @@ impl MemoryStore {
         match self {
             MemoryStore::Facts => "facts",
             MemoryStore::History => "history",
-            MemoryStore::Patterns => "patterns",
         }
     }
 
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "facts" | "fact" => Some(MemoryStore::Facts),
-            "history" | "insights" => Some(MemoryStore::History),
-            "patterns" | "pattern" => Some(MemoryStore::Patterns),
-            _ => None,
-        }
-    }
-
-    /// All stores, for cross-store iteration (restore, reporting).
-    pub fn all() -> [MemoryStore; 3] {
-        [
-            MemoryStore::Facts,
-            MemoryStore::History,
-            MemoryStore::Patterns,
-        ]
+    /// All stores, for cross-store iteration.
+    #[cfg(test)]
+    fn all() -> [MemoryStore; 2] {
+        [MemoryStore::Facts, MemoryStore::History]
     }
 
     /// Subdirectory under `memory/archive`. Facts return `None` (the root).
     fn subdir(self) -> Option<&'static str> {
         match self {
             MemoryStore::Facts => None,
-            other => Some(other.as_str()),
+            MemoryStore::History => Some(MemoryStore::History.as_str()),
         }
     }
 }
@@ -305,10 +291,10 @@ mod tests {
             for _ in 0..6 {
                 // Distinct filenames require distinct sub-second suffixes; a tiny
                 // sleep guarantees monotonic timestamps on fast machines.
-                archive_items(MemoryStore::Patterns, Some("p"), &items(1), &cfg).unwrap();
+                archive_items(MemoryStore::History, Some("p"), &items(1), &cfg).unwrap();
                 std::thread::sleep(std::time::Duration::from_millis(2));
             }
-            let archives = list_archives(MemoryStore::Patterns, Some("p"));
+            let archives = list_archives(MemoryStore::History, Some("p"));
             assert!(
                 archives.len() <= 3,
                 "prune should bound to max_files, got {}",
@@ -321,13 +307,5 @@ mod tests {
     fn reachable_is_bounded_and_aligns_with_retention_by_default() {
         let cfg = ArchiveConfig::default();
         assert_eq!(cfg.rehydrate_reach, cfg.max_files);
-    }
-
-    #[test]
-    fn store_parse_round_trips() {
-        for store in MemoryStore::all() {
-            assert_eq!(MemoryStore::parse(store.as_str()), Some(store));
-        }
-        assert_eq!(MemoryStore::parse("nope"), None);
     }
 }

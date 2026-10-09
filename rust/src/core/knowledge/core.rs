@@ -3,7 +3,7 @@ use chrono::Utc;
 use super::ranking::{fact_version_id_v1, hash_project_root, string_similarity};
 use super::types::{
     AdmissionResult, Contradiction, ContradictionSeverity, KnowledgeArchetype, KnowledgeFact,
-    ProjectKnowledge, ProjectPattern,
+    ProjectKnowledge,
 };
 use crate::core::memory_policy::MemoryPolicy;
 
@@ -21,7 +21,6 @@ impl ProjectKnowledge {
             project_root: project_root.to_string(),
             project_hash: hash_project_root(project_root),
             facts: Vec::new(),
-            patterns: Vec::new(),
             history: Vec::new(),
             updated_at: Utc::now(),
         }
@@ -266,56 +265,6 @@ impl ProjectKnowledge {
             confirmations: f.confirmation_count,
             value: f.value.clone(),
         })
-    }
-
-    pub fn add_pattern(
-        &mut self,
-        pattern_type: &str,
-        description: &str,
-        examples: Vec<String>,
-        session_id: &str,
-        policy: &MemoryPolicy,
-    ) {
-        if let Some(existing) = self
-            .patterns
-            .iter_mut()
-            .find(|p| p.pattern_type == pattern_type && p.description == description)
-        {
-            for ex in &examples {
-                if !existing.examples.contains(ex) {
-                    existing.examples.push(ex.clone());
-                }
-            }
-            return;
-        }
-
-        self.patterns.push(ProjectPattern {
-            pattern_type: pattern_type.to_string(),
-            description: description.to_string(),
-            examples,
-            source_session: session_id.to_string(),
-            created_at: Utc::now(),
-        });
-
-        // Lossless capacity reclaim: keep the newest patterns and archive
-        // the rest. The previous `truncate` kept the *oldest* patterns (it dropped
-        // the just-pushed one once at the cap) and lost them permanently.
-        if let Err(error) = crate::core::memory_capacity::reclaim_store(
-            crate::core::memory_archive::MemoryStore::Patterns,
-            Some(&self.project_hash),
-            &mut self.patterns,
-            policy.knowledge.max_patterns,
-            policy.lifecycle.reclaim_headroom_pct,
-            |a, b| {
-                b.created_at
-                    .cmp(&a.created_at)
-                    .then_with(|| a.pattern_type.cmp(&b.pattern_type))
-                    .then_with(|| a.description.cmp(&b.description))
-            },
-        ) {
-            tracing::warn!(%error, "pattern capacity reclaim failed");
-        }
-        self.updated_at = Utc::now();
     }
 
     pub fn remove_fact(&mut self, category: &str, key: &str) -> bool {

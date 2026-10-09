@@ -2,20 +2,6 @@ use chrono::Utc;
 
 use super::types::KnowledgeFact;
 
-pub(super) fn confidence_stars(confidence: f32) -> &'static str {
-    if confidence >= 0.95 {
-        "★★★★★"
-    } else if confidence >= 0.85 {
-        "★★★★"
-    } else if confidence >= 0.7 {
-        "★★★"
-    } else if confidence >= 0.5 {
-        "★★"
-    } else {
-        "★"
-    }
-}
-
 pub(super) fn string_similarity(a: &str, b: &str) -> f32 {
     let a_lower = a.to_lowercase();
     let b_lower = b.to_lowercase();

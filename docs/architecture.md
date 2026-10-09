@@ -237,15 +237,13 @@ project hash: a short hash of the canonical project root
 | Path | Holds | Kept |
 |---|---|---|
 | `usage.jsonl` | the usage ledger ([contract](contracts/usage-ledger-v1.md)) | until `gain --reset` |
-| `sessions/<id>.json` | saved sessions | until `sobre_session action=cleanup` (older than 7 days) |
-| `sessions/<id>_snapshot.txt` | compaction snapshots | with their session |
-| `knowledge/<h>/knowledge.json`, `relations.json`, `gotchas.json`, `embeddings.json` | facts, links between them, pitfalls, fact embeddings | 200 facts, 50 patterns, 100 history entries; unused facts archived after 90 days |
-| `memory/archive/…` | archived facts, history and patterns | the newest 16 per store |
+| `sessions/<id>.json` | saved sessions | 7 days: older ones are deleted when a server starts |
+| `knowledge/<h>/knowledge.json`, `gotchas.json`, `embeddings.json` | facts and consolidation history, pitfalls, fact embeddings | 200 facts, 100 history entries; unused facts archived after 90 days |
+| `memory/archive/…` | archived facts and history | the newest 16 per store; `recall` brings back archived facts it finds nothing else for |
 | `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst`, `health.json` | the code graph | rebuilt when stale; removed after 48 h unused, or by `doctor --fix` when the project is gone |
 | `vectors/<h>/bm25_index.bin.zst`, `embeddings.bin`, `project_root.txt` | BM25 and dense indexes | as above; BM25 is not saved above 512 MB |
 | `read_cache/stub_index.json` | which file versions a conversation has already received (no content) | 1024 entries |
 | `shadow/<h>/git/` | `sobre_checkpoint` snapshots, a git repository apart from yours | until uninstall |
-| `exports/` | knowledge and session exports with no `path` given | until you delete them |
 | `detected_model.json`, `active_transcript.json`, `last_compaction.json` | what `hook observe` recorded | overwritten |
 | `diagnostics.json` | recent compiler and linter errors | 15 minutes, 200 entries |
 | `doctor/latest.json` | the last `doctor --fix` report | overwritten |
@@ -398,7 +396,7 @@ files are parsed through their script blocks. The post-edit syntax check covers
 | [config-keys.md](reference/generated/config-keys.md) | every config key | `core/config/schema/` |
 | [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/spec.rs` |
 | [env-vars.md](reference/generated/env-vars.md) | every environment variable | `core/env_vars.rs` |
-| [contracts/](contracts/) | on-disk formats: usage ledger, session bundle, graph, knowledge | the contract files |
+| [contracts/](contracts/) | on-disk formats and policies: usage ledger, graph, knowledge, gotchas | the contract files |
 | [LOCK_ORDERING.md](../rust/LOCK_ORDERING.md) | every lock and its order | checked by a test |
 
 ## 13. Changing it

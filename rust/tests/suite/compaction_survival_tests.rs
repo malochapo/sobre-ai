@@ -127,17 +127,7 @@ fn resume_block_with_files() {
 #[test]
 fn session_resume_action() {
     let mut session = make_session_with_data();
-    let result = sobre::tools::sobre_session::handle(
-        &mut session,
-        "resume",
-        None,
-        None,
-        sobre::tools::sobre_session::SessionToolOptions {
-            format: None,
-            path: None,
-            write: false,
-        },
-    );
+    let result = sobre::tools::sobre_session::handle(&mut session, "resume", None, None);
     assert!(
         result.contains("SESSION RESUME"),
         "sobre_session resume should return resume block"

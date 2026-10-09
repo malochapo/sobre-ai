@@ -138,15 +138,6 @@ impl KnowledgeEmbeddingIndex {
     }
 }
 
-pub fn reset(project_hash: &str) -> Result<(), String> {
-    let path = KnowledgeEmbeddingIndex::index_path(project_hash)
-        .ok_or_else(|| "Cannot determine data directory".to_string())?;
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("{e}"))?;
-    }
-    Ok(())
-}
-
 #[derive(Debug)]
 pub struct ScoredFact<'a> {
     pub fact: &'a KnowledgeFact,
@@ -379,7 +370,7 @@ pub fn embed_and_store(
 pub const BACKFILL_PER_REMEMBER: usize = 32;
 
 /// Current facts that have no vector in the side-car index, most valuable
-/// first (same ordering as `embeddings_reindex`: confidence, then recency).
+/// first: confidence, then recency.
 /// Engine-free so the selection is unit-testable with raw indices.
 pub fn missing_current_facts<'a>(
     index: &KnowledgeEmbeddingIndex,
@@ -415,9 +406,9 @@ pub fn missing_current_facts<'a>(
 /// from the side-car index. Facts land without vectors on two paths — the
 /// consolidation/ETL writers never embed at all, and a non-blocking `remember`
 /// skips its side-car while the engine is still warming up. Without a healer
-/// those facts stay invisible to `mode=semantic` recall until a *manual*
-/// `embeddings_reindex`. Called from `remember` under the per-project lock
-/// once the engine is warm, so active projects self-heal incrementally.
+/// those facts would stay invisible to `mode=semantic` recall. Called from
+/// `remember` and `recall` under the per-project lock once the engine is warm,
+/// so active projects self-heal incrementally.
 /// Returns the number of facts embedded.
 #[cfg(feature = "dense")]
 pub fn backfill_missing(
@@ -573,29 +564,6 @@ mod tests {
             archetype: KnowledgeArchetype::infer_from_category(category),
             revision_count: 0,
         }
-    }
-
-    #[test]
-    fn reset_removes_index_file() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().expect("tempdir");
-        crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path().to_string_lossy().to_string());
-
-        let idx = KnowledgeEmbeddingIndex {
-            project_hash: "projhash".to_string(),
-            entries: vec![FactEmbedding {
-                category: "arch".to_string(),
-                key: "db".to_string(),
-                quant: embedding_quant::quantize(&[1.0, 0.0, 0.0]),
-            }],
-        };
-        idx.save().expect("save");
-        assert!(KnowledgeEmbeddingIndex::load("projhash").is_some());
-
-        reset("projhash").expect("reset");
-        assert!(KnowledgeEmbeddingIndex::load("projhash").is_none());
-
-        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]

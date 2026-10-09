@@ -56,7 +56,7 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     )
     .await;
 
-    // 2) Knowledge: remember + feedback + relations.
+    // 2) Knowledge: remember.
     let _ = call_tool(
         &engine,
         "sobre_knowledge",
@@ -81,30 +81,6 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
         }),
     )
     .await;
-    let _ = call_tool(
-        &engine,
-        "sobre_knowledge",
-        json!({
-            "action": "feedback",
-            "category": "arch",
-            "key": "db",
-            "value": "up"
-        }),
-    )
-    .await;
-    let relate_resp = call_tool(
-        &engine,
-        "sobre_knowledge",
-        json!({
-            "action": "relate",
-            "category": "arch",
-            "key": "db",
-            "value": "depends_on",
-            "query": "arch/cache"
-        }),
-    )
-    .await;
-
     // 3) Assert artifacts exist on disk. Persistence runs on a background thread,
     //    so poll with a bounded timeout rather than asserting immediately.
     let knowledge = sobre::core::knowledge::ProjectKnowledge::load_or_create(&root_str);
@@ -117,25 +93,6 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
         wait_until(|| knowledge_dir.join("knowledge.json").exists()).await,
         "expected knowledge.json to exist"
     );
-    assert!(
-        wait_until(|| knowledge_dir.join("relations.json").exists()).await,
-        "expected relations.json to exist (relate said: {relate_resp})"
-    );
-
-    let edge_present = wait_until(|| {
-        sobre::core::knowledge_relations::KnowledgeRelationGraph::load(&knowledge.project_hash)
-            .is_some_and(|graph| {
-                graph.edges.iter().any(|e| {
-                    e.from.category == "arch"
-                        && e.from.key == "db"
-                        && e.to.category == "arch"
-                        && e.to.key == "cache"
-                })
-            })
-    })
-    .await;
-    assert!(edge_present, "expected at least one relation edge");
-
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
 }
