@@ -675,8 +675,10 @@ pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> boo
     }
 }
 
-/// Files larger than this are not content-hashed for stub verification; the
-/// mtime check alone decides. Keeps the stub fast-path O(small-file-read).
+/// Files larger than this are not content-hashed for stub verification and
+/// always read as stale. A read is capped well below it
+/// ([`crate::core::limits::max_read_bytes`]), so only a file that grew past it
+/// since it was cached gets here.
 const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Staleness with content verification: like [`is_cache_entry_stale`], but when
@@ -690,9 +692,8 @@ const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 /// can have. The extra disk read costs microseconds for typical source files;
 /// the stub's token savings are unaffected.
 ///
-/// Note: entries whose stored content differs from disk by design (e.g. secret
-/// redaction) hash differently and therefore never serve stubs — conservative
-/// and correct.
+/// The cache stores the file as read (redaction applies to output only), so
+/// an unchanged file hashes the same.
 pub fn is_cache_entry_stale_verified(
     path: &str,
     cached_mtime: Option<SystemTime>,
@@ -709,7 +710,8 @@ pub fn is_cache_entry_stale_verified(
         return true;
     };
     if meta.len() > VERIFY_HASH_CAP_BYTES {
-        return false;
+        // Too large to hash: the content cannot be vouched for.
+        return true;
     }
     match std::fs::read(path) {
         // Hash the same view of the bytes that `store()` hashed: lossy UTF-8,
@@ -978,6 +980,31 @@ mod tests {
             is_cache_entry_stale_verified(&p, mtime, &hash),
             "hash verification must catch the change"
         );
+    }
+
+    /// A file too large to hash is never vouched for by its mtime alone.
+    #[test]
+    fn verified_staleness_flags_file_too_large_to_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grown.txt");
+        let p = path.to_string_lossy().to_string();
+
+        std::fs::write(&path, "one").unwrap();
+        let original_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let mut cache = SessionCache::new();
+        cache.store(&p, "one");
+        let (mtime, hash) = {
+            let e = cache.get(&p).unwrap();
+            (e.stored_mtime, e.hash.clone())
+        };
+
+        let big = vec![b'x'; usize::try_from(VERIFY_HASH_CAP_BYTES).unwrap() + 1];
+        std::fs::write(&path, big).unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.set_modified(original_mtime).unwrap();
+        drop(f);
+
+        assert!(is_cache_entry_stale_verified(&p, mtime, &hash));
     }
 
     #[test]
