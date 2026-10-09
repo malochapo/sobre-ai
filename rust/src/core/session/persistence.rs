@@ -49,11 +49,6 @@ impl PreparedSave {
         restrict_file_permissions(&tmp);
         std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
 
-        if let Some(snapshot) = self.compaction_snapshot {
-            let snap_path = self.dir.join(format!("{}_snapshot.txt", self.id));
-            let _ = std::fs::write(&snap_path, &snapshot);
-            restrict_file_permissions(&snap_path);
-        }
         Ok(())
     }
 }
@@ -76,11 +71,6 @@ impl SessionState {
     /// to a background thread via `write_to_disk()`.
     pub fn prepare_save(&mut self) -> Result<PreparedSave, String> {
         let dir = sessions_dir().ok_or("cannot determine home directory")?;
-        let compaction_snapshot = if self.stats.total_tool_calls > 0 {
-            Some(self.build_compaction_snapshot())
-        } else {
-            None
-        };
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         self.stats.unsaved_changes = 0;
         // Arm the time-based flush window.
@@ -89,7 +79,6 @@ impl SessionState {
             dir,
             id: self.id.clone(),
             json,
-            compaction_snapshot,
         })
     }
 
@@ -223,8 +212,6 @@ impl SessionState {
                     && session.updated_at < cutoff
                     && std::fs::remove_file(&path).is_ok()
                 {
-                    // Its compaction snapshot goes with it.
-                    let _ = std::fs::remove_file(dir.join(format!("{filename}_snapshot.txt")));
                     removed += 1;
                 }
             }

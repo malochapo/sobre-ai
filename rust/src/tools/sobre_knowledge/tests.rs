@@ -4,6 +4,7 @@
 use super::*;
 use crate::core::consolidation_engine::ConsolidateOptions;
 use crate::core::memory_lifecycle::LifecycleReport;
+use chrono::Utc;
 
 struct CurrentDirGuard {
     previous: std::path::PathBuf,
@@ -56,9 +57,6 @@ fn report(session_id: Option<String>, session_items: usize) -> KnowledgeConsolid
         archived_facts: 2,
         fact_capacity_target: 6,
         fact_capacity_archived: 1,
-        patterns: 2,
-        patterns_capacity_target: 6,
-        patterns_compacted: 0,
         history: 3,
         history_capacity_target: 6,
         history_compacted: 1,
@@ -90,14 +88,10 @@ fn consolidation_report_includes_session_and_lifecycle_stats() {
     assert!(
         out.contains("Facts: 5 active, 2 archived, 7 total (target <= 6, archived-to-target 1)")
     );
-    assert!(
-        out.contains(
-            "Patterns: 2 (target <= 6, compacted 0), History: 3 (target <= 6, compacted 1)"
-        )
-    );
+    assert!(out.contains("History: 3 (target <= 6, compacted 1)"));
     assert!(out.contains("archived 3, compacted 4, remaining 5"));
-    // Lossless: a run that archived items points at the restore path.
-    assert!(out.contains("restore with: sobre_knowledge action=restore"));
+    // Lossless: a run that archived items says so.
+    assert!(out.contains("archived 2 item(s)"));
 }
 
 #[test]

@@ -156,7 +156,7 @@ mod tests {
             // rank 0 = best kept (retention_cmp ascending by rank).
             let mut items: Vec<Item> = (0..8).map(|rank| Item { rank }).collect();
             let archived = reclaim_store(
-                MemoryStore::Patterns,
+                MemoryStore::History,
                 Some("p"),
                 &mut items,
                 8,
@@ -211,7 +211,7 @@ mod tests {
         let mut items: Vec<Item> = (0..8).map(|rank| Item { rank }).collect();
         let original = items.clone();
         let result = reclaim_store(
-            MemoryStore::Patterns,
+            MemoryStore::History,
             Some("p"),
             &mut items,
             8,

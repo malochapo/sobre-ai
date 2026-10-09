@@ -11,7 +11,6 @@ pub mod sobre_graph_diagram;
 pub mod sobre_graph_impact;
 pub mod sobre_graph_primitives;
 pub mod sobre_knowledge;
-pub mod sobre_knowledge_relations;
 pub mod sobre_outline;
 pub mod sobre_patch;
 pub mod sobre_read;

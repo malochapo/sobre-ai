@@ -53,7 +53,6 @@ pub mod knowledge;
 // only in that configuration.
 #[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod knowledge_embedding;
-pub mod knowledge_relations;
 
 // ---------------------------------------------------------------------------
 // Domain: Search & Retrieval
@@ -85,10 +84,8 @@ pub mod spreading_activation;
 // ---------------------------------------------------------------------------
 // Domain: Session & Handoff
 // ---------------------------------------------------------------------------
-pub mod ccp_session_bundle;
 pub mod clock;
 pub mod session;
-pub mod session_diff;
 
 // ---------------------------------------------------------------------------
 // Domain: Neural / ML

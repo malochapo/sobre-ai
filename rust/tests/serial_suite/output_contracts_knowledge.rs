@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use sobre::core::knowledge::ProjectKnowledge;
 use sobre::core::memory_policy::MemoryPolicy;
 
@@ -42,8 +40,6 @@ fn sobre_knowledge_recall_is_budgeted_and_deterministic() {
         None,
         None,
         None,
-        None,
-        None,
     );
     let out2 = sobre::tools::sobre_knowledge::handle(
         &project_root_str,
@@ -53,8 +49,6 @@ fn sobre_knowledge_recall_is_budgeted_and_deterministic() {
         None,
         None,
         "s1",
-        None,
-        None,
         None,
         None,
         None,
@@ -71,288 +65,6 @@ fn sobre_knowledge_recall_is_budgeted_and_deterministic() {
         .filter(|l| l.starts_with("  [architecture/"))
         .count();
     assert!(fact_lines <= 10, "must not exceed recall budget");
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
-}
-
-#[test]
-fn sobre_knowledge_export_is_file_backed_not_json_stdout() {
-    let _g = sobre::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).expect("create data dir");
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
-
-    let project_root = tmp.path().join("proj");
-    std::fs::create_dir_all(&project_root).expect("create project root");
-    let project_root_str = project_root.to_string_lossy().to_string();
-
-    let policy = MemoryPolicy::default();
-    let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
-    knowledge.remember("arch", "db", "MySQL", "s1", 0.8, &policy);
-    knowledge.save().expect("save knowledge");
-
-    let out = sobre::tools::sobre_knowledge::handle(
-        &project_root_str,
-        "export",
-        None,
-        None,
-        None,
-        None,
-        "s1",
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-
-    assert!(
-        out.starts_with("Export saved: "),
-        "export must return a compact confirmation"
-    );
-    assert!(
-        !out.trim_start().starts_with('{'),
-        "export must not print full JSON to stdout"
-    );
-
-    let path_str = out
-        .strip_prefix("Export saved: ")
-        .and_then(|s| s.split_whitespace().next())
-        .expect("extract export path");
-    assert!(Path::new(path_str).exists(), "export file must exist");
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
-}
-
-#[test]
-fn sobre_knowledge_feedback_persists_and_affects_quality_score() {
-    let _g = sobre::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).expect("create data dir");
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
-
-    let project_root = tmp.path().join("proj");
-    std::fs::create_dir_all(&project_root).expect("create project root");
-    let project_root_str = project_root.to_string_lossy().to_string();
-
-    let policy = MemoryPolicy::default();
-    let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
-    knowledge.remember("arch", "db", "MySQL", "s1", 0.8, &policy);
-    knowledge.save().expect("save knowledge");
-
-    let before = ProjectKnowledge::load_or_create(&project_root_str);
-    let before_fact = before
-        .facts
-        .iter()
-        .find(|f| f.is_current() && f.category == "arch" && f.key == "db")
-        .expect("fact exists");
-    let before_score = before_fact.quality_score();
-
-    let out = sobre::tools::sobre_knowledge::handle(
-        &project_root_str,
-        "feedback",
-        Some("arch"),
-        Some("db"),
-        Some("up"),
-        None,
-        "s2",
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(
-        out.contains("Feedback recorded"),
-        "feedback output must confirm recording: {out}"
-    );
-
-    let after = ProjectKnowledge::load_or_create(&project_root_str);
-    let after_fact = after
-        .facts
-        .iter()
-        .find(|f| f.is_current() && f.category == "arch" && f.key == "db")
-        .expect("fact exists");
-
-    assert_eq!(after_fact.feedback_up, 1);
-    assert_eq!(after_fact.feedback_down, 0);
-    assert!(after_fact.last_feedback.is_some());
-    assert!(
-        after_fact.quality_score() > before_score,
-        "quality score should increase after positive feedback"
-    );
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
-}
-
-#[test]
-fn sobre_knowledge_relations_persist_and_render() {
-    let _g = sobre::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).expect("create data dir");
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
-
-    let project_root = tmp.path().join("proj");
-    std::fs::create_dir_all(&project_root).expect("create project root");
-    let project_root_str = project_root.to_string_lossy().to_string();
-
-    let policy = MemoryPolicy::default();
-    let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
-    knowledge.remember("arch", "db", "MySQL", "s1", 0.9, &policy);
-    knowledge.remember("arch", "cache", "Redis", "s1", 0.9, &policy);
-    knowledge.save().expect("save knowledge");
-
-    let out = sobre::tools::sobre_knowledge::handle(
-        &project_root_str,
-        "relate",
-        Some("arch"),
-        Some("db"),
-        Some("depends_on"),
-        Some("arch/cache"),
-        "s2",
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(out.contains("Relation"), "relate must confirm: {out}");
-
-    let loaded = ProjectKnowledge::load_or_create(&project_root_str);
-    let graph =
-        sobre::core::knowledge_relations::KnowledgeRelationGraph::load(&loaded.project_hash)
-            .expect("relations graph should exist");
-    assert!(
-        graph.edges.iter().any(|e| {
-            e.from.category == "arch"
-                && e.from.key == "db"
-                && e.to.category == "arch"
-                && e.to.key == "cache"
-                && e.kind == sobre::core::knowledge_relations::KnowledgeEdgeKind::DependsOn
-        }),
-        "expected depends_on edge in relations graph"
-    );
-
-    let list = sobre::tools::sobre_knowledge::handle(
-        &project_root_str,
-        "relations",
-        Some("arch"),
-        Some("db"),
-        None,
-        Some("out"),
-        "s2",
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(
-        list.contains("depends_on") && list.contains("arch/cache"),
-        "relations must include the edge: {list}"
-    );
-
-    let diagram = sobre::tools::sobre_knowledge::handle(
-        &project_root_str,
-        "relations_diagram",
-        Some("arch"),
-        Some("db"),
-        None,
-        Some("out"),
-        "s2",
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(
-        diagram.contains("graph TD") && diagram.contains("depends_on"),
-        "relations_diagram must return mermaid: {diagram}"
-    );
-
-    let out2 = sobre::tools::sobre_knowledge::handle(
-        &project_root_str,
-        "unrelate",
-        Some("arch"),
-        Some("db"),
-        Some("depends_on"),
-        Some("arch/cache"),
-        "s2",
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-    assert!(
-        out2.contains("removed"),
-        "unrelate must confirm removal: {out2}"
-    );
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
-}
-
-#[test]
-fn sobre_knowledge_lifecycle_report_covers_all_layers() {
-    let _g = sobre::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let data_dir = tmp.path().join("data");
-    std::fs::create_dir_all(&data_dir).expect("create data dir");
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe { std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string()) };
-
-    let project_root = tmp.path().join("proj");
-    std::fs::create_dir_all(&project_root).expect("create project root");
-    let project_root_str = project_root.to_string_lossy().to_string();
-
-    let policy = MemoryPolicy::default();
-    let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
-    knowledge.remember("architecture", "auth", "JWT RS256", "s1", 0.9, &policy);
-    knowledge.save().expect("save knowledge");
-
-    let out = sobre::tools::sobre_knowledge::handle(
-        &project_root_str,
-        "lifecycle_report",
-        None,
-        None,
-        None,
-        None,
-        "s1",
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
-
-    for layer in ["knowledge", "archives", "embeddings"] {
-        assert!(
-            out.contains(layer),
-            "lifecycle report must mention layer '{layer}': {out}"
-        );
-    }
-    assert!(
-        out.contains("1 active"),
-        "knowledge layer must show real counts: {out}"
-    );
-    assert!(
-        out.contains("Layer boundaries"),
-        "report must document layer boundaries: {out}"
-    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
@@ -390,8 +102,6 @@ fn sobre_knowledge_recall_as_of_time_travels() {
         "s1",
         None,
         None,
-        None,
-        None,
         Some(&between.to_rfc3339()),
     );
     assert!(
@@ -407,8 +117,6 @@ fn sobre_knowledge_recall_as_of_time_travels() {
         None,
         Some("db"),
         "s1",
-        None,
-        None,
         None,
         None,
         Some("not-a-date"),

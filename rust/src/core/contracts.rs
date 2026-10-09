@@ -59,7 +59,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // ── Frozen: the usage ledger's on-disk format ─────────────────────
         doc("usage-ledger", "usage-ledger-v1.md", 1, Frozen),
         // ── Stable: additive evolution allowed ──────────────────────────────
-        doc("ccp-session-bundle", "ccp-session-bundle-v1.md", 1, Stable),
         doc(
             "gotchas-reminders",
             "gotchas-reminders-contract-v1.md",

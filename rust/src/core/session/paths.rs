@@ -1,41 +1,5 @@
 use chrono::Utc;
-use std::path::{Path, PathBuf};
-
-pub(crate) fn escape_xml_attr(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-}
-
-pub(crate) fn file_stem_search_pattern(path: &str) -> String {
-    Path::new(path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty() && s.chars().any(char::is_alphanumeric))
-        .unwrap_or("")
-        .to_string()
-}
-
-pub(crate) fn parent_dir_slash(path: &str) -> String {
-    Path::new(path)
-        .parent()
-        .and_then(|p| p.to_str())
-        .map_or_else(
-            || "./".to_string(),
-            |p| {
-                let norm = p.replace('\\', "/");
-                let trimmed = norm.trim_end_matches('/');
-                if trimmed.is_empty() {
-                    "./".to_string()
-                } else {
-                    format!("{trimmed}/")
-                }
-            },
-        )
-}
+use std::path::PathBuf;
 
 pub(crate) fn sessions_dir() -> Option<PathBuf> {
     crate::core::data_dir::sobre_data_dir()
