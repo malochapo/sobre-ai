@@ -7,10 +7,12 @@
 //!   free when the upstream is local. Without the proxy there are no calls and
 //!   no real cost.
 //! - **Saved tokens**: the sum over compressions of tokens removed, minus the
-//!   tokens bounces re-sent. A compression that sent more than it read (a
-//!   search whose output frames its matches) counts against the total. Priced once at the model's uncached input rate,
-//!   which is a lower bound: a removed tool result would also have been re-sent
-//!   (mostly as cache reads) on every later turn.
+//!   tokens bounces re-sent. A bounce re-sends the whole file its compressed
+//!   read had shortened, so it takes back that read's saving and charges what
+//!   the read sent. A compression that sent more than it read (a search whose
+//!   output frames its matches) counts against the total. Priced once at the
+//!   model's uncached input rate, which is a lower bound: a removed tool result
+//!   would also have been re-sent (mostly as cache reads) on every later turn.
 //!
 //! The counterfactual cost is the real cost plus the saved tokens' price.
 
@@ -88,6 +90,8 @@ pub struct Summary {
     pub by_surface: BTreeMap<String, ToolTotals>,
     /// Keyed by tool name.
     pub by_tool: BTreeMap<String, ToolTotals>,
+    /// Tokens full re-reads sent again after a compressed read: the whole
+    /// file each time.
     pub bounce_tokens: u64,
     pub llm_calls: u64,
     pub input_tokens: u64,
@@ -157,9 +161,12 @@ pub fn summarize(events: &[Event], period: Period, pricing: &ModelPricing) -> Su
                 s.by_day.entry(day).or_default().0 += signed(original) - signed(sent);
             }
             EVENT_BOUNCE => {
+                // The full re-read sent the whole file again: the compressed
+                // read saved nothing, and what it sent was wasted.
                 let wasted = ev.int("sobre.tokens.wasted").unwrap_or(0);
-                s.bounce_tokens += wasted;
-                s.by_day.entry(day).or_default().0 -= signed(wasted);
+                let resent = ev.int("sobre.tokens.original").unwrap_or(0).max(wasted);
+                s.bounce_tokens += resent;
+                s.by_day.entry(day).or_default().0 -= signed(resent);
             }
             EVENT_LLM_CALL => {
                 let input = ev.int("gen_ai.usage.input_tokens").unwrap_or(0);
@@ -300,6 +307,37 @@ mod tests {
         assert_eq!(s.by_tool["grep"].saved(), -200);
         assert_eq!(s.net_saved_tokens(), 600);
         assert_eq!(s.by_day.values().map(|(t, _)| t).sum::<i64>(), 600);
+    }
+
+    /// A compressed read of `c` out of `F` tokens, then a full re-read of the
+    /// same file: the agent received `c + F` where one native read is `F`, so
+    /// sobre cost `c`. The compressed read's claimed saving must not survive.
+    #[test]
+    fn a_bounced_read_costs_what_it_sent() {
+        let read = |original: i64, sent: i64| {
+            ev(
+                EVENT_COMPRESSION,
+                &[
+                    ("sobre.tool", Value::Str("sobre_read".into())),
+                    ("sobre.tokens.original", Value::Int(original as u64)),
+                    ("sobre.tokens.sent", Value::Int(sent as u64)),
+                ],
+            )
+        };
+        let events = vec![
+            read(1_000, 200),
+            read(1_000, 1_000),
+            ev(
+                EVENT_BOUNCE,
+                &[
+                    ("sobre.tokens.wasted", Value::Int(200)),
+                    ("sobre.tokens.original", Value::Int(1_000)),
+                ],
+            ),
+        ];
+        let s = summarize(&events, Period::All, &ModelPricing::load());
+        assert_eq!(s.net_saved_tokens(), -200);
+        assert_eq!(s.by_day.values().map(|(t, _)| t).sum::<i64>(), -200);
     }
 
     #[test]

@@ -17,7 +17,7 @@ const TRACKED_PATH_TTL_SEQ: u64 = 64;
 struct ReadEvent {
     _mode: String,
     tokens_sent: usize,
-    _original_tokens: usize,
+    original_tokens: usize,
     seq: u64,
     was_compressed: bool,
 }
@@ -88,7 +88,7 @@ impl BounceTracker {
         events.push(ReadEvent {
             _mode: mode.to_string(),
             tokens_sent,
-            _original_tokens: original_tokens,
+            original_tokens,
             seq,
             was_compressed: compressed,
         });
@@ -139,7 +139,7 @@ impl BounceTracker {
             }
 
             if self.persist {
-                crate::core::usage::record_bounce("read", wasted);
+                crate::core::usage::record_bounce("read", wasted, ev.original_tokens);
             }
         }
     }

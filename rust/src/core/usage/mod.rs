@@ -14,8 +14,8 @@
 //!   counted by [`crate::core::tokens::count_tokens`].
 //! - [`EVENT_LLM_CALL`]: one upstream LLM call the proxy forwarded, with the
 //!   usage the provider reported.
-//! - [`EVENT_BOUNCE`]: tokens re-sent because a compressed read was not enough
-//!   and the agent read the file again in full.
+//! - [`EVENT_BOUNCE`]: a compressed read that was not enough, so the agent
+//!   read the file again in full.
 //!
 //! Nothing here is aggregated on write: [`summarize`] computes every figure from
 //! the file when it is read.
@@ -133,14 +133,16 @@ pub fn record_llm_call(call: &LlmCall) {
     append(&ev);
 }
 
-/// Records tokens re-sent after a compressed read turned out to be too little.
-pub fn record_bounce(tool: &str, wasted: usize) {
-    if wasted == 0 {
+/// Records a compressed read of `sent` out of `original` tokens that turned
+/// out to be too little: the agent read the whole file again.
+pub fn record_bounce(tool: &str, sent: usize, original: usize) {
+    if sent == 0 && original == 0 {
         return;
     }
     let mut ev = Event::now(EVENT_BOUNCE);
     ev.attr("sobre.tool", Value::Str(tool.to_string()));
-    ev.attr("sobre.tokens.wasted", Value::Int(wasted as u64));
+    ev.attr("sobre.tokens.wasted", Value::Int(sent as u64));
+    ev.attr("sobre.tokens.original", Value::Int(original as u64));
     append(&ev);
 }
 
@@ -191,21 +193,28 @@ mod tests {
     #[test]
     fn records_round_trip_through_the_file() {
         let dir = crate::core::data_dir::isolated_data_dir();
-        record_compression(Surface::Mcp, "sobre_read", 1000, 250);
-        record_compression(Surface::Shell, "cargo test", 0, 0);
+        record_compression(Surface::Mcp, "round-trip-read", 1000, 250);
+        record_compression(Surface::Shell, "round-trip-shell", 0, 0);
         record_llm_call(&LlmCall {
             provider: "anthropic".into(),
-            request_model: "claude-sonnet-4-5".into(),
-            response_model: "claude-sonnet-4-5".into(),
+            request_model: "round-trip-model".into(),
+            response_model: "round-trip-model".into(),
             input_tokens: 5000,
             output_tokens: 200,
             cache_read_tokens: 4000,
             cache_write_tokens: 0,
             local: false,
         });
-        record_bounce("sobre_read", 300);
+        record_bounce("round-trip-read", 300, 1200);
 
-        let events = load();
+        // Tests elsewhere in this process record through the global bounce
+        // tracker while this one holds the data dir, so keep only these events.
+        let ours = |e: &Event| {
+            e.str("sobre.tool")
+                .or_else(|| e.str("gen_ai.request.model"))
+                .is_some_and(|t| t.starts_with("round-trip-"))
+        };
+        let events: Vec<Event> = load().into_iter().filter(ours).collect();
         assert_eq!(events.len(), 3, "the empty compression is not recorded");
         assert_eq!(events[0].name, EVENT_COMPRESSION);
         assert_eq!(events[0].int("sobre.tokens.original"), Some(1000));
@@ -216,9 +225,10 @@ mod tests {
             Some(4000)
         );
         assert_eq!(events[2].int("sobre.tokens.wasted"), Some(300));
+        assert_eq!(events[2].int("sobre.tokens.original"), Some(1200));
 
         assert!(reset());
-        assert!(load().is_empty());
+        assert!(!load().iter().any(ours));
         drop(dir);
     }
 }
