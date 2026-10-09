@@ -299,7 +299,7 @@ mod tests {
             "Unknown action: x. Use: status, load",
             "[src/a.rs]\nCONFLICT: 1 stale anchor(s) in a.rs",
             "[a.rs]\n✓ a.rs: 1 edit\n\n[b.rs]\nERROR: file changed since read",
-            "[my docs/a b.md]\nERROR: old_string not found in my docs/a b.md",
+            "[my docs/a b.md]\nERROR: old_text not found in my docs/a b.md",
         ] {
             assert!(reports_failure(text), "{text}");
         }

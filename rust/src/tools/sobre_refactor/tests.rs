@@ -404,7 +404,6 @@ fn handle_replace_symbol_body_via_position_fallback() {
         "action": "replace_symbol_body",
         "path": "a.rs",
         "line": 1,
-        "end_line": 3,
         "new_text": "fn new() {\n  2\n}"
     });
     let out = super::handle(&args, dir.path().to_str().unwrap(), "");
@@ -420,7 +419,7 @@ fn handle_replace_symbol_body_conflict_on_stale_hash() {
     // Range = full file lines 1..=3; old content = the whole file text.
     let stale = serde_json::json!({
         "action": "replace_symbol_body",
-        "path": "a.rs", "line": 1, "end_line": 3,
+        "path": "a.rs", "line": 1,
         "new_text": "fn new() {\n  2\n}",
         "expected_hash": "deadbeefnotahash"
     });
@@ -434,27 +433,15 @@ fn handle_replace_symbol_body_conflict_on_stale_hash() {
     );
 }
 
-/// With an explicit `path`, `name_path` is looked up in that file only,
-/// so a symbol the index knows from another checkout is never the target.
-/// Simulates a git worktree INSIDE the project root
-/// (`/repo/.claude/worktrees/wt/`): the edit fails and neither file changes.
+/// With an explicit `path`, `name_path` is looked up in that file only, as
+/// it is now: a git worktree INSIDE the project root
+/// (`/repo/.claude/worktrees/wt/`) gets the edit, and the main checkout's
+/// same-named symbol is left alone.
 #[test]
-#[ignore = "requires pre-built symbol index; flaky under parallel cargo test"]
-fn handle_replace_symbol_worktree_mismatch_blocks_write() {
-    let _lock = crate::core::data_dir::test_env_lock();
+fn name_path_with_path_edits_only_the_named_checkout() {
     let tmp = tempfile::tempdir().unwrap();
-    let data = tmp.path().join("data");
-    std::fs::create_dir_all(&data).unwrap();
-    crate::test_env::set_var("SOBRE_DATA_DIR", data.to_string_lossy().to_string());
-
-    // Main checkout root with a symbol.
     let main_root = tmp.path().join("repo");
     std::fs::create_dir_all(main_root.join("src")).unwrap();
-    std::fs::write(
-        main_root.join("Cargo.toml"),
-        "[package]\nname=\"x\"\nversion=\"0.0.0\"\n",
-    )
-    .unwrap();
     std::fs::write(
         main_root.join("src/lib.rs"),
         "fn worktree_canary_zz() { let _ = 1; }\n",
@@ -462,45 +449,85 @@ fn handle_replace_symbol_worktree_mismatch_blocks_write() {
     .unwrap();
     let root = main_root.to_string_lossy().to_string();
 
-    // Worktree INSIDE the project root (realistic layout).
     let wt_dir = main_root.join(".claude/worktrees/wt/src");
     std::fs::create_dir_all(&wt_dir).unwrap();
-    std::fs::write(
-        wt_dir.join("lib.rs"),
-        "fn worktree_canary_zz() { let _ = 2; }\n",
-    )
-    .unwrap();
+    let wt_file = wt_dir.join("lib.rs");
+    std::fs::write(&wt_file, "fn worktree_canary_zz() { let _ = 2; }\n").unwrap();
 
-    // The symbol resolves via the main-root index to "src/lib.rs".
-    let resolved = super::resolve_name_path_scoped("worktree_canary_zz", &root, None);
-    assert!(resolved.is_ok(), "symbol should resolve: {resolved:?}");
-
-    // Caller provides a path inside the worktree: the lookup is scoped to it.
-    let wt_file = main_root.join(".claude/worktrees/wt/src/lib.rs");
     let args = serde_json::json!({
         "action": "replace_symbol_body",
         "name_path": "worktree_canary_zz",
         "path": wt_file.to_string_lossy().to_string(),
-        "new_text": "fn worktree_canary_zz() { panic!(\"CANARY\"); }"
+        "new_text": "fn worktree_canary_zz() { let _ = 3; }"
     });
     let out = super::handle(&args, &root, "");
-    assert!(
-        out.starts_with("ERROR"),
-        "must not resolve elsewhere, got: {out}"
+    assert!(out.contains("applied"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(&wt_file).unwrap(),
+        "fn worktree_canary_zz() { let _ = 3; }\n"
     );
-    // Verify neither file was modified.
-    let main_content = std::fs::read_to_string(main_root.join("src/lib.rs")).unwrap();
-    assert!(
-        !main_content.contains("CANARY"),
-        "main checkout must NOT be modified: {main_content}"
+    assert_eq!(
+        std::fs::read_to_string(main_root.join("src/lib.rs")).unwrap(),
+        "fn worktree_canary_zz() { let _ = 1; }\n",
+        "the main checkout must not change"
     );
-    let wt_content = std::fs::read_to_string(&wt_file).unwrap();
-    assert!(
-        !wt_content.contains("CANARY"),
-        "worktree must NOT be modified: {wt_content}"
-    );
+}
 
-    crate::test_env::remove_var("SOBRE_DATA_DIR");
+/// J3: the symbol's lines are read from the file at edit time, so a second
+/// edit after the first moved the symbol lands on its new lines.
+#[test]
+fn a_second_symbol_edit_follows_the_moved_symbol() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.rs");
+    std::fs::write(&file, "fn first() {\n    1\n}\n\nfn second() {\n    2\n}\n").unwrap();
+    let root = dir.path().to_str().unwrap();
+    let edit = |name: &str, text: &str| {
+        super::handle(
+            &serde_json::json!({
+                "action": "replace_symbol_body",
+                "name_path": name,
+                "path": "a.rs",
+                "new_text": text
+            }),
+            root,
+            "",
+        )
+    };
+    let out = edit("first", "fn first() {\n    1;\n    1;\n    1\n}");
+    assert!(out.contains("applied"), "{out}");
+    let out = edit("second", "fn second() {\n    22\n}");
+    assert!(out.contains("applied"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "fn first() {\n    1;\n    1;\n    1\n}\n\nfn second() {\n    22\n}\n"
+    );
+}
+
+/// J4: `path`+`line` resolves the whole symbol around the line.
+#[test]
+fn path_and_line_replace_the_whole_symbol_around_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("a.rs");
+    std::fs::write(
+        &file,
+        "fn keep() {}\n\nfn old() {\n    let x = 1;\n    x\n}\n",
+    )
+    .unwrap();
+    let out = super::handle(
+        &serde_json::json!({
+            "action": "replace_symbol_body",
+            "path": "a.rs",
+            "line": 4,
+            "new_text": "fn new() {\n    2\n}"
+        }),
+        dir.path().to_str().unwrap(),
+        "",
+    );
+    assert!(out.contains("applied"), "{out}");
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "fn keep() {}\n\nfn new() {\n    2\n}\n"
+    );
 }
 
 /// Decision 5: with `path`, `name_path` resolves in that file only, so a name

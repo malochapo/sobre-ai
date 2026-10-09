@@ -652,7 +652,7 @@ pub struct DeltaExplicitDecision {
 /// already holds.
 ///
 /// Returns the mode the read should proceed with:
-/// - **Changed on disk** (verified mtime+md5 stale) and full content is cached →
+/// - **Changed on disk** (verified mtime+hash stale) and full content is cached →
 ///   `diff`, plus an advisory note. The diff carries exactly the new
 ///   information in a fraction of the tokens.
 /// - **Unchanged** and the request is `lines:` of an already-fully-delivered

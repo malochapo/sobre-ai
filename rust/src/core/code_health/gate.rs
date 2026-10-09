@@ -1,5 +1,4 @@
-//! Edit-time code-health gate — shared by `sobre_edit`, `sobre_patch`, and the
-//! native-edit hook.
+//! Edit-time code-health gate, run on every `sobre_patch` write.
 //!
 //! Drift prevention is the lever sobre has that a post-hoc scanner does not:
 //! it sits *in the edit path*, so it can flag a complexity regression at the

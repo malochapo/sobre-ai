@@ -1,5 +1,4 @@
 pub(crate) mod batch_read;
-pub(crate) mod impl_edit;
 pub mod sobre_checkpoint;
 pub mod sobre_compose;
 pub mod sobre_expand;

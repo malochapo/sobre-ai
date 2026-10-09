@@ -367,7 +367,7 @@ fn cold_fallback_withheld_when_file_changed() {
     std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
 
     seed_cold_record(&p, "conv-a");
-    // Content changed during downtime → mtime/md5 mismatch → no stub.
+    // Content changed during downtime → mtime/hash mismatch → no stub.
     std::fs::write(&path, "fn main() { let x = 2; let y = 3; }\n").unwrap();
     let cold = SessionCache::new();
     let out = try_stub_hit_readonly_scoped(&cold, &p, Some("conv-a"));

@@ -989,6 +989,21 @@ fn process_scan_targets(
     }
 }
 
+/// The symbols of `content` as the index records them — name and 1-based
+/// inclusive line span — read from the text as it is now.
+pub(crate) fn symbol_spans(content: &str, ext: &str) -> Vec<(String, usize, usize)> {
+    signatures::extract_signatures(content, ext)
+        .iter()
+        .map(|sig| {
+            let (start, end) = sig
+                .start_line
+                .zip(sig.end_line)
+                .unwrap_or_else(|| find_symbol_range(content, sig));
+            (sig.name.clone(), start, end)
+        })
+        .collect()
+}
+
 fn find_symbol_range(content: &str, sig: &signatures::Signature) -> (usize, usize) {
     let lines: Vec<&str> = content.lines().collect();
     let mut start = 0;

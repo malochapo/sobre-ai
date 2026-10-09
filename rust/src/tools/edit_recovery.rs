@@ -1,4 +1,4 @@
-//! Recovery context for failed `sobre_edit` calls.
+//! Recovery context for failed `sobre_patch` text replacements.
 //!
 //! When an edit cannot be applied, these helpers turn the failure into
 //! actionable guidance so the agent does not have to spend a turn re-reading
@@ -6,7 +6,7 @@
 //!
 //! - [`moved_or_deleted_hint`]: the target file does not exist — was it moved,
 //!   or is the name/path wrong? (point 3)
-//! - [`cross_file_hint`]: `old_string` is not in the target file — does a
+//! - [`cross_file_hint`]: `old_text` is not in the target file — does a
 //!   matching line live in a *different* file the agent should have targeted?
 //!   (point 2)
 //!
@@ -89,8 +89,8 @@ pub(crate) fn moved_or_deleted_hint(target: &Path) -> String {
     }
 }
 
-/// Point 2: `old_string` is not in the target file. Search sibling files
-/// for the most distinctive line of `old_string` so the agent can re-target
+/// Point 2: `old_text` is not in the target file. Search sibling files
+/// for the most distinctive line of `old_text` so the agent can re-target
 /// the right file instead of assuming it picked the correct one. Returns a
 /// leading-newline hint, or empty if nothing distinctive matches elsewhere.
 pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
@@ -141,7 +141,7 @@ pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
     if hits.is_empty() {
         return String::new();
     }
-    let mut out = String::from("\nold_string was not found here, but a matching line exists in:");
+    let mut out = String::from("\nold_text was not found here, but a matching line exists in:");
     for p in &hits {
         let _ = write!(out, "\n  - {}", p.display());
     }
