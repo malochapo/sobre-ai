@@ -340,7 +340,7 @@ pub(crate) enum ConfigCommand {
     Show,
     /// Change one key
     #[command(after_help = "\
-Booleans take true/false (also yes/no, on/off, 1/0); a list takes
+Booleans take true/false (also yes/no, 1/0); a list takes
 comma-separated values. The value is checked before the file is written;
 the file keeps its comments. `default`, an empty value or the key's default
 value removes the key, so its default applies. Exits 2 on an unknown key or

@@ -290,7 +290,7 @@ pub fn config_keys_markdown() -> String {
          warning goes to stderr once. An unknown key is ignored; `sobre doctor` \
          names it.\n\
          - **`sobre config set <key> <value>`.** Booleans take `true`/`false` \
-         (also `yes`/`no`, `on`/`off`, `1`/`0`); a list takes comma-separated \
+         (also `yes`/`no`, `1`/`0`); a list takes comma-separated \
          values. The value is checked before the file is written, and the \
          file keeps its comments and key order. `default` or an empty value \
          removes the key, so its default applies.\n\

@@ -7,7 +7,7 @@ Source of truth: `rust/src/core/config/schema/`.
 sobre reads one file, `~/.config/sobre/config.toml` (the directory follows `$XDG_CONFIG_HOME`, or `$SOBRE_CONFIG_DIR` when set). Below is every recognized key with its type and default.
 
 - **Reading.** The file is read again when it changes. A file that does not parse is ignored whole: every key takes its default, and a warning goes to stderr once. An unknown key is ignored; `sobre doctor` names it.
-- **`sobre config set <key> <value>`.** Booleans take `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`); a list takes comma-separated values. The value is checked before the file is written, and the file keeps its comments and key order. `default` or an empty value removes the key, so its default applies.
+- **`sobre config set <key> <value>`.** Booleans take `true`/`false` (also `yes`/`no`, `1`/`0`); a list takes comma-separated values. The value is checked before the file is written, and the file keeps its comments and key order. `default` or an empty value removes the key, so its default applies.
 - **`sobre config init`** writes the file with every key documented, keeping an existing one as `config.toml.sobre.bak`.
 
 ## Top-level keys
