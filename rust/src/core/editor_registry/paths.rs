@@ -1,15 +1,9 @@
 use std::path::{Path, PathBuf};
 
-/// OpenCode's global `opencode.json`: `%APPDATA%\opencode` on Windows,
-/// `~/.config/opencode` elsewhere. The MCP entry and the proxy wiring both
-/// live in it.
+/// OpenCode's global `opencode.json`, in `~/.config/opencode` on every OS
+/// (OpenCode resolves it with xdg-basedir, Windows included), next to the
+/// plugin and the skill. The MCP entry and the proxy wiring both live in it.
 pub fn opencode_config_path(home: &Path) -> PathBuf {
-    #[cfg(windows)]
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        return PathBuf::from(appdata)
-            .join("opencode")
-            .join("opencode.json");
-    }
     home.join(".config/opencode/opencode.json")
 }
 
