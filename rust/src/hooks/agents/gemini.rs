@@ -72,7 +72,7 @@ fn is_sobre_group(group: &serde_json::Value) -> bool {
             hooks.iter().any(|h| {
                 h.get("command")
                     .and_then(|c| c.as_str())
-                    .is_some_and(|c| c.contains("sobre") && c.contains(" hook "))
+                    .is_some_and(crate::hooks::is_sobre_hook_command)
             })
         })
 }

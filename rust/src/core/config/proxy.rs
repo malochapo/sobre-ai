@@ -14,6 +14,7 @@ pub struct ProxyConfig {
     /// Upstream URL per provider (`anthropic`, `openai`). Only the URL is
     /// configurable; writing one is the deliberate opt-in for a custom or
     /// plaintext host, such as a local Ollama for `anthropic`.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub upstreams: std::collections::BTreeMap<String, String>,
 }
 
