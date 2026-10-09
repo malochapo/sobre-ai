@@ -115,9 +115,9 @@ pub(crate) fn stale_hook_binary(content: &str, binary: &str) -> Option<String> {
     refs.into_iter().next()
 }
 
-/// Cascade hook health for Windsurf. `sobre init` writes observe +
-/// pre_mcp_tool_use hooks into `~/.codeium/windsurf/hooks.json`; the `hook
-/// observe` command is the stable marker. A missing file is genuine drift, fixed
+/// Cascade hook health for Windsurf. `sobre init` writes observe hooks into
+/// `~/.codeium/windsurf/hooks.json`; the `hook observe` command is the
+/// marker. A missing file is genuine drift, fixed
 /// by re-running setup.
 pub(crate) fn check_windsurf_hooks(home: &std::path::Path) -> NamedCheck {
     let path = home.join(".codeium/windsurf/hooks.json");

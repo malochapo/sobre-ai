@@ -14,5 +14,5 @@ history). If a change would only matter to a previous install, it doesn't
 matter.
 
 Build: `cargo check` (local-only default) or `cargo check --features dense`
-(local embeddings + GPU). Never `--no-default-features` for a warning audit —
+(local embeddings). Never `--no-default-features` for a warning audit —
 `dead_code = "deny"` produces false positives when features are off.

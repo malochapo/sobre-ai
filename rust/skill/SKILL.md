@@ -59,9 +59,13 @@ is not understanding more.
 
 1. `sobre_read(path, mode="anchored")`.
 2. `sobre_patch` with the `line` + `hash` anchors — you never re-type the old
-   text. `op="create"` for a new file, `replace_unique(old_text, new_text)` for
-   an exact unique replacement without a read, `ops=[...]` for several edits,
-   across files if needed.
+   text: `op="set_line"`, `op="replace_lines"` (`start_line`…`end_line`),
+   `op="insert_after"` or `op="delete"`. Without anchors:
+   `op="replace_unique"` (`old_text`, `new_text`; the old text must occur
+   once), `op="replace_all"` (`find`, `replace`), or `op="replace_symbol"`
+   (`name`, `new_text`) for a whole function or type. `op="create"` writes a
+   new file. `ops=[...]` applies several edits, across files if needed;
+   `dry_run=true` shows the diff and writes nothing.
 3. `CONFLICT` means the file changed under you: read it again.
 
 Native Read → Edit also works. `sobre_refactor` finds references and
@@ -73,7 +77,9 @@ history separate from the user's git, and can restore them.
 
 - `sobre_shell(command)` compresses build, test and log output; errors carry
   `[exit:N]` and are never dropped.
-- Long jobs: `run_in_background=true`, then poll the returned `job_id`.
+- Long jobs: `run_in_background=true` returns a `job_id`; check it with
+  `sobre_shell(background_action="status", job_id=...)`, stop it with
+  `background_action="cancel"`.
 - sobre runs every command as given; what may run is your host's decision.
 - Multi-line scripts: write them to a file, then run the file.
 - Where the host supports hooks, the output of your native shell commands may

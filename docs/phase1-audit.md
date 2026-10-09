@@ -55,7 +55,7 @@ The lots run in this order:
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | done (#41, #42, #43, #44, #45, #46) |
 | F | Release: publish a `dense` binary (decision 8) | done (#47) |
-| E | Documentation and install path, written last so it describes the final behaviour | open |
+| E | Documentation and install path, written last so it describes the final behaviour | done (#49), except E5, E7 and E13 (#48, invariant PR) and E20 (open) |
 
 ## What already works
 
@@ -1092,7 +1092,7 @@ dead code) and #46 (the reachability sweep).
 
 ### Factual errors
 
-- [ ] **E1 The build command misses the pinned toolchain.**
+- [x] **E1 The build command misses the pinned toolchain.**
   - `cargo build --manifest-path rust/Cargo.toml` from the repository root
     does not use it, because `rust-toolchain.toml` is in `rust/` and rustup
     reads it from the cwd.
@@ -1101,7 +1101,9 @@ dead code) and #46 (the reachability sweep).
   - Affected: `README.md:56-61`, `CONTRIBUTING.md:48`,
     `.pre-commit-config.yaml`. CI uses `working-directory: rust`.
   - Fix: `cd rust && cargo build --release`, and set `rust-version`.
-- [ ] **E2 "`--features dense` adds GPU providers" is false**
+  - Done: `rust-version = "1.99"`; the README and CONTRIBUTING run cargo
+    from `rust/`. `.pre-commit-config.yaml` was already gone (D13).
+- [x] **E2 "`--features dense` adds GPU providers" is false**
   (`README.md:63-68`, `rust/README.md:16`, `CONTRIBUTING.md:26`,
   `rust/CLAUDE.md`, the Cargo.toml comment).
   - `dense = ["embeddings"]`.
@@ -1109,14 +1111,20 @@ dead code) and #46 (the reachability sweep).
     at a GPU runtime" (`ort_execution_providers.rs:163`).
   - `:47` mentions a "shipped Linux/Windows GPU build" that does not
     exist.
-- [ ] **E3 `Makefile:13` `$(sobre --version)` runs whatever `sobre` is on
+  - Done: the docs say `dense` adds local embeddings; `embeddings status`
+    says a GPU needs a GPU feature; the comment no longer names a shipped
+    GPU build.
+- [x] **E3 `Makefile:13` `$(sobre --version)` runs whatever `sobre` is on
   PATH.**
-- [ ] **E4 The agent lists omit VS Code.**
+  - Done: it runs the binary it installed.
+- [x] **E4 The agent lists omit VS Code.**
   - The lists (`README.md:77-79`, `help.rs:16,51-52`, `bug_report.md:12`)
     leave out `vscode`, which `init` accepts. The `claude-code` alias is
     accepted too.
   - FORK.md:48 says "agents beyond eight" were removed, but there are 9
     keys.
+  - Done: the README, the bug template and FORK.md name the nine agents;
+    `help.rs` already did.
 - [ ] **E5 INVARIANTS.md contradicts `init`.**
   - It says "no per-agent init" (`:31`) and "init takes no option beyond
     which agent" (`:52`).
@@ -1124,8 +1132,11 @@ dead code) and #46 (the reachability sweep).
     `--json` and `--agent`, an interactive proxy question that writes
     config and installs autostart, and the ~120 MB model question in dense
     builds.
-- [ ] **E6 `README.md:81` says `uninstall` removes "everything init
+  - Open: an `invariant:` PR (#48), which both maintainers approve.
+- [x] **E6 `README.md:81` says `uninstall` removes "everything init
   wrote".** Document what it really removes once A3 is settled.
+  - Done: the README's Uninstall section says what goes, including data,
+    memory, models and the binary.
 - [ ] **E7 "Parameters never change" does not hold across builds.**
   - `README.md:41-44` and `INVARIANTS.md:62-68` say so, but `sobre_search`
     gains `mode` in embeddings builds
@@ -1133,7 +1144,9 @@ dead code) and #46 (the reachability sweep).
   - The generated reference shows the default build only.
   - Document that the list is fixed per build; with a published dense
     binary there are two lists.
-- [ ] **E8 The proxy section is incomplete.**
+  - The README says so (one fixed surface per build). INVARIANTS.md is in
+    the `invariant:` PR (#48).
+- [x] **E8 The proxy section is incomplete.**
   - `proxy enable` installs a login service:
     `~/Library/LaunchAgents/com.sobre.proxy.plist` on macOS,
     `~/.config/systemd/user/sobre-proxy.service` on Linux, and none on
@@ -1141,37 +1154,51 @@ dead code) and #46 (the reachability sweep).
   - The port is 4444 + (uid − 1000) % 1000 on Unix
     (`proxy_setup/util.rs:20-45`).
   - `--force` is undocumented.
-- [ ] **E9 SECURITY.md.**
+  - Done in the README. `config-keys.md` now gives the per-user port.
+- [x] **E9 SECURITY.md.**
   - It says paths escaping the root are refused (`:25-26`); false, sobre
     does not confine paths (`server_paths.rs:66-68`, `INVARIANTS.md`,
     FORK.md:65).
   - "Not released / no supported version / no users" is stale for 0.1.0,
     and so are `README.md:15-17` and `rust/README.md:8`.
   - "Archived" content does not exist; what exists is the 24 h tee store.
-- [ ] **E10 SKILL.md and the instructions.**
+  - Done: SECURITY.md describes the real threat model (no path
+    confinement, redaction, the 24 h store, the proxy's token); the
+    "not released" notices are gone.
+- [x] **E10 SKILL.md and the instructions.**
   - They call `full` "verbatim" and `raw` "exact bytes" (see B22).
   - "Poll the returned job_id": the real call is
     `sobre_shell(background_action="status", job_id=…)`.
   - `replace_unique(old_text,new_text)` reads like a function; it is
     `op="replace_unique"`. The anchored op names are never given.
-- [ ] **E11 Contracts.** The upstream tracker IDs and wording are covered
+  - Done: the skill names the `sobre_patch` ops and their fields, and the
+    background `status`/`cancel` call. `full` and `raw` were already
+    described as B22 left them.
+- [x] **E11 Contracts.** The upstream tracker IDs and wording are covered
   in D14.
-- [ ] **E12 FORK.md:55,67** name `lean-ctx call` and `lean-ctx -c`; check
+  - Done in D14.
+- [x] **E12 FORK.md:55,67** name `lean-ctx call` and `lean-ctx -c`; check
   what they mean.
+  - Checked: the removal table now says `sobre call`; `lean-ctx -t` is the
+    upstream name of the removed shell hook, as the table's note says.
 - [ ] **E13 INVARIANTS.md:152-153 says "No generated artefacts in the
   repository"**, yet `docs/reference/generated/*.md` is committed and
   drift-checked.
-- [ ] **E14 CONTRIBUTING.md:31-32 says "git hooks run the same script"**,
+  - Open: the `invariant:` PR (#48).
+- [x] **E14 CONTRIBUTING.md:31-32 says "git hooks run the same script"**,
   but the hooks are opt-in through `make setup-hooks`, which it never
   mentions.
-- [ ] **E15 `compression_pattern.md:8` uses mypy as the example**, but a
+  - Done: CONTRIBUTING says the hooks are opt-in and what each runs.
+- [x] **E15 `compression_pattern.md:8` uses mypy as the example**, but a
   mypy pattern already exists.
-- [ ] **E16 `rust/README.md:4` "still called sobre"** is left over from the
+  - Done: the examples are commands without a pattern.
+- [x] **E16 `rust/README.md:4` "still called sobre"** is left over from the
   rename.
+  - Done, with the stale `data/` line of the layout.
 
 ### Gaps for a new user
 
-- [ ] **E17 Rewrite the README in this order:**
+- [x] **E17 Rewrite the README in this order:**
   1. Install
   2. Connect agents
   3. Check it works
@@ -1230,8 +1257,29 @@ dead code) and #46 (the reachability sweep).
   - **Upgrade and uninstall.** Reinstall to the same path and restart the
     agents; run `uninstall --dry-run` first; data and memory are deleted;
     `cargo uninstall`.
-- [ ] **E18 Templates.**
+  - Done: the README follows that order, with every point above.
+- [x] **E18 Templates.**
   - The bug report should list VS Code and ask for build features,
     install method and `sobre doctor` output.
   - The feature request and PR templates should link INVARIANTS.md and
     ask which tool or key a change replaces.
+  - Done.
+
+### Found while writing the README
+
+- [x] **E19 Install fixes.**
+  - `init --help` omitted `--dry-run` and said `--json` implies `--repair`;
+    any failure exits non-zero, not only under `--repair`.
+  - Observe hooks were added once and kept the old binary path after a
+    move, even through `init` and `doctor --fix`. They now follow it.
+  - The Codex proxy wiring wrote `config.toml` with no `.sobre.bak`.
+  - `uninstall` cleaned `~/.copilot/hooks/hooks.json` even when
+    `COPILOT_HOME` had moved it.
+  - Stale comments: the model download, Windsurf's hooks.
+- [ ] **E20 Check on the real tools.**
+  - Windows: `opencode.json` is read from `%APPDATA%\opencode`, but the
+    plugin and the skill go to `~/.config/opencode`, and Zed's settings to
+    `~/.config/zed`. One side is wrong; this environment cannot reach either
+    tool's documentation.
+  - `COPILOT_HOME` moves the Copilot hooks but not `mcp-config.json` or the
+    skill: check what Copilot CLI honours.
