@@ -1,3 +1,5 @@
+Install with `curl -fsSL https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.sh | sh` on Linux and macOS, or `irm https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.ps1 | iex` in Windows PowerShell; `--dense` (`-Dense`) picks the build with local embeddings and `--version <tag>` (`-Version <tag>`) a given release. Then run `sobre init`.
+
 Each platform has up to two builds:
 
 - `sobre-<target>`: everything except local embeddings. `sobre_search` ranks with BM25.
