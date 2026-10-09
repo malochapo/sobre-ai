@@ -799,9 +799,9 @@ pub(super) fn resolve_gd(
             return (Some(found), false);
         }
         // `res://` always names an intra-project resource. When the target is a
-        // concrete file (carries a resource extension) that simply isn't indexed
-        // yet — e.g. a `.tscn` scene before scene indexing exists — still
-        // emit the edge to the declared path so scene references survive.
+        // concrete file (carries a resource extension) that is not indexed —
+        // e.g. a `.tres` resource — still emit the edge to the declared path
+        // so the reference survives.
         if !rel.is_empty() && Path::new(rel).extension().is_some() {
             return (Some(rel.to_string()), false);
         }

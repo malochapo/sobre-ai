@@ -19,8 +19,8 @@ pub(super) fn extract_calls(root: Node, src: &str, ext: &str) -> Vec<CallSite> {
         }
         // Rust: calls written inside macro bodies (`println!("{}", greet(x))`,
         // `assert_eq!(foo(), 1)`) are token trees to tree-sitter, not
-        // `call_expression`s — a file whose calls all sit inside macros used to
-        // produce ZERO call edges. Recover them at the token level.
+        // `call_expression`s, so a file whose calls all sit inside macros
+        // would have no call edges. Recover them at the token level.
         if ext == "rs"
             && let Some(call) = parse_macro_interior_call(node, src)
         {
@@ -60,8 +60,7 @@ fn parse_macro_interior_call(node: Node, src: &str) -> Option<CallSite> {
 /// Different grammars name the invocation node differently: most use
 /// `call_expression`, Java methods use `method_invocation` and constructors
 /// use `object_creation_expression`, while Python (and Elixir) use a bare
-/// `call`. Missing `call` here is what previously made Python call sites —
-/// including class instantiation `Foo(...)` — invisible to the call graph.
+/// `call` (which also covers Python class instantiation `Foo(...)`).
 #[cfg(feature = "tree-sitter")]
 fn is_call_node(kind: &str) -> bool {
     matches!(
