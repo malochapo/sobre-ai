@@ -76,7 +76,7 @@ was added.
 | Lot | Scope | Status |
 |---|---|---|
 | G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
-| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #PRNUM) |
+| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #58) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
@@ -394,7 +394,7 @@ documented:
   - Done. Where there is no autostart, `proxy enable` refuses while
     nothing answers on the port, says to start the proxy by hand first,
     and changes nothing; `init`'s question does the same.
-- [x] **H5 `claude mcp add-json` never succeeds.** (#PRNUM) sobre pipes the JSON on
+- [x] **H5 `claude mcp add-json` never succeeds.** (#58) sobre pipes the JSON on
   stdin; the CLI's usage is `claude mcp add-json [options] <name> <json>`,
   and it fails with "missing required argument 'json'"
   (`core/editor_registry/writers/mod.rs:166-230`).
@@ -440,7 +440,7 @@ documented:
     proxy cannot use.
 - [x] **H7 `init --check --json` looks like a real run.** Its JSON says
   "connected" and "created", with no dry-run field
-  (`setup/mod.rs:200-226,255`). (#PRNUM)
+  (`setup/mod.rs:200-226,255`). (#58)
   Done: the report carries `"dry_run": true`, an agent is
   `would_connect`, and each file reads "would create" or "would update".
 - [x] **H8 The systemd unit pins no directories** (`proxy_autostart.rs:383-405`).
@@ -453,16 +453,16 @@ documented:
   `~/Library/Application Support/Zed/settings.json`; Zed reads
   `~/.config/zed/settings.json` on macOS, which is what `doctor` checks
   (`core/editor_registry/paths.rs:16-30`, `doctor/common.rs:167`). Likely;
-  verify with E20. (#PRNUM)
+  verify with E20. (#58)
   Done, after Zed's documentation: `~/.config/zed` on macOS,
   `$XDG_CONFIG_HOME/zed` on Linux, `%APPDATA%\Zed` on Windows. `init`,
   `doctor` and `uninstall` use the one path. A run on a real Mac stays
   with E20.
 - [x] **H10 Windows: an npm-installed Claude Code is not detected.**
   `where claude` prints several lines, used whole as one path
-  (`core/editor_registry/detect.rs:84-88`). Likely. (#PRNUM)
+  (`core/editor_registry/detect.rs:84-88`). Likely. (#58)
   Done: the first line is the path.
-- [x] **H11 Smaller ones.** (#PRNUM)
+- [x] **H11 Smaller ones.** (#58)
   - The default proxy port truncates the uid to 16 bits. macOS uids start
     at 501, below the 1000 that marks a system user, so every macOS user
     gets 4444: the README's "two people on one machine get different
@@ -507,7 +507,7 @@ documented:
   - Done. The hooks share `<state dir>/hooks/dedup` and
     `<state dir>/hooks/read`, mode 0700; `uninstall` removes them with the
     state dir.
-- [x] **H13 `doctor --fix` rewrites files in the user's repository.** (#PRNUM)
+- [x] **H13 `doctor --fix` rewrites files in the user's repository.** (#58)
   - Reproduced on a repo with a committed JSONC `.cursor/mcp.json`
     (comments, a `team-db` entry and `sobre`) and `.vscode/mcp.json`:
     `doctor --fix` printed only "All 4 checks passed". `git diff` shows
@@ -523,7 +523,7 @@ documented:
     still reports sobre declared both in a repository and for the user,
     and says to remove the repository entry by hand; the README says
     `--fix` never edits a repository.
-- [x] **H14 `doctor` says things that are not true.** (#57, #PRNUM)
+- [x] **H14 `doctor` says things that are not true.** (#57, #58)
   - Codex: "hooks auto-compress when trusted (/hooks)"
     (`doctor/integrations/codex.rs:130`); sobre installs only observe hooks
     for Codex, and the README says Codex gets no shell compression.
