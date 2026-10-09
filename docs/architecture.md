@@ -363,7 +363,9 @@ points, and runs commands as written. The agent host decides what may run
   `sobre call --project-root` and graph scans (`core/pathutil.rs`).
 - **Masks secrets** in its own output: shell output, `sobre_read` (except
   `raw=true`), hook output and stored originals (`core/redaction.rs`,
-  `core/secret_detection.rs`).
+  `core/secret_detection.rs`, one shared table of token formats). It is
+  pattern matching: short values, secrets under unrelated key names and a read
+  window that starts inside a key's body are not caught.
 - **Keeps its files private.**
   - Directories that exist are set to 0700 when resolved.
   - The token, sessions, stored originals, the crash log and the captured variables are 0600.
@@ -389,19 +391,24 @@ points, and runs commands as written. The agent host decides what may run
 | TypeScript, JavaScript | `typescript-language-server --stdio` |
 | Python | `pylsp` |
 | Go | `gopls serve` |
-| Java, Kotlin, Ruby, C, C++, C# | `<language>-language-server` when one is on `PATH` |
+| Java | `jdtls` |
+| Kotlin | `kotlin-language-server` |
+| Ruby | `ruby-lsp` |
+| C, C++ | `clangd` |
+| C# | `csharp-ls` |
 
 Requests time out after 30 s, initialisation after 60 s. Requests from the
 server are answered: an empty success for `workspace/configuration` and
 `client/registerCapability`, `MethodNotFound` for any other.
 
-`sobre_outline`, `sobre_read mode=signatures` and the graph's symbols parse 27
-languages with tree-sitter: Rust, TypeScript (and TSX), JavaScript, Python, Go,
+`sobre_outline` and `sobre_read mode=signatures` parse 27 languages with
+tree-sitter: Rust, TypeScript (and TSX), JavaScript, Python, Go,
 Java, C, C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala, Elixir, Zig,
 GDScript, Lua, Luau, OCaml, Haskell, Julia, Solidity, Nix and PowerShell. Vue
-and Svelte files are parsed through their script blocks. The graph's imports,
-calls and type uses, and the post-edit syntax check, cover 21 of them, Rust
-through Luau in that list.
+and Svelte files are parsed through their script blocks. The code graph
+(symbols, imports, calls and type uses) and the post-edit syntax check cover 21
+of them, Rust through Luau in that list, plus Vue and Svelte script blocks and
+Godot scenes in the graph.
 
 ## 12. Reference
 
