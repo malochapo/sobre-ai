@@ -55,7 +55,7 @@ The lots run in this order:
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | done (#41, #42, #43, #44, #45, #46) |
 | F | Release: publish a `dense` binary (decision 8) | done (#47) |
-| E | Documentation and install path, written last so it describes the final behaviour | done but E5, E7, E13 (invariant PR) and E20 (#PR_ED) |
+| E | Documentation and install path, written last so it describes the final behaviour | done but E5, E7, E13 (invariant PR) and E20 (#49) |
 
 ## What already works
 
