@@ -52,7 +52,7 @@ fn claude_skill_follows_claude_config_dir() {
 #[serial]
 fn instructions_never_point_at_a_claude_file() {
     // The MCP instructions are the only rules channel; they must not send
-    // agents looking for a CLAUDE.md that sobre no longer writes.
+    // agents looking for a CLAUDE.md that sobre does not write.
     with_claude_config_dir(Some("~/.arc/claude"), || {
         let instr = sobre::instructions::build_instructions();
         assert!(!instr.contains("CLAUDE.md"), "{instr}");

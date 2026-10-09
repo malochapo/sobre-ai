@@ -1,15 +1,13 @@
-//! End-to-end regression: `proxy enable` must treat the two
-//! Codex auth modes differently.
+//! `proxy enable` treats the two Codex auth modes differently.
 //!
 //! - **API-key** mode: Codex is pointed at the proxy's `/v1` rail (top-level
 //!   `openai_base_url`).
 //! - **ChatGPT login**: left native — no sobre Codex config — so history and
 //!   `codex cloud`/remote keep working.
 //!
-//! All scenarios live in one serial test: they redirect Codex via `CODEX_HOME`
-//! (the documented override `resolve_codex_dir` honours) and a live dummy proxy so
-//! the reachability guard passes. A single test means no in-process race on the
-//! shared env vars, and a dedicated test binary isolates it from the lib suite.
+//! Both scenarios redirect Codex via `CODEX_HOME` (the documented override
+//! `resolve_codex_dir` honours) and run a live dummy proxy so the reachability
+//! guard passes.
 
 use std::ffi::OsString;
 use std::net::TcpListener;
@@ -27,15 +25,14 @@ const ISOLATED_ENV_VARS: [&str; 4] = [
 
 /// Scope-guard that points `CODEX_HOME` at `dir` and restores the previous value on
 /// drop. `set_var`/`remove_var` are `unsafe` on edition 2024; safe here because this
-/// test binary runs the single test below serially.
+/// test binary runs one test at a time.
 struct CodexHome(Option<OsString>);
 
 impl CodexHome {
     fn set(dir: &Path) -> Self {
         let prev = std::env::var_os("CODEX_HOME");
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: tests/serial.rs runs this binary on one thread, so no other
+        // test touches the environment concurrently.
         unsafe { std::env::set_var("CODEX_HOME", dir) };
         CodexHome(prev)
     }
@@ -44,13 +41,11 @@ impl CodexHome {
 impl Drop for CodexHome {
     fn drop(&mut self) {
         match &self.0 {
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: tests/serial.rs runs this binary on one thread, so no other
+            // test touches the environment concurrently.
             Some(v) => unsafe { std::env::set_var("CODEX_HOME", v) },
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: tests/serial.rs runs this binary on one thread, so no other
+            // test touches the environment concurrently.
             None => unsafe { std::env::remove_var("CODEX_HOME") },
         }
     }
@@ -66,9 +61,8 @@ struct EnvVar {
 impl EnvVar {
     fn set(key: &'static str, value: &str) -> Self {
         let prev = std::env::var_os(key);
-        // SAFETY: the project's test suite always runs with `--test-threads=1`
-        // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-        // this binary touches the environment concurrently.
+        // SAFETY: tests/serial.rs runs this binary on one thread, so no other
+        // test touches the environment concurrently.
         unsafe { std::env::set_var(key, value) };
         EnvVar { key, prev }
     }
@@ -77,13 +71,11 @@ impl EnvVar {
 impl Drop for EnvVar {
     fn drop(&mut self) {
         match &self.prev {
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: tests/serial.rs runs this binary on one thread, so no other
+            // test touches the environment concurrently.
             Some(v) => unsafe { std::env::set_var(self.key, v) },
-            // SAFETY: the project's test suite always runs with `--test-threads=1`
-            // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-            // this binary touches the environment concurrently.
+            // SAFETY: tests/serial.rs runs this binary on one thread, so no other
+            // test touches the environment concurrently.
             None => unsafe { std::env::remove_var(self.key) },
         }
     }
@@ -108,11 +100,9 @@ fn codex_home_with_auth(auth_json: &str) -> (tempfile::TempDir, std::path::PathB
 
 #[test]
 fn proxy_enable_respects_codex_auth_mode() {
-    // An explicit CODEX_API_KEY forces API-key mode regardless of auth.json, which
-    // would invalidate the ChatGPT-login halves of this test.
-    if std::env::var("CODEX_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
-        return;
-    }
+    // A non-empty CODEX_API_KEY forces API-key mode whatever auth.json says;
+    // blank it so the ChatGPT-login half tests the stored login.
+    let _codex_key = EnvVar::set("CODEX_API_KEY", "");
 
     // Hermetic config isolation: setup reads the global config, so point it at
     // a throwaway dir. Integration tests cannot use the crate-private

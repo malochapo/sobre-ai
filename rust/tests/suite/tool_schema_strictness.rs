@@ -1,9 +1,8 @@
-//! Every advertised MCP tool schema must survive *strict* JSON-Schema
-//! validators (OpenAI/Azure Pydantic backends, Claude thinking models,
-//! `SGLang`, ...). Community-reported failure that motivated this gate
-//! (`OpenCode` on Windows → OpenAI):
+//! Every advertised MCP tool schema survives *strict* JSON-Schema validators
+//! (OpenAI/Azure Pydantic backends, Claude thinking models, `SGLang`, ...),
+//! which reject a schema with, for instance:
 //!
-//!   Invalid schema for function 'sobre_ctx_expand': None is not of type 'array'
+//!   Invalid schema for function 'sobre_expand': None is not of type 'array'
 //!
 //! Strict backends require an explicit `required` array on every object
 //! schema that declares `properties`, and an `items` definition on every
@@ -52,8 +51,7 @@ fn check_schema(tool: &str, node: &Value, path: &str, errors: &mut Vec<String>) 
 fn all_tool_schemas_survive_strict_validators() {
     let registry = sobre::server::registry::build_registry();
     let tools = registry.tool_defs();
-    // Upstream asserted `>= 60`. Invariant 1 caps the surface at twenty, so the
-    // sanity check becomes the invariant itself: wired, and within the ceiling.
+    // Wired, and within the ceiling of invariant 1.
     assert!(!tools.is_empty(), "registry is empty — wiring broken?");
     assert!(
         tools.len() <= 20,

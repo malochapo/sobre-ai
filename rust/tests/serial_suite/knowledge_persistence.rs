@@ -1,3 +1,6 @@
+//! Facts remembered through the MCP pipeline reach `knowledge.json` in the
+//! data dir.
+
 use serde_json::json;
 
 /// Calls `tool` through the full MCP request pipeline and returns its text.
@@ -12,11 +15,9 @@ async fn call_tool(
         .unwrap_or_else(|e| panic!("{tool} failed: {e:#}"))
 }
 
-/// Poll `cond` up to ~10s. The memory stores are persisted on a background
-/// thread (the consolidation pipeline), so asserting immediately after a tool
-/// call returns raced the writer and made this test flaky under full-suite load.
-/// Polling keeps the assertion strict (it still fails if the artifact
-/// never lands) while tolerating scheduling latency.
+/// Poll `cond` up to ~10s. The knowledge store is written on a background
+/// thread (the consolidation pipeline), so the file can land after the tool
+/// call returns. Polling still fails if it never lands.
 async fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
     for _ in 0..200 {
         if cond() {
@@ -29,7 +30,7 @@ async fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
 
 #[allow(clippy::await_holding_lock)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn memory_benchmark_suite_persists_core_artifacts() {
+async fn remembered_facts_are_written_to_the_data_dir() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let data_dir = tempfile::tempdir().expect("data dir");
     // SAFETY: serialized by `test_env_lock()`.

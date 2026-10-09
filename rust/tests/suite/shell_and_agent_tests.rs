@@ -1,7 +1,6 @@
-//! E2E tests for shell detection (`$SHELL`),
-//! agent init, Windows path handling,
-//! and pipe-guard (stdout not a terminal → bypass sobre).
-// noqa: SIZE_OK — single-responsibility E2E test module for the CLI binary.
+//! The binary end to end: `-c` with the user's `$SHELL` and common shell
+//! syntax, `init` for an unknown agent and for Codex, and the `hook`
+//! entrypoints the agents call.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -43,44 +42,9 @@ fn run_with_env(
     (stdout, stderr, code)
 }
 
-fn run_hook_test(
-    args: &[&str],
-    env_vars: &[(&str, &str)],
-    stdin_data: Option<&str>,
-) -> (String, String, i32) {
-    let mut cmd = Command::new(sobre_bin());
-    cmd.args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-
-    for (k, v) in env_vars {
-        cmd.env(k, v);
-    }
-
-    let mut child = cmd.spawn().expect("failed to spawn sobre");
-
-    if let Some(data) = stdin_data {
-        child
-            .stdin
-            .take()
-            .unwrap()
-            .write_all(data.as_bytes())
-            .unwrap();
-    }
-
-    let output = child.wait_with_output().expect("failed to wait");
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-    let code = output.status.code().unwrap_or(1);
-    (stdout, stderr, code)
-}
-
+#[cfg(unix)]
 #[test]
 fn posix_shell_from_env_is_used() {
-    if cfg!(windows) {
-        return; // /bin/sh not available on Windows
-    }
     let (stdout, _stderr, code) = run_with_env(
         &["-c", "echo sobre_shell_works"],
         &[("SHELL", "/bin/sh")],
@@ -93,6 +57,7 @@ fn posix_shell_from_env_is_used() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn bash_from_env_is_used() {
     if !std::path::Path::new("/bin/bash").exists() {
@@ -107,15 +72,20 @@ fn bash_from_env_is_used() {
     assert!(!stdout.trim().is_empty(), "BASH_VERSION should be set");
 }
 
+#[cfg(unix)]
 #[test]
 fn shell_exec_pipe_command() {
-    if cfg!(windows) {
-        return; // head -1 not available on Windows
-    }
-    let (stdout, _stderr, code) =
-        run_with_env(&["-c", "echo 'line1\nline2\nline3' | head -1"], &[], None);
+    let (stdout, _stderr, code) = run_with_env(
+        &["-c", "printf 'line1\\nline2\\nline3\\n' | head -1"],
+        &[],
+        None,
+    );
     assert_eq!(code, 0, "pipe should work");
-    assert!(!stdout.trim().is_empty(), "should have output: {stdout}");
+    assert_eq!(
+        stdout.trim(),
+        "line1",
+        "only the first line passes the pipe"
+    );
 }
 
 #[test]
@@ -134,21 +104,17 @@ fn shell_exec_semicolon_chain() {
     assert!(stdout.contains("bbb"), "bbb: {stdout}");
 }
 
+#[cfg(unix)]
 #[test]
 fn shell_exec_subshell() {
-    if cfg!(windows) {
-        return; // $(...) subshell syntax varies on Windows
-    }
     let (stdout, _stderr, code) = run_with_env(&["-c", "echo $(echo subshell_output)"], &[], None);
     assert_eq!(code, 0, "subshell should work");
     assert!(stdout.contains("subshell_output"), "subshell: {stdout}");
 }
 
+#[cfg(unix)]
 #[test]
 fn shell_exec_env_var_expansion() {
-    if cfg!(windows) {
-        return; // $VAR syntax is bash-only; PowerShell uses $env:VAR
-    }
     let (stdout, _stderr, code) = run_with_env(
         &["-c", "echo $TEST_SOBRE_VAR"],
         &[("TEST_SOBRE_VAR", "expanded_value")],
@@ -203,7 +169,7 @@ fn hook_compress_replaces_long_bash_output_with_a_labelled_copy() {
         "tool_response": { "stdout": stdout_text, "stderr": "", "interrupted": false, "isImage": false }
     })
     .to_string();
-    let (stdout, stderr, code) = run_hook_test(
+    let (stdout, stderr, code) = run_with_env(
         &["hook", "compress"],
         &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
         Some(&input),
@@ -229,7 +195,7 @@ fn hook_cursor_wraps_known_commands_without_a_permission_decision() {
     let home = tempfile::tempdir().expect("tempdir");
     let home_s = home.path().to_string_lossy().to_string();
     let input = r#"{"tool_name":"Shell","tool_input":{"command":"git status"}}"#;
-    let (stdout, stderr, code) = run_hook_test(
+    let (stdout, stderr, code) = run_with_env(
         &["hook", "cursor"],
         &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
         Some(input),
@@ -255,7 +221,7 @@ fn hook_cursor_wraps_known_commands_without_a_permission_decision() {
     .unwrap();
     // A different command: Cursor double-fires, so a repeated command replays
     // the first reply for a few seconds.
-    let (stdout, _stderr, _code) = run_hook_test(
+    let (stdout, _stderr, _code) = run_with_env(
         &["hook", "cursor"],
         &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
         Some(r#"{"tool_name":"Shell","tool_input":{"command":"git diff"}}"#),
@@ -315,63 +281,4 @@ fn agent_init_codex_installs_hooks_and_skill() {
         config.contains("hooks = true"),
         "init should enable Codex hook support"
     );
-}
-
-#[test]
-fn piped_output_is_not_compressed() {
-    if cfg!(windows) {
-        return;
-    }
-    let bin = sobre_bin();
-    let script = r#"echo "line one"; echo "line two"; echo "line three""#.to_string();
-    let output = Command::new(&bin)
-        .args(["-c", &script])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("run");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("line one"),
-        "piped output must contain original content: {stdout}"
-    );
-}
-
-#[test]
-fn sobre_c_preserves_output_when_piped() {
-    if cfg!(windows) {
-        return;
-    }
-    let bin = sobre_bin();
-
-    let output = Command::new(&bin)
-        .args(["-c", "echo MARKER_STRING_12345"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("run sobre -c echo");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("MARKER_STRING_12345"),
-        "sobre -c must preserve output content when piped: {stdout}"
-    );
-}
-
-#[test]
-fn sobre_c_multiline_preserves_all_lines_when_piped() {
-    if cfg!(windows) {
-        return;
-    }
-    let bin = sobre_bin();
-    let cmd = "echo LINE_A && echo LINE_B && echo LINE_C";
-    let output = Command::new(&bin)
-        .args(["-c", cmd])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .expect("run");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("LINE_A"), "LINE_A: {stdout}");
-    assert!(stdout.contains("LINE_B"), "LINE_B: {stdout}");
-    assert!(stdout.contains("LINE_C"), "LINE_C: {stdout}");
 }

@@ -367,13 +367,10 @@ fn anchored_editing_beats_str_replace_on_ambiguity_across_languages() {
 ///   `old_text` and once again echoed in `new_text`.
 ///
 /// Both sides are counted with the same tokenizer over the payload fields only
-/// (path/booleans are identical overhead on both tools and cancel out). This is
-/// the same preimage math the runtime meters per applied op via
-/// `edit_metering` (`anchored_avoided_output_tokens`), and the benchmark keeps
-/// the claim exactly as honest as the meter does: on a *tiny* span the 4-hex
-/// anchor can cost a token or two more than quoting the line (the meter floors
-/// that op at 0 rather than booking negative savings) — but every ambiguity
-/// case and the batch total must be strictly cheaper anchored.
+/// (path/booleans are identical overhead on both tools and cancel out). On a
+/// *tiny* span the 4-hex anchor can cost a token or two more than quoting the
+/// line; every ambiguity case and the batch total must still be strictly
+/// cheaper anchored.
 #[test]
 fn anchored_args_cost_fewer_output_tokens_on_identical_fixes() {
     let langs = langs();

@@ -1,4 +1,4 @@
-//! Adversarial compression tests based on TheDecipherist/rtk-test methodology.
+//! Adversarial compression tests, after the TheDecipherist/rtk-test method.
 //! Each test verifies that safety-critical information survives compression.
 
 use sobre::core::patterns::compress_output;
@@ -285,11 +285,10 @@ fn adversarial_middle_truncation_preserves_errors() {
     }
 }
 
-// ===== Regression tests: Scenarios that were SAFE in TheDecipherist/rtk-test v3.2.5 =====
-// These must stay SAFE after the adversarial hardening changes.
+// ===== Everyday output that must keep its key facts =====
 
 #[test]
-fn regression_git_status_detached_head() {
+fn git_status_detached_head() {
     let output = "HEAD detached at 48a7098\nnothing to commit, working tree clean";
     let result = compress_output("git status", output).unwrap_or_else(|| output.to_string());
     assert!(
@@ -299,7 +298,7 @@ fn regression_git_status_detached_head() {
 }
 
 #[test]
-fn regression_log_critical_severity() {
+fn log_critical_severity() {
     let output = "[INFO] health check ok\n\
                   [INFO] health check ok\n\
                   [CRITICAL] database connection lost\n\
@@ -318,7 +317,7 @@ fn regression_log_critical_severity() {
 }
 
 #[test]
-fn regression_ls_shows_dotenv() {
+fn ls_shows_dotenv() {
     let output = ".env\n.gitignore\nREADME.md\nsrc\npackage.json";
     let compressed = compress_output("ls -a", output);
     let text = compressed.unwrap_or_else(|| output.to_string());
@@ -326,7 +325,7 @@ fn regression_ls_shows_dotenv() {
 }
 
 #[test]
-fn regression_pip_list_all_packages() {
+fn pip_list_all_packages() {
     let mut lines = vec![
         "Package    Version".to_string(),
         "---------- -------".to_string(),
@@ -344,7 +343,7 @@ fn regression_pip_list_all_packages() {
 }
 
 #[test]
-fn regression_git_stash_verbatim() {
+fn git_stash_verbatim() {
     let output = "No local changes to save";
     let compressed = compress_output("git stash", output);
     let text = compressed.unwrap_or_else(|| output.to_string());
@@ -363,7 +362,7 @@ fn regression_git_stash_verbatim() {
 }
 
 #[test]
-fn regression_ruff_preserves_file_line_col() {
+fn ruff_preserves_file_line_col() {
     let output = "src/api.py:42:10: E501 Line too long (120 > 79)\n\
                   src/api.py:88:1: F401 'os' imported but unused\n\
                   Found 2 errors.";
@@ -380,7 +379,7 @@ fn regression_ruff_preserves_file_line_col() {
 }
 
 #[test]
-fn regression_find_preserves_full_paths() {
+fn find_preserves_full_paths() {
     let output = "/home/user/project/src/api/file.ts\n\
                   /home/user/project/src/utils/helper.ts\n\
                   /home/user/project/tests/test_api.ts";
@@ -393,7 +392,7 @@ fn regression_find_preserves_full_paths() {
 }
 
 #[test]
-fn regression_ls_recursive_preserves_tree() {
+fn ls_recursive_preserves_tree() {
     let output = "./src:\napi.ts\nutils.ts\n\n./src/components:\nButton.tsx\nHeader.tsx\n\n./tests:\ntest_api.ts";
     let compressed = compress_output("ls -R", output);
     let text = compressed.unwrap_or_else(|| output.to_string());
@@ -404,14 +403,14 @@ fn regression_ls_recursive_preserves_tree() {
 }
 
 #[test]
-fn regression_wc_pipe_correct() {
+fn wc_pipe_correct() {
     let output = "42";
     let compressed = compress_output("wc -l", output);
     let text = compressed.unwrap_or_else(|| output.to_string());
     assert!(text.contains("42"), "wc output must be preserved: {text}");
 }
 
-// ===== New adversarial tests: comprehensive coverage across ecosystems =====
+// ===== Coverage across ecosystems =====
 
 #[test]
 fn adversarial_npm_install_preserves_packages() {
@@ -747,7 +746,7 @@ Plan: 1 to add, 0 to change, 1 to destroy.";
     );
 }
 
-// ===== TheDecipherist security review — additional adversarial tests =====
+// ===== Security-relevant changes in diffs and logs =====
 
 #[test]
 fn adversarial_git_show_preserves_diff_content() {
@@ -899,7 +898,7 @@ fn adversarial_shell_hook_preserves_errors_in_truncation() {
     );
 }
 
-// --- gh CLI security regression tests (follow-up) ---
+// --- gh CLI ---
 
 #[test]
 fn adversarial_gh_pr_diff_passes_through_verbatim() {
@@ -966,7 +965,7 @@ fn adversarial_gh_workflow_passes_through_verbatim() {
 
 #[test]
 fn adversarial_gh_pr_list_still_compresses() {
-    let pr_list = "#185\tSupport configurable proxy\tzsefvlol:feat/proxy\tDRAFT\n#184\tFix auth bypass\tsecurity-team:fix/auth\tOPEN\n";
+    let pr_list = "#185\tSupport configurable proxy\talice:feat/proxy\tDRAFT\n#184\tFix auth bypass\tsecurity-team:fix/auth\tOPEN\n";
     let result = compress_output("gh pr list", pr_list).unwrap_or_else(|| pr_list.to_string());
     assert!(
         result.contains("auth bypass") || result.contains("Fix auth"),

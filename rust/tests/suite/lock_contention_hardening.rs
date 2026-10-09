@@ -1,13 +1,17 @@
-//! Tests verifying the lock-contention hardening (plan: `harden_ctx_read_locks`).
-//! Covers `adaptive_timeout` inversion fix, `bounded_lock` behavior under load,
-//! and concurrent read scenarios.
+//! Lock contention: the adaptive timeout only ever lengthens in a slow or
+//! degraded environment, and `bounded_lock` readers queued behind a writer
+//! get the written value or a timeout, never a hang or a panic.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
 
+/// Base timeout for the contention tests. The production base is 10 s; the
+/// timeout path is the same at any base, so these wait 0.2 s instead.
+const TEST_BASE: Duration = Duration::from_millis(200);
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// 1. adaptive_timeout: slow/degraded → LONGER, not shorter
+// adaptive_timeout: slow/degraded → LONGER, not shorter
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -42,33 +46,28 @@ fn adaptive_timeout_degraded_returns_longer_than_base() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 2. bounded_lock: timeout returns None, no panic
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/// Base timeout for the contention tests. The production base is 10 s; the
-/// timeout path is the same at any base, so these wait 0.2 s instead.
-const TEST_BASE: Duration = Duration::from_millis(200);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 3. Parallel reads: multiple concurrent readers on same lock
+// Readers queued behind a writer
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn writer_blocks_readers_but_they_recover() {
     let lock: Arc<RwLock<u32>> = Arc::new(RwLock::new(0));
 
-    // Writer holds lock for 1s
+    // The writer holds the lock for 1 s, and says when it has it.
+    let (held_tx, held_rx) = std::sync::mpsc::channel();
     let lock_w = lock.clone();
     let writer = tokio::task::spawn_blocking(move || {
-        if let Some(mut guard) = sobre::server::bounded_lock::write(&lock_w, "blocking_writer") {
-            *guard = 42;
-            std::thread::sleep(Duration::from_secs(1));
-        }
+        let mut guard = sobre::server::bounded_lock::write(&lock_w, "blocking_writer")
+            .expect("an uncontended write lock is granted");
+        *guard = 42;
+        held_tx.send(()).unwrap();
+        std::thread::sleep(Duration::from_secs(1));
     });
+    held_rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the writer takes the lock");
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
-
-    // Readers that start while writer holds lock
+    // Readers that start while the writer holds the lock.
     let mut readers = Vec::new();
     for i in 0..4 {
         let lock_r = lock.clone();
@@ -80,41 +79,16 @@ async fn writer_blocks_readers_but_they_recover() {
     writer.await.unwrap();
 
     for h in readers {
-        let result = h.await.unwrap();
-        // Readers may have gotten None (timeout) or Some(42) (after writer released)
-        // Either is acceptable — the key is they don't hang or panic
-        if let Some(val) = result {
+        // A reader either times out (None) or sees the writer's value; it never
+        // hangs, panics or reads the value from before the write.
+        if let Some(val) = h.await.unwrap() {
             assert_eq!(val, 42);
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 4. Simulated 2-agent contention on session read-lock
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 5. Channel error delivery (slow-path thread sends error, not silent return)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 6. Post-dispatch spawn doesn't block caller
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 7. Simulated multi-agent scenario (2 agents, interleaved reads + writes)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 8. Zombie thread scenario: cancelled thread vs new reader
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 9. Graceful degradation: enrichment timeout doesn't lose read result
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 10. Adaptive timeout with io_health integration
+// Adaptive timeout with io_health integration
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]

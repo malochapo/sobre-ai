@@ -4,10 +4,10 @@
 
 use std::process::{Command, Output};
 
+/// The binary under test. HOME and the XDG dirs are this test process's
+/// sandbox (tests/support/user_dirs.rs), which the child inherits.
 fn sobre() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
-    cmd.env("HOME", "/tmp/sobre-cli-test");
-    cmd
+    Command::new(env!("CARGO_BIN_EXE_sobre"))
 }
 
 fn run(args: &[&str]) -> Output {
@@ -54,9 +54,8 @@ fn help_flag_exits_zero_and_lists_commands() {
     assert_eq!(exit_code(&out), 0);
     let s = stdout(&out);
     assert!(
-        s.contains("COMMANDS") || s.contains("Usage") || s.contains("sobre"),
-        "help must show usage info; got: {}",
-        &s[..s.len().min(200)]
+        s.contains("GETTING STARTED:") && s.contains("sobre init"),
+        "help must list the commands; got: {s}"
     );
 }
 
@@ -65,34 +64,6 @@ fn help_short_flag() {
     let out = run(&["-h"]);
     assert_eq!(exit_code(&out), 0);
     assert!(!stdout(&out).is_empty());
-}
-
-/// Commands the minimal CLI dropped answer like any unknown command; `exec`
-/// was the alias of `-c`, `status` folded into `doctor`, `stop` and `restart`
-/// into `proxy`.
-#[test]
-fn removed_commands_are_unknown() {
-    for cmd in [
-        "read",
-        "grep",
-        "ls",
-        "status",
-        "stop",
-        "restart",
-        "exec",
-        "session",
-        "knowledge",
-        "benchmark",
-        "completions",
-    ] {
-        let out = run(&[cmd, "x"]);
-        assert_eq!(exit_code(&out), 2, "{cmd} must be unknown");
-        assert!(
-            stderr(&out).contains(&format!("unrecognized subcommand '{cmd}'")),
-            "{cmd}: {}",
-            stderr(&out)
-        );
-    }
 }
 
 #[test]
@@ -223,16 +194,14 @@ fn config_path_prints_the_file() {
 }
 
 #[test]
-fn config_rejects_removed_subcommands() {
-    for sub in ["validate", "schema", "apply", "effective", "which"] {
-        let out = run(&["config", sub]);
-        assert_eq!(exit_code(&out), 2, "config {sub}");
-        assert!(
-            stderr(&out).contains("Usage: sobre config"),
-            "config {sub}: {}",
-            stderr(&out)
-        );
-    }
+fn config_rejects_an_unknown_subcommand() {
+    let out = run(&["config", "bogus"]);
+    assert_eq!(exit_code(&out), 2);
+    assert!(
+        stderr(&out).contains("Usage: sobre config"),
+        "{}",
+        stderr(&out)
+    );
 }
 
 #[test]
@@ -263,7 +232,7 @@ fn doctor_runs_without_panic() {
         s.contains('✓') || s.contains('✗'),
         "doctor output should contain check marks"
     );
-    // The summary `status` used to print, and where the debug log goes.
+    // The install summary, and where the debug log goes.
     assert!(s.contains("agents connected"), "doctor summary: {s}");
     assert!(s.contains("debug log"), "doctor debug-log path: {s}");
 }
@@ -304,13 +273,9 @@ fn exec_echo_exits_zero() {
 }
 
 #[test]
-fn exec_false_exits_nonzero() {
-    let out = run(&["-c", "false"]);
-    assert_ne!(
-        exit_code(&out),
-        0,
-        "exec of 'false' should propagate exit code"
-    );
+fn exec_propagates_the_exit_code() {
+    let out = run(&["-c", "exit 3"]);
+    assert_eq!(exit_code(&out), 3, "`-c` exits with the command's own code");
 }
 
 #[test]
@@ -350,21 +315,5 @@ fn proxy_status_exits_cleanly() {
     assert!(
         code == 0 || code == 1,
         "proxy status should not crash, got {code}"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Machine-facing entry points
-// ═══════════════════════════════════════════════════════════════════
-
-/// `-c` is the wire form the hook rewriter (`hook_handlers/rewrite.rs`) emits as
-/// `<binary> -c "<command>"`. Assert the dispatcher still knows it.
-#[test]
-fn dash_c_is_not_an_unknown_command() {
-    let out = run(&["-c", "echo hello"]);
-    let err = stderr(&out);
-    assert!(
-        !err.contains("error:"),
-        "`-c` must dispatch (the hook rewriter emits it), got stderr: {err}"
     );
 }

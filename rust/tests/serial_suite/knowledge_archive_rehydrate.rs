@@ -1,3 +1,5 @@
+//! A recall that finds nothing in the active facts brings archived ones back.
+
 use sobre::core::knowledge::ProjectKnowledge;
 use sobre::core::memory_policy::MemoryPolicy;
 

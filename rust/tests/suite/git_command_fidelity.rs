@@ -1,10 +1,4 @@
-//! Scenario tests for a PowerShell bug:
-//!
-//! sobre was rewriting `git commit` to `git cmt` via the terse abbreviation
-//! dictionary, and PowerShell quoting was wrapping full command strings in
-//! single quotes when passed as a single argument.
-//!
-//! These tests verify:
+//! Git commands and their output stay what they are:
 //! 1. Git subcommand words are NEVER abbreviated in compression output
 //! 2. Git write-commands (commit/push/pull/merge/rebase) are verbatim (no compression)
 //! 3. PowerShell `join_command` does not wrap full command strings with & '...'
@@ -150,7 +144,7 @@ fn scenario_git_cherry_pick_is_verbatim() {
 #[test]
 fn scenario_git_tag_is_verbatim() {
     assert!(
-        is_verbatim_output("git tag -a v3.6.10 -m \"release\""),
+        is_verbatim_output("git tag -a v1.2.0 -m \"release\""),
         "git tag must be classified as verbatim"
     );
 }

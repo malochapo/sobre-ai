@@ -50,7 +50,6 @@ proptest! {
     }
 }
 
-#[cfg(test)]
 mod fuzz_no_panic {
     use super::*;
 

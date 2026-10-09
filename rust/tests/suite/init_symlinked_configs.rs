@@ -1,15 +1,6 @@
-//! End-to-end regression:
-//! "installer fails on symlinked claude and codex folders".
-//!
-//! Dotfiles users symlink their agent config (`~/.claude.json`,
-//! `~/.codex/config.toml`, …) into a managed repo. The `[Critical] symlink
-//! hijack protection` added to `config_io::write_atomic` then hard-blocked
-//! every write *through* such a symlink, so `sobre init`/`setup` could no
-//! longer register the MCP server or write agent config.
-//!
-//! sobre now writes THROUGH a user-managed symlink to its real target
-//! (as long as the target stays within `$HOME`), preserving the symlink. These
-//! tests pin that behaviour with real symlinks against an isolated `$HOME`.
+//! `init` writes through a symlinked agent config to its target and keeps the
+//! symlink: dotfiles users link `~/.claude.json`, `~/.codex/config.toml`, …
+//! into a repository they manage. Real symlinks, isolated `$HOME`.
 //!
 //! Unix-only: `$HOME`-override + POSIX symlinks. On Windows `dirs::home_dir()`
 //! ignores the env var and junction semantics differ.
@@ -40,8 +31,7 @@ fn sandbox() -> Sandbox {
     let home = tmp.path().join("home");
     let data = tmp.path().join("data");
     let bin_dir = tmp.path().join("bin");
-    // The user's managed dotfiles repo — kept *inside* $HOME so the home-only
-    // symlink-follow guard permits writing through to it.
+    // The user's managed dotfiles repository.
     let dotfiles = home.join("dotfiles");
     for d in [&home, &data, &bin_dir, &dotfiles] {
         std::fs::create_dir_all(d).unwrap();

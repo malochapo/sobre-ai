@@ -1,3 +1,6 @@
+//! `sobre_knowledge recall`: bounded output, the same answer twice, and the
+//! value a fact had at a past time (`as_of`).
+
 use sobre::core::knowledge::ProjectKnowledge;
 use sobre::core::memory_policy::MemoryPolicy;
 

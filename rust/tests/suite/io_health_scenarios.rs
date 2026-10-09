@@ -131,11 +131,7 @@ fn freeze_counter_escalates_to_degraded() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 4: WSL2 detection (safe to run on non-WSL)
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Scenario 5: slow_mount detection
+// Scenario 4: slow_mount detection
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -163,7 +159,7 @@ fn mnt_paths_slow_only_on_wsl() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 6: canonicalize_bounded doesn't hang on non-existent paths
+// Scenario 5: canonicalize_bounded doesn't hang on non-existent paths
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -197,7 +193,7 @@ fn canonicalize_bounded_resolves_existing_path() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 7: Multiple concurrent lock attempts don't deadlock
+// Scenario 6: Multiple concurrent lock attempts don't deadlock
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
@@ -267,7 +263,7 @@ async fn mixed_read_write_with_timeout_doesnt_deadlock() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 8: Proxy port tests
+// Scenario 7: the default proxy port
 // ---------------------------------------------------------------------------
 
 #[test]

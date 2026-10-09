@@ -6,9 +6,8 @@ use std::sync::atomic::Ordering;
 fn init_test_data_dir() {
     static DIR: OnceLock<tempfile::TempDir> = OnceLock::new();
     let dir = DIR.get_or_init(|| tempfile::tempdir().expect("tempdir"));
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
+    // SAFETY: tests/serial.rs runs this binary on one thread, so no other
+    // test touches the environment concurrently.
     unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
 }
 

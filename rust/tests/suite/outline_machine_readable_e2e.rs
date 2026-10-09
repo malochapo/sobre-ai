@@ -94,16 +94,15 @@ impl McpSandbox {
             .env("SOBRE_STATE_DIR", &self.state)
             .env("SOBRE_CACHE_DIR", &self.cache)
             // Resolve the project root synchronously from the host env, as
-            // Claude Code sets it (no async
-            // client-roots / cwd race) so the auto-context overview is live on
-            // the very FIRST tool call. This makes the briefing-survival check
-            // discriminating: the root is ready when the json call runs, so the
-            // unfixed dispatch would burn the once-per-session flag right there.
+            // Claude Code sets it (no async client-roots / cwd race), so the
+            // project is known on the very first tool call: anything that
+            // prefixed a session's first answer would show up there.
             .env("CLAUDE_PROJECT_DIR", &self.project);
         cmd
     }
 
-    /// Synchronously build the project graph + BM25 so the overview warms fast.
+    /// Build the project graph and BM25 index up front, so the session starts
+    /// with a project that is fully indexed.
     fn build_index(&self) {
         let out = self
             .base_command()
@@ -208,9 +207,6 @@ impl McpSession {
         text_content(&resp).unwrap_or_default()
     }
 
-    /// Poll `sobre_compose` without a task (the session-start overview) until the
-    /// project graph is ready. That call counts as the session briefing, so a
-    /// session warmed this way gets no further auto-context.
     fn shutdown(mut self) {
         self.stdin.take();
         let _ = self.child.wait();
