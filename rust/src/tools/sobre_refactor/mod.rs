@@ -432,7 +432,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
     hypothetical.push_str(&edit.text);
     hypothetical.push_str(&content[end_off..]);
     // A syntax error the edit introduces is reported; the edit is written
-    // either way (decision 3).
+    // either way.
     let syntax_notice = crate::core::syntax_validate::syntax_notice(ext, &content, &hypothetical);
 
     if args.get("dry_run").and_then(Value::as_bool) == Some(true) {

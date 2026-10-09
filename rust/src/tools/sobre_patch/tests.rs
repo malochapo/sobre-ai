@@ -394,7 +394,7 @@ fn missing_file_reports_error() {
 #[test]
 fn an_edit_that_breaks_a_clean_file_is_written_and_reported() {
     // Deleting the closing brace turns valid Rust into a parse error: the
-    // edit is written (decision 3) and the result says what broke.
+    // edit is written and the result says what broke.
     let f = make_temp_rs("fn main() {\n    let x = 1;\n}\n");
     let (text, effect) = run_io(
         &params(

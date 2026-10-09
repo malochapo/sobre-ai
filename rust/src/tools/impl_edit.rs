@@ -773,7 +773,7 @@ mod tests {
         }
     }
 
-    /// J6: a long file escalates to its first and last lines only, so it is
+    /// A long file escalates to its first and last lines only, so it is
     /// not recorded as delivered whole.
     #[test]
     fn a_partial_escalation_stores_nothing() {

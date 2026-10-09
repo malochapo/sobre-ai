@@ -196,7 +196,7 @@ pub fn workspace_roots_from_env() -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// L11: a non-ASCII directory name survives the URI decode.
+    /// A non-ASCII directory name survives the URI decode.
     #[test]
     fn percent_decode_reads_utf8() {
         assert_eq!(

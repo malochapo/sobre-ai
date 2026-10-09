@@ -22,7 +22,7 @@ impl McpTool for SobreCheckpointTool {
     }
 
     /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
-    /// or `Unknown action` (B29).
+    /// or `Unknown action`.
     fn text_reports_failures(&self) -> bool {
         true
     }
@@ -150,7 +150,7 @@ fn budget(content: &str, max_tokens: usize) -> String {
     let keep = ((content.chars().count() as f64 * ratio) as usize).max(1);
     let truncated: String = content.chars().take(keep).collect();
     // The whole diff is saved like a compressed shell output, so the cut
-    // part stays reachable (B26).
+    // part stays reachable.
     let rest = crate::shell::save_tee("sobre_checkpoint diff", content)
         .and_then(|p| {
             let id = std::path::Path::new(&p).file_name()?.to_str()?.to_string();

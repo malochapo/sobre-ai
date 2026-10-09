@@ -415,7 +415,7 @@ mod tests {
         assert!(parse_value("maybe", &schema).is_err());
     }
 
-    /// C3: `proxy.port` is a `u16?` and parses as a number, bounded by the
+    /// `proxy.port` is a `u16?` and parses as a number, bounded by the
     /// type; `compression_level` outside 0–1 is refused, not clamped.
     #[test]
     fn optional_port_parses_and_ranges_are_enforced() {
@@ -502,7 +502,7 @@ mod tests {
         std::fs::read_to_string(Config::path().unwrap()).unwrap_or_default()
     }
 
-    /// H6: setting a key to its default, or to `default`, removes it; the
+    /// Setting a key to its default, or to `default`, removes it; the
     /// file's comments stay.
     #[test]
     fn the_default_value_removes_the_key_and_comments_stay() {
@@ -530,7 +530,7 @@ mod tests {
         );
     }
 
-    /// H6: a value the loader would drop is refused here.
+    /// A value the loader would drop is refused here.
     #[test]
     fn values_the_loader_would_drop_are_refused() {
         let _iso = crate::core::data_dir::isolated_data_dir();

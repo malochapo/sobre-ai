@@ -23,7 +23,7 @@ fn hook_binary_refs_extracts_token_before_hook_keyword() {
     assert_eq!(refs, vec!["/opt/sobre", "/opt/sobre"]);
 }
 
-/// J12: a binary path with a space, quoted in the command, reads whole.
+/// A binary path with a space, quoted in the command, reads whole.
 #[test]
 fn hook_binary_refs_reads_a_quoted_path_whole() {
     let content = r#"{"command": "'/Users/Jane Doe/.local/bin/sobre' hook observe"}

@@ -192,7 +192,7 @@ fn a_file_over_the_read_limit_is_read_in_windows() {
     assert!(all.contains("lines:1-200"), "{all}");
 }
 
-/// G6: an instruction file is read whole only when the agent asked for
+/// An instruction file is read whole only when the agent asked for
 /// nothing in particular; a line window it asked for is honoured.
 #[test]
 fn instruction_file_honours_a_line_window() {

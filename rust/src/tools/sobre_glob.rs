@@ -133,7 +133,7 @@ pub fn handle(
 mod tests {
     use super::*;
 
-    /// G12: a glob that stops at `max_results` says so.
+    /// A glob that stops at `max_results` says so.
     #[test]
     fn stopping_at_max_results_is_said() {
         let dir = tempfile::tempdir().unwrap();
@@ -148,7 +148,7 @@ mod tests {
         assert!(!all.contains("stopped at max_results"), "{all}");
     }
 
-    /// K14: `*` stays within one directory; a glob without `/` names a file
+    /// `*` stays within one directory; a glob without `/` names a file
     /// at any depth.
     #[test]
     fn star_does_not_cross_a_directory() {

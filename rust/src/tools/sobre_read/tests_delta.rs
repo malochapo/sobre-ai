@@ -443,7 +443,7 @@ fn delta_explicit_changed_lines_request_diverts_to_diff() {
     assert!(decision.note.is_some());
 }
 
-/// K1: a diff is read against the full content this conversation holds.
+/// A diff is read against the full content this conversation holds.
 /// After `full` then `map`, the agent's latest view is the map; a diff
 /// against the full source would be computed on content it may not have
 /// in view, so none is served. With `full` alone, the diff is exact.
@@ -610,7 +610,7 @@ fn delta_explicit_decision_is_byte_stable() {
     );
 }
 
-/// K1: `signatures`, an edit, then an explicit `full`: the agent never had
+/// `signatures`, an edit, then an explicit `full`: the agent never had
 /// the full content, so it gets the file, not a diff against it.
 #[test]
 fn a_full_read_after_a_partial_view_is_the_file_not_a_diff() {
@@ -640,7 +640,7 @@ fn a_full_read_after_a_partial_view_is_the_file_not_a_diff() {
     );
 }
 
-/// K3: a file that starts with a UTF-8 BOM is not "changed" on every
+/// A file that starts with a UTF-8 BOM is not "changed" on every
 /// re-read: the cache checks it against the same BOM-less view it stored.
 #[test]
 fn a_bom_file_reread_is_unchanged() {

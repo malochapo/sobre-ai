@@ -172,7 +172,7 @@ fn consolidation_does_not_capacity_compact_at_twenty_five_percent_free() {
     assert_eq!(reloaded.history.len(), 75);
 }
 
-/// L8: `consolidate` imports the session it is given (the live one, unsaved
+/// `consolidate` imports the session it is given (the live one, unsaved
 /// findings included), and a second run confirms nothing twice.
 #[test]
 fn consolidating_the_live_session_twice_confirms_each_fact_once() {
@@ -245,7 +245,7 @@ fn search_reads_only_the_requested_project() {
     assert!(!out.contains("other"), "another project leaked in: {out}");
 }
 
-/// L9: a superseded fact is not a search result.
+/// A superseded fact is not a search result.
 #[test]
 fn search_leaves_superseded_facts_out() {
     let _env_lock = crate::core::data_dir::test_env_lock();

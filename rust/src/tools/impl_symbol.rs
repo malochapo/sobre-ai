@@ -407,7 +407,7 @@ mod tests {
         assert_eq!(first_highest_score(&[]), None);
     }
 
-    /// An absolute `file` and an `_` in the name match literally (B15).
+    /// An absolute `file` and an `_` in the name match literally.
     #[test]
     fn absolute_file_and_underscore_match_literally() {
         let _iso = crate::core::data_dir::isolated_data_dir();

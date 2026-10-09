@@ -158,7 +158,7 @@ fn rust_symbol_in_module() {
     );
 }
 
-/// L1: `use my_crate::…` from a binary or a test of the same project
+/// `use my_crate::…` from a binary or a test of the same project
 /// resolves inside that crate.
 #[test]
 fn rust_own_crate_name_resolves_inside_the_crate() {

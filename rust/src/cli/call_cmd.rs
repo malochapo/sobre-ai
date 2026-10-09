@@ -103,7 +103,7 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
     let tool = tool.ok_or_else(|| CallError::Usage("missing <tool>".into()))?;
     // Without the flag, the project around the current directory, as for the
     // other commands; a relative root (`.`) is made absolute first, so the
-    // broad-root check sees the real directory (C8).
+    // broad-root check sees the real directory.
     let project_root = match project_root {
         Some(p) => {
             let path = Path::new(&p);
@@ -140,7 +140,7 @@ fn oneshot_ctx(
     path_errors: HashMap<String, String>,
 ) -> ToolContext {
     // An empty session and a fresh file cache, as a starting MCP server has
-    // (decision 4): the tools that track reads or memory (`sobre_read`,
+    //: the tools that track reads or memory (`sobre_read`,
     // `sobre_shell`, `sobre_session`, `sobre_knowledge`) refuse to run without
     // them. The session is stamped with the canonical root so a later load
     // matches it.
@@ -326,7 +326,7 @@ mod tests {
         assert!(matches!(err, CallError::UnsafeRoot(_)), "got {err:?}");
     }
 
-    /// C8: no `--project-root` means the project around the current
+    /// No `--project-root` means the project around the current
     /// directory, and `.` is the current directory made absolute.
     #[test]
     fn project_root_defaults_to_cwd_and_dot_is_absolute() {

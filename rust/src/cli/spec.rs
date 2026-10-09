@@ -1,4 +1,4 @@
-//! The command line, declared once (decision 8). This table drives:
+//! The command line, declared once. This table drives:
 //!
 //! - flag checking: every command calls [`check_or_exit`], so an unknown
 //!   flag, a missing value or an unexpected argument exits 2 before anything

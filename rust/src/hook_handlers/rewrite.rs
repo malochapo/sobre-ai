@@ -164,7 +164,7 @@ mod tests {
         );
     }
 
-    /// J12: the wrapper names a binary whose path holds a space as one word
+    /// The wrapper names a binary whose path holds a space as one word
     /// (on Windows, where cmd and PowerShell quote differently, the command
     /// runs as written).
     #[test]

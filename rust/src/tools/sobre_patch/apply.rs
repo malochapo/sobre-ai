@@ -353,7 +353,7 @@ mod tests {
         }
     }
 
-    /// J5: an edit keeps every other line's ending; new lines take their
+    /// An edit keeps every other line's ending; new lines take their
     /// neighbour's, and the file's last-line ending stays as it was.
     #[test]
     fn mixed_line_endings_survive_an_edit() {
@@ -610,7 +610,7 @@ mod tests {
         assert_eq!(apply_lf(lines, edits), vec!["A", "3", "4", "E"]);
     }
 
-    /// J2 (decision 1): an anchor whose line moved is a conflict, for every
+    /// An anchor whose line moved is a conflict, for every
     /// op, even when the anchored text sits unchanged one line below.
     #[test]
     fn a_shifted_anchor_is_a_conflict_never_a_move() {
@@ -656,7 +656,7 @@ mod tests {
         }
     }
 
-    /// J1: `insert_after` line L and an edit of line L+1 give the same file
+    /// `insert_after` line L and an edit of line L+1 give the same file
     /// whatever their order in `ops`.
     #[test]
     fn insert_after_and_an_edit_below_commute() {

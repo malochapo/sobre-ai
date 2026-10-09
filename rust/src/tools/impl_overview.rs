@@ -143,7 +143,7 @@ pub(crate) fn handle(
         } else {
             format!("  scanned {scan_age}")
         };
-        // F6: the header counts file-level (import/type_ref) edges; the
+        // The header counts file-level (import/type_ref) edges; the
         // function-level call graph is a separate artifact. When one has been
         // built (the sobre_graph call actions persist it lazily), surface it too —
         // otherwise a single-file project reads "0 edges" while it has call edges.
@@ -585,7 +585,7 @@ mod tests {
         assert!(s.is_char_boundary(start));
     }
 
-    /// F6: when a persisted call graph exists, the overview header must
+    /// When a persisted call graph exists, the overview header must
     /// surface its edge count — a single-file project has 0 file-level edges
     /// but may well have call edges, and the two surfaces must not contradict.
     #[test]

@@ -324,7 +324,7 @@ fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
 
 /// Build the final `CallToolResult`, surfacing failures in MCP metadata: any
 /// non-zero exit, and any failure of the tool itself, sets `isError: true`
-/// (decision 5, as the hosts' own shell tools do); a command's exit code also
+/// (as the hosts' own shell tools do); a command's exit code also
 /// goes in `structuredContent` (`{"exitCode": N}`), so clients need not parse
 /// the `[exit:N]` footer. The text, the command's output included, is the
 /// same either way.
@@ -375,7 +375,7 @@ mod shell_outcome_tests {
         assert_eq!(text_of(&r), "ok");
     }
 
-    /// J8 (decision 5): any non-zero exit is an error, and the command's
+    /// Any non-zero exit is an error, and the command's
     /// output stays in the result.
     #[test]
     fn every_nonzero_exit_is_an_error_and_keeps_its_text() {

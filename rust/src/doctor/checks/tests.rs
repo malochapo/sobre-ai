@@ -216,7 +216,7 @@ fn local_model_upstream_passes_and_only_the_proxy_itself_fails() {
     );
 }
 
-/// H6: an upstream the proxy cannot use fails the check: the proxy would
+/// An upstream the proxy cannot use fails the check: the proxy would
 /// send those requests to the provider's default instead.
 #[test]
 fn an_invalid_upstream_fails() {
