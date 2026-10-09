@@ -193,14 +193,7 @@ impl SobreReadTool {
                 .map_or(usize::MAX, |l| start.saturating_add(l.max(1)) - 1);
             let content = crate::tools::sobre_read::raw_line_window(path, start, end)
                 .map_err(|e| ErrorData::invalid_params(format!("{path}: {e}"), None))?;
-            let tokens = crate::core::tokens::count_tokens(&content);
-            return Ok(ToolOutput {
-                text: content,
-                original_tokens: tokens,
-                saved_tokens: 0,
-                shell_outcome: None,
-                content_blocks: None,
-            });
+            return Ok(ToolOutput::simple(content));
         }
 
         // `start_line` (and its `offset`/`limit` aliases) can pin a line window.
@@ -317,14 +310,7 @@ impl SobreReadTool {
         if mode == "raw" {
             let content = crate::tools::sobre_read::read_file_lossy(path)
                 .map_err(|e| ErrorData::invalid_params(format!("{path}: {e}"), None))?;
-            let tokens = crate::core::tokens::count_tokens(&content);
-            return Ok(ToolOutput {
-                text: content,
-                original_tokens: tokens,
-                saved_tokens: 0,
-                shell_outcome: None,
-                content_blocks: None,
-            });
+            return Ok(ToolOutput::simple(content));
         }
 
         let (output, resolved_mode, original, file_ref) = read_through_cache(
@@ -463,7 +449,6 @@ impl SobreReadTool {
 
         Ok(ToolOutput {
             text: final_output,
-            original_tokens: replaced_tokens,
             saved_tokens: saved,
             shell_outcome: None,
             content_blocks: None,

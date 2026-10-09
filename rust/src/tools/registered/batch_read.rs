@@ -152,7 +152,6 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
     Ok(ToolOutput {
         text: output,
-        original_tokens: total_original,
         saved_tokens: total_original.saturating_sub(tokens),
         shell_outcome: None,
         content_blocks: None,

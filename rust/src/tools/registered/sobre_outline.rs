@@ -64,7 +64,6 @@ impl McpTool for SobreOutlineTool {
 
         Ok(ToolOutput {
             text: result,
-            original_tokens: original,
             saved_tokens: saved,
             shell_outcome: None,
             content_blocks: None,

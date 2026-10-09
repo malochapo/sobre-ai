@@ -98,13 +98,7 @@ impl McpTool for SobreRefactorTool {
         let result =
             crate::tools::sobre_refactor::handle(&args_value, &ctx.project_root, &abs_path);
 
-        Ok(ToolOutput {
-            text: result,
-            original_tokens: 0,
-            saved_tokens: 0,
-            shell_outcome: None,
-            content_blocks: None,
-        })
+        Ok(ToolOutput::simple(result))
     }
 }
 

@@ -257,9 +257,8 @@ impl McpTool for SobreShellTool {
 
             let output = redact_shell_output_secrets(&raw_output);
 
-            let (result_out, original, saved, tee_hint) = if raw {
-                let tokens = crate::core::tokens::count_tokens(&output);
-                (output, tokens, 0, String::new())
+            let (result_out, saved, tee_hint) = if raw {
+                (output, 0, String::new())
             } else {
                 let result =
                     crate::tools::sobre_shell::handle(&cmd_clone, &output, exit_code, crp_mode);
@@ -291,7 +290,7 @@ impl McpTool for SobreShellTool {
                     String::new()
                 };
 
-                (result, original, saved, tee_hint)
+                (result, saved, tee_hint)
             };
 
             let shell_mismatch = if cfg!(windows) && !raw {
@@ -314,7 +313,6 @@ impl McpTool for SobreShellTool {
 
             Ok(ToolOutput {
                 text: final_out,
-                original_tokens: original,
                 saved_tokens: saved,
                 shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                 content_blocks: None,

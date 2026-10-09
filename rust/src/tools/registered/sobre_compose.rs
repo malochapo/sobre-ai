@@ -7,55 +7,14 @@ use crate::tool_defs::tool_def;
 
 pub struct SobreComposeTool;
 
-impl SobreComposeTool {
-    /// `sobre_compose` with no `task`: the session-start orientation pass.
-    ///
-    /// Structure, project markers, the last task, recent decisions and the
-    /// facts carried over from previous sessions. Distinct from the ranked
-    /// retrieval `compose` performs once a task is known — at session start
-    /// there is no task yet, which is exactly when this is needed.
-    fn overview(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
-        let resolved_path = if get_str(args, "path").is_some() {
-            if let Some(p) = ctx.resolved_path("path") {
-                Some(p.to_string())
-            } else if let Some(err) = ctx.path_error("path") {
-                return Err(ErrorData::invalid_params(format!("path: {err}"), None));
-            } else {
-                None
-            }
-        } else if let Some(ref session) = ctx.session {
-            let guard =
-                crate::server::bounded_lock::read(session, "sobre_compose:overview:session");
-            guard.as_ref().and_then(|g| g.project_root.clone())
-        } else {
-            None
-        };
-
-        let cache = ctx
-            .cache
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
-        let Some(guard) = crate::server::bounded_lock::read(cache, "sobre_compose:overview:cache")
-        else {
-            return Ok(ToolOutput::simple(
-                "[overview temporarily unavailable — cache busy]".to_string(),
-            ));
-        };
-
-        let (result, _complete) = crate::tools::impl_overview::handle(
-            &guard,
-            None,
-            resolved_path.as_deref(),
-            ctx.crp_mode,
-        );
-
-        Ok(ToolOutput {
-            text: result,
-            original_tokens: 0,
-            saved_tokens: 0,
-            shell_outcome: None,
-            content_blocks: None,
-        })
+/// The project `path` names, or the session's project root.
+fn project_path(ctx: &ToolContext) -> Result<String, ErrorData> {
+    if let Some(p) = ctx.resolved_path("path") {
+        Ok(p.to_string())
+    } else if let Some(err) = ctx.path_error("path") {
+        Err(ErrorData::invalid_params(format!("path: {err}"), None))
+    } else {
+        Ok(ctx.project_root.clone())
     }
 }
 
@@ -90,19 +49,14 @@ impl McpTool for SobreComposeTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        // No task: the caller is orienting, not asking. Return the project
-        // overview — structure, markers, last task, recent decisions and the
-        // facts carried over from previous sessions. `task` is what turns
-        // compose from "where am I" into "what do I need for this".
+        let path = project_path(ctx)?;
+        // No task: the caller is orienting, not asking. The session-start
+        // overview: structure, hotspots, and what earlier sessions left.
         let Some(task) = get_str(args, "task") else {
-            return Self::overview(args, ctx);
-        };
-        let path = if let Some(p) = ctx.resolved_path("path") {
-            p.to_string()
-        } else if let Some(err) = ctx.path_error("path") {
-            return Err(ErrorData::invalid_params(format!("path: {err}"), None));
-        } else {
-            ctx.project_root.clone()
+            let root = (!path.is_empty()).then_some(path.as_str());
+            return Ok(ToolOutput::simple(crate::tools::impl_overview::handle(
+                root,
+            )));
         };
 
         // Share the resident BM25 cache with the composed semantic search.
@@ -110,7 +64,7 @@ impl McpTool for SobreComposeTool {
             crate::tools::impl_semantic_search::set_thread_cache(cache.clone());
         }
 
-        let (text, sent) = tokio::task::block_in_place(|| {
+        let (text, _) = tokio::task::block_in_place(|| {
             crate::tools::sobre_compose::handle(&task, &path, ctx.crp_mode)
         });
 
@@ -118,12 +72,6 @@ impl McpTool for SobreComposeTool {
             return Err(ErrorData::invalid_params(text, None));
         }
 
-        Ok(ToolOutput {
-            text,
-            original_tokens: sent,
-            saved_tokens: 0,
-            shell_outcome: None,
-            content_blocks: None,
-        })
+        Ok(ToolOutput::simple(text))
     }
 }

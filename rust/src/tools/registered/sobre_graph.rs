@@ -109,9 +109,7 @@ impl McpTool for SobreGraphTool {
             _ => None,
         };
         if let Some(text) = calls {
-            return Ok(ToolOutput {
-                ..ToolOutput::simple(text)
-            });
+            return Ok(ToolOutput::simple(text));
         }
 
         // `diagram` takes a substring filter and `symbol` a `file::symbol` spec
@@ -157,9 +155,7 @@ impl McpTool for SobreGraphTool {
             _ => None,
         };
         if let Some(text) = impact {
-            return Ok(ToolOutput {
-                ..ToolOutput::simple(text)
-            });
+            return Ok(ToolOutput::simple(text));
         }
         let to = if let Some(p) = ctx.resolved_path("to") {
             Some(p.to_string())
@@ -182,9 +178,7 @@ impl McpTool for SobreGraphTool {
             format.as_deref(),
         );
 
-        Ok(ToolOutput {
-            ..ToolOutput::simple(result)
-        })
+        Ok(ToolOutput::simple(result))
     }
 }
 

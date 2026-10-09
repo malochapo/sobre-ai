@@ -247,7 +247,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
     Ok(ToolOutput {
         text: final_out,
-        original_tokens: total_observed,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,
@@ -344,7 +343,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
         let sent = crate::core::tokens::count_tokens(&result);
         return Ok(ToolOutput {
             text: result,
-            original_tokens: original,
             saved_tokens: original.saturating_sub(sent),
             shell_outcome: None,
             content_blocks: None,
@@ -363,7 +361,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
     let sent = crate::core::tokens::count_tokens(&result);
     Ok(ToolOutput {
         text: result,
-        original_tokens: original,
         saved_tokens: original.saturating_sub(sent),
         shell_outcome: None,
         content_blocks: None,
@@ -415,13 +412,7 @@ fn handle_find_related(
 /// is handled inside the core fns, mirroring the former standalone tool). The
 /// chunk snippets they quote have their secrets masked as `sobre_read` does.
 fn semantic_output(text: &str) -> ToolOutput {
-    ToolOutput {
-        text: crate::core::redaction::redact_text(text),
-        original_tokens: 0,
-        saved_tokens: 0,
-        shell_outcome: None,
-        content_blocks: None,
-    }
+    ToolOutput::simple(crate::core::redaction::redact_text(text))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -480,7 +471,6 @@ fn search_single(
 
     Ok(ToolOutput {
         text: final_out,
-        original_tokens: observed,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,
@@ -599,7 +589,6 @@ fn handle_batch_queries(
 
     Ok(ToolOutput {
         text: final_out,
-        original_tokens: total_observed,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,

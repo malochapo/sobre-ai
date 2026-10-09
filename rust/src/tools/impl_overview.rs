@@ -1,245 +1,94 @@
-use crate::core::cache::SessionCache;
 use crate::core::graph_provider::{self, GraphProvider};
-use crate::core::task_relevance::{compute_relevance, parse_task_hints};
-use crate::tools::CrpMode;
 
-/// Multi-resolution context overview.
-///
-/// Provides a compact map of the entire project, organized by task relevance.
-/// Files are shown at different detail levels based on their relevance score:
-/// - Level 0 (full): directly task-relevant files → full content (use sobre_read)
-/// - Level 1 (signatures): graph neighbors → key signatures
-/// - Level 2 (reference): distant files → name + line count only
-///
-/// This implements lazy evaluation for context: start with the overview,
-/// then zoom into specific files as needed.
-/// Returns the rendered overview plus whether it is the complete graph-backed
-/// view. `false` means the partial, still-indexing fallback — callers
-/// must take it from here rather than pattern-matching the body text.
-pub(crate) fn handle(
-    _cache: &SessionCache,
-    task: Option<&str>,
-    path: Option<&str>,
-    _crp_mode: CrpMode,
-) -> (String, bool) {
+/// The session-start project overview: structure by directory, graph
+/// hotspots, and what earlier sessions left (facts, last task, recent
+/// decisions). While the graph is still being indexed, a partial overview
+/// built from what is on disk now.
+pub(crate) fn handle(path: Option<&str>) -> String {
     let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
         crate::core::index_orchestrator::ensure_all_background(&project_root);
-        return (partial_overview(&project_root), false);
+        return partial_overview(&project_root);
     };
     let gp = &open;
 
-    let (task_files, task_keywords) = if let Some(task_desc) = task {
-        parse_task_hints(task_desc)
-    } else {
-        (vec![], vec![])
-    };
-
-    let has_task = !task_files.is_empty() || !task_keywords.is_empty();
-
     let mut output = Vec::new();
-
-    if has_task {
-        let mut relevance = compute_relevance(gp, &task_files, &task_keywords);
-        crate::core::git_signals::apply_boost(&mut relevance, &project_root);
-        crate::core::diagnostics_store::apply_boost(&mut relevance);
-
-        output.push(format!(
-            "PROJECT OVERVIEW  {} files  task-filtered",
-            gp.file_count()
-        ));
-        output.push(String::new());
-
-        let high: Vec<&_> = relevance.iter().filter(|r| r.score >= 0.8).collect();
-        let medium: Vec<&_> = relevance
-            .iter()
-            .filter(|r| r.score >= 0.3 && r.score < 0.8)
-            .collect();
-        let low: Vec<&_> = relevance.iter().filter(|r| r.score < 0.3).collect();
-
-        if !high.is_empty() {
-            output.push("▸ DIRECTLY RELEVANT (use sobre_read):".to_string());
-            for r in &high {
-                output.push(format!(
-                    "  {} {}L  score={:.2}  mode={}",
-                    short_path(&r.path),
-                    file_line_count(&r.path),
-                    r.score,
-                    r.recommended_mode
-                ));
+    let last_scan = gp.last_scan();
+    let scan_age = chrono::NaiveDateTime::parse_from_str(&last_scan, "%Y-%m-%d %H:%M:%S")
+        .ok()
+        .map(|t| {
+            let elapsed = chrono::Local::now().naive_local().signed_duration_since(t);
+            if elapsed.num_hours() < 1 {
+                format!("{}m ago", elapsed.num_minutes())
+            } else if elapsed.num_hours() < 24 {
+                format!("{}h ago", elapsed.num_hours())
+            } else {
+                format!("{}d ago", elapsed.num_days())
             }
-            output.push(String::new());
-        }
-
-        if !medium.is_empty() {
-            let knowledge = crate::core::knowledge::ProjectKnowledge::load(&project_root);
-            output.push("▸ CONTEXT (use sobre_read signatures/map):".to_string());
-            for r in medium.iter().take(20) {
-                let line_count = file_line_count(&r.path);
-                let doc = extract_module_doc(&r.path)
-                    .or_else(|| knowledge_doc_for_file(knowledge.as_ref(), &r.path))
-                    .map(|d| format!(" — {d}"))
-                    .unwrap_or_default();
-                output.push(format!(
-                    "  {} {line_count}L  mode={}{doc}",
-                    short_path(&r.path),
-                    r.recommended_mode
-                ));
-            }
-            if medium.len() > 20 {
-                output.push(format!("  ... +{} more", medium.len() - 20));
-            }
-            output.push(String::new());
-        }
-
-        if !low.is_empty() {
-            output.push(format!(
-                "▸ DISTANT ({} files, not loaded unless needed)",
-                low.len()
-            ));
-            for r in low.iter().take(10) {
-                output.push(format!("  {}", short_path(&r.path)));
-            }
-            if low.len() > 10 {
-                output.push(format!("  ... +{} more", low.len() - 10));
-            }
-        }
-
-        // Dynamic task-specific briefing last (prefix-cache-friendly)
-        if let Some(task_desc) = task {
-            let file_context: Vec<(String, usize)> = relevance
-                .iter()
-                .filter(|r| r.score >= 0.3)
-                .take(8)
-                .filter_map(|r| {
-                    std::fs::read_to_string(&r.path)
-                        .ok()
-                        .map(|c| (r.path.clone(), c.lines().count()))
-                })
-                .collect();
-            let briefing = crate::core::task_briefing::build_briefing(task_desc, &file_context);
-            output.push(String::new());
-            output.push(crate::core::task_briefing::format_briefing(&briefing));
-        }
+        })
+        .unwrap_or_default();
+    let scan_info = if scan_age.is_empty() {
+        String::new()
     } else {
-        // No task context: show project structure overview
-        let last_scan = gp.last_scan();
-        let scan_age = chrono::NaiveDateTime::parse_from_str(&last_scan, "%Y-%m-%d %H:%M:%S")
-            .ok()
-            .map(|t| {
-                let elapsed = chrono::Local::now().naive_local().signed_duration_since(t);
-                if elapsed.num_hours() < 1 {
-                    format!("{}m ago", elapsed.num_minutes())
-                } else if elapsed.num_hours() < 24 {
-                    format!("{}h ago", elapsed.num_hours())
-                } else {
-                    format!("{}d ago", elapsed.num_days())
-                }
-            })
-            .unwrap_or_default();
-        let scan_info = if scan_age.is_empty() {
-            String::new()
+        format!("  scanned {scan_age}")
+    };
+    // The header counts file-level (import/type_ref) edges; the
+    // function-level call graph is a separate artifact. When one has been
+    // built (the sobre_graph call actions persist it lazily), surface it too —
+    // otherwise a single-file project reads "0 edges" while it has call edges.
+    let call_edges =
+        crate::core::call_graph::CallGraph::load(&project_root).map_or(0, |g| g.edges.len());
+    let call_info = if call_edges > 0 {
+        format!("  {call_edges} call edges")
+    } else {
+        String::new()
+    };
+    output.push(format!(
+        "PROJECT OVERVIEW  {} files  {} edges{call_info}{scan_info}",
+        gp.file_count(),
+        gp.edge_count().unwrap_or(0)
+    ));
+    output.push(String::new());
+
+    let mut by_dir: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+
+    for path in gp.file_paths() {
+        let dir = std::path::Path::new(&path)
+            .parent()
+            .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());
+        by_dir.entry(dir).or_default().push(short_path(&path));
+    }
+
+    for (dir, files) in &by_dir {
+        let dir_display = if dir.len() > 50 {
+            let start = truncate_start_char_boundary(dir, 47);
+            format!("...{}", &dir[start..])
         } else {
-            format!("  scanned {scan_age}")
+            dir.clone()
         };
-        // The header counts file-level (import/type_ref) edges; the
-        // function-level call graph is a separate artifact. When one has been
-        // built (the sobre_graph call actions persist it lazily), surface it too —
-        // otherwise a single-file project reads "0 edges" while it has call edges.
-        let call_edges =
-            crate::core::call_graph::CallGraph::load(&project_root).map_or(0, |g| g.edges.len());
-        let call_info = if call_edges > 0 {
-            format!("  {call_edges} call edges")
+
+        if files.len() <= 5 {
+            output.push(format!("{dir_display}/  {}", files.join(" ")));
         } else {
-            String::new()
-        };
-        output.push(format!(
-            "PROJECT OVERVIEW  {} files  {} edges{call_info}{scan_info}",
-            gp.file_count(),
-            gp.edge_count().unwrap_or(0)
-        ));
-        output.push(String::new());
-
-        let mut by_dir: std::collections::BTreeMap<String, Vec<String>> =
-            std::collections::BTreeMap::new();
-
-        for path in gp.file_paths() {
-            let dir = std::path::Path::new(&path)
-                .parent()
-                .map_or_else(|| ".".to_string(), |p| p.to_string_lossy().to_string());
-            by_dir.entry(dir).or_default().push(short_path(&path));
-        }
-
-        for (dir, files) in &by_dir {
-            let dir_display = if dir.len() > 50 {
-                let start = truncate_start_char_boundary(dir, 47);
-                format!("...{}", &dir[start..])
-            } else {
-                dir.clone()
-            };
-
-            if files.len() <= 5 {
-                output.push(format!("{dir_display}/  {}", files.join(" ")));
-            } else {
-                output.push(format!(
-                    "{dir_display}/  {} +{} more",
-                    files[..3].join(" "),
-                    files.len() - 3
-                ));
-            }
+            output.push(format!(
+                "{dir_display}/  {} +{} more",
+                files[..3].join(" "),
+                files.len() - 3
+            ));
         }
     }
 
-    if let Some(task_desc) = task {
-        append_knowledge_task_section(&mut output, &project_root, task_desc);
-    }
     append_graph_hotspots_section(&mut output, &project_root, gp);
 
-    let wakeup = build_wakeup_briefing(&project_root, task);
+    let wakeup = build_wakeup_briefing(&project_root);
     if !wakeup.is_empty() {
         output.push(String::new());
         output.push(wakeup);
     }
 
-    (output.join("\n"), true)
-}
-
-fn append_knowledge_task_section(output: &mut Vec<String>, project_root: &str, task: &str) {
-    let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(project_root) else {
-        return;
-    };
-    let hits: Vec<_> = knowledge.recall(task).into_iter().take(5).collect();
-    if hits.is_empty() {
-        return;
-    }
-    let n = hits.len();
-    output.push(String::new());
-    output.push(format!("[knowledge: {n} relevant facts]"));
-    for f in hits {
-        let text = compact_fact_phrase(f);
-        output.push(format!("  \"{text}\" (confidence: {:.1})", f.confidence));
-    }
-}
-
-fn compact_fact_phrase(f: &crate::core::knowledge::KnowledgeFact) -> String {
-    let v = f.value.trim();
-    let k = f.key.trim();
-    let raw = if !v.is_empty() && (k.is_empty() || v.contains(' ') || v.len() >= k.len()) {
-        v.to_string()
-    } else if !k.is_empty() && !v.is_empty() {
-        format!("{k}: {v}")
-    } else {
-        k.to_string()
-    };
-    let neutral = crate::core::sanitize::neutralize_metadata(&raw);
-    const MAX: usize = 100;
-    if neutral.chars().count() > MAX {
-        let trimmed: String = neutral.chars().take(MAX.saturating_sub(1)).collect();
-        format!("{trimmed}…")
-    } else {
-        neutral
-    }
+    output.join("\n")
 }
 
 fn append_graph_hotspots_section(output: &mut Vec<String>, project_root: &str, gp: &GraphProvider) {
@@ -319,7 +168,7 @@ fn import_hotspots_from_edges(gp: &GraphProvider, limit: usize) -> Vec<(String, 
     v
 }
 
-pub(crate) fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> String {
+fn build_wakeup_briefing(project_root: &str) -> String {
     let mut parts = Vec::new();
 
     if let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(project_root) {
@@ -347,107 +196,11 @@ pub(crate) fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> S
         }
     }
 
-    if let Some(t) = task {
-        for r in crate::core::prospective_memory::reminders_for_task(project_root, t) {
-            parts.push(r);
-        }
-    }
-
     if parts.is_empty() {
         return String::new();
     }
 
     format!("WAKE-UP BRIEFING:\n{}", parts.join("\n"))
-}
-
-/// Extracts a 1-line module documentation from a file's first lines.
-/// Looks for Rust `//!`, Python `"""..."""` / `#`, JS/TS `/** ... */`, or generic `# description`.
-fn extract_module_doc(path: &str) -> Option<String> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let mut lines = content.lines();
-
-    // Skip shebang
-    let first = lines.next()?.trim();
-    let search_start = if first.starts_with("#!") {
-        lines.next()
-    } else {
-        Some(first)
-    };
-
-    let first_meaningful = search_start?;
-
-    // Rust: //! module doc
-    if first_meaningful.starts_with("//!") {
-        let doc = first_meaningful.trim_start_matches("//!").trim();
-        if !doc.is_empty() {
-            return Some(truncate_doc(doc));
-        }
-    }
-
-    // Python: """ or '''
-    if first_meaningful.starts_with("\"\"\"") || first_meaningful.starts_with("'''") {
-        let doc = first_meaningful
-            .trim_start_matches("\"\"\"")
-            .trim_start_matches("'''")
-            .trim();
-        let doc = doc
-            .trim_end_matches("\"\"\"")
-            .trim_end_matches("'''")
-            .trim();
-        if !doc.is_empty() {
-            return Some(truncate_doc(doc));
-        }
-    }
-
-    // JS/TS: /** ... */
-    if first_meaningful.starts_with("/**") {
-        let doc = first_meaningful
-            .trim_start_matches("/**")
-            .trim_end_matches("*/")
-            .trim_start_matches('*')
-            .trim();
-        if !doc.is_empty() {
-            return Some(truncate_doc(doc));
-        }
-    }
-
-    // Generic: first # comment (markdown, python, shell)
-    if first_meaningful.starts_with("# ") && !first_meaningful.starts_with("# !") {
-        let doc = first_meaningful.trim_start_matches('#').trim();
-        if !doc.is_empty() {
-            return Some(truncate_doc(doc));
-        }
-    }
-
-    None
-}
-
-/// Falls back to Knowledge-Facts for a file description if no source-level doc found.
-fn knowledge_doc_for_file(
-    knowledge: Option<&crate::core::knowledge::ProjectKnowledge>,
-    path: &str,
-) -> Option<String> {
-    let knowledge = knowledge?;
-    let filename = std::path::Path::new(path).file_name()?.to_str()?;
-    let hits = knowledge.recall(filename);
-    let fact = hits.first()?;
-    let val = fact.value.trim();
-    if val.is_empty() || val.len() < 5 {
-        return None;
-    }
-    Some(truncate_doc(val))
-}
-
-fn truncate_doc(doc: &str) -> String {
-    if doc.len() > 80 {
-        let mut end = 77;
-        while end > 0 && !doc.is_char_boundary(end) {
-            end -= 1;
-        }
-        format!("{}...", &doc[..end])
-    } else {
-        doc.to_string()
-    }
 }
 
 fn short_path(path: &str) -> String {
@@ -469,10 +222,6 @@ fn truncate_start_char_boundary(s: &str, max_tail_bytes: usize) -> usize {
         start += 1;
     }
     start
-}
-
-fn file_line_count(path: &str) -> usize {
-    std::fs::read_to_string(path).map_or(0, |c| c.lines().count())
 }
 
 /// Builds an immediately-useful overview while the knowledge graph is still
@@ -634,9 +383,11 @@ mod tests {
         });
         graph.save().expect("persist call graph");
 
-        let cache = SessionCache::new();
-        let (out, complete) = handle(&cache, None, Some(root_str), CrpMode::Off);
-        assert!(complete, "graph-backed overview must not report as partial");
+        let out = handle(Some(root_str));
+        assert!(
+            !out.contains("(partial"),
+            "graph-backed overview must not report as partial"
+        );
         assert!(
             out.contains("1 call edges"),
             "overview header must show persisted call edges, got:\n{out}"

@@ -80,7 +80,6 @@ impl McpTool for SobreGlobTool {
 
         Ok(ToolOutput {
             text: final_out,
-            original_tokens: total_original,
             saved_tokens: saved,
             shell_outcome: None,
             content_blocks: None,
@@ -115,7 +114,6 @@ fn handle_single(
 
     Ok(ToolOutput {
         text: final_out,
-        original_tokens: original,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,

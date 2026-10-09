@@ -11,6 +11,9 @@ pub fn get_bool(args: Option<&serde_json::Map<String, Value>>, key: &str) -> Opt
     args?.get(key)?.as_bool()
 }
 
+/// A content hash that reads at most the first and last 4 KiB of a long
+/// string. Nothing in sobre calls it: only the integration tests exercise it.
+#[cfg(feature = "test-support")]
 pub fn hash_fast(s: &str) -> String {
     const THRESHOLD: usize = 16 * 1024;
     if s.len() <= THRESHOLD {
@@ -24,28 +27,4 @@ pub fn hash_fast(s: &str) -> String {
         hasher.update(suffix.as_bytes());
         hasher.finalize().to_hex().to_string()
     }
-}
-
-pub fn canonicalize_json(v: &Value) -> Value {
-    match v {
-        Value::Object(map) => {
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort();
-            let mut out = serde_json::Map::new();
-            for k in keys {
-                if let Some(val) = map.get(k) {
-                    out.insert(k.clone(), canonicalize_json(val));
-                }
-            }
-            Value::Object(out)
-        }
-        Value::Array(arr) => Value::Array(arr.iter().map(canonicalize_json).collect()),
-        other => other.clone(),
-    }
-}
-
-pub fn canonical_args_string(args: Option<&serde_json::Map<String, Value>>) -> String {
-    let v = args.map_or(Value::Null, |m| Value::Object(m.clone()));
-    let canon = canonicalize_json(&v);
-    serde_json::to_string(&canon).unwrap_or_default()
 }

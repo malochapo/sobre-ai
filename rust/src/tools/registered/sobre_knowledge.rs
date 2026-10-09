@@ -178,11 +178,5 @@ impl McpTool for SobreKnowledgeTool {
 /// A plain text `ToolOutput`. `sobre_knowledge` results are already
 /// compressed prose, so token accounting is left at zero.
 fn text_output(text: String) -> ToolOutput {
-    ToolOutput {
-        text,
-        original_tokens: 0,
-        saved_tokens: 0,
-        shell_outcome: None,
-        content_blocks: None,
-    }
+    ToolOutput::simple(text)
 }

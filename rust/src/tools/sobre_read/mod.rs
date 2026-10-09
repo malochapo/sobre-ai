@@ -31,10 +31,6 @@ pub struct ReadOutput {
     /// Approximate output token count from mode processing.
     /// The dispatch layer recounts the final assembled string for accurate savings.
     pub output_tokens: usize,
-    /// Structurally determined cache-hit flag. Set by the code that
-    /// serves the read (stub, delta, cached mode), not sniffed from rendered
-    /// output. Replaces the fragile `content.contains("[unchanged")` checks.
-    pub is_cache_hit: bool,
 }
 
 /// SSOT via [`ReadMode`]: the `map`/`signatures` summaries whose rendered
@@ -287,7 +283,6 @@ fn try_disk_anchored_window(
         content: out,
         resolved_mode: mode.to_string(),
         output_tokens: sent,
-        is_cache_hit: false,
     })
 }
 
@@ -322,7 +317,6 @@ fn disk_lines_window(path: &str, range: &str, short: &str) -> Option<ReadOutput>
         content: out,
         resolved_mode: format!("lines:{range}"),
         output_tokens: sent,
-        is_cache_hit: false,
     })
 }
 
@@ -370,6 +364,7 @@ fn open_with_retry(path: &str) -> Result<std::fs::File, std::io::Error> {
 }
 
 /// Reads a file through the cache and applies the requested compression mode.
+#[cfg(any(test, feature = "test-support"))]
 pub fn handle(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
     handle_with_options(cache, path, mode, false, crp_mode, None)
 }
@@ -589,7 +584,6 @@ pub(crate) fn finish(
         content: out,
         resolved_mode: resolved_mode.to_string(),
         output_tokens: sent,
-        is_cache_hit: false,
     }
 }
 
@@ -739,7 +733,6 @@ fn render_unchanged_stub(file_ref: &str, path: &str, line_count: usize) -> ReadO
         content: out,
         resolved_mode: "full".into(),
         output_tokens: sent,
-        is_cache_hit: true,
     }
 }
 
@@ -876,7 +869,6 @@ fn prepare_inner(
                 content: warning.to_string(),
                 resolved_mode: "diff".into(),
                 output_tokens: count_tokens(warning),
-                is_cache_hit: false,
             });
         }
         cache.invalidate(path);
@@ -897,7 +889,6 @@ fn prepare_inner(
             content: out,
             resolved_mode: "diff".into(),
             output_tokens: sent,
-            is_cache_hit: false,
         });
     }
 
@@ -950,7 +941,6 @@ fn prepare_inner(
                 content: out,
                 resolved_mode: "full".into(),
                 output_tokens: sent,
-                is_cache_hit: false,
             });
         }
 
@@ -971,7 +961,6 @@ fn prepare_inner(
                     content: out,
                     resolved_mode,
                     output_tokens: sent,
-                    is_cache_hit: true,
                 });
             }
         }
@@ -1002,7 +991,6 @@ fn prepare_inner(
                     content: msg,
                     resolved_mode: "error".into(),
                     output_tokens: tokens,
-                    is_cache_hit: false,
                 });
             }
         }
@@ -1035,7 +1023,6 @@ fn prepare_inner(
             content: output,
             resolved_mode: "full".into(),
             output_tokens: sent,
-            is_cache_hit: false,
         });
     }
 
