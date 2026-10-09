@@ -456,7 +456,7 @@ mod tests {
     /// Scientific notation and plain numbers after keys containing
     /// `token` must not be redacted — these are pricing/cost fields.
     #[test]
-    fn keeps_numeric_values_827() {
+    fn keeps_numeric_values() {
         for (input, desc) in [
             ("input_cost_per_token: 1.4e-06", "scientific notation"),
             ("output_cost_per_token: 4.4e-06", "scientific notation"),
@@ -480,7 +480,7 @@ mod tests {
     /// Env-variable references must not be redacted — they are
     /// pointers to secrets, not the secrets themselves.
     #[test]
-    fn keeps_env_references_827() {
+    fn keeps_env_references() {
         for (input, desc) in [
             (
                 "api_key: os.environ/MY_SERVICE_API_KEY",
@@ -509,7 +509,7 @@ mod tests {
 
     /// Real secrets must STILL be redacted (regression guard).
     #[test]
-    fn still_redacts_real_secrets_827() {
+    fn still_redacts_real_secrets() {
         for input in [
             "api_key: sk-1234567890abcdef1234567890abcdef",
             "password: hunter2-super-secret-value",

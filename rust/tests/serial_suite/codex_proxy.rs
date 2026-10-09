@@ -107,7 +107,7 @@ fn codex_home_with_auth(auth_json: &str) -> (tempfile::TempDir, std::path::PathB
 }
 
 #[test]
-fn proxy_enable_respects_codex_auth_mode_554() {
+fn proxy_enable_respects_codex_auth_mode() {
     // An explicit CODEX_API_KEY forces API-key mode regardless of auth.json, which
     // would invalidate the ChatGPT-login halves of this test.
     if std::env::var("CODEX_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {

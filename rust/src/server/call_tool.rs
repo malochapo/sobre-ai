@@ -471,11 +471,7 @@ mod shell_outcome_tests {
     #[test]
     fn exit_2_is_always_error() {
         let r = finalize_call_result("error output", Some(ShellOutcome::Exit(2)));
-        assert_eq!(
-            r.is_error,
-            Some(true),
-            "exit >= 2 must always set isError"
-        );
+        assert_eq!(r.is_error, Some(true), "exit >= 2 must always set isError");
         assert_eq!(
             r.structured_content,
             Some(serde_json::json!({ "exitCode": 2 })),

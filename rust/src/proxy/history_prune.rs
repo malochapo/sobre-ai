@@ -602,11 +602,7 @@ mod tests {
         // The breakpoint sits on the last message so `cached == len >= boundary`:
         // the prune window is empty on both turns and nothing is stubbed.
         assert_eq!(stubs(11), 0, "no pruning below the first stride jump");
-        assert_eq!(
-            stubs(12),
-            0,
-            "cached prefix not rewritten after the jump"
-        );
+        assert_eq!(stubs(12), 0, "cached prefix not rewritten after the jump");
         assert_eq!(stubs(20), 0, "still zero deep into the session");
 
         // Contrast: the unguarded boundary (`prune_start = 0`) DOES stub the

@@ -239,13 +239,10 @@ mod tests {
     /// Spot-check the concrete keys from the report so a future schema/struct
     /// refactor that reintroduces the drift fails loudly.
     #[test]
-    fn known_keys_recognise_reported_456_keys() {
+    fn known_keys_recognise_reported_keys() {
         let known = ConfigSchema::generate().known_keys();
         for key in ["search_roots", "proxy"] {
-            assert!(
-                accepted(&known, key),
-                "validation must recognise '{key}'"
-            );
+            assert!(accepted(&known, key), "validation must recognise '{key}'");
         }
     }
 

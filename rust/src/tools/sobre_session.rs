@@ -372,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn finding_cyrillic_with_em_dash_issue_272() {
+    fn finding_cyrillic_with_em_dash() {
         let value = "ruff: pyproject.toml dev-group \u{2014} >=0.15.14,<0.16.0 (был 0.14.x)";
         let (file, line, text) = parse_finding_value(value);
         assert_eq!(file.as_deref(), Some("ruff: pyproject.toml dev-group"));
