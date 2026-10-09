@@ -295,4 +295,31 @@ mod build_warning_tests {
             }
         }
     }
+
+    #[test]
+    fn swiftlint_warnings_keep_their_locations() {
+        let mut out = String::from("Linting Swift files in current working directory\n");
+        for f in 0..60 {
+            out.push_str(&format!("Linting 'File{f}.swift' ({}/60)\n", f + 1));
+        }
+        for f in 0..12 {
+            out.push_str(&format!(
+                "/repo/Sources/File{f}.swift:{}:5: warning: Line Length Violation: Line should be 120 characters or less; currently it has {} characters (rule_{f})\n",
+                f + 10,
+                f + 121
+            ));
+        }
+        out.push_str("Done linting! Found 12 violations, 0 serious in 60 files.\n");
+
+        let result = compress_for_outcome("swiftlint", &out, 0);
+        for f in 0..12 {
+            assert!(
+                result.contains(&format!(
+                    "/repo/Sources/File{f}.swift:{}:5: warning",
+                    f + 10
+                )),
+                "violation {f} lost:\n{result}"
+            );
+        }
+    }
 }
