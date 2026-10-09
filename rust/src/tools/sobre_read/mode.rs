@@ -178,20 +178,23 @@ fn parse_line_multi(payload: &str) -> Result<String, ParseModeError> {
     Ok(payload.to_string())
 }
 
-/// Parse the payload of a line-range mode (`"5-10"`, `"5-999999"`, or a bare
-/// `"5"` meaning "from line N to EOF"). `whole` is the full original mode string
-/// (`"lines:…"` or `"anchored:…"`) so a rejection names the mode the caller
-/// actually typed — an `anchored:` typo must not be reported as `lines:`.
+/// Parse the payload of a line-range mode: `"5-10"`, `"5-"` (line 5 to the
+/// end), or a bare `"5"` (line 5 alone), the same everywhere a window is read.
+/// `whole` is the full original mode string (`"lines:…"` or `"anchored:…"`)
+/// so a rejection names the mode the caller actually typed — an `anchored:`
+/// typo must not be reported as `lines:`.
 fn parse_line_range(payload: &str, whole: &str) -> Result<LineRange, ParseModeError> {
     let malformed = || ParseModeError::Malformed(whole.to_string());
     if let Some((a, b)) = payload.split_once('-') {
         let start = a.trim().parse::<u32>().map_err(|_| malformed())?;
+        if b.trim().is_empty() {
+            return Ok(LineRange::to_eof(start));
+        }
         let end = b.trim().parse::<u32>().map_err(|_| malformed())?;
         Ok(LineRange::new(start, end))
     } else {
-        // A bare `lines:N` means "from line N to EOF".
-        let start = payload.trim().parse::<u32>().map_err(|_| malformed())?;
-        Ok(LineRange::to_eof(start))
+        let line = payload.trim().parse::<u32>().map_err(|_| malformed())?;
+        Ok(LineRange::new(line, line))
     }
 }
 
@@ -415,10 +418,19 @@ mod tests {
             "lines:5-999999".parse::<ReadMode>().unwrap(),
             ReadMode::Lines(LineRange::to_eof(5))
         );
-        // A bare `lines:5` means "from line 5 to EOF".
+        // K15: a bare `lines:5` is line 5 alone, as everywhere else; `5-`
+        // runs to the end.
         assert_eq!(
             "lines:5".parse::<ReadMode>().unwrap(),
+            ReadMode::Lines(LineRange::new(5, 5))
+        );
+        assert_eq!(
+            "lines:5-".parse::<ReadMode>().unwrap(),
             ReadMode::Lines(LineRange::to_eof(5))
+        );
+        assert_eq!(
+            "anchored:5".parse::<ReadMode>().unwrap(),
+            ReadMode::Anchored(Some(LineRange::new(5, 5)))
         );
     }
 

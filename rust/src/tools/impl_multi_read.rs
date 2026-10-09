@@ -62,7 +62,12 @@ pub fn handle_with_task_fresh(
         total_original = total_original.saturating_add(original);
         total_saved = total_saved.saturating_add(original.saturating_sub(sent));
         accumulated_bytes += chunk_bytes;
-        sections.push(chunk);
+        // Every section names its file: a full read of a small file is the
+        // bare content, with nothing else to say whose it is.
+        sections.push(format!(
+            "=== {} ===\n{chunk}",
+            crate::core::protocol::shorten_path(path)
+        ));
         files_read += 1;
     }
 
@@ -80,4 +85,32 @@ pub fn handle_with_task_fresh(
         format!("Read {n} files")
     };
     format!("{body}\n---\n{summary}")
+}
+
+#[cfg(test)]
+mod tests {
+    /// K17: every section of a batch read names its file.
+    #[test]
+    fn each_section_names_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("first.rs");
+        let b = dir.path().join("second.rs");
+        std::fs::write(&a, "fn a() {}\n").unwrap();
+        std::fs::write(&b, "fn b() {}\n").unwrap();
+        let paths = [
+            a.to_string_lossy().to_string(),
+            b.to_string_lossy().to_string(),
+        ];
+        let mut cache = crate::core::cache::SessionCache::new();
+        let out = super::handle_with_task_fresh(
+            &mut cache,
+            &paths,
+            "full",
+            false,
+            crate::tools::CrpMode::Off,
+            None,
+        );
+        assert!(out.contains("first.rs ===\nfn a() {}"), "{out}");
+        assert!(out.contains("second.rs ===\nfn b() {}"), "{out}");
+    }
 }

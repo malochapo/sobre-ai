@@ -726,8 +726,8 @@ documented:
 
 ## Lot K — reading and search tools
 
-- [ ] **K1 A re-read of a changed file returns a diff against content the
-  agent never had.**
+- [x] **K1 A re-read of a changed file returns a diff against content the
+  agent never had.** (#PRNUM)
   - `resolve_explicit_delta_mode` checks only that the full content is
     cached, and every read caches it (`tools/sobre_read/mod.rs:653-669`).
     `mode=auto` takes the same path (`core/auto_mode_resolver.rs:55`).
@@ -735,12 +735,17 @@ documented:
     same after `lines:1-3`, or in a new conversation after `/clear`.
   - Fix: a diff only when this conversation received the full content
     (`is_full_delivered` and `conversation_allows_stub`), in both places.
-- [ ] **K2 An explicit `lines:N-M` can return the whole file, unlabelled.**
+  - Done: `delivered_here` gates the explicit delta, `mode=auto`, the
+    `[auto-delta]` of a full re-read and an explicit `diff`; otherwise the
+    agent gets the file.
+- [x] **K2 An explicit `lines:N-M` can return the whole file, unlabelled.** (#PRNUM)
   Whether the file was delivered is not scoped to the conversation, and the
   delta decision runs before the compaction sync
   (`tools/registered/sobre_read.rs:229-244` before `:295-300`). Conversation B
   asking `lines:5-7` after conversation A read the file gets 302 lines.
-- [ ] **K3 Files that start with a UTF-8 BOM.**
+  Done: a window collapses to the stub only when this conversation holds
+  the file, and the compaction sync now runs before that decision.
+- [x] **K3 Files that start with a UTF-8 BOM.** (#PRNUM)
   - The cache hashes the bytes with the BOM (`core/cache.rs:716`), the
     store without it (`tools/sobre_read/mod.rs:144-147`). The entry is always
     stale: an explicit re-read returns "changed" with "(no changes)", and
@@ -750,19 +755,27 @@ documented:
     `sobre_patch` without it. A `sobre_patch` with the window's hash gets
     CONFLICT.
   - Fix: strip the BOM in all three places.
-- [ ] **K4 Under lock contention `sobre_read` runs a second copy of its
-  core** (`tools/registered/sobre_read.rs:375-790`), which differs.
+  - Done: the cache's verification hashes the BOM-less view it stored;
+    `sobre_search anchored=true` hashes line 1 without it; window reads
+    already did.
+- [x] **K4 Under lock contention `sobre_read` runs a second copy of its
+  core** (#PRNUM) (`tools/registered/sobre_read.rs:375-790`), which differs.
   - `diff` is unknown there: `[WARNING: unknown mode 'diff', falling back
     to full]` and the whole file (`tools/sobre_read/render.rs:313`). The
     `auto`→`diff` path of K1 lands there too.
   - It has no disk window, so windows on files over 4 MB fail (likely).
   - Non-full modes do not clear `full_content_delivered`.
   - Fix: one core function for both paths.
-- [ ] **K5 The fast path holds the global cache write lock during the whole
-  render** (`tools/registered/sobre_read.rs:343-372`). A 3.3 MB `entropy` read
+  - Done: one path, `read_through_cache`. The core is split into
+    `prepare` (cache, brief lock), `render` (no lock) and
+    `finish`/`settle` (brief lock), and the CLI and tests compose the
+    same three.
+- [x] **K5 The fast path holds the global cache write lock during the whole
+  render** (#PRNUM) (`tools/registered/sobre_read.rs:343-372`). A 3.3 MB `entropy` read
   held it 27 s in a debug build; a concurrent read of a 50-line file failed
   with "cache lock contention… retry in a moment".
-- [ ] **K6 `raw` is not raw on three paths.** The schema says "the bytes on
+  Done with K4: a compressed view renders with no lock held.
+- [x] **K6 `raw` is not raw on three paths.** (#PRNUM) The schema says "the bytes on
   disk: no framing, no redaction".
   - In a batch, `mode:"raw"` is redacted (`tools/registered/batch_read.rs:28-35`,
     `tools/sobre_read/mod.rs:869`); the batch refuses `raw:true` but not this.
@@ -770,6 +783,9 @@ documented:
     window (`tools/registered/sobre_read.rs:1008-1012`).
   - The degraded-compression note is appended to raw output too
     (`server/call_tool.rs:114-116`; from reading).
+  - Done: a batch `mode:"raw"` is not redacted; `raw:true` with
+    `start_line`/`limit` returns those lines as on disk (endings kept,
+    no numbers); nothing is appended to a raw read.
 - [ ] **K7 Batch `queries[]` ignores the top-level `include`, `exclude` and
   `exclude_pattern`** (`tools/registered/sobre_search.rs:564`).
 - [ ] **K8 `find_related` fails in its default form.**
@@ -794,7 +810,7 @@ documented:
     (`tools/sobre_tree.rs:36,118-147`): `node_modules` counts as saved.
   - A windowed `sobre_read` records the whole file as the original
     (`tools/registered/sobre_read.rs:811-812,936`): `lines:1-3` logs 1,800
-    tokens original, 51 sent.
+    tokens original, 51 sent. Done in #PRNUM: a window claims no saving.
 - [ ] **K12 `sobre_tree` counts and labels.**
   - Directories at the depth limit show `(0)`.
   - A directory holding only `.env`, and any `depth:0` call, say "(empty
@@ -809,17 +825,20 @@ documented:
   `src/a/b/c/f0.ts` in `sobre_glob` (`tools/sobre_glob.rs:89`) and in
   `sobre_search`'s `include`/`exclude` (`tools/sobre_search.rs:574`). Fix:
   `require_literal_separator`.
-- [ ] **K15 `lines:N` means two things.** On a normal file it is one line
+- [x] **K15 `lines:N` means two things.** (#PRNUM) On a normal file it is one line
   (`tools/sobre_read/render.rs:421`); `anchored:N`, files over 4 MB and the
   parser's own doc read it as N to the end (`tools/sobre_read/mode.rs:192`).
+  Done: `N` is that line and `N-` runs to the end, for `lines:`,
+  `anchored:` and the disk window alike; the schema says so.
 - [ ] **K16 B62's guard compares the raw path argument**
   (`tools/registered/sobre_search.rs:350`). With a different case or `\` on
   Windows, or `/var` against `/private/var` on macOS, it misses and the
   symbol lookup moves to the nearest git root. Likely.
 
-- [ ] **K17 `sobre_read paths=[…]` does not name the files.** Full
+- [x] **K17 `sobre_read paths=[…]` does not name the files.** (#PRNUM) Full
   sections are joined with `---` under "Read 2 files", with no path; only
   stubs carry one (`tools/impl_multi_read.rs:69`).
+  Done: each section starts `=== <path> ===`.
 
 ## Lot L — graph, session, knowledge, review, `gain`
 

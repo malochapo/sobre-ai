@@ -48,7 +48,7 @@ fn disk_windowed_anchored_read_serves_file_over_the_size_cap() {
     assert!(full_err.is_err(), "full read must hit the size cap");
 
     let mut cache = SessionCache::new();
-    let out = handle_with_options_inner(
+    let out = handle_with_options_resolved_preread(
         &mut cache,
         &p,
         "anchored:5-7",
@@ -108,7 +108,7 @@ fn windowed_anchored_read_via_preread_slow_path_stays_windowed() {
     let preread = std::fs::read_to_string(&path).unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_options_inner(
+    let out = handle_with_options_resolved_preread(
         &mut cache,
         &p,
         "anchored:109-118",
@@ -163,7 +163,7 @@ fn disk_windows_survive_invalid_utf8_and_serve_comma_ranges() {
     crate::core::limits::set_max_read_bytes_for_this_thread(Some(1024));
     let mut cache = SessionCache::new();
     let mut read = |mode: &str| {
-        handle_with_options_inner(
+        handle_with_options_resolved_preread(
             &mut cache,
             &p,
             mode,
@@ -218,4 +218,23 @@ fn disk_windows_survive_invalid_utf8_and_serve_comma_ranges() {
             out.content
         );
     }
+}
+
+/// K6: a `raw` line window is those lines as they are on disk: endings
+/// kept, no numbers, no redaction.
+#[test]
+fn a_raw_window_is_the_lines_verbatim() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("w.txt");
+    std::fs::write(
+        &path,
+        "\u{feff}one\r\ntwo\r\napi_key = \"sk-ant-api03-abcdefghijklmnopqrstuvwxyz\"\r\nfour\r\n",
+    )
+    .unwrap();
+    let p = path.to_string_lossy().to_string();
+    assert_eq!(
+        super::raw_line_window(&p, 2, 3).unwrap(),
+        "two\r\napi_key = \"sk-ant-api03-abcdefghijklmnopqrstuvwxyz\"\r\n"
+    );
+    assert_eq!(super::raw_line_window(&p, 1, 1).unwrap(), "one\r\n");
 }
