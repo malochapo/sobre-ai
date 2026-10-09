@@ -129,8 +129,9 @@ built when a tool first needs them.
 
 ### A hook, per host
 
-Hooks never approve, deny or block anything. Each host gets one of two
-strategies (`hooks/agents/`, `hook_handlers/`):
+Hooks never approve, deny or block anything. A host whose hooks allow it gets
+one of two strategies for shell output (`hooks/agents/`, `hook_handlers/`);
+Codex, Windsurf and Zed get neither:
 
 - **Post-tool compression** (`hook compress`). The command runs as the agent
   wrote it. Afterwards, the output the model sees is replaced by a compressed
