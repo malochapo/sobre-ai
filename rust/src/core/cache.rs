@@ -25,9 +25,8 @@ fn normalize_key(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-/// Built-in token budget for the in-memory read cache.
-/// 2M covers ~100 typical source files, reducing premature eviction
-/// before re-reads occur. RAM-pressure eviction via EvictionOrchestrator
+/// Built-in token budget for the in-memory read cache: several hundred
+/// typical source files. RAM-pressure eviction via EvictionOrchestrator
 /// provides an independent safety net regardless of this budget.
 /// Shared with `eviction_orchestrator` so both eviction rails read one budget.
 pub(crate) const CACHE_MAX_TOKENS: usize = 2_000_000;
@@ -36,7 +35,7 @@ pub(crate) const CACHE_MAX_TOKENS: usize = 2_000_000;
 ///
 /// `read_count` and `last_access` use interior mutability (atomics) so cache
 /// hits can be recorded under a shared (read) lock — parallel reads of distinct
-/// files no longer serialize on a global write lock.
+/// files do not serialize on a global write lock.
 #[derive(Debug)]
 pub struct CacheEntry {
     compressed_content: Vec<u8>,
@@ -804,7 +803,7 @@ mod tests {
         cache.store("/a.rs", "a");
         cache.store("/b.rs", "b");
         // Shared (no RwLock): proves SessionCache is Sync and hit recording is
-        // lock-free and atomic — the whole point of the read-mostly refactor.
+        // lock-free and atomic.
         let cache = Arc::new(cache);
         let threads = 8;
         let iters = 1_000;
@@ -845,7 +844,7 @@ mod tests {
         let bonus = cache.hebbian_eviction_bonus();
         assert!(
             !bonus.is_empty(),
-            "co-accessed reads must yield a Hebbian eviction bonus (#3 wired)"
+            "co-accessed reads must yield a Hebbian eviction bonus"
         );
     }
 
@@ -920,7 +919,7 @@ mod tests {
         assert!(is_cache_entry_stale(&p, entry.stored_mtime));
     }
 
-    // P0-7: a *backward* mtime (git checkout, touch -t) is a change.
+    // A *backward* mtime (git checkout, touch -t) is a change.
     #[test]
     fn stale_detection_flags_backward_mtime() {
         let dir = tempfile::tempdir().unwrap();
@@ -946,7 +945,7 @@ mod tests {
         );
     }
 
-    // P0-7: identical mtime with different content (same-second write,
+    // Identical mtime with different content (same-second write,
     // restored timestamps) is caught by the content-hash verification.
     #[test]
     fn verified_staleness_catches_same_mtime_content_change() {

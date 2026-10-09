@@ -17,7 +17,10 @@ pub fn strip_ansi(s: &str) -> String {
         .collect()
 }
 
-/// Strips comments, blank lines, and normalizes indentation for maximum token savings.
+/// The `aggressive` text pass. Markdown, JSON, CSV/TSV and YAML go to their
+/// own compactors when those pay; anything else loses its comments,
+/// attributes (`#[…]`), blank lines and half of its space indentation, and
+/// runs of closing brackets join onto one line.
 pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     // Structured data (JSON/JSONL) carries no comments and barely compresses via
     // the line-based path below (~0% measured). Strip insignificant whitespace

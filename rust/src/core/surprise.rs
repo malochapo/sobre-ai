@@ -1,14 +1,10 @@
-//! Predictive Surprise Scoring — conditional entropy relative to LLM knowledge.
+//! Line keep/drop decisions for `entropy` mode.
 //!
-//! Instead of measuring Shannon entropy in isolation (H(X)), we measure
-//! how surprising each line is to the LLM: H(X | LLM_knowledge).
-//!
-//! Approximation: use BPE token frequency ranks from o200k_base as a proxy
-//! for P(token | LLM). Common tokens (high frequency rank) carry low surprise;
-//! rare tokens (low rank / unknown to the vocab) carry high surprise.
-//!
-//! Scientific basis: Cross-entropy H(P,Q) = -sum(P(x) * log Q(x))
-//! where P is the true distribution and Q is the model's prior.
+//! A line's "surprise" is the mean `-log2 P(token)` of its `o200k_base`
+//! tokens under a Zipf prior that takes the token ID as its frequency rank
+//! (lower IDs were merged earlier, so are roughly more frequent). It is a
+//! cheap stand-in for how rare a line's tokens are, not a language model's
+//! probability: a line with low token entropy but rare tokens is kept.
 
 use std::sync::OnceLock;
 
@@ -18,7 +14,7 @@ static VOCAB_LOG_PROBS: OnceLock<Vec<f64>> = OnceLock::new();
 
 /// Build a log-probability table indexed by token ID.
 /// Uses a Zipfian approximation: P(rank r) ~ 1/(r * H_n) where H_n is the
-/// harmonic number. This closely matches empirical BPE token distributions.
+/// harmonic number, with the token ID standing in for the rank.
 fn get_vocab_log_probs() -> &'static Vec<f64> {
     VOCAB_LOG_PROBS.get_or_init(|| {
         let vocab_size = 200_000usize;
@@ -82,7 +78,7 @@ pub fn should_keep_line(trimmed: &str, entropy_threshold: f64) -> bool {
         return true;
     }
 
-    // New: check if line has high surprise despite low entropy.
+    // A line with low token entropy can still carry rare tokens.
     // This catches lines like `CustomDomainType::validate()`
     // which have low token diversity but high surprise per-token.
     let surprise = line_surprise(trimmed);
@@ -95,13 +91,9 @@ pub fn should_keep_line(trimmed: &str, entropy_threshold: f64) -> bool {
 //
 // The Zipf prior measures *lexical* rarity: a rare boilerplate identifier
 // scores high (kept), a frequent but semantically unique line scores low
-// (dropped). The LLMLingua family (survey 2410.12388) climbs this ladder
-// with real likelihood models; the strongest model-assisted step we can take
-// without shipping a token classifier is MMR-style semantic dedup: a line
-// that is near-identical *in embedding space* to something already kept
-// carries almost no marginal information (rate-distortion: spend bits on
-// distinct content only). This is exactly what H2O/SnapKV exploit at the
-// KV level.
+// (dropped). When an embedding engine is at hand, a kept line that embeds
+// near-identically to a line kept before it is dropped as well (MMR-style
+// dedup): it adds almost nothing new.
 //
 // The embedder is injected as a function so the production path can use the
 // real (feature-gated, lazily loaded) embedding engine while the scoring

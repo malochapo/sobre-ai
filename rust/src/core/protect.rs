@@ -1,12 +1,13 @@
-//! Explicit, deterministic preservation of user-marked spans across every
-//! compressor (read, shell, proxy, prose).
+//! Explicit, deterministic preservation of marked spans and lines through
+//! lossy compression.
 //!
 //! Two complementary, fully deterministic mechanisms (pure functions of
 //! their inputs, no model, no clock, no global state):
 //!
-//! 1. **Universal markers** `<lc_safe>…</lc_safe>`: any compressor wraps its
-//!    work in [`compress_preserving`]; the content between the markers passes
-//!    through verbatim and the markers themselves are stripped from the output.
+//! 1. **Markers** `<lc_safe>…</lc_safe>`: the shell output and proxy
+//!    compressors wrap their work in [`compress_preserving`]; the content
+//!    between the markers passes through verbatim and the markers themselves
+//!    are stripped from the output.
 //! 2. **`protect` token list** (`sobre_read` convenience): [`line_is_protected`]
 //!    lets the line-based lossy filters (entropy / information-bottleneck)
 //!    force-keep every line that contains one of the given tokens.
@@ -34,7 +35,7 @@ pub fn has_markers(s: &str) -> bool {
 /// Deterministic: pure function of `(input, f)`. An unterminated open marker
 /// keeps the remainder of the input verbatim (fail-safe: never compress what the
 /// user tried to protect). When there are no markers the input is handed to `f`
-/// unchanged, so existing callers keep their exact byte output.
+/// unchanged.
 #[must_use]
 pub fn compress_preserving<F: Fn(&str) -> String>(input: &str, f: F) -> String {
     if !has_markers(input) {
@@ -58,7 +59,7 @@ pub fn compress_preserving<F: Fn(&str) -> String>(input: &str, f: F) -> String {
 
 /// True if `line` must survive a lossy line filter because it contains one of
 /// the explicit `protect` tokens. Empty tokens are ignored so an empty list (or
-/// a list of empty strings) reproduces today's behaviour exactly.
+/// a list of empty strings) protects nothing.
 #[must_use]
 pub fn line_is_protected(line: &str, needles: &[String]) -> bool {
     needles

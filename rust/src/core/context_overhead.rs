@@ -94,8 +94,7 @@ mod tests {
     #[test]
     fn per_turn_prefix_stays_within_budget() {
         // Ratchet on the fixed per-turn prefix: the 15 tool schemas and the MCP
-        // instructions. Measured at 4697 tokens once sobre_session and
-        // sobre_knowledge kept their 14 useful actions; the budget leaves ~3%
+        // instructions, measured at 4697 tokens; the budget leaves ~3%
         // for small wording changes. A tool or a paragraph more fails here,
         // which is the point — raise the budget only in the same commit that
         // justifies the growth.
