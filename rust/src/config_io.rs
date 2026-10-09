@@ -211,7 +211,8 @@ pub mod journal {
     }
 }
 
-/// Like `write_toml_preserving`, but keeps the config minimal: keys whose value
+/// Merges `new_content` into the TOML file at `path`, keeping its comments,
+/// formatting and unknown keys, and keeping the config minimal: keys whose value
 /// equals the type's default AND are not already present on disk are skipped,
 /// so a hand-written config is not bloated with every default key. Existing
 /// keys are always updated (preserving comments), and non-default values are
@@ -344,13 +345,12 @@ fn item_equals_default(item: &toml_edit::Item, default: Option<&toml_edit::Item>
     }
 }
 
+/// Writes `content` to `path` atomically (temp file + rename).
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
     // A user may symlink agent config (`~/.claude.json`,
-    // `~/.codex/config.toml`, …) into a managed dotfiles repo. Resolve the
-    // symlink to its real target and write THROUGH it (preserving the symlink)
-    // instead of hard-blocking. The target must stay within `$HOME`, so a
-    // planted symlink can never redirect a config write outside the user's own
-    // home (preserves the symlink-hijack protection).
+    // `~/.codex/config.toml`, …) into a managed dotfiles repo. The write goes
+    // THROUGH the symlink to its target, wherever that is, and the symlink
+    // stays.
     let target = resolve_write_target(path)?;
 
     if let Some(parent) = target.parent() {
@@ -409,8 +409,8 @@ fn resolve_symlink_target(link_path: &Path) -> Result<PathBuf, String> {
 }
 
 /// Canonicalize `path` by resolving its deepest *existing* ancestor (following
-/// symlinks) and re-appending the not-yet-created tail, so the home-only check
-/// runs on a real path even when the target file/dir doesn't exist yet.
+/// symlinks) and re-appending the not-yet-created tail, so a target that does
+/// not exist yet still resolves to a real path.
 fn canonicalize_existing_prefix(path: &Path) -> Result<PathBuf, String> {
     let mut tail: Vec<std::ffi::OsString> = Vec::new();
     let mut cur = path;
@@ -482,7 +482,7 @@ mod tests {
     fn merge_preserves_comments_and_unknown_keys() {
         let existing = "\
 # My custom config — do not delete!
-ultra_compact = true  # inline note
+debug_log = true  # inline note
 
 # Section about the proxy
 [proxy]
@@ -490,7 +490,7 @@ enabled = false
 custom_user_key = \"keep-me\"
 ";
         let incoming = "\
-ultra_compact = false
+debug_log = false
 
 [proxy]
 enabled = true
@@ -504,41 +504,41 @@ enabled = true
         // Unknown / user keys survive.
         assert!(merged.contains("custom_user_key = \"keep-me\""));
         // Values are updated.
-        assert!(merged.contains("ultra_compact = false"));
+        assert!(merged.contains("debug_log = false"));
         assert!(merged.contains("enabled = true"));
         assert!(!merged.contains("enabled = false"));
     }
 
     #[test]
     fn minimal_mode_skips_unset_defaults_but_keeps_existing() {
-        // On-disk: only ultra_compact is explicitly set, with a comment.
-        let existing = "# my config\nultra_compact = true\n";
+        // On-disk: only debug_log is explicitly set, with a comment.
+        let existing = "# my config\ndebug_log = true\n";
         // Incoming: full serialization (all fields present).
-        let incoming = "ultra_compact = false\ncheckpoint_interval = 15\ntheme = \"default\"\n";
+        let incoming = "debug_log = false\nshell_timeout_secs = 15\nhook_binary = \"sobre\"\n";
         // Defaults: what an untouched config would serialize to.
-        let defaults = "ultra_compact = false\ncheckpoint_interval = 15\ntheme = \"default\"\n";
+        let defaults = "debug_log = false\nshell_timeout_secs = 15\nhook_binary = \"sobre\"\n";
 
         let merged = merge_toml_inner(existing, incoming, Some(defaults)).unwrap();
 
         // Existing key updated + comment preserved.
         assert!(merged.contains("# my config"));
-        assert!(merged.contains("ultra_compact = false"));
+        assert!(merged.contains("debug_log = false"));
         // Default-valued keys that were never on disk are NOT added (stay minimal).
-        assert!(!merged.contains("checkpoint_interval"));
-        assert!(!merged.contains("theme"));
+        assert!(!merged.contains("shell_timeout_secs"));
+        assert!(!merged.contains("hook_binary"));
     }
 
     #[test]
     fn minimal_mode_writes_non_default_values() {
         let existing = "";
-        let incoming = "ultra_compact = false\ncheckpoint_interval = 42\n";
-        let defaults = "ultra_compact = false\ncheckpoint_interval = 15\n";
+        let incoming = "debug_log = false\nshell_timeout_secs = 42\n";
+        let defaults = "debug_log = false\nshell_timeout_secs = 15\n";
 
         let merged = merge_toml_inner(existing, incoming, Some(defaults)).unwrap();
 
         // Non-default value is written, default value is skipped.
-        assert!(merged.contains("checkpoint_interval = 42"));
-        assert!(!merged.contains("ultra_compact"));
+        assert!(merged.contains("shell_timeout_secs = 42"));
+        assert!(!merged.contains("debug_log"));
     }
 
     #[test]
@@ -556,19 +556,19 @@ enabled = true
 
     #[test]
     fn merge_adds_new_keys_and_sections() {
-        let existing = "ultra_compact = true\n";
-        let incoming = "ultra_compact = true\nnew_key = 42\n\n[updates]\nauto_update = true\n";
+        let existing = "debug_log = true\n";
+        let incoming = "debug_log = true\nnew_key = 42\n\n[proxy]\nenabled = true\n";
         let merged = merge_toml(existing, incoming).unwrap();
         assert!(merged.contains("new_key = 42"));
-        assert!(merged.contains("[updates]"));
-        assert!(merged.contains("auto_update = true"));
+        assert!(merged.contains("[proxy]"));
+        assert!(merged.contains("enabled = true"));
     }
 
     fn unique_tmp(tag: &str) -> std::path::PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
-        std::env::temp_dir().join(format!("lc_{tag}_{}_{nanos}", std::process::id()))
+        std::env::temp_dir().join(format!("sobre_{tag}_{}_{nanos}", std::process::id()))
     }
 
     #[test]
@@ -580,11 +580,8 @@ enabled = true
         let corrupt = "broken = = =\n";
         std::fs::write(&path, corrupt).unwrap();
 
-        let result = write_toml_preserving_minimal(
-            &path,
-            "ultra_compact = false\n",
-            "ultra_compact = false\n",
-        );
+        let result =
+            write_toml_preserving_minimal(&path, "debug_log = false\n", "debug_log = false\n");
 
         assert!(
             result.is_err(),
@@ -603,7 +600,7 @@ enabled = true
 /// Write THROUGH a user-managed symlink to its real target, and make
 /// `ensure_dir` tolerant of symlinked directories. Unix-only (POSIX symlinks + `$HOME` override).
 #[cfg(all(test, unix))]
-mod symlink_596_tests {
+mod symlink_tests {
     use super::*;
     use std::os::unix::fs::symlink;
 
