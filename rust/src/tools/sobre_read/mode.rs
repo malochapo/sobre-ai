@@ -82,7 +82,7 @@ pub(crate) enum ReadMode {
     Task,
     /// One-line pointer/quote — `"reference"`.
     Reference,
-    /// Learned/auto mode selection — `"auto"`.
+    /// sobre picks the mode — `"auto"`.
     Auto,
     /// Git delta vs the cached copy — `"diff"`.
     Diff,

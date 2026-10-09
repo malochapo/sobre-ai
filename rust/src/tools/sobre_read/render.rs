@@ -214,7 +214,7 @@ pub(crate) fn process_mode_tuned(
         }
         "auto" => {
             // The aggressiveness knob routes `auto` through the density path so a
-            // single number drives whole-file intensity; otherwise the learned
+            // single number drives whole-file intensity; otherwise the
             // auto-resolver picks the mode.
             let chosen = tuning
                 .auto_density_mode()
@@ -279,6 +279,17 @@ pub(crate) fn process_mode_tuned(
             // not line count — density mode *intentionally* reduces lines.
             let guarded_output =
                 crate::core::quality::guard_density(content, &result.output, ext, target);
+            let target_clamped = target.clamp(0.05, 1.0);
+            if guarded_output != result.output {
+                // The gate fell back to the whole file: say so, and not the
+                // rejected attempt's figures.
+                let output = format!(
+                    "{short} {line_count}L full file: density={target_clamped:.2} compression \
+                     rejected by the quality gate\n{content}"
+                );
+                let sent = count_tokens(&output);
+                return (output, sent);
+            }
             let guarded_tokens = count_tokens(&guarded_output);
             let actual = if result.original_tokens > 0 {
                 guarded_tokens as f64 / result.original_tokens as f64
@@ -286,13 +297,12 @@ pub(crate) fn process_mode_tuned(
                 0.0
             };
             let techs = techniques_tag(&result.techniques);
-            let target_clamped = target.clamp(0.05, 1.0);
             let header = format!(
                 "{short} {line_count}L density target={target_clamped:.2} actual={actual:.2}{techs}"
             );
             let output = format!("{header}\n{guarded_output}");
             let sent = count_tokens(&output);
-            (append_compressed_hint(&output.clone(), file_path), sent)
+            (append_compressed_hint(&output, file_path), sent)
         }
         unknown => {
             let header = build_header(short, ext, content, line_count, true);
@@ -777,7 +787,7 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         .map(|t| crate::core::task_relevance::parse_task_hints(t).1)
         .unwrap_or_default();
     let result = match (task_kws.is_empty(), tuning.aggressiveness) {
-        // Aggressiveness overrides the learned BPE-entropy threshold for
+        // Aggressiveness overrides the adaptive BPE-entropy threshold for
         // the plain (no task keywords) path; task-conditioned entropy
         // keeps its own relevance-aware thresholds.
         (true, Some(a)) => entropy::entropy_compress_with_threshold(
@@ -802,7 +812,7 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         result.output
     );
     let sent = count_tokens(&output);
-    (append_compressed_hint(&output.clone(), file_path), sent)
+    (append_compressed_hint(&output, file_path), sent)
 }
 
 fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) -> (String, usize) {

@@ -1061,7 +1061,12 @@ pub(crate) fn cap_to_raw(
     raw_tokens: usize,
     mode: &str,
 ) -> String {
-    if raw_tokens > 0 && framed_tokens > raw_tokens {
+    // A view that already is the whole file under a one-line notice costs
+    // what the replacement would, and its notice says why.
+    let already_whole = framed
+        .strip_suffix(raw_content)
+        .is_some_and(|head| !head.trim_end_matches('\n').contains('\n'));
+    if raw_tokens > 0 && framed_tokens > raw_tokens && !(mode != "full" && already_whole) {
         if mode == "full" {
             raw_content.to_string()
         } else {
