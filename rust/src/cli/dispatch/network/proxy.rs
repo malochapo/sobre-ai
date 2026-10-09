@@ -24,32 +24,11 @@ fn port_flag(rest: &[String]) -> Option<u16> {
     None
 }
 
-/// Where the port of the last proxy started from this CLI is kept, so
-/// `status`, `stop` and `restart` find a proxy started on another port.
-fn port_file() -> Option<std::path::PathBuf> {
-    crate::core::paths::state_dir()
-        .ok()
-        .map(|d| d.join("proxy.port"))
-}
-
-fn remember_port(port: u16) {
-    if let Some(path) = port_file() {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let _ = std::fs::write(path, port.to_string());
-    }
-}
-
 /// The port to talk to: `--port`, else the last port a proxy was started on,
 /// else the configured one.
 fn proxy_port(rest: &[String]) -> u16 {
     port_flag(rest)
-        .or_else(|| {
-            port_file()
-                .and_then(|p| std::fs::read_to_string(p).ok())
-                .and_then(|s| s.trim().parse().ok())
-        })
+        .or_else(crate::proxy_setup::last_started_port)
         .unwrap_or_else(crate::proxy_setup::default_port)
 }
 
@@ -140,7 +119,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     start_detached(port);
                     return;
                 }
-                remember_port(port);
+                crate::proxy_setup::remember_started_port(port);
                 if let Err(e) = crate::cli::dispatch::run_async(crate::proxy::start_proxy(port)) {
                     tracing::error!("Proxy error: {e}");
                     std::process::exit(1);
@@ -345,7 +324,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             .spawn()
         {
             Ok(child) => {
-                remember_port(port);
+                crate::proxy_setup::remember_started_port(port);
                 crate::outln!(
                     "\x1b[32m✓\x1b[0m Proxy started in background (PID {}, port {port})",
                     child.id()

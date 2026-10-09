@@ -137,7 +137,9 @@ writes nothing into your shell rc files or your own instruction files
 tools from the MCP server instructions, and from the skill when it opens it.
 
 The first time `sobre` edits an existing file, it copies it to
-`<file>.sobre.bak` next to it; `uninstall` restores from that copy.
+`<file>.sobre.bak` next to it; `uninstall` restores from that copy. A file
+`sobre` creates gets an empty `<file>.sobre.bak`, so `uninstall` knows it can
+delete the file when nothing but `sobre`'s entries is left in it.
 
 | Agent | MCP server entry | Hooks | Skill |
 |---|---|---|---|
@@ -355,11 +357,10 @@ from the new one.
 ## Uninstall
 
 ```bash
-sobre uninstall --dry-run     # what would go; changes nothing
 sobre uninstall
 ```
 
-`uninstall` removes:
+`uninstall` lists each change as it makes it. It removes:
 
 - `sobre`'s entries from every agent configuration, its hooks, plugin and
   skills; a file it edited goes back to its `.sobre.bak` copy when nothing else
@@ -371,7 +372,8 @@ sobre uninstall
 - the binary, unless it sits in a build directory or under `~/.cargo` (run
   `cargo uninstall sobre` then).
 
-`--keep-config` keeps `config.toml`, `--keep-binary` keeps the binary.
+`--keep-config` keeps `config.toml`, `--keep-binary` keeps the binary. Any
+other argument is an error, and nothing is removed.
 
 ## Platform notes
 

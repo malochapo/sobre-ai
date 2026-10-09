@@ -1,6 +1,7 @@
 //! `sobre uninstall --help` (and `-h`) must print usage and remove
-//! NOTHING. Previously the `uninstall` dispatch arm ignored `--help`, so the
-//! flag fell through to a real, irreversible uninstall.
+//! NOTHING, and so must any argument `uninstall` does not know: a typo such
+//! as `--dryrun`, or an agent name as `init` takes, must never run a real,
+//! irreversible uninstall.
 //!
 //! These run the real binary as a subprocess inside a fully isolated tempdir so
 //! that — even if the guard ever regresses — no developer file is touched.
@@ -40,6 +41,12 @@ impl Sandbox {
             .args(["uninstall", flag])
             .env("HOME", &self.home)
             .env("SOBRE_DATA_DIR", &self.data)
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("XDG_STATE_HOME")
+            .env_remove("XDG_CACHE_HOME")
+            .env_remove("SOBRE_CONFIG_DIR")
+            .env_remove("SOBRE_STATE_DIR")
+            .env_remove("SOBRE_CACHE_DIR")
             .output()
             .expect("spawn sobre uninstall")
     }
@@ -62,7 +69,7 @@ fn assert_is_help_not_uninstall(out: &Output, flag: &str, marker: &std::path::Pa
         out.status
     );
     assert!(
-        stdout.contains("USAGE") && stdout.contains("--dry-run"),
+        stdout.contains("USAGE") && stdout.contains("--keep-config"),
         "`uninstall {flag}` must print usage; stdout was:\n{stdout}"
     );
     for needle in REMOVAL_MARKERS {
@@ -89,4 +96,31 @@ fn uninstall_short_help_shows_usage_and_removes_nothing() {
     let sandbox = Sandbox::new();
     let out = sandbox.run_uninstall("-h");
     assert_is_help_not_uninstall(&out, "-h", &sandbox.marker);
+}
+
+#[test]
+fn uninstall_unknown_arguments_exit_2_and_remove_nothing() {
+    for arg in ["--dryrun", "--dry-run", "-n", "claude", "--bogus"] {
+        let sandbox = Sandbox::new();
+        let out = sandbox.run_uninstall(arg);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "`uninstall {arg}` must exit 2\nstdout:\n{stdout}\nstderr:\n{stderr}"
+        );
+        assert!(
+            stderr.contains(arg),
+            "`uninstall {arg}` must name the argument it refused: {stderr}"
+        );
+        assert!(
+            stdout.trim().is_empty(),
+            "`uninstall {arg}` must not start: {stdout}"
+        );
+        assert!(
+            sandbox.marker.exists(),
+            "`uninstall {arg}` deleted the data dir marker — it ran a real uninstall!"
+        );
+    }
 }

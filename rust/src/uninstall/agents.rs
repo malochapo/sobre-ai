@@ -79,12 +79,10 @@ fn json_configs(home: &Path) -> Vec<JsonConfig> {
 }
 
 /// Removes sobre from every agent config, skill and plugin. Returns true when
-/// anything was (or, with `dry_run`, would be) removed.
-pub(super) fn remove_agent_files(home: &Path, dry_run: bool) -> bool {
+/// anything was removed.
+pub(super) fn remove_agent_files(home: &Path) -> bool {
     let mut removed = false;
-    if !dry_run {
-        try_claude_mcp_remove();
-    }
+    try_claude_mcp_remove();
 
     for config in json_configs(home) {
         let Ok(content) = std::fs::read_to_string(&config.path) else {
@@ -99,26 +97,24 @@ pub(super) fn remove_agent_files(home: &Path, dry_run: bool) -> bool {
                 remove_sobre_hooks(root);
             }
         });
-        removed |= apply(config.agent, &config.path, result, home, dry_run);
+        removed |= apply(config.agent, &config.path, result, home);
     }
 
     let codex_config = crate::core::home::resolve_codex_config_path()
         .unwrap_or_else(|| home.join(".codex/config.toml"));
     if let Ok(content) = std::fs::read_to_string(&codex_config) {
         let result = clean_codex_toml(&content, read_backup(&codex_config).as_deref());
-        removed |= apply("Codex CLI", &codex_config, result, home, dry_run);
+        removed |= apply("Codex CLI", &codex_config, result, home);
     }
 
     let plugin = home.join(".config/opencode/plugins/sobre.js");
     if plugin.exists() {
-        removed |= apply("OpenCode", &plugin, Ok(Cleanup::Delete), home, dry_run);
+        removed |= apply("OpenCode", &plugin, Ok(Cleanup::Delete), home);
     }
 
     for dir in crate::setup::skill::installed_dirs(home) {
         removed = true;
-        if dry_run {
-            println!("  Would delete the skill {}", shorten(&dir, home));
-        } else if let Err(e) = std::fs::remove_dir_all(&dir) {
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
             println!("  ✗ Could not delete {}: {e}", shorten(&dir, home));
         } else {
             println!("  ✓ Deleted the skill {}", shorten(&dir, home));
@@ -128,44 +124,34 @@ pub(super) fn remove_agent_files(home: &Path, dry_run: bool) -> bool {
     removed
 }
 
-/// The copy of `path` `init` kept from before sobre first edited it.
+/// The copy of `path` `init` kept from before sobre first edited it. An
+/// empty copy means sobre created the file: there is nothing to restore.
 fn read_backup(path: &Path) -> Option<String> {
-    std::fs::read_to_string(crate::config_io::backup_path_for(path)).ok()
+    std::fs::read_to_string(crate::config_io::backup_path_for(path))
+        .ok()
+        .filter(|backup| !backup.is_empty())
 }
 
 /// Writes or deletes `path` as `result` says, and drops the copy `init` kept
 /// of the file as it was before sobre.
-fn apply(
-    agent: &str,
-    path: &Path,
-    result: Result<Cleanup, String>,
-    home: &Path,
-    dry_run: bool,
-) -> bool {
+fn apply(agent: &str, path: &Path, result: Result<Cleanup, String>, home: &Path) -> bool {
     let short = shorten(path, home);
     let done = match result {
         Ok(Cleanup::Unchanged) => false,
         Ok(Cleanup::Rewrite(content)) => {
-            if dry_run {
-                println!("  Would remove sobre from {short} ({agent})");
-            } else if let Err(e) = crate::config_io::write_atomic(path, &content) {
+            if let Err(e) = crate::config_io::write_atomic(path, &content) {
                 println!("  ✗ Could not update {short}: {e}");
                 return false;
-            } else {
-                println!("  ✓ Removed sobre from {short} ({agent})");
             }
+            println!("  ✓ Removed sobre from {short} ({agent})");
             true
         }
         Ok(Cleanup::Delete) => {
-            if dry_run {
-                println!("  Would delete {short} ({agent}: nothing but sobre in it)");
-            } else if let Err(e) = std::fs::remove_file(path) {
+            if let Err(e) = std::fs::remove_file(path) {
                 println!("  ✗ Could not delete {short}: {e}");
                 return false;
-            } else {
-                println!("  ✓ Deleted {short} ({agent}: nothing but sobre in it)");
-                remove_dir_if_empty(path.parent());
             }
+            println!("  ✓ Deleted {short} ({agent}: nothing but sobre in it)");
             true
         }
         Err(e) => {
@@ -173,8 +159,9 @@ fn apply(
             return false;
         }
     };
-    if !dry_run {
-        let _ = std::fs::remove_file(crate::config_io::backup_path_for(path));
+    let _ = std::fs::remove_file(crate::config_io::backup_path_for(path));
+    if !path.exists() {
+        remove_dir_if_empty(path.parent());
     }
     done
 }

@@ -22,8 +22,8 @@ use opencode::{has_proxy_base_url, install_opencode_env, uninstall_opencode_env}
 
 pub use claude::anthropic_api_key_available;
 pub(crate) use codex::install_codex_env;
-pub(crate) use util::is_proxy_reachable;
 pub use util::{default_port, is_local_sobre_url, proxy_timeout};
+pub(crate) use util::{is_proxy_reachable, last_started_port, remember_started_port};
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     let cfg = crate::core::config::Config::load();
@@ -48,40 +48,6 @@ pub fn install_proxy_env_unchecked(home: &Path, port: u16, quiet: bool, force_en
     }
     install_codex_env(home, port, quiet);
     install_opencode_env(home, port, quiet);
-}
-
-pub fn preview_proxy_cleanup(home: &Path) {
-    let settings_dir = crate::core::editor_registry::claude_state_dir(home);
-    let settings_path = settings_dir.join("settings.json");
-    if std::fs::read_to_string(&settings_path)
-        .ok()
-        .and_then(|content| crate::core::jsonc::parse_jsonc(&content).ok())
-        .is_some_and(|doc| {
-            doc.get("env")
-                .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-                .and_then(|v| v.as_str())
-                .is_some_and(is_local_sobre_url)
-        })
-    {
-        let cfg = crate::core::config::Config::load();
-        if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
-            println!("  Would restore ANTHROPIC_BASE_URL → {upstream} in Claude Code settings");
-        } else {
-            println!("  Would remove ANTHROPIC_BASE_URL from Claude Code settings");
-        }
-    }
-
-    let codex_path = crate::core::home::resolve_codex_config_path()
-        .unwrap_or_else(|| home.join(".codex/config.toml"));
-    if let Ok(content) = std::fs::read_to_string(codex_path)
-        && codex_config_has_local_proxy_entry(&content)
-    {
-        println!("  Would remove Codex proxy URL from config.toml");
-    }
-
-    if has_proxy_base_url(home) {
-        println!("  Would remove the proxy base URLs from OpenCode's opencode.json");
-    }
 }
 
 /// Removes stale proxy URLs from Claude Code / Codex / OpenCode settings when the proxy is not enabled.
