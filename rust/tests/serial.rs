@@ -3,9 +3,7 @@
 //!
 //! Every test in this binary runs on one thread, with or without `#[serial]`:
 //! the static below runs before `main` and sets `RUST_TEST_THREADS=1`, which
-//! the libtest harness reads when no `--test-threads` flag is given. Under
-//! nextest, `.config/nextest.toml` puts this binary in the `serial-state`
-//! group for the same reason.
+//! the libtest harness reads when no `--test-threads` flag is given.
 
 #[path = "support/user_dirs.rs"]
 mod user_dirs;
