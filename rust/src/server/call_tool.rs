@@ -360,7 +360,10 @@ fn finalize_call_result(
 /// as a success with a timeout marker, not as an error. The partial output is
 /// often enough to answer the question; treating it as a failure causes the
 /// client to retry the entire pipeline.
-fn is_shell_error(outcome: crate::server::tool_trait::ShellOutcome, output: &str) -> bool {
+pub(crate) fn is_shell_error(
+    outcome: crate::server::tool_trait::ShellOutcome,
+    output: &str,
+) -> bool {
     match outcome {
         crate::server::tool_trait::ShellOutcome::Exit(0) => false,
         crate::server::tool_trait::ShellOutcome::Exit(1) => {

@@ -143,7 +143,7 @@ delete the file when nothing but `sobre`'s entries is left in it.
 
 | Agent | MCP server entry | Hooks | Skill |
 |---|---|---|---|
-| Claude Code | `~/.claude.json`, through `claude mcp add-json` when the `claude` CLI is installed | `~/.claude/settings.json`: compress shell output, stub unchanged re-reads, session observer | `~/.claude/skills/sobre/` |
+| Claude Code | `~/.claude.json` | `~/.claude/settings.json`: compress shell output, stub unchanged re-reads, session observer | `~/.claude/skills/sobre/` |
 | Codex | `~/.codex/config.toml`, or the active profile's `<name>.config.toml` | `~/.codex/hooks.json`: session observer; sets `[features] hooks = true` | `~/.codex/skills/sobre/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/hooks/hooks.json`: compress shell output, session observer | `~/.copilot/skills/sobre/` |
 | Cursor | `~/.cursor/mcp.json` | `~/.cursor/hooks.json`: wrap shell commands, session observer | `~/.cursor/skills/sobre/` |
@@ -151,7 +151,7 @@ delete the file when nothing but `sobre`'s entries is left in it.
 | OpenCode | `~/.config/opencode/opencode.json` | the plugin `~/.config/opencode/plugins/sobre.js`: compress shell output | `~/.config/opencode/skills/sobre/` |
 | VS Code | `mcp.json` in VS Code's user settings directory | the Copilot CLI hooks file | `~/.copilot/skills/sobre/` |
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` | `~/.codeium/windsurf/hooks.json`: session observer | — |
-| Zed | `settings.json` in Zed's config directory | — | — |
+| Zed | `~/.config/zed/settings.json` (under `$XDG_CONFIG_HOME` on Linux when set, `%APPDATA%\Zed\` on Windows) | — | — |
 
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` move those agents' files, and `init`
 follows them. The session observer records which conversation and
@@ -179,7 +179,13 @@ writes no approval setting into its configuration.
 ```bash
 sobre doctor                  # the install, the agents, the data directories
 sobre doctor integrations     # each agent's MCP entry, hooks and skill
+sobre doctor --fix            # rewire the agents, prune stale caches
 ```
+
+`doctor --fix` repairs what sobre wrote in your user configuration. It never
+edits files in a repository: when a project's own `.vscode/mcp.json` or
+`.cursor/mcp.json` also registers `sobre`, `doctor` names the file, and you
+remove the entry if you do not want it there.
 
 In the agent, the MCP server list shows `sobre` with 15 tools (`/mcp` in Claude
 Code). From a shell, without an agent:
@@ -222,6 +228,9 @@ sobre -c "cargo test"                  # compressed
 sobre raw "cargo test"                 # exact output
 sobre call sobre_read --json '{"path": "src/main.rs", "mode": "signatures"}'
 ```
+
+`sobre call` prints what the tool returned and exits 1 when the tool reports
+an error, as `isError` does for the agent; a wrong tool name or argument exits 2.
 
 ## Configure
 
@@ -321,9 +330,9 @@ changes nothing. Windows has no login service: start the proxy by hand with
 wire the agents while nothing answers on the port. Once it is enabled, the MCP
 server also starts it when nothing answers.
 
-The port is `proxy.port`. Unset, it is 4444 on Windows and for system users, and
-4444 + (uid − 1000) mod 1000 for other Unix users, so two people on one machine
-get different ports.
+The port is `proxy.port`. Unset, it is 4444 + uid mod 1000 on Unix, so two
+people on one machine get different ports (uid 1000 gets 4444, macOS's first
+user, 501, gets 4945), and 4444 on Windows.
 
 The proxy forwards the key the agent sends and never adds one, so it works
 only with API keys: a subscription login (Claude Pro or Max, ChatGPT) keeps

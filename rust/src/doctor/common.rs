@@ -164,13 +164,12 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
         },
     ];
 
-    #[cfg(unix)]
     {
-        let zed_cfg = home.join(".config").join("zed").join("settings.json");
+        let path = crate::core::editor_registry::zed_settings_path(home);
         locations.push(McpLocation {
             name: "Zed",
-            display: "~/.config/zed/settings.json".into(),
-            path: zed_cfg,
+            display: path.display().to_string(),
+            path,
         });
     }
 

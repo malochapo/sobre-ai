@@ -149,12 +149,7 @@ pub fn print_outcomes(outcomes: &[AgentOutcome], dry_run: bool) {
         };
         println!("  {:<width$}  {status}", outcome.name);
         for (path, change) in &outcome.files {
-            let verb = match (change, dry_run) {
-                (Change::Created, false) => "created",
-                (Change::Updated, false) => "updated",
-                (Change::Created, true) => "would create",
-                (Change::Updated, true) => "would update",
-            };
+            let verb = change_word(*change, dry_run);
             println!("  {:<width$}    {verb} {}", "", display_path(path, &home));
         }
         for warning in &outcome.warnings {
@@ -204,13 +199,15 @@ pub fn run_init(named: &[&str], dry_run: bool) -> SetupReport {
             "error"
         } else if outcome.files.is_empty() {
             "already"
+        } else if dry_run {
+            "would_connect"
         } else {
             "connected"
         };
         let files: Vec<String> = outcome
             .files
             .iter()
-            .map(|(p, c)| format!("{} {}", display_path(p, &home), change_word(*c)))
+            .map(|(p, c)| format!("{} {}", change_word(*c, dry_run), display_path(p, &home)))
             .collect();
         agents_step.items.push(SetupItem {
             name: outcome.name.to_string(),
@@ -242,6 +239,7 @@ pub fn run_init(named: &[&str], dry_run: bool) -> SetupReport {
         started_at,
         finished_at: chrono::Utc::now(),
         success,
+        dry_run,
         platform: PlatformInfo {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
@@ -252,10 +250,12 @@ pub fn run_init(named: &[&str], dry_run: bool) -> SetupReport {
     }
 }
 
-fn change_word(change: Change) -> &'static str {
-    match change {
-        Change::Created => "created",
-        Change::Updated => "updated",
+fn change_word(change: Change, dry_run: bool) -> &'static str {
+    match (change, dry_run) {
+        (Change::Created, false) => "created",
+        (Change::Updated, false) => "updated",
+        (Change::Created, true) => "would create",
+        (Change::Updated, true) => "would update",
     }
 }
 

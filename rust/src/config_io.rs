@@ -201,8 +201,8 @@ pub mod journal {
         JOURNAL.with(|j| j.borrow().as_ref().is_some_and(|j| j.dry_run))
     }
 
-    /// Records a change made outside this module (`claude mcp add-json`).
-    pub(crate) fn record(path: &Path, change: Change) {
+    /// Records a change about to be made.
+    pub(super) fn record(path: &Path, change: Change) {
         JOURNAL.with(|j| {
             if let Some(j) = j.borrow_mut().as_mut() {
                 j.entries.push((path.to_path_buf(), change));

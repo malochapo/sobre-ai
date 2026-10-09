@@ -88,32 +88,6 @@ fn build_and_persist_fix_report(
     }
     steps.push(agents_step);
 
-    // Resolve workspace/user dual-scope conflicts
-    let mut ws_scope_step = SetupStepReport {
-        name: "workspace_scope".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let user_scope_mcp_locations = super::sobre_mcp_location_names(&home);
-    let ws_fixed = super::workspace_scope::fix_workspace_dual_scope(&user_scope_mcp_locations);
-    ws_scope_step.items.push(SetupItem {
-        name: "dual_scope_dedup".to_string(),
-        status: if ws_fixed > 0 {
-            format!("fixed {ws_fixed}")
-        } else {
-            "clean".to_string()
-        },
-        path: None,
-        note: if ws_fixed > 0 {
-            Some("removed sobre from workspace-scope (user-scope preferred)".to_string())
-        } else {
-            None
-        },
-    });
-    steps.push(ws_scope_step);
-
     for (name, prune_result) in [
         ("bm25_cache_prune", prune_bm25_caches()),
         ("graph_cache_prune", prune_graph_caches()),
@@ -241,6 +215,7 @@ fn build_and_persist_fix_report(
         started_at,
         finished_at,
         success,
+        dry_run: false,
         platform: PlatformInfo {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),

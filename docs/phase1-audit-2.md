@@ -76,7 +76,7 @@ was added.
 | Lot | Scope | Status |
 |---|---|---|
 | G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
-| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51, #56, #57) |
+| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #PRNUM) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
@@ -394,7 +394,7 @@ documented:
   - Done. Where there is no autostart, `proxy enable` refuses while
     nothing answers on the port, says to start the proxy by hand first,
     and changes nothing; `init`'s question does the same.
-- [ ] **H5 `claude mcp add-json` never succeeds.** sobre pipes the JSON on
+- [x] **H5 `claude mcp add-json` never succeeds.** (#PRNUM) sobre pipes the JSON on
   stdin; the CLI's usage is `claude mcp add-json [options] <name> <json>`,
   and it fails with "missing required argument 'json'"
   (`core/editor_registry/writers/mod.rs:166-230`).
@@ -406,6 +406,8 @@ documented:
     claude CLI is installed".
   - Fix: remove the CLI path; the file edit is the one writer, and the
     tested one.
+  - Done: `init` writes `~/.claude.json` itself and never runs the CLI;
+    the smoke test checks a `claude` on PATH is left alone.
 - [x] **H6 `config set`** (`cli/config_cmd.rs:21-27`,
   `core/config/setter.rs:176-190`). (#57)
   - Setting a key to its default is ignored. With `compression_level =
@@ -436,24 +438,31 @@ documented:
     named as a table). `sobre config` lists every key with the value in
     effect, `(default)` or `not set`. `doctor` fails on an upstream the
     proxy cannot use.
-- [ ] **H7 `init --check --json` looks like a real run.** Its JSON says
+- [x] **H7 `init --check --json` looks like a real run.** Its JSON says
   "connected" and "created", with no dry-run field
-  (`setup/mod.rs:200-226,255`).
+  (`setup/mod.rs:200-226,255`). (#PRNUM)
+  Done: the report carries `"dry_run": true`, an agent is
+  `would_connect`, and each file reads "would create" or "would update".
 - [x] **H8 The systemd unit pins no directories** (`proxy_autostart.rs:383-405`).
   The macOS plist pins `SOBRE_*_DIR` and `HOME`; the systemd unit sets only
   `RUST_LOG`. A proxy started by systemd can read another config and token
   than the CLI that set it up. Likely; not run under systemd. (#56)
   Done: the unit sets `HOME` and the four `SOBRE_*_DIR` this CLI resolves,
   and quotes the binary in `ExecStart` (a path with a space broke it).
-- [ ] **H9 Zed on macOS.** sobre writes
+- [x] **H9 Zed on macOS.** sobre writes
   `~/Library/Application Support/Zed/settings.json`; Zed reads
   `~/.config/zed/settings.json` on macOS, which is what `doctor` checks
   (`core/editor_registry/paths.rs:16-30`, `doctor/common.rs:167`). Likely;
-  verify with E20.
-- [ ] **H10 Windows: an npm-installed Claude Code is not detected.**
+  verify with E20. (#PRNUM)
+  Done, after Zed's documentation: `~/.config/zed` on macOS,
+  `$XDG_CONFIG_HOME/zed` on Linux, `%APPDATA%\Zed` on Windows. `init`,
+  `doctor` and `uninstall` use the one path. A run on a real Mac stays
+  with E20.
+- [x] **H10 Windows: an npm-installed Claude Code is not detected.**
   `where claude` prints several lines, used whole as one path
-  (`core/editor_registry/detect.rs:84-88`). Likely.
-- [ ] **H11 Smaller ones.**
+  (`core/editor_registry/detect.rs:84-88`). Likely. (#PRNUM)
+  Done: the first line is the path.
+- [x] **H11 Smaller ones.** (#PRNUM)
   - The default proxy port truncates the uid to 16 bits. macOS uids start
     at 501, below the 1000 that marks a system user, so every macOS user
     gets 4444: the README's "two people on one machine get different
@@ -467,6 +476,16 @@ documented:
     `sobre embeddings provision`, which that build refuses (exit 1).
   - `sobre` with stdin closed before `initialize` exits 1 with an ERROR
     line.
+  - Done:
+    - the port is 4444 + uid mod 1000 on Unix, so 501 gets 4945, and no
+      uid is truncated;
+    - `init --agent` with no name exits 2;
+    - the `uninstall --dry-run` line went with `--dry-run` (decision 13);
+    - `sobre call` exits 1 when the server would set `isError`;
+    - `index`'s usage keeps its indentation;
+    - `embeddings status` in the build without embeddings says only
+      that;
+    - stdin closed before `initialize` exits 0, logged at debug level.
 - [x] **H12 The hooks trust a shared directory in `/tmp`.** *Security.*
   (#51)
   - The Cursor and Gemini rewrite dedup and the read dedup keep their state
@@ -488,7 +507,7 @@ documented:
   - Done. The hooks share `<state dir>/hooks/dedup` and
     `<state dir>/hooks/read`, mode 0700; `uninstall` removes them with the
     state dir.
-- [ ] **H13 `doctor --fix` rewrites files in the user's repository.**
+- [x] **H13 `doctor --fix` rewrites files in the user's repository.** (#PRNUM)
   - Reproduced on a repo with a committed JSONC `.cursor/mcp.json`
     (comments, a `team-db` entry and `sobre`) and `.vscode/mcp.json`:
     `doctor --fix` printed only "All 4 checks passed". `git diff` shows
@@ -500,7 +519,11 @@ documented:
   - The README says "never into a repository"; A5 made every edit
     in place.
   - Decision 12.
-- [ ] **H14 `doctor` says things that are not true.**
+  - Done: `doctor --fix` no longer touches workspace files. `doctor`
+    still reports sobre declared both in a repository and for the user,
+    and says to remove the repository entry by hand; the README says
+    `--fix` never edits a repository.
+- [x] **H14 `doctor` says things that are not true.** (#57, #PRNUM)
   - Codex: "hooks auto-compress when trusted (/hooks)"
     (`doctor/integrations/codex.rs:130`); sobre installs only observe hooks
     for Codex, and the README says Codex gets no shell compression.
@@ -516,6 +539,10 @@ documented:
     (#57) Done for the config: said once, telling the user to fix the
     file by hand; `config init` exits 1.
   - `--fix` counts 4 checks, `doctor` 15: a C6 leftover.
+  - Done: Codex reads "sobre installs only observe hooks for Codex",
+    with shell output compressed through `sobre_shell`; Claude's check is
+    "Native Read" and says what the read-dedup hook does and does not do;
+    `--fix` says "4 quick checks passed (sobre doctor runs them all)".
 - [x] **H15 `proxy enable` and `disable` leave state behind and report
   what did not happen.** (#56)
   - Without a systemd user bus, `proxy enable` prints "managed service did
@@ -1092,6 +1119,7 @@ a signed-in GitHub account.
 
 E20 ([first audit](phase1-audit.md)) stays open: the OpenCode plugin and
 skill paths against its config path on Windows, Zed's path on Windows, and
-the scope of `COPILOT_HOME`. H9 (Zed on macOS) and H10 (`where claude` on
-Windows) join it: none of them can be settled without the platform at
-hand.
+the scope of `COPILOT_HOME`. H9 (Zed on macOS and Windows) and H10
+(`where claude` on Windows) are fixed from the documentation and the
+code; a run on each platform joins E20, which none of them can settle
+without the platform at hand.

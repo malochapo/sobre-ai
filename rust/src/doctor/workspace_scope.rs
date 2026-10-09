@@ -102,10 +102,10 @@ pub(super) fn workspace_scope_outcome(
     // 2) Duplicate registration across user + workspace scope.
     //
     // This is informational (WARN), not a hard failure: dual-scope *can* cause
-    // Copilot "ws0 not found" errors, but is also the expected state when
-    // running inside the sobre repo itself (the workspace config is part of
-    // the distribution). Marking it `ok: true` keeps it out of the failure
-    // count while still surfacing the hint.
+    // Copilot "ws0 not found" errors, but a project may register sobre on
+    // purpose. Marking it `ok: true` keeps it out of the failure count while
+    // still surfacing the hint. `doctor --fix` leaves the file alone: sobre
+    // writes nothing into a repository (decision 12).
     let duplicated: Vec<String> = registered
         .iter()
         .filter(|(loc, _)| {
@@ -121,9 +121,10 @@ pub(super) fn workspace_scope_outcome(
             ok: true,
             line: format!(
                 "{BOLD}Workspace MCP{RST}  {YELLOW}sobre registered in BOTH user and \
-                 workspace scope{RST} {DIM}({}){RST}  {DIM}(keep only one scope — duplicate \
-                 registration can cause Copilot 'ws0 not found' / 'tool not contributed' \
-                 errors){RST}",
+                 workspace scope{RST} {DIM}({}){RST}  {DIM}(keep only one scope: remove the \
+                 `sobre` entry from the project file by hand if you do not need it there — \
+                 sobre does not edit files in a repository; duplicate registration can cause \
+                 Copilot 'ws0 not found' / 'tool not contributed' errors){RST}",
                 duplicated.join(", ")
             ),
         });
@@ -141,67 +142,6 @@ pub(super) fn workspace_scope_outcome(
                 .join(", ")
         ),
     })
-}
-
-/// Removes sobre from workspace-scope MCP configs when user-scope already
-/// has it registered. Called by `doctor --fix` to resolve the dual-scope conflict.
-/// Returns the number of files cleaned up.
-pub(super) fn fix_workspace_dual_scope(user_scope_mcp_locations: &BTreeSet<&'static str>) -> usize {
-    if user_scope_mcp_locations.is_empty() {
-        return 0;
-    }
-    let Some(cwd) = std::env::current_dir().ok() else {
-        return 0;
-    };
-
-    let mut fixed = 0;
-    for loc in WORKSPACE_LOCATIONS {
-        if !loc
-            .user_scope_names
-            .iter()
-            .any(|name| user_scope_mcp_locations.contains(name))
-        {
-            continue;
-        }
-        let path = cwd.join(loc.rel);
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        if content.trim().is_empty() || !super::has_sobre_mcp_entry(&content) {
-            continue;
-        }
-        if let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) {
-            let removed = remove_sobre_from_json(&mut json);
-            if removed
-                && let Ok(out) = serde_json::to_string_pretty(&json)
-                && std::fs::write(&path, out.as_bytes()).is_ok()
-            {
-                tracing::info!(
-                    "Removed sobre from workspace-scope {} (user-scope preferred)",
-                    path.display()
-                );
-                fixed += 1;
-            }
-        }
-    }
-    fixed
-}
-
-/// Remove sobre server entries from a parsed JSON value.
-fn remove_sobre_from_json(json: &mut serde_json::Value) -> bool {
-    let containers = ["servers", "mcpServers"];
-    let mut removed = false;
-    for key in containers {
-        if let Some(obj) = json.get_mut(key).and_then(|m| m.as_object_mut()) {
-            if obj.remove("sobre").is_some() {
-                removed = true;
-            }
-            if obj.remove("user-sobre").is_some() {
-                removed = true;
-            }
-        }
-    }
-    removed
 }
 
 #[cfg(test)]
@@ -310,39 +250,5 @@ mod tests {
         );
         let out = with_cwd(tmp.path(), || workspace_scope_outcome(&BTreeSet::new())).unwrap();
         assert!(out.ok, "JSONC with trailing commas must parse cleanly");
-    }
-
-    #[test]
-    fn fix_skips_vscode_workspace_when_only_copilot_cli_is_user_scope() {
-        let tmp = tempfile::tempdir().unwrap();
-        write(
-            tmp.path(),
-            ".vscode/mcp.json",
-            r#"{"servers": {"sobre": {"command": "sobre"}}}"#,
-        );
-        let fixed = with_cwd(tmp.path(), || {
-            fix_workspace_dual_scope(&BTreeSet::from(["GitHub Copilot CLI"]))
-        });
-        assert_eq!(fixed, 0);
-
-        let content = fs::read_to_string(tmp.path().join(".vscode/mcp.json")).unwrap();
-        assert!(content.contains("sobre"));
-    }
-
-    #[test]
-    fn fix_removes_vscode_workspace_when_vscode_is_user_scope() {
-        let tmp = tempfile::tempdir().unwrap();
-        write(
-            tmp.path(),
-            ".vscode/mcp.json",
-            r#"{"servers": {"sobre": {"command": "sobre"}}}"#,
-        );
-        let fixed = with_cwd(tmp.path(), || {
-            fix_workspace_dual_scope(&BTreeSet::from(["VS Code"]))
-        });
-        assert_eq!(fixed, 1);
-
-        let content = fs::read_to_string(tmp.path().join(".vscode/mcp.json")).unwrap();
-        assert!(!content.contains("sobre"));
     }
 }

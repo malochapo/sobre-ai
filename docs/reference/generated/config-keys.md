@@ -24,7 +24,7 @@ Top-level configuration keys
 The local API proxy: switch, port and upstream URLs
 
 - `enabled` (bool?, default `null`) — Run the local API proxy and point installed agents at it. null = not decided yet (init asks), false = never touch it
-- `port` (u16?, default `null`) — Port the proxy listens on (default: 4444 on Windows and for system users; 4444 + (uid - 1000) mod 1000 for other Unix users)
+- `port` (u16?, default `null`) — Port the proxy listens on (default: 4444 + uid mod 1000 on Unix, 4444 on Windows)
 - `upstreams.anthropic` (string?, default `null`) — Upstream URL for the anthropic provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
 - `upstreams.openai` (string?, default `null`) — Upstream URL for the openai provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host
 

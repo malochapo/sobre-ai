@@ -12,8 +12,8 @@ use crate::server::registry::build_registry;
 use crate::server::tool_trait::ToolContext;
 
 /// CLI-level failure — distinct from a tool's *functional* result (a tool that
-/// returns "ERROR:" text is a successful invocation and
-/// goes to stdout with exit 0). These variants are wrong *usage* of `call`.
+/// failed still prints its text to stdout, and exits 1). These variants are
+/// wrong *usage* of `call`.
 #[derive(Debug)]
 pub(crate) enum CallError {
     Usage(String),
@@ -161,9 +161,17 @@ fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) ->
     }
 }
 
-/// Core, testable entry point. Returns the tool's stdout text on success;
-/// `CallError` only for CLI-usage problems (never for functional tool errors).
-pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
+/// What the tool returned: its text, and whether the server would mark it
+/// `isError`.
+#[derive(Debug)]
+pub(crate) struct Called {
+    pub text: String,
+    pub is_error: bool,
+}
+
+/// Core, testable entry point. Returns what the tool returned; `CallError`
+/// only for CLI-usage problems (never for functional tool errors).
+pub(crate) fn run_call(args: &[String]) -> Result<Called, CallError> {
     let parsed = parse_args(args)?;
 
     // Same defense as MCP root resolution: never operate on a broad/unsafe root.
@@ -236,14 +244,25 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
     .and_then(|r| r.map_err(|e| e.to_string()))
     .map_err(|message| CallError::Dispatch(DispatchError::Tool { message }))?;
 
-    Ok(output.text)
+    let is_error = output
+        .shell_outcome
+        .is_some_and(|outcome| crate::server::call_tool::is_shell_error(outcome, &output.text));
+    Ok(Called {
+        text: output.text,
+        is_error,
+    })
 }
 
-/// Thin CLI wrapper: print result to stdout (exit 0, even for functional
-/// "ERROR:" output), or usage error to stderr (exit 2).
+/// Thin CLI wrapper: the tool's text on stdout, exit 1 when the server would
+/// mark it `isError`; a usage error on stderr, exit 2.
 pub(crate) fn cmd_call(args: &[String]) {
     match run_call(args) {
-        Ok(text) => println!("{text}"),
+        Ok(called) => {
+            println!("{}", called.text);
+            if called.is_error {
+                std::process::exit(1);
+            }
+        }
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);
@@ -331,13 +350,34 @@ mod tests {
             "--json".to_string(),
             r#"{"path": "."}"#.to_string(),
         ];
-        let out = run_call(&args).expect("dispatch should succeed");
+        let out = run_call(&args).expect("dispatch should succeed").text;
         assert!(
             out.contains("MARKER_FILE.txt"),
             "tree output missing marker:\n{out}"
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A tool that failed is a call that worked: its text, marked as the
+    /// server marks it, so `cmd_call` exits 1.
+    #[test]
+    fn a_failed_tool_is_marked_as_an_error() {
+        let project = tempfile::tempdir().unwrap();
+        let call = |tool: &str, json: &str| {
+            run_call(&[
+                tool.to_string(),
+                "--project-root".to_string(),
+                project.path().to_string_lossy().to_string(),
+                "--json".to_string(),
+                json.to_string(),
+            ])
+            .expect("the call itself works")
+        };
+        let failed = call("sobre_shell", r#"{"command": "exit 3"}"#);
+        assert!(failed.is_error, "{}", failed.text);
+        let fine = call("sobre_shell", r#"{"command": "echo ok"}"#);
+        assert!(!fine.is_error, "{}", fine.text);
     }
 
     #[test]
@@ -353,6 +393,7 @@ mod tests {
                 json.to_string(),
             ])
             .expect("sobre_session call")
+            .text
         };
 
         call(r#"{"action": "task", "value": "wire the parser"}"#);

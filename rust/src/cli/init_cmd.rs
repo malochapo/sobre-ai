@@ -25,8 +25,18 @@ pub fn cmd_init(args: &[String]) {
         std::process::exit(2);
     }
 
-    // `init <agent>…` and `init --agent <agent>`: any other positional (a
-    // typo) is an error, since falling through would connect every agent.
+    // `init <agent>…` and `init --agent <agent>`: a bare `--agent` or any
+    // other positional (a typo) is an error, since falling through would
+    // connect every agent.
+    if args
+        .iter()
+        .enumerate()
+        .any(|(i, a)| a == "--agent" && args.get(i + 1).is_none_or(|v| v.starts_with('-')))
+    {
+        crate::errln!("init: --agent needs an agent name\n");
+        print_init_help();
+        std::process::exit(2);
+    }
     let mut named: Vec<&'static str> = Vec::new();
     for arg in args.iter().filter(|a| !a.starts_with('-')) {
         match crate::setup::agent_key(arg) {
