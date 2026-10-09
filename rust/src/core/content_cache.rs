@@ -1,22 +1,22 @@
 //! Resident, bounded file-content cache shared across the search-index build and
 //! `sobre_search`.
 //!
-//! Before this module the trigram [`search_index`](crate::core::search_index)
-//! build read *every* file in the corpus to extract trigrams and then threw the
-//! content away, after which `sobre_search` read the narrowed candidate files
-//! **again** to run the regex line-by-line — the corpus was read from disk
-//! twice. This cache lets the first reader (whichever it is) populate file
-//! contents once, keyed by absolute path and validated by `(mtime, size)`, and
-//! every subsequent reader reuse them as an in-memory hit.
+//! The trigram [`search_index`](crate::core::search_index) build reads every
+//! file of the corpus, and `sobre_search` then reads the narrowed candidate
+//! files to run the regex line by line. This cache lets the first reader
+//! (whichever it is) keep file contents, keyed by absolute path and validated
+//! by `(mtime, size)`, so the next reader takes them from memory instead of
+//! from disk.
 //!
 //! Correctness: an entry is only ever served when the file's *current*
-//! `(mtime, size)` exactly matches the stored identity, so any edit (which
-//! changes mtime, and usually size) is a guaranteed miss — results can never go
-//! stale. A miss simply falls back to a disk read.
+//! `(mtime, size)` exactly matches the stored identity, and a file modified
+//! less than [`RACY_WINDOW_MS`] before it was read is not cached at all: a
+//! same-size edit within one mtime tick (1 s on HFS+, 2 s on FAT) would
+//! otherwise keep the old identity. A miss simply falls back to a disk read.
 //!
 //! Bounds & safety:
-//! - Total resident bytes are capped (128 MB) with approximate-LRU eviction, so a large corpus cannot grow the
-//!   cache without limit.
+//! - Total resident bytes are capped (128 MB) with LRU eviction, so a large
+//!   corpus cannot grow the cache without limit.
 //! - Inserts are skipped while the process is under memory pressure, and the
 //!   eviction orchestrator can [`clear`] the cache on `UnloadIndices` /
 //!   `EmergencyDrop`.
@@ -24,12 +24,17 @@
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use lru::LruCache;
 
 /// Resident byte budget.
-const DEFAULT_BUDGET_MB: usize = 128;
+const BUDGET_BYTES: usize = 128 * 1024 * 1024;
+
+/// A file whose mtime is this recent (or in the future) when it is inserted is
+/// not cached: a later same-size edit could land in the same mtime tick. Twice
+/// the coarsest common granularity (FAT's 2 s).
+const RACY_WINDOW_MS: u64 = 4_000;
 
 /// Identity of one file *version*. A changed mtime or size ⇒ stale ⇒ cache miss.
 /// Mirrors the `(mtime, size)` pair the BM25 index already trusts for staleness.
@@ -54,6 +59,15 @@ impl FileState {
             size_bytes: meta.len(),
         })
     }
+
+    /// Whether this version is too recent to tell apart from a same-size edit
+    /// in the same mtime tick.
+    fn is_racy(self) -> bool {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis() as u64);
+        now_ms.saturating_sub(self.mtime_ms) < RACY_WINDOW_MS
+    }
 }
 
 struct Entry {
@@ -63,19 +77,11 @@ struct Entry {
 
 struct Cache {
     /// Unbounded by entry count — eviction is driven by `total_bytes` vs
-    /// `budget_bytes` below, not by a capacity `lru::LruCache` would enforce on
-    /// its own. `LruCache` gives O(1) recency tracking and O(1) LRU-victim
-    /// lookup (`pop_lru`), replacing a hand-rolled `last_used` clock plus an
-    /// O(n) `min_by_key` scan per eviction — the scan was rare per insert as
-    /// originally noted, but `trim_oldest_percent` called it in a loop, making
-    /// a big trim O(n²) over the resident set.
+    /// `budget_bytes` below; `LruCache` gives O(1) recency tracking and O(1)
+    /// LRU-victim lookup (`pop_lru`).
     map: LruCache<PathBuf, Entry>,
     total_bytes: usize,
     budget_bytes: usize,
-    hits: u64,
-    misses: u64,
-    inserts: u64,
-    evictions: u64,
 }
 
 impl Cache {
@@ -84,10 +90,6 @@ impl Cache {
             map: LruCache::unbounded(),
             total_bytes: 0,
             budget_bytes,
-            hits: 0,
-            misses: 0,
-            inserts: 0,
-            evictions: 0,
         }
     }
 
@@ -104,25 +106,14 @@ impl Cache {
                 break;
             };
             self.total_bytes = self.total_bytes.saturating_sub(victim.content.len());
-            self.evictions += 1;
         }
     }
 }
 
 static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
 
-fn budget_bytes() -> usize {
-    DEFAULT_BUDGET_MB.saturating_mul(1024 * 1024)
-}
-
-fn disabled() -> bool {
-    // A zero byte budget turns the cache into a no-op pass-through — every
-    // `get` misses and `insert` is dropped.
-    budget_bytes() == 0
-}
-
 fn cache() -> &'static Mutex<Cache> {
-    CACHE.get_or_init(|| Mutex::new(Cache::new(budget_bytes())))
+    CACHE.get_or_init(|| Mutex::new(Cache::new(BUDGET_BYTES)))
 }
 
 fn lock() -> std::sync::MutexGuard<'static, Cache> {
@@ -136,35 +127,25 @@ fn lock() -> std::sync::MutexGuard<'static, Cache> {
 /// entry and reports a miss. `state` is passed in (not re-`stat`ed) because hot
 /// callers already hold the metadata.
 pub fn get(path: &Path, current: FileState) -> Option<Arc<str>> {
-    if disabled() {
-        return None;
-    }
     let mut c = lock();
     // `peek` (not `get`) first: a stale hit must not promote to MRU on its way
     // to being evicted.
-    let Some(entry) = c.map.peek(path) else {
-        c.misses += 1;
-        return None;
-    };
+    let entry = c.map.peek(path)?;
     if entry.state != current {
         // Stale version cached — drop it so we don't keep paying for it.
         c.remove_entry(path);
-        c.misses += 1;
         return None;
     }
-    c.hits += 1;
-    // `get` promotes to MRU; present under the lock we still hold, but degrade
-    // gracefully instead of panicking on the read hot path if that invariant
-    // ever changes.
+    // `get` promotes to MRU.
     let entry = c.map.get(path)?;
     Some(Arc::clone(&entry.content))
 }
 
 /// Insert (or replace) the content for `path` at version `state`. Skipped while
-/// the process is under memory pressure or when the cache is disabled, so the
-/// cache never *adds* to a memory problem.
+/// the process is under memory pressure, so the cache never *adds* to a memory
+/// problem, and for a file modified in the last [`RACY_WINDOW_MS`].
 pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
-    if disabled() || crate::core::memory_guard::is_under_pressure() {
+    if state.is_racy() || crate::core::memory_guard::is_under_pressure() {
         return;
     }
     let len = content.len();
@@ -176,7 +157,6 @@ pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
     c.remove_entry(path);
     c.map.put(path.to_path_buf(), Entry { state, content });
     c.total_bytes += len;
-    c.inserts += 1;
     if c.total_bytes > c.budget_bytes {
         c.evict_to_budget();
     }
@@ -193,7 +173,7 @@ pub fn clear() {
     c.total_bytes = 0;
 }
 
-/// Evict the oldest `percent` of entries by LRU clock. Used after index builds
+/// Evict the least recently used `percent` of entries. Used after index builds
 /// to release file contents that were only needed for chunking/tokenization.
 /// `percent` is clamped to `[0, 100]`.
 pub fn trim_oldest_percent(percent: u8) {
@@ -201,17 +181,12 @@ pub fn trim_oldest_percent(percent: u8) {
         return;
     }
     let mut c = lock();
-    if c.map.is_empty() {
-        return;
-    }
-    let pct = (percent.min(100)) as usize;
-    let target_evictions = c.map.len() * pct / 100;
+    let target_evictions = c.map.len() * usize::from(percent.min(100)) / 100;
     for _ in 0..target_evictions {
         let Some((_, victim)) = c.map.pop_lru() else {
             break;
         };
         c.total_bytes = c.total_bytes.saturating_sub(victim.content.len());
-        c.evictions += 1;
     }
 }
 
@@ -227,8 +202,8 @@ pub fn memory_usage_bytes() -> usize {
 mod tests {
     use super::*;
 
-    /// The cache is a process-wide global and tests mutate it (and the budget
-    /// env var). Serialize them so they cannot observe each other's state.
+    /// The cache is a process-wide global and tests mutate it. Serialize them
+    /// so they cannot observe each other's state.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn fresh_cache(budget_bytes: usize) {
@@ -236,9 +211,13 @@ mod tests {
         *c = Cache::new(budget_bytes);
     }
 
+    /// Writes a file last modified an hour ago, well outside the racy window.
     fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
         let p = dir.join(name);
         std::fs::write(&p, body).unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&p).unwrap();
+        f.set_modified(SystemTime::now() - std::time::Duration::from_secs(3600))
+            .unwrap();
         p
     }
 
@@ -255,6 +234,27 @@ mod tests {
         insert(&p, state, Arc::from("fn main() {}\n"));
         let got = get(&p, state).expect("warm cache must hit");
         assert_eq!(&*got, "fn main() {}\n");
+    }
+
+    /// A file written in the last moments is not cached: a same-size edit in
+    /// the same mtime tick would otherwise be served from the stale entry.
+    #[test]
+    fn recently_modified_file_is_not_cached() {
+        let _g = TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        fresh_cache(1024 * 1024);
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("a.rs");
+        std::fs::write(&p, "let a = 1;\n").unwrap();
+        let state = FileState::from_metadata(&std::fs::metadata(&p).unwrap()).unwrap();
+        insert(&p, state, Arc::from("let a = 1;\n"));
+        // Same size, same mtime tick: the cache cannot tell the versions apart.
+        std::fs::write(&p, "let a = 2;\n").unwrap();
+        assert!(
+            get(&p, state).is_none(),
+            "a racy entry must never be served"
+        );
     }
 
     #[test]
