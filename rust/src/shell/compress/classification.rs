@@ -276,7 +276,7 @@ fn is_file_viewer(command: &str) -> bool {
         // Grep-family routes to `has_structural_output` via
         // `is_source_search` — the dedicated `patterns::grep` compressor
         // handles them dictionary-free. NOT in is_file_viewer.
-        "head" | "tail" => !command.contains("-f") && !command.contains("--follow"),
+        "head" | "tail" => !follows(command, &['f', 'F']),
         // sed/awk are commonly used as range/pattern file viewers
         // (`sed -n '10,50p' file`, `awk '{print}' file`). Their stdout
         // is file payload and must never enter the generic terse pipeline —
@@ -621,22 +621,38 @@ fn is_config_viewer(command: &str) -> bool {
 
 fn is_log_viewer(command: &str) -> bool {
     let cl = command.trim().to_ascii_lowercase();
-    if cl.starts_with("journalctl") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("journalctl") && !follows(&cl, &['f']) {
         return true;
     }
-    if cl.starts_with("dmesg") && !cl.contains("-w") && !cl.contains("--follow") {
+    if cl.starts_with("dmesg") && !follows(&cl, &['w']) {
         return true;
     }
-    if cl.starts_with("docker logs") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("docker logs") && !follows(&cl, &['f']) {
         return true;
     }
-    if cl.starts_with("kubectl logs") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("kubectl logs") && !follows(&cl, &['f']) {
         return true;
     }
-    if cl.starts_with("docker compose logs") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("docker compose logs") && !follows(&cl, &['f']) {
         return true;
     }
     false
+}
+
+/// True when `command` asks to keep streaming: a `--follow` word, or a
+/// short-flag word (`-f`, `-fn`, `-xef`) holding one of `short`. An `f` in a
+/// file name or in another flag (`--file=`, `short-full`) does not count.
+fn follows(command: &str, short: &[char]) -> bool {
+    command.split_whitespace().any(|word| {
+        if let Some(long) = word.strip_prefix("--") {
+            return long == "follow" || long.starts_with("follow=");
+        }
+        word.strip_prefix('-').is_some_and(|flags| {
+            !flags.is_empty()
+                && flags.chars().all(|c| c.is_ascii_alphanumeric())
+                && flags.chars().any(|c| short.contains(&c))
+        })
+    })
 }
 
 fn is_archive_listing(command: &str) -> bool {
@@ -1011,5 +1027,34 @@ mod verbatim_classification_tests {
     #[test]
     fn non_viewer_compound_not_verbatim() {
         assert!(!is_verbatim_output("cd /repo && cargo build"));
+    }
+
+    /// Only a follow flag makes a log or file viewer stream; an `-f` inside a
+    /// file name or another flag does not.
+    #[test]
+    fn a_follow_flag_is_a_word_not_a_substring() {
+        for cmd in [
+            "tail -n 50 app-frontend.log",
+            "head -20 my-file.txt",
+            "journalctl --file=/var/log/journal/system.journal",
+            "journalctl -u nginx -o short-full",
+            "dmesg --level=warn -T",
+            "kubectl logs my-pod --tail=100 -c side-feed",
+            "docker logs --since 1h web-frontend",
+        ] {
+            assert!(is_verbatim_output(cmd), "{cmd}");
+        }
+        for cmd in [
+            "tail -f app.log",
+            "tail -F app.log",
+            "tail -fn 100 app.log",
+            "journalctl -fu nginx",
+            "journalctl --follow",
+            "dmesg -w",
+            "kubectl logs -f my-pod",
+            "docker logs --follow web",
+        ] {
+            assert!(!is_verbatim_output(cmd), "{cmd}");
+        }
     }
 }
