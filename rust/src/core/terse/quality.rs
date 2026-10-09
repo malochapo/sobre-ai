@@ -101,6 +101,14 @@ fn extract_identifiers(text: &str, min_len: usize) -> HashSet<String> {
 mod tests {
     use super::*;
 
+    /// The path gate alone: identifier preservation is not scored.
+    fn paths_only() -> QualityConfig {
+        QualityConfig {
+            min_identifier_preservation: 0.0,
+            ..QualityConfig::default()
+        }
+    }
+
     #[test]
     fn path_detection() {
         assert!(looks_like_path("src/main.rs"));
@@ -127,7 +135,7 @@ mod tests {
         let original =
             "src/main.rs: error[E0308]: mismatched types\nlong description here that is verbose";
         let compressed = "src/main.rs: err[E0308]: mismatched types";
-        assert!(check(original, compressed, &QualityConfig::default()));
+        assert!(check(original, compressed, &paths_only()));
     }
 
     #[test]
@@ -142,7 +150,7 @@ mod tests {
     fn quality_fails_missing_path() {
         let original = "error in src/config.rs";
         let compressed = "error occurred";
-        assert!(!check(original, compressed, &QualityConfig::default()));
+        assert!(!check(original, compressed, &paths_only()));
     }
 
     /// A pure-digit, hex-shaped blob (e.g. an all-numeric slice of a
@@ -154,8 +162,12 @@ mod tests {
         let blob = "1".repeat(9) + &"2".repeat(9) + &"3".repeat(9);
         let original = format!("commit hash: {blob}");
         let compressed = "commit hash:";
+        let identifiers_only = QualityConfig {
+            min_path_preservation: 0.0,
+            ..QualityConfig::default()
+        };
         assert!(
-            !check(&original, compressed, &QualityConfig::default()),
+            !check(&original, compressed, &identifiers_only),
             "dropping a pure-digit hash-shaped blob must fail the identifier gate"
         );
     }
