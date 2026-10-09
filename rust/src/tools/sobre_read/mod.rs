@@ -305,20 +305,17 @@ fn parse_line_ranges(range: &str) -> Option<Vec<(usize, usize)>> {
         .split(',')
         .map(|part| {
             let part = part.trim();
-            match part.split_once('-') {
-                Some((s, e)) => {
-                    let start = s.trim().parse::<usize>().ok()?.max(1);
-                    let end = if e.trim().is_empty() {
-                        usize::MAX
-                    } else {
-                        e.trim().parse::<usize>().ok()?
-                    };
-                    Some((start, end))
-                }
-                None => {
-                    let n = part.parse::<usize>().ok()?;
-                    Some((n, n))
-                }
+            if let Some((s, e)) = part.split_once('-') {
+                let start = s.trim().parse::<usize>().ok()?.max(1);
+                let end = if e.trim().is_empty() {
+                    usize::MAX
+                } else {
+                    e.trim().parse::<usize>().ok()?
+                };
+                Some((start, end))
+            } else {
+                let n = part.parse::<usize>().ok()?;
+                Some((n, n))
             }
         })
         .collect()

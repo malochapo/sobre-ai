@@ -1024,7 +1024,10 @@ mod tests {
     fn stopping_at_max_results_is_said() {
         let dir = tempfile::tempdir().unwrap();
         for i in 0..30 {
-            let body: String = (0..10).map(|j| format!("needle {i} {j}\n")).collect();
+            let body = (0..10)
+                .map(|j| format!("needle {i} {j}"))
+                .collect::<Vec<_>>()
+                .join("\n");
             std::fs::write(dir.path().join(format!("f{i:02}.txt")), body).unwrap();
         }
         let search = |max| {

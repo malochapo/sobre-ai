@@ -201,7 +201,10 @@ fn instruction_file_honours_a_line_window() {
     let proj = home.join("proj");
     std::fs::create_dir_all(&proj).unwrap();
     let file = proj.join("AGENTS.md");
-    let body: String = (1..=40).map(|i| format!("rule number {i}\n")).collect();
+    let body = (1..=40)
+        .map(|i| format!("rule number {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     std::fs::write(&file, body).unwrap();
     let data = home.join("data");
     std::fs::create_dir_all(&data).unwrap();
