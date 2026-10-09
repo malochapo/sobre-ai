@@ -236,11 +236,6 @@ fn remove_mcp_entry(root: &mut Map<String, Value>, container: &str) {
     }
 }
 
-/// True for a hook command sobre wrote: `<binary> hook <action>`.
-fn is_sobre_command(command: &str) -> bool {
-    command.contains("sobre") && command.contains(" hook ")
-}
-
 /// True for a hook entry whose command (`command`, Copilot's `bash` and
 /// `powershell`) is one of sobre's.
 fn is_sobre_hook(entry: &Value) -> bool {
@@ -248,7 +243,7 @@ fn is_sobre_hook(entry: &Value) -> bool {
         entry
             .get(*k)
             .and_then(Value::as_str)
-            .is_some_and(is_sobre_command)
+            .is_some_and(crate::hooks::is_sobre_hook_command)
     })
 }
 
@@ -393,6 +388,28 @@ mod tests {
         assert_eq!(post.len(), 1);
         assert_eq!(post[0]["hooks"][0]["command"], "my-check");
         assert!(v["hooks"].get("Stop").is_none(), "{out}");
+    }
+
+    #[test]
+    fn another_tools_hook_named_observe_is_kept() {
+        let input = r#"{
+  "hooks": {
+    "Stop": [
+      { "matcher": ".*", "hooks": [{ "type": "command", "command": "/opt/acme/bin/acme hook observe" }] },
+      { "matcher": ".*", "hooks": [{ "type": "command", "command": "/bin/sobre hook observe" }] }
+    ]
+  }
+}"#;
+        let Cleanup::Rewrite(out) = clean_hooks(input) else {
+            panic!("expected a rewrite");
+        };
+        let v = crate::core::jsonc::parse_jsonc(&out).unwrap();
+        let stop = v["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1, "{out}");
+        assert_eq!(
+            stop[0]["hooks"][0]["command"],
+            "/opt/acme/bin/acme hook observe"
+        );
     }
 
     #[test]

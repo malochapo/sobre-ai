@@ -5,9 +5,10 @@
 //! schema completeness. Schema descriptions, allowed values and defaults
 //! are then woven in as `#` comment lines *above* each key and section, and
 //! every key the body leaves out (an unset optional) is listed commented out
-//! in its section. Only comment lines are inserted; key/value lines are never
-//! touched, which guarantees `parse(render(cfg)) == cfg` and keeps the output a
-//! deterministic function of `(cfg, schema)`.
+//! where uncommenting it alone sets it. Only comment lines and empty section
+//! headers are inserted; key/value lines are never touched, which guarantees
+//! `parse(render(cfg)) == cfg` and keeps the output a deterministic function
+//! of `(cfg, schema)`.
 
 use super::Config;
 use super::schema::{ConfigSchema, KeySchema};
@@ -31,23 +32,24 @@ pub fn render_annotated_config(cfg: &Config, schema: &ConfigSchema) -> String {
     let mut out = String::from(HEADER);
 
     // Serializing the full config is what guarantees a lossless round-trip; the
-    // annotation pass below only ever *inserts* comment lines. A `Config` always
-    // serializes, so the error path is unreachable in practice — we still return
-    // a valid (header-only) document rather than panicking.
+    // annotation pass below only ever *inserts* comment lines and empty section
+    // headers. A `Config` always serializes, so the error path is unreachable
+    // in practice — we still return a valid (header-only) document rather than
+    // panicking.
     let Ok(body) = toml::to_string_pretty(cfg) else {
         return out;
     };
+    let body = with_every_section_header(&body, schema);
+    let tables: Vec<String> = body.lines().filter_map(section_header).collect();
 
     let mut current_section = String::from("root");
     let mut seen_keys: Vec<String> = Vec::new();
-    let mut seen_sections: Vec<String> = vec![current_section.clone()];
     for line in body.lines() {
         let trimmed = line.trim_start();
 
         if let Some(section) = section_header(trimmed) {
-            append_unset_keys(&mut out, schema, &current_section, &seen_keys, false);
+            append_unset_keys(&mut out, schema, &current_section, &seen_keys, &tables);
             append_section(&mut out, schema, &section, line);
-            seen_sections.push(section.clone());
             current_section = section;
             continue;
         }
@@ -67,61 +69,99 @@ pub fn render_annotated_config(cfg: &Config, schema: &ConfigSchema) -> String {
         out.push_str(line);
         out.push('\n');
     }
-    append_unset_keys(&mut out, schema, &current_section, &seen_keys, false);
-
-    // Sections the body has no table for: header and keys, all commented out.
-    for name in schema.sections.keys() {
-        if !seen_sections.contains(name) {
-            append_unset_keys(&mut out, schema, name, &seen_keys, true);
-        }
-    }
-
+    append_unset_keys(&mut out, schema, &current_section, &seen_keys, &tables);
     out
 }
 
+/// `body` with a header for every section of the schema, empty when the
+/// config sets nothing in it. `toml` writes no `[proxy]` when the table has
+/// no key of its own; a commented `# port = …` would then land under
+/// whatever table came last once uncommented. A missing header goes before
+/// the section's first sub-table (`[proxy.upstreams]`), or at the end.
+fn with_every_section_header(body: &str, schema: &ConfigSchema) -> String {
+    let mut lines: Vec<String> = body.lines().map(str::to_string).collect();
+    for name in schema.sections.keys().filter(|n| *n != "root") {
+        if lines
+            .iter()
+            .any(|l| section_header(l).as_deref() == Some(name))
+        {
+            continue;
+        }
+        let sub = format!("[{name}.");
+        if let Some(at) = lines.iter().position(|l| l.starts_with(&sub)) {
+            lines.insert(at, format!("[{name}]"));
+        } else {
+            if lines.last().is_some_and(|l| !l.is_empty()) {
+                lines.push(String::new());
+            }
+            lines.push(format!("[{name}]"));
+        }
+    }
+    let mut text = lines.join("\n");
+    text.push('\n');
+    text
+}
+
 /// The keys of `section` the body did not write, documented and commented
-/// out. With `with_header`, the section's `[name]` header comes first, also
-/// commented out.
+/// out, so that uncommenting any one of them alone sets it:
+///
+/// - a dotted key of the schema (`upstreams.anthropic` in `[proxy]`) is
+///   written as is, unless its sub-table (`[proxy.upstreams]`) is in the
+///   body, where it goes instead;
+/// - in such a sub-table, the parent's keys under it, without the prefix
+///   (`# openai = …`).
 fn append_unset_keys(
     out: &mut String,
     schema: &ConfigSchema,
     section: &str,
     seen: &[String],
-    with_header: bool,
+    tables: &[String],
 ) {
-    let Some(section_schema) = schema.sections.get(section) else {
+    let (owner, prefix) = match schema.sections.get(section) {
+        Some(_) => (section, String::new()),
+        None => match section.split_once('.') {
+            Some((parent, sub)) => (parent, format!("{sub}.")),
+            None => return,
+        },
+    };
+    let Some(owner_schema) = schema.sections.get(owner) else {
         return;
     };
-    let unset: Vec<(&String, &KeySchema)> = section_schema
-        .keys
-        .iter()
-        .filter(|(field, _)| {
-            let path = if section == "root" {
-                (*field).clone()
-            } else {
-                format!("{section}.{field}")
-            };
-            !seen.contains(&path)
-        })
-        .collect();
-    if unset.is_empty() {
-        return;
+    // The body's blank line before the next table goes after these keys.
+    let spaced = out.ends_with("\n\n");
+    if spaced {
+        out.pop();
     }
-    if with_header {
-        out.push('\n');
-        for comment in section_schema.description.lines() {
-            out.push_str("# ");
-            out.push_str(comment);
-            out.push('\n');
+    for (field, key_schema) in &owner_schema.keys {
+        let path = if owner == "root" {
+            field.clone()
+        } else {
+            format!("{owner}.{field}")
+        };
+        if seen.contains(&path) {
+            continue;
         }
-        out.push_str(&format!("# [{section}]\n"));
-    }
-    for (field, key_schema) in unset {
+        let shown = if prefix.is_empty() {
+            if let Some((sub, _)) = field.split_once('.')
+                && tables.contains(&format!("{owner}.{sub}"))
+            {
+                continue;
+            }
+            field.as_str()
+        } else {
+            match field.strip_prefix(&prefix) {
+                Some(rest) => rest,
+                None => continue,
+            }
+        };
         append_key_comment(out, key_schema);
         out.push_str(&format!(
-            "# {field} = <{}>\n",
+            "# {shown} = <{}>\n",
             key_schema.ty.trim_end_matches('?')
         ));
+    }
+    if spaced {
+        out.push('\n');
     }
 }
 
@@ -246,6 +286,61 @@ mod tests {
             parsed.proxy.upstreams.get("anthropic").map(String::as_str),
             Some("https://upstream.example")
         );
+    }
+
+    /// G3: uncommenting any one commented-out key, alone, sets that key —
+    /// with nothing set, and with a sub-table (`[proxy.upstreams]`) present.
+    #[test]
+    fn each_commented_key_works_once_uncommented_alone() {
+        let schema = ConfigSchema::generate();
+        let mut partly = Config::default();
+        partly.proxy.enabled = Some(true);
+        partly.proxy.upstreams.insert(
+            "anthropic".to_string(),
+            "http://127.0.0.1:11434".to_string(),
+        );
+        for cfg in [Config::default(), partly] {
+            let rendered = render_annotated_config(&cfg, &schema);
+            let before = toml::to_string(&cfg).unwrap();
+            let mut tried = 0;
+            for (i, line) in rendered.lines().enumerate() {
+                let Some(rest) = line.strip_prefix("# ") else {
+                    continue;
+                };
+                let Some((key, ty)) = rest.split_once(" = <") else {
+                    continue;
+                };
+                let sample = match ty.trim_end_matches('>') {
+                    "bool" => "true",
+                    "u16" => "4445",
+                    "u64" => "30",
+                    "f64" => "0.5",
+                    "string" => "\"http://127.0.0.1:1\"",
+                    "string[]" => "[\"x\"]",
+                    other => panic!("no sample value for type {other}"),
+                };
+                let edited: String = rendered
+                    .lines()
+                    .enumerate()
+                    .map(|(j, l)| {
+                        if j == i {
+                            format!("{key} = {sample}\n")
+                        } else {
+                            format!("{l}\n")
+                        }
+                    })
+                    .collect();
+                let parsed: Config = toml::from_str(&edited)
+                    .unwrap_or_else(|e| panic!("uncommenting `{key}` breaks the file: {e}"));
+                assert_ne!(
+                    toml::to_string(&parsed).unwrap(),
+                    before,
+                    "uncommenting `{key}` set nothing"
+                );
+                tried += 1;
+            }
+            assert!(tried >= 3, "too few commented keys found:\n{rendered}");
+        }
     }
 
     // Output must be a deterministic function of its inputs and actually

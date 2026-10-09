@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#51) |
+| G | Regressions and half-done phase-1 fixes | in progress (#51, #52) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -162,7 +162,7 @@ documented:
     `~/.copilot/hooks` behind. `tests/suite/init_uninstall_round_trip.rs`
     runs `init` twice, once more from a moved binary, then `uninstall`,
     over nine agents, and compares the whole HOME.
-- [ ] **G2 The observe-hook refresh takes over other tools' hooks.**
+- [x] **G2 The observe-hook refresh takes over other tools' hooks.** (#52)
   *Regression: E19.*
   - `refresh_command` (`hooks/agents/mod.rs:13-26`) points every hook
     command containing `hook observe` at sobre (`hooks/agents/claude.rs:118`,
@@ -170,7 +170,13 @@ documented:
   - A user's `/opt/acme/bin/acme hook observe` becomes sobre's command, and
     `uninstall` then deletes it.
   - Fix: match sobre's own command only.
-- [ ] **G3 `config init` writes `[proxy]` under `[proxy.upstreams]`.**
+  - Done. One test, `hooks::is_sobre_hook_command`, decides what a sobre
+    hook is: the program before ` hook ` is a binary named `sobre` (any
+    directory, quoted or not, `.exe`, PowerShell's `& "…"`), or the
+    configured `hook_binary`. The refresh, every host's installer and
+    `uninstall` use it; they used five different substring tests, which
+    also matched `/home/sobre/bin/acme hook observe`.
+- [x] **G3 `config init` writes `[proxy]` under `[proxy.upstreams]`.** (#52)
   *Regression: C11.*
   - The live `[proxy.upstreams]` header comes first, then the commented
     `# [proxy]` keys (`core/config/render.rs:68-77`).
@@ -183,6 +189,13 @@ documented:
   - Fix: render `[proxy]` before its sub-table, and no empty live table; a
     test that uncomments each key, and each documented group, and parses
     the file.
+  - Done. Every section has a live header, empty when nothing in it is
+    set, placed before its sub-tables. An unset upstream is listed as
+    `# upstreams.openai = …` under `[proxy]`, or as `# openai = …` inside
+    `[proxy.upstreams]` when that table is there. An empty
+    `[proxy.upstreams]` is no longer written, by `config init` or `sobre
+    config`. A test uncomments each listed key alone, with nothing set and
+    with an upstream set, and checks the file parses and the key took.
 - [ ] **G4 The whitespace-insensitive fallback of `replace_unique` and
   `replace_all` reports edits it did not make** (`tools/impl_edit.rs:257-276`,
   `:403-425`, `:643-664`). *Regression: B9 added it to `replace_all`.*

@@ -205,3 +205,45 @@ fn roundtrip_unix_path() {
     let back = from_bash_to_native_path(&bash);
     assert_eq!(back, native);
 }
+
+// ── which hook commands are sobre's ──
+
+#[test]
+fn sobre_hook_commands_are_recognised_by_their_program() {
+    for ours in [
+        "sobre hook observe",
+        "/home/u/.local/bin/sobre hook compress",
+        "\"/home/Jane Doe/.local/bin/sobre\" hook observe",
+        "/home/Jane Doe/.local/bin/sobre hook observe",
+        "& \"C:\\Users\\Jane Doe\\AppData\\Local\\sobre.exe\" hook compress",
+        "C:\\tools\\SOBRE.EXE hook read-dedup",
+    ] {
+        assert!(is_sobre_hook_command(ours), "{ours}");
+    }
+    for theirs in [
+        "/opt/acme/bin/acme hook observe",
+        "/home/sobre/bin/acme hook observe",
+        "/opt/sobre-tools/lint hook compress",
+        "sobre -c 'git status'",
+        "my-check",
+    ] {
+        assert!(!is_sobre_hook_command(theirs), "{theirs}");
+    }
+}
+
+#[test]
+fn another_tools_observe_hook_is_neither_refreshed_nor_removed() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let acme = "/opt/acme/bin/acme hook observe";
+    let mut entries = vec![
+        serde_json::json!({ "command": acme }),
+        serde_json::json!({ "command": "/old/path/sobre hook observe" }),
+    ];
+    assert!(agents::refresh_commands_for_test(
+        &mut entries,
+        "hook observe",
+        "/new/path/sobre hook observe"
+    ));
+    assert_eq!(entries[0]["command"], acme);
+    assert_eq!(entries[1]["command"], "/new/path/sobre hook observe");
+}

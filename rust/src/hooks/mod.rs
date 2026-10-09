@@ -8,6 +8,35 @@ use agents::{
 };
 pub(crate) use support::{CodexHooksFlag, ensure_codex_hooks_enabled, remove_codex_hooks_flag};
 
+/// True for a hook command sobre writes, `<binary> hook <action>`: the
+/// program before ` hook ` is a binary named `sobre` (`sobre.exe`), in any
+/// directory, quoted or not, or PowerShell's `& "…"` form; or it is the
+/// `hook_binary` the config sets. Another tool's `… hook observe` is not.
+pub(crate) fn is_sobre_hook_command(command: &str) -> bool {
+    let Some(at) = command.find(" hook ") else {
+        return false;
+    };
+    let program = command[..at].trim();
+    let program = program.strip_prefix('&').map_or(program, str::trim_start);
+    let program = program
+        .strip_prefix('"')
+        .and_then(|p| p.strip_suffix('"'))
+        .or_else(|| {
+            program
+                .strip_prefix('\'')
+                .and_then(|p| p.strip_suffix('\''))
+        })
+        .unwrap_or(program);
+    let name = program.rsplit(['/', '\\']).next().unwrap_or(program);
+    let stem = name
+        .len()
+        .checked_sub(4)
+        .filter(|&i| name.is_char_boundary(i) && name[i..].eq_ignore_ascii_case(".exe"))
+        .map_or(name, |i| &name[..i]);
+    stem.eq_ignore_ascii_case("sobre")
+        || crate::core::portable_binary::hook_binary_override().is_some_and(|b| b == program)
+}
+
 /// Resolve the sobre binary to an **absolute** path for generated hook
 /// commands and MCP server entries.
 ///

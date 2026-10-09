@@ -63,7 +63,7 @@ fn is_sobre_entry(entry: &serde_json::Value) -> bool {
         entry
             .get(*k)
             .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains("sobre") && c.contains(" hook "))
+            .is_some_and(crate::hooks::is_sobre_hook_command)
     })
 }
 
