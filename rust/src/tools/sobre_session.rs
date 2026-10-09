@@ -7,6 +7,15 @@ pub struct SessionToolOptions<'a> {
     pub write: bool,
 }
 
+/// Save `session` when it holds anything, so replacing it loses nothing.
+fn save_if_recorded(session: &mut SessionState) -> Result<(), String> {
+    if session.has_record() {
+        session.save()
+    } else {
+        Ok(())
+    }
+}
+
 pub fn handle(
     session: &mut SessionState,
     action: &str,
@@ -19,8 +28,8 @@ pub fn handle(
         "status" | "show" => session.format_compact(),
 
         "load" => {
-            // Without an id: this project's latest session, never the one of
-            // the server's cwd.
+            // Without an id: this project's latest saved session, never the
+            // one of the server's cwd. The live session is saved first.
             let loaded = if let Some(id) = session_id {
                 SessionState::load_by_id(id)
             } else {
@@ -28,21 +37,28 @@ pub fn handle(
                     .project_root
                     .as_deref()
                     .and_then(SessionState::load_latest_for_project_root)
+                    .filter(|s| s.id != session.id)
             };
 
-            if let Some(prev) = loaded {
-                let summary = prev.format_compact();
-                *session = prev;
-                format!("Session loaded.\n{summary}")
-            } else {
-                let id_str = session_id.unwrap_or("latest");
-                format!("No session found (id: {id_str}). Starting fresh.")
+            let Some(prev) = loaded else {
+                return match session_id {
+                    Some(id) => format!("ERROR: no saved session '{id}'"),
+                    None => "ERROR: no other saved session for this project".to_string(),
+                };
+            };
+            if let Err(e) = save_if_recorded(session) {
+                return format!(
+                    "ERROR: the current session could not be saved ({e}); nothing loaded"
+                );
             }
+            let summary = prev.format_compact();
+            session.replace_record(prev);
+            format!("Session loaded.\n{summary}")
         }
 
         "save" => match session.save() {
             Ok(()) => format!("Session {} saved (v{}).", session.id, session.version),
-            Err(e) => format!("Save failed: {e}"),
+            Err(e) => format!("ERROR: save failed: {e}"),
         },
 
         "export" => {
@@ -125,10 +141,14 @@ bytes: {}\n",
         }
 
         "import" => {
-            let root = session.project_root.clone().unwrap_or_else(|| {
-                std::env::current_dir()
-                    .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
-            });
+            // The session's own root, never the server's cwd.
+            let Some(root) = session
+                .project_root
+                .clone()
+                .or_else(|| session.shell_cwd.clone())
+            else {
+                return "ERROR: import needs a project root; this session has none".to_string();
+            };
             let root_path = std::path::PathBuf::from(&root);
 
             let Some(p) = opts.path.or(value) else {
@@ -173,12 +193,19 @@ bytes: {}\n",
                 warning = Some("WARNING: project_identity_hash mismatch (importing into different project identity).".to_string());
             }
 
+            if let Err(e) = save_if_recorded(session) {
+                return format!(
+                    "ERROR: the current session could not be saved ({e}); nothing imported"
+                );
+            }
             let report = crate::core::ccp_session_bundle::import_bundle_v1_into_session(
                 session,
                 &bundle,
                 Some(&root),
             );
-            let _ = session.save();
+            if let Err(e) = session.save() {
+                warning = Some(format!("WARNING: imported, but not saved: {e}"));
+            }
 
             let mut out = format!(
                 "CCP session bundle imported.\n\
@@ -194,29 +221,35 @@ stale_files: {}\n",
             out
         }
 
-        "task" => {
-            let desc = value.unwrap_or("(no description)");
-            session.set_task(desc, None);
-            format!("Task set: {desc}")
-        }
-
-        "finding" => {
-            let summary = value.unwrap_or("(no summary)");
-            let (file, line, text) = parse_finding_value(summary);
-            session.add_finding(file.as_deref(), line, text);
-            format!("Finding added: {summary}")
-        }
-
-        "decision" => {
-            let desc = value.unwrap_or("(no description)");
-            session.add_decision(desc, None);
-            format!("Decision recorded: {desc}")
+        "task" | "finding" | "decision" => {
+            let Some(text) = value.map(str::trim).filter(|v| !v.is_empty()) else {
+                return format!("ERROR: value is required for action={action}");
+            };
+            match action {
+                "task" => {
+                    session.set_task(text, None);
+                    format!("Task set: {text}")
+                }
+                "finding" => {
+                    let (file, line, summary) = parse_finding_value(text);
+                    session.add_finding(file.as_deref(), line, summary);
+                    format!("Finding added: {text}")
+                }
+                _ => {
+                    session.add_decision(text, None);
+                    format!("Decision recorded: {text}")
+                }
+            }
         }
 
         "reset" => {
-            let _ = session.save();
+            if let Err(e) = save_if_recorded(session) {
+                return format!(
+                    "ERROR: the current session could not be saved ({e}); nothing reset"
+                );
+            }
             let old_id = session.id.clone();
-            *session = SessionState::new();
+            session.replace_record(SessionState::new());
             format!("Session reset. Previous: {old_id}. New: {}.", session.id)
         }
 
@@ -277,7 +310,7 @@ stale_files: {}\n",
             };
             match snapshot {
                 Some(s) => format!("Session restored from compaction snapshot:\n{s}"),
-                None => "No compaction snapshot found. Session continues fresh.".to_string(),
+                None => "ERROR: no compaction snapshot found".to_string(),
             }
         }
 
@@ -346,7 +379,46 @@ fn parse_finding_value(value: &str) -> (Option<String>, Option<u32>, &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_finding_value;
+    use super::{SessionState, SessionToolOptions, handle, parse_finding_value};
+
+    fn run(session: &mut SessionState, action: &str, value: Option<&str>) -> String {
+        let opts = SessionToolOptions {
+            format: None,
+            path: None,
+            write: false,
+        };
+        handle(session, action, value, None, opts)
+    }
+
+    /// L4: `reset` keeps the project root, the shell directory and the extra
+    /// roots; only the record is new.
+    #[test]
+    fn reset_keeps_where_the_process_works() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let mut session = SessionState::new();
+        session.project_root = Some("/work/app".to_string());
+        session.shell_cwd = Some("/work/app/src".to_string());
+        session.extra_roots = vec!["/work/lib".to_string()];
+        run(&mut session, "task", Some("ship it"));
+
+        let out = run(&mut session, "reset", None);
+        assert!(out.starts_with("Session reset."), "{out}");
+        assert!(session.task.is_none());
+        assert_eq!(session.project_root.as_deref(), Some("/work/app"));
+        assert_eq!(session.shell_cwd.as_deref(), Some("/work/app/src"));
+        assert_eq!(session.extra_roots, vec!["/work/lib".to_string()]);
+    }
+
+    /// L18: an empty value is refused, never stored as a placeholder.
+    #[test]
+    fn a_record_without_a_value_is_refused() {
+        let mut session = SessionState::new();
+        for action in ["task", "finding", "decision"] {
+            let out = run(&mut session, action, Some("  "));
+            assert!(out.starts_with("ERROR: value is required"), "{out}");
+        }
+        assert!(!session.has_record());
+    }
 
     #[test]
     fn finding_with_em_dash_and_file_line() {

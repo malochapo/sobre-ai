@@ -167,13 +167,22 @@ impl ProjectKnowledge {
     pub fn recall_by_category_for_output(
         &mut self,
         category: &str,
+        query: Option<&str>,
         limit: usize,
     ) -> (Vec<KnowledgeFact>, usize) {
+        // With a query, a fact must contain every one of its words.
+        let terms: Vec<String> = query
+            .map(|q| q.split_whitespace().map(str::to_lowercase).collect())
+            .unwrap_or_default();
+        let matches = |f: &KnowledgeFact| {
+            let text = format!("{} {}", f.key, f.value).to_lowercase();
+            terms.iter().all(|t| text.contains(t.as_str()))
+        };
         let mut idxs: Vec<usize> = self
             .facts
             .iter()
             .enumerate()
-            .filter(|(_, f)| f.is_current() && f.category == category)
+            .filter(|(_, f)| f.is_current() && f.category == category && matches(f))
             .map(|(i, _)| i)
             .collect();
 

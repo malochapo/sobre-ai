@@ -184,10 +184,7 @@ impl SobreServer {
             output_token_count,
         );
 
-        let action = helpers::get_str(args, "action");
-
-        self.record_receipt(name, args, action.as_deref(), &result_text)
-            .await;
+        self.save_session_when_due().await;
 
         let skip_checkpoint = matches!(name, "sobre_session" | "sobre_knowledge");
 
@@ -225,6 +222,9 @@ impl SobreServer {
         if !self.has_client_roots.load(Ordering::Relaxed) {
             return;
         }
+        // Concurrent first calls wait here for one `roots/list` answer instead
+        // of running with no root.
+        let _gate = self.roots_gate.lock().await;
         if self.roots_resolved.swap(true, Ordering::Relaxed) {
             return;
         }
@@ -295,25 +295,13 @@ impl SobreServer {
         }
 
         if old_root.as_deref() == Some(&new_root) {
-            let _ = session.save();
             return;
         }
         tracing::info!(
             "MCP roots: switching project root from {:?} to {new_root}",
             old_root
         );
-        if let Some(existing) =
-            crate::core::session::SessionState::load_latest_for_project_root(&new_root)
-        {
-            *session = existing;
-            session.extra_roots = validated_paths
-                .iter()
-                .filter(|p| p.as_str() != new_root)
-                .cloned()
-                .collect();
-        }
         session.project_root = Some(new_root);
-        let _ = session.save();
         drop(session);
         // Indices warm lazily on first use of a tool that needs them —
         // the dispatch path for this very call handles it via

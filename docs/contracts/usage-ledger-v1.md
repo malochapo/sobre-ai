@@ -53,7 +53,7 @@ to compress (`original = 0`) is not recorded.
 
 | Attribute | Type | Meaning |
 |---|---|---|
-| `sobre.surface` | string | `mcp`, `shell` (`sobre -c`), `hook` or `proxy` |
+| `sobre.surface` | string | `mcp`, `shell` (`sobre -c`), `hook`, `proxy` or `call` (`sobre call`) |
 | `sobre.tool` | string | MCP tool name, shell program name (`cargo`, `git`), hook name, or `request` for the proxy |
 | `sobre.tokens.original` | int | Tokens before compression |
 | `sobre.tokens.sent` | int | Tokens actually sent to the model |
@@ -98,9 +98,12 @@ file again in full.
   Without the proxy there are no calls and no real cost.
 - **Saved value**: net saved tokens at the uncached input price of a model:
   the one passed with `--model`, else the model that answered the most calls,
-  else the model a host hook last reported, else a blended fallback. It is a
-  lower bound: a removed tool result would also have been re-sent, mostly as
-  cache reads, on later turns.
+  else the model a host hook last reported, else a blended fallback. It is an
+  estimate, not a bound: a removed tool result would have been re-sent on
+  later turns, mostly as cheaper cache reads, and the proxy re-compresses the
+  whole history on every request, so a result it shortened counts once per
+  request that carried it. When every call went to a local upstream, `gain`
+  shows no money figure.
 - **Cost without sobre**: real cost plus saved value.
 
 ## Stability

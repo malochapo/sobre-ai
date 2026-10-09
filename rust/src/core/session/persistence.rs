@@ -18,7 +18,6 @@ fn restrict_file_permissions(_path: &std::path::Path) {}
 
 fn validate_session_id(id: &str) -> Result<(), String> {
     if id.is_empty()
-        || id == "latest"
         || id.starts_with('.')
         || id.contains('/')
         || id.contains('\\')
@@ -30,23 +29,25 @@ fn validate_session_id(id: &str) -> Result<(), String> {
 }
 
 impl PreparedSave {
-    /// Writes the pre-serialized session data, latest pointer, and compaction
-    /// snapshot to disk atomically.
+    /// Writes the pre-serialized session data and compaction snapshot to
+    /// disk atomically.
     pub fn write_to_disk(self) -> Result<(), String> {
         if !self.dir.exists() {
             std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
         }
         let path = self.dir.join(format!("{}.json", self.id));
-        let tmp = self.dir.join(format!(".{}.json.tmp", self.id));
+        // A save can run on a background thread while another one is
+        // prepared: each write gets its own temporary file.
+        static SAVE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SAVE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = self.dir.join(format!(
+            ".{}.{}.{seq}.json.tmp",
+            self.id,
+            std::process::id()
+        ));
         std::fs::write(&tmp, &self.json).map_err(|e| e.to_string())?;
         restrict_file_permissions(&tmp);
         std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-
-        let latest_path = self.dir.join("latest.json");
-        let latest_tmp = self.dir.join(".latest.json.tmp");
-        std::fs::write(&latest_tmp, &self.pointer_json).map_err(|e| e.to_string())?;
-        restrict_file_permissions(&latest_tmp);
-        std::fs::rename(&latest_tmp, &latest_path).map_err(|e| e.to_string())?;
 
         if let Some(snapshot) = self.compaction_snapshot {
             let snap_path = self.dir.join(format!("{}_snapshot.txt", self.id));
@@ -81,10 +82,6 @@ impl SessionState {
             None
         };
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        let pointer_json = serde_json::to_string(&LatestPointer {
-            id: self.id.clone(),
-        })
-        .map_err(|e| e.to_string())?;
         self.stats.unsaved_changes = 0;
         // Arm the time-based flush window.
         self.last_flush = Some(std::time::Instant::now());
@@ -92,23 +89,13 @@ impl SessionState {
             dir,
             id: self.id.clone(),
             json,
-            pointer_json,
             compaction_snapshot,
         })
     }
 
-    /// Loads the most recent session matching the current working directory's
-    /// project root.
-    ///
-    /// Returns `None` (a fresh session) rather than falling back to the global
-    /// `latest.json` pointer: that unconditional fallback bypassed project-root
-    /// matching and was the root cause of cross-project session leakage — one
-    /// project's findings/decisions/knowledge bleeding into another project's
-    /// first session. The correct project session is loaded later from the MCP
-    /// `roots` handshake (`load_latest_for_project_root`).
-    ///
-    /// Also refuses to scope to a broad/unsafe cwd (e.g. the MCP server's HOME),
-    /// which would otherwise resurrect the contaminated "HOME mega-session".
+    /// Loads the most recent saved session of the current working directory's
+    /// project, for `doctor` and `cleanup`. `None` for a broad or unsafe cwd
+    /// (the MCP server's HOME, `/`).
     pub fn load_latest() -> Option<Self> {
         let cwd = std::env::current_dir().ok()?;
         if crate::core::pathutil::is_broad_or_unsafe_root(&cwd) {
@@ -151,9 +138,6 @@ impl SessionState {
             if path.extension().and_then(|e| e.to_str()) != Some("json") {
                 continue;
             }
-            if path.file_name().and_then(|n| n.to_str()) == Some("latest.json") {
-                continue;
-            }
 
             let Some(id) = path.file_stem().and_then(|n| n.to_str()) else {
                 continue;
@@ -193,9 +177,6 @@ impl SessionState {
                 if path.extension().and_then(|e| e.to_str()) != Some("json") {
                     continue;
                 }
-                if path.file_name().and_then(|n| n.to_str()) == Some("latest.json") {
-                    continue;
-                }
                 if let Ok(json) = std::fs::read_to_string(&path)
                     && let Ok(session) = serde_json::from_str::<SessionState>(&json)
                 {
@@ -231,7 +212,7 @@ impl SessionState {
                     continue;
                 }
                 let filename = path.file_stem().and_then(|n| n.to_str()).unwrap_or("");
-                if filename == "latest" || filename.starts_with('.') {
+                if filename.starts_with('.') {
                     continue;
                 }
                 if latest.as_deref() == Some(filename) {

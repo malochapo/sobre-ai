@@ -11,31 +11,12 @@
 use super::*;
 
 impl SobreServer {
-    /// Record the tool receipt, infer/apply intent, persist the session when due,
-    /// and trigger auto-consolidation. All work is either
-    /// synchronous bookkeeping under the session lock or fire-and-forget blocking
-    /// tasks; nothing here feeds back into the tool output.
-    pub(super) async fn record_receipt(
-        &self,
-        name: &str,
-        args: Option<&serde_json::Map<String, serde_json::Value>>,
-        action: Option<&str>,
-        result_text: &str,
-    ) {
-        let input = helpers::canonical_args_string(args);
-        let input_hash = helpers::hash_fast(&input);
-        let output_hash = helpers::hash_fast(result_text);
-        let client_name = self.client_name.read().await.clone();
-
+    /// Count the call as a session change and persist the session when due.
+    /// Fire-and-forget: nothing here feeds back into the tool output.
+    pub(super) async fn save_session_when_due(&self) {
         let pending_session_save = {
             let mut session = self.session.write().await;
-            session.record_tool_receipt(
-                name,
-                action,
-                &input_hash,
-                &output_hash,
-                Some(&client_name),
-            );
+            session.increment();
 
             if session.should_save() {
                 session.prepare_save().ok()

@@ -1190,7 +1190,7 @@ fn bench_session_prepare_save_is_cpu_only() {
     let mut session = SessionState::new();
     session.set_task("benchmark task for save split", None);
     for _ in 0..20 {
-        session.record_tool_call(100, 200);
+        session.record_tool_call(100);
         session.stats.unsaved_changes = 0;
     }
 

@@ -13,7 +13,13 @@ pub static LAST_COMPACTION_TS: AtomicU64 = AtomicU64::new(0);
 /// atomically by the observe hook. It is only a few bytes, immune to being
 /// displaced by large events.
 pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
-    let last_seen = LAST_COMPACTION_TS.load(Ordering::Relaxed);
+    let mut last_seen = LAST_COMPACTION_TS.load(Ordering::Relaxed);
+    if last_seen == 0 {
+        // A new process: the stub index remembers the compaction it was last
+        // emptied for, so an old marker does not empty it again.
+        last_seen = crate::core::read_stub_index::compaction_seen_in_dir(data_dir);
+        LAST_COMPACTION_TS.store(last_seen, Ordering::Relaxed);
+    }
 
     let Some(latest_compaction_ts) = check_compaction_marker(data_dir, last_seen) else {
         return false;
@@ -25,7 +31,7 @@ pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
     // summarised away, so neither a warm nor a cold stub may claim "you already
     // have this". Writes the emptied index synchronously so a restart in the
     // crash window can't resurrect a pre-compaction stub.
-    crate::core::read_stub_index::reset_in_dir(data_dir);
+    crate::core::read_stub_index::reset_in_dir(data_dir, latest_compaction_ts);
     if reset_count > 0 {
         eprintln!("[sobre] compaction detected — reset {reset_count} delivery flags for re-read");
     }
@@ -113,6 +119,25 @@ mod tests {
         cache.mark_full_delivered("/tmp/a.rs");
         assert!(!sync_if_compacted(&mut cache, dir.path()));
         assert!(cache.is_full_delivered("/tmp/a.rs"));
+    }
+
+    /// L10: a new process does not empty the stub index again for a
+    /// compaction an earlier process already handled.
+    #[test]
+    #[serial]
+    fn a_handled_compaction_is_not_handled_again_by_a_new_process() {
+        let dir = TempDir::new().unwrap();
+        write_marker(&dir, 2000);
+
+        LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
+        let mut cache = make_cache_with_delivered(&["/tmp/a.rs"]);
+        assert!(sync_if_compacted(&mut cache, dir.path()));
+
+        // A new process starts with no memory of its own.
+        LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
+        let mut fresh = make_cache_with_delivered(&["/tmp/b.rs"]);
+        assert!(!sync_if_compacted(&mut fresh, dir.path()));
+        assert!(fresh.is_full_delivered("/tmp/b.rs"));
     }
 
     /// A corrupt marker file is ignored.

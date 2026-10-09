@@ -934,7 +934,7 @@ fn prepare_inner(
         let resolved_mode = if mode == "auto" {
             tuning
                 .auto_density_mode()
-                .unwrap_or_else(|| resolve_auto_mode(Some(cache), path, original_tokens, task))
+                .unwrap_or_else(|| resolve_auto_mode(Some(cache), path, original_tokens))
         } else {
             mode.to_string()
         };
@@ -1042,7 +1042,7 @@ fn prepare_inner(
     let resolved_mode = if mode == "auto" {
         tuning
             .auto_density_mode()
-            .unwrap_or_else(|| resolve_auto_mode(None, path, store_result.original_tokens, task))
+            .unwrap_or_else(|| resolve_auto_mode(None, path, store_result.original_tokens))
     } else {
         mode.to_string()
     };
@@ -1102,12 +1102,10 @@ pub(crate) fn resolve_auto_mode(
     cache: Option<&SessionCache>,
     file_path: &str,
     original_tokens: usize,
-    task: Option<&str>,
 ) -> String {
     let ctx = crate::core::auto_mode_resolver::AutoModeContext {
         path: file_path,
         token_count: original_tokens,
-        task,
         cache,
     };
     crate::core::auto_mode_resolver::resolve(&ctx).mode

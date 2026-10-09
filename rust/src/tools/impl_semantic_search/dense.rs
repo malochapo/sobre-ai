@@ -66,8 +66,8 @@ fn filter_pred(filter: &SearchFilter) -> impl Fn(&str) -> bool + '_ {
     |p: &str| filter.matches(p)
 }
 
-/// Hybrid ranking: BM25 + dense embeddings + recently-touched-file graph
-/// neighbors, fused by RRF, then SPLADE and complexity boosts. Every hybrid
+/// Hybrid ranking: BM25 + dense embeddings fused by RRF, then SPLADE and
+/// complexity boosts. Every hybrid
 /// search (one root, workspace, `find_related`, the eval harness) goes through
 /// here.
 ///
@@ -83,38 +83,30 @@ pub(crate) fn hybrid_ranked(
 ) -> Result<Ranked, String> {
     let (engine, mut embed_idx) = load_engine_and_index(root)?;
     let candidate_k = filtered_candidate_k(top_k, filter.is_active());
-    let graph_ranks = graph_rrf_ranks_for_search_root(root);
 
-    let (mut results, coverage, degraded) =
-        if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
-            let mut results = crate::core::hybrid_search::hybrid_search(
-                query,
-                index,
-                None,
-                None,
-                candidate_k,
-                cfg,
-                graph_ranks.as_ref(),
-            );
-            if filter.is_active() {
-                results.retain(|r| filter.matches(&r.file_path));
-            }
-            (results, 0.0, Some(dense_build_hint(pending, true)))
-        } else {
-            let (aligned, coverage) = ensure_embeddings(root, index, engine, &mut embed_idx)?;
-            let pred = filter_pred(filter);
-            let results = crate::core::dense_backend::hybrid_results(
-                index,
-                engine,
-                &aligned,
-                query,
-                candidate_k,
-                cfg,
-                filter.is_active().then_some(&pred as &dyn Fn(&str) -> bool),
-                graph_ranks.as_ref(),
-            );
-            (results, coverage, None)
-        };
+    let (mut results, coverage, degraded) = if let Some(pending) =
+        cold_start_embed_guard(&embed_idx, index)
+    {
+        let mut results =
+            crate::core::hybrid_search::hybrid_search(query, index, None, None, candidate_k, cfg);
+        if filter.is_active() {
+            results.retain(|r| filter.matches(&r.file_path));
+        }
+        (results, 0.0, Some(dense_build_hint(pending, true)))
+    } else {
+        let (aligned, coverage) = ensure_embeddings(root, index, engine, &mut embed_idx)?;
+        let pred = filter_pred(filter);
+        let results = crate::core::dense_backend::hybrid_results(
+            index,
+            engine,
+            &aligned,
+            query,
+            candidate_k,
+            cfg,
+            filter.is_active().then_some(&pred as &dyn Fn(&str) -> bool),
+        );
+        (results, coverage, None)
+    };
 
     if cfg.splade_weight > 0.0 {
         let splade = crate::core::splade_retrieval::hybrid_retrieve(query, index, candidate_k);

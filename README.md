@@ -217,6 +217,10 @@ fit, and its native tools keep working. The 15 tools
 | `sobre_checkpoint` | Snapshots of the agent's changes, kept apart from your git history |
 | `sobre_session`, `sobre_knowledge` | The session's task and decisions; facts kept across sessions |
 
+Each server process starts an empty session: nothing a previous run recorded
+is loaded until the agent asks (`sobre_session action=load`), and neither the
+session nor the knowledge store changes how `sobre_read` picks a mode.
+
 Each build has one fixed list of tools and parameters: the build with
 embeddings adds a single parameter, `sobre_search`'s `mode`. The reference
 lists the build without embeddings.

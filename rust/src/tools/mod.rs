@@ -228,7 +228,7 @@ mod resolve_path_tests {
 
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn startup_prefers_workspace_scoped_session_over_global_latest() {
+    async fn a_new_server_starts_an_empty_session() {
         let _lock = crate::core::data_dir::test_env_lock();
         let _data = tempfile::tempdir().unwrap();
         let _tmp = tempfile::tempdir().unwrap();
@@ -257,13 +257,13 @@ mod resolve_path_tests {
         let server = SobreServer::new_with_startup(None, Some(repo_b.as_path()));
         crate::test_env::remove_var("SOBRE_DATA_DIR");
 
+        // Decision 4: the saved sessions stay on disk for `load`; the new
+        // process starts empty, rooted where it was started.
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
         assert_eq!(session.shell_cwd.as_deref(), Some(root_b.as_str()));
-        assert_eq!(
-            session.task.as_ref().map(|t| t.description.as_str()),
-            Some("repo-b task")
-        );
+        assert!(session.task.is_none());
+        assert_ne!(session.id, session_b.id);
     }
 
     #[tokio::test]

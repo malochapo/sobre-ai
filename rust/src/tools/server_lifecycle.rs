@@ -35,11 +35,9 @@ impl SobreServer {
         crate::core::graph_index::ProjectIndex::purge_stale_indices();
 
         let startup = detect_startup_context(project_root, startup_cwd);
-        let mut session = if let Some(ref root) = startup.project_root {
-            SessionState::load_latest_for_project_root(root).unwrap_or_default()
-        } else {
-            SessionState::load_latest().unwrap_or_default()
-        };
+        // Every process starts an empty session; `sobre_session load` restores
+        // a saved one when the agent asks (decision 4).
+        let mut session = SessionState::new();
         if let Some(ref root) = startup.project_root {
             session.project_root = Some(root.clone());
         }
@@ -96,6 +94,7 @@ impl SobreServer {
             peer: Arc::new(tokio::sync::RwLock::new(None)),
             has_client_roots: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            roots_gate: Arc::new(tokio::sync::Mutex::new(())),
             roots_list_attempts: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             bm25_cache,
             _eviction_target: eviction_target,

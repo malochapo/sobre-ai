@@ -37,27 +37,31 @@ pub fn uri_to_path(uri: &str) -> Option<String> {
     Some(s)
 }
 
+/// Decode `%XX` escapes into bytes, then read the bytes as UTF-8: `%C3%A9`
+/// is `é`. A `%` not followed by two hex digits stays as it is; `%00` is
+/// dropped.
 fn percent_decode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.bytes();
-    while let Some(b) = chars.next() {
-        if b == b'%' {
-            let hi = chars.next().and_then(hex_val);
-            let lo = chars.next().and_then(hex_val);
-            if let (Some(h), Some(l)) = (hi, lo) {
-                let byte = h << 4 | l;
-                if byte == 0 {
-                    continue;
-                }
-                out.push(byte as char);
-            } else {
-                out.push('%');
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let (Some(h), Some(l)) = (
+                bytes.get(i + 1).copied().and_then(hex_val),
+                bytes.get(i + 2).copied().and_then(hex_val),
+            )
+        {
+            let byte = h << 4 | l;
+            if byte != 0 {
+                out.push(byte);
             }
+            i += 3;
         } else {
-            out.push(b as char);
+            out.push(bytes[i]);
+            i += 1;
         }
     }
-    out
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn hex_val(b: u8) -> Option<u8> {
@@ -191,6 +195,18 @@ pub fn workspace_roots_from_env() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// L11: a non-ASCII directory name survives the URI decode.
+    #[test]
+    fn percent_decode_reads_utf8() {
+        assert_eq!(
+            percent_decode("/home/r%C3%A9mi/projet"),
+            "/home/rémi/projet"
+        );
+        assert_eq!(percent_decode("/a%2"), "/a%2");
+        assert_eq!(percent_decode("/a%zz/b"), "/a%zz/b");
+        assert_eq!(percent_decode("/a%00b"), "/ab");
+    }
 
     #[cfg(unix)]
     #[test]
