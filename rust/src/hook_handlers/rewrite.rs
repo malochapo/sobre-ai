@@ -32,16 +32,20 @@ pub fn handle_gemini() {
 }
 
 fn compute(host: Host) -> String {
-    let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
-        return build_passthrough_output();
-    };
+    match read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) {
+        Some(input) => compute_from(host, &input),
+        None => build_passthrough_output(),
+    }
+}
+
+fn compute_from(host: Host, input: &str) -> String {
     let Ok(v) = serde_json::from_str::<Value>(input.trim_start_matches('\u{feff}')) else {
         return build_passthrough_output();
     };
     let Some(tool) = payload::resolve_tool_name(&v) else {
         return build_passthrough_output();
     };
-    if !is_shell_tool(&tool) && tool != "run_shell_command" {
+    if !is_shell_tool(&tool) {
         return build_passthrough_output();
     }
     let args = payload::resolve_tool_args(&v);
@@ -50,8 +54,10 @@ fn compute(host: Host) -> String {
     };
     let cwd = payload_cwd(&v);
 
-    // Cursor fires preToolUse twice; the second fire replays the first.
-    let key = format!("{host:?}\u{0}{cmd}");
+    // Cursor fires preToolUse twice with byte-identical payloads; the second
+    // fire replays the first. The key is the whole payload, so the same
+    // command run elsewhere (another `cwd`) is a call of its own.
+    let key = format!("{host:?}\u{0}{input}");
     dedup::deduped("rewrite", &key, || {
         let binary = resolve_binary();
         match rewrite_for(host, &cmd, &binary, &cwd) {
@@ -194,6 +200,40 @@ mod tests {
         ] {
             assert_eq!(candidate(cmd, BIN), None, "{cmd}");
         }
+    }
+
+    /// Two calls of the same command in different directories, close enough
+    /// to fall in the double-fire window, each get their own reply: the
+    /// second must not replay the first's `cwd`.
+    #[cfg(unix)]
+    #[test]
+    fn the_same_command_in_two_directories_gets_two_replies() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let home = tempfile::tempdir().unwrap();
+        let previous_home = std::env::var_os("HOME");
+        crate::test_env::set_var("HOME", home.path());
+
+        let reply_for = |dir: &Path| {
+            let input = json!({
+                "tool_name": "Shell",
+                "tool_input": { "command": "git status", "cwd": dir.to_string_lossy() },
+                "cwd": dir.to_string_lossy(),
+            })
+            .to_string();
+            let out: Value = serde_json::from_str(&compute_from(Host::Cursor, &input)).unwrap();
+            out["updated_input"]["cwd"].as_str().map(str::to_string)
+        };
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let first = reply_for(a.path());
+        let second = reply_for(b.path());
+
+        match previous_home {
+            Some(h) => crate::test_env::set_var("HOME", h),
+            None => crate::test_env::remove_var("HOME"),
+        }
+        assert_eq!(first.as_deref(), Some(&*a.path().to_string_lossy()));
+        assert_eq!(second.as_deref(), Some(&*b.path().to_string_lossy()));
     }
 
     #[test]
