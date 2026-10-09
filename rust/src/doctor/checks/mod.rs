@@ -1,8 +1,7 @@
 //! Doctor check catalog, split by domain.
 //!
 //! Every check returns an [`Outcome`] (or `Option`/`Vec` thereof) and is
-//! re-exported flat so `doctor/mod.rs` and `doctor/report.rs` keep addressing
-//! `checks::foo()` — the split is purely structural.
+//! re-exported flat for `doctor/mod.rs`.
 
 mod clients;
 mod environment;

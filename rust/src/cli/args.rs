@@ -132,9 +132,11 @@ proxy; money figures are estimates.")]
 Removes the proxy (autostart unit, process, the URLs it put in agent
 configs); sobre's MCP entry, hooks, skill and plugin from every agent (a
 file that held nothing else is deleted); all sobre data; and the binary the
-agents run. Every change is listed as it is made. Running agents keep their
-sobre server until they restart. Any other argument is an error: nothing is
-removed.")]
+agents run, unless cargo installed it (cargo uninstall sobre) or it is a
+build in a cargo target directory. On Windows a running binary cannot be
+deleted: delete it once uninstall has exited. Every change is listed as it
+is made. Running agents keep their sobre server until they restart. Any
+other argument is an error: nothing is removed.")]
     Uninstall(UninstallArgs),
 
     /// The common commands; `help all` prints the full reference
@@ -340,7 +342,7 @@ pub(crate) enum ConfigCommand {
     Show,
     /// Change one key
     #[command(after_help = "\
-Booleans take true/false (also yes/no, on/off, 1/0); a list takes
+Booleans take true/false (also yes/no, 1/0); a list takes
 comma-separated values. The value is checked before the file is written;
 the file keeps its comments. `default`, an empty value or the key's default
 value removes the key, so its default applies. Exits 2 on an unknown key or
@@ -398,9 +400,11 @@ pub(crate) enum ProxyCommand {
     Status(PortArg),
     /// Turn the proxy on
     #[command(after_help = "\
-Sets proxy.enabled, installs the autostart unit (macOS and Linux) and points
-the agents at the proxy. On Windows it refuses: start the proxy by hand
-there.")]
+Sets proxy.enabled, installs the autostart unit (launchd on macOS, a systemd
+user service on Linux) and points the agents at the proxy. Where there is no
+service manager (Windows, Linux without a systemd user session), it needs a
+proxy started by hand first (sobre proxy start -d), and refuses without one.
+Exits 1 when the proxy does not run.")]
     Enable {
         /// Also rewire agents that point to another endpoint
         #[arg(long)]

@@ -175,6 +175,7 @@ pub(crate) fn run_call(args: &CallArgs) -> Result<Called, CallError> {
     // an agent has seen; a shell call is not the agent, so it is dropped.
     let save_session = parsed.tool == "sobre_session";
     let tool_name = parsed.tool.clone();
+    let reports_failures = tool.text_reports_failures();
 
     // Run the synchronous handler on the blocking pool of a runtime, as the
     // server does: handlers that lock the session block on it there.
@@ -204,9 +205,12 @@ pub(crate) fn run_call(args: &CallArgs) -> Result<Called, CallError> {
         sent,
     );
 
-    let is_error = output
-        .shell_outcome
-        .is_some_and(crate::server::tool_trait::ShellOutcome::is_error);
+    // As the server's dispatch decides `isError`: from the shell outcome, or
+    // from the text of a tool whose text says when it failed.
+    let is_error = match output.shell_outcome {
+        Some(outcome) => outcome.is_error(),
+        None => reports_failures && crate::server::tool_trait::reports_failure(&output.text),
+    };
     Ok(Called {
         text: output.text,
         is_error,
@@ -317,8 +321,37 @@ mod tests {
         assert!(!fine.is_error, "{}", fine.text);
     }
 
-    /// Decision 4: each call starts an empty session; what one call saved,
-    /// `load` restores.
+    /// A tool whose text says it failed (an `ERROR` or a `CONFLICT`) is marked
+    /// as the server marks it, so `cmd_call` exits 1.
+    #[test]
+    fn a_failure_the_text_reports_is_marked_as_an_error() {
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().to_string();
+        let file = project.path().join("a.txt");
+        std::fs::write(&file, "one\n").unwrap();
+        let path = file.to_string_lossy();
+        let failed = run_call(&call_args(
+            "sobre_patch",
+            Some(&root),
+            Some(&format!(
+                r#"{{"path": "{path}", "op": "replace_unique", "old_text": "absent", "new_text": "x"}}"#
+            )),
+        ))
+        .expect("the call itself works");
+        assert!(failed.is_error, "{}", failed.text);
+        let fine = run_call(&call_args(
+            "sobre_patch",
+            Some(&root),
+            Some(&format!(
+                r#"{{"path": "{path}", "op": "replace_unique", "old_text": "one", "new_text": "two"}}"#
+            )),
+        ))
+        .expect("the call itself works");
+        assert!(!fine.is_error, "{}", fine.text);
+    }
+
+    /// Each call starts an empty session; what one call saved, `load`
+    /// restores.
     #[test]
     fn a_saved_session_is_loaded_on_request() {
         let _data = crate::core::data_dir::isolated_data_dir();

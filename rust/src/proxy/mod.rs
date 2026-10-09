@@ -63,38 +63,28 @@ impl ProxyState {
     }
 }
 
-/// TCP connect timeout (seconds).
-fn connect_timeout_secs() -> u64 {
-    15
-}
+/// TCP connect timeout to an upstream.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
-/// Idle read timeout (seconds) between bytes from upstream. Generous by default
-/// so long extended-thinking phases (which still emit SSE keepalives) are never
-/// cut, while a truly dead connection eventually fails.
-fn read_idle_timeout_secs() -> u64 {
-    300
-}
+/// Idle read timeout between bytes from upstream: generous, so long
+/// extended-thinking phases (which still emit SSE keepalives) are never cut,
+/// while a dead connection eventually fails.
+const READ_IDLE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-/// How often (seconds) a running proxy re-reads config.toml for upstream
-/// changes.
-fn upstream_reload_secs() -> u64 {
-    5
-}
+/// How often a running proxy re-reads config.toml for upstream changes.
+const UPSTREAM_RELOAD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Background task: re-resolves the provider upstreams from config.toml on an
 /// interval and publishes any change to the live request handlers. Ends
 /// once every receiver (the proxy itself) has been dropped.
 ///
-/// `Config::load()` already keeps an internal content-hash cache, so re-reading
-/// an unchanged `config.toml` skips the TOML parse + merge and costs only a small
-/// file read; combined with the relaxed default interval the idle steady
-/// state is negligible without needing a separate stat pre-check.
+/// `Config::load()` keeps a content-hash cache, so re-reading an unchanged
+/// `config.toml` costs a small file read and no parse.
 fn spawn_upstream_refresh(tx: tokio::sync::watch::Sender<Arc<Upstreams>>, initial: Upstreams) {
-    let interval = std::time::Duration::from_secs(upstream_reload_secs());
     tokio::spawn(async move {
         let mut last = initial;
         loop {
-            tokio::time::sleep(interval).await;
+            tokio::time::sleep(UPSTREAM_RELOAD_INTERVAL).await;
             let next = crate::core::config::Config::load()
                 .proxy
                 .refresh_upstreams(&last);
@@ -120,40 +110,30 @@ fn log_upstream_change(old: &Upstreams, new: &Upstreams) {
     }
 }
 
+/// Runs the proxy on `port` until SIGTERM or Ctrl-C, behind this machine's
+/// session token.
 pub async fn start_proxy(port: u16) -> anyhow::Result<()> {
     let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
-    start_proxy_with_token(port, Some(token)).await
+    start_proxy_with_token(port, token).await
 }
 
-/// Security invariant: the proxy NEVER runs unauthenticated. `None` does not
-/// mean "no auth" — it means "resolve the session token for me". Provider
-/// routes additionally accept provider API keys (see `proxy_auth_guard`), so
-/// IDE clients keep working without any setup.
-fn effective_auth_token(auth_token: Option<String>) -> String {
-    auth_token
-        .filter(|t| !t.trim().is_empty())
-        .unwrap_or_else(|| crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN"))
-}
-
-pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> anyhow::Result<()> {
+/// Runs the proxy on `port` behind `auth_token`: every route but `/health`
+/// takes it (provider routes also take a provider API key, see
+/// `proxy_auth_guard`), so the proxy never runs unauthenticated.
+pub async fn start_proxy_with_token(port: u16, auth_token: String) -> anyhow::Result<()> {
     use crate::core::config::{Config, is_local_proxy_url};
 
-    let auth_token = effective_auth_token(auth_token);
-
-    // A single total timeout aborts long streaming generations (e.g. Opus doing
-    // a big refactor) mid-response. Use a connect timeout plus a read (idle)
-    // timeout instead: a genuinely hung upstream still fails, but a slow-but-
-    // alive stream is never cut off. Both are configurable for edge networks.
+    // A single total timeout would abort long streaming generations
+    // mid-response. A connect timeout plus a read (idle) timeout fails a hung
+    // upstream and never cuts a slow but live stream.
     let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs()))
-        .read_timeout(std::time::Duration::from_secs(read_idle_timeout_secs()))
+        .connect_timeout(CONNECT_TIMEOUT)
+        .read_timeout(READ_IDLE_TIMEOUT)
         .build()?;
 
-    let cfg = Config::load();
-    // Read once at startup — avoids a Config::load() on every proxied request.
     // The proxy serves this machine only: it always binds loopback.
     let bind_host = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
-    let initial = cfg.proxy.resolve_all();
+    let initial = Config::load().proxy.resolve_all();
 
     // The proxy reads its upstreams live from a watch channel: a background task
     // re-resolves them from config.toml on an interval and publishes any change,
@@ -175,6 +155,9 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     let app = app(state, auth_token);
 
     let addr = SocketAddr::from((bind_host, port));
+    // Bound before the banner: a port in use fails here, and nothing claims
+    // the proxy listens.
+    let listener = tokio::net::TcpListener::bind(addr).await?;
     println!("sobre proxy listening on http://{addr} (token auth enabled)");
     println!("  Anthropic: POST /v1/messages → {anthropic_upstream}");
     println!("  OpenAI:    POST /v1/chat/completions → {openai_upstream}");
@@ -188,7 +171,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         );
     }
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -316,9 +298,8 @@ async fn responses_websocket_refused() -> impl IntoResponse {
 }
 
 async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
-    // Live upstreams the proxy is forwarding to right now. This is the
-    // single source of truth for "where is my traffic actually going" — it
-    // reflects config.toml hot-reloads and any start-time env override.
+    // The upstreams the proxy forwards to right now, config.toml reloads
+    // included.
     let up = state.upstream_snapshot();
 
     // Usage (calls, tokens, cost, savings) is in the usage ledger, which

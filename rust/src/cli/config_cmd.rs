@@ -133,10 +133,9 @@ fn show() -> String {
 /// file yields defaults, and an unparseable one is surfaced as an error so the
 /// caller can refuse to clobber it.
 ///
-/// This is the regression guard: `config init` once wrote
-/// `Config::default()`, and `Config::save()` overwrites any key present in both
-/// the incoming document and the file (see `config_io::merge_table`), which
-/// silently reset customized values like `search_roots` or `compression_level`.
+/// Writing `Config::default()` instead would reset every customized value:
+/// `Config::save()` overwrites any key present in both the incoming document
+/// and the file (see `config_io::merge_table`).
 fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
     match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
         Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),
@@ -154,7 +153,7 @@ fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String>
 fn init_config() {
     let Some(path) = config::Config::path() else {
         crate::errln!("Error: cannot determine the config path");
-        return;
+        std::process::exit(1);
     };
 
     let existing_raw = std::fs::read_to_string(&path).ok();
@@ -173,10 +172,33 @@ fn init_config() {
     let schema = config::schema::ConfigSchema::generate();
     let rendered = config::render_annotated_config(&cfg, &schema);
 
-    match crate::config_io::write_atomic_with_backup(&path, &rendered) {
-        Ok(()) => crate::outln!("Wrote annotated config at {}", path.display()),
-        Err(e) => crate::errln!("Error: {e}"),
+    match write_annotated(&path, existing_raw.as_deref(), &rendered) {
+        Ok(false) => crate::outln!("{} already holds the annotated config", path.display()),
+        Ok(true) => crate::outln!("Wrote annotated config at {}", path.display()),
+        Err(e) => {
+            crate::errln!("Error: {e}");
+            std::process::exit(1);
+        }
     }
+}
+
+/// Writes `rendered` at `path`, first copying the file it replaces, when
+/// there is one, to `config.toml.sobre.bak`. Returns false when the file
+/// already held `rendered`: nothing is written.
+fn write_annotated(
+    path: &std::path::Path,
+    existing: Option<&str>,
+    rendered: &str,
+) -> Result<bool, String> {
+    if existing == Some(rendered) {
+        return Ok(false);
+    }
+    if existing.is_some() {
+        let backup = crate::config_io::backup_path_for(path);
+        std::fs::copy(path, &backup).map_err(|e| format!("{}: {e}", backup.display()))?;
+    }
+    crate::config_io::write_atomic(path, rendered)?;
+    Ok(true)
 }
 
 /// Print the absolute path of the resolved global `config.toml` (one line,
@@ -244,6 +266,35 @@ mod tests {
             cfg_empty.shell_timeout_secs,
             config::Config::default().shell_timeout_secs
         );
+    }
+
+    /// `config init` keeps the file it replaces as `config.toml.sobre.bak`,
+    /// each time, and leaves no backup when there was no file.
+    #[test]
+    fn init_keeps_the_file_it_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let backup = dir.path().join("config.toml.sobre.bak");
+
+        assert!(write_annotated(&path, None, "# v1\n").unwrap());
+        assert!(!backup.exists(), "nothing to keep: no backup");
+
+        std::fs::write(&path, "compression_level = 0.5\n").unwrap();
+        assert!(write_annotated(&path, Some("compression_level = 0.5\n"), "# v2\n").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            "compression_level = 0.5\n"
+        );
+
+        std::fs::write(&path, "debug_log = true\n").unwrap();
+        assert!(write_annotated(&path, Some("debug_log = true\n"), "# v3\n").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            "debug_log = true\n"
+        );
+
+        assert!(!write_annotated(&path, Some("# v3\n"), "# v3\n").unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# v3\n");
     }
 
     #[test]

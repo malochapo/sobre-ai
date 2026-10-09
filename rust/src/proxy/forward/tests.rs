@@ -286,8 +286,3 @@ fn forwards_codex_state_response_headers() {
         );
     }
 }
-
-#[test]
-fn internal_project_tag_is_not_forwarded() {
-    assert!(!is_allowed_request_header("x-sobre-project"));
-}

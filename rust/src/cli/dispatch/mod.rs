@@ -152,12 +152,12 @@ fn handle_raw(words: &[String]) -> ! {
 /// Restore the default SIGPIPE disposition for short-lived CLI invocations.
 ///
 /// Rust's runtime ignores SIGPIPE process-wide, so `sobre doctor | head`
-/// made `println!` panic with BrokenPipe; the LineWriter flush in stdout's
-/// Drop then panicked again *during unwinding*, which aborts — the SIGABRT
-/// (exit 134) seen upstream. Real CLIs (cat, grep, rg) terminate
-/// silently with exit 141 instead; SIG_DFL gives us exactly that. Children
-/// spawned via std::process::Command are unaffected either way (std resets
-/// their SIGPIPE disposition since Rust 1.65).
+/// would make `println!` panic with BrokenPipe, and the LineWriter flush in
+/// stdout's Drop panic again *during unwinding*, which aborts (SIGABRT, exit
+/// 134). CLIs such as cat, grep and rg terminate silently with exit 141
+/// instead; SIG_DFL gives exactly that. Children spawned via
+/// std::process::Command are unaffected either way (std resets their SIGPIPE
+/// disposition).
 #[cfg(unix)]
 fn restore_sigpipe_default() {
     // SAFETY: signal(2) with SIG_DFL has no preconditions and is called once
@@ -235,7 +235,7 @@ mod tests {
     #[test]
     fn quickstart_is_short_and_points_to_setup() {
         let q = quickstart_text();
-        assert!(q.contains("sobre init"), "quickstart must point to wrap");
+        assert!(q.contains("sobre init"), "quickstart must point to init");
         assert!(q.contains("sobre help"), "quickstart must point to help");
         // Must stay a *quickstart*, not the full reference — keep it tight.
         assert!(
@@ -262,7 +262,7 @@ mod tests {
             h.lines().count()
         );
         assert!(
-            !h.contains("SHELL HOOK PATTERNS"),
+            !h.contains("SHELL OUTPUT PATTERNS"),
             "concise help must not inline the full pattern catalog"
         );
     }

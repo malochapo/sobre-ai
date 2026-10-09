@@ -1,13 +1,12 @@
 //! Content-addressed recovery (CCR) for the proxy's lossy rewrites.
 //!
-//! When the proxy prunes an old `tool_result` from conversation history, the
-//! lossy stub used to say *"re-read the file"* — which is stale-unsafe by
-//! construction: in an agent session files are edited or deleted between turns,
-//! so a re-read returns the *current* bytes (or fails), not the historical
-//! version the conversation actually showed. The model could then silently
-//! reason about the wrong content.
+//! When the proxy prunes an old `tool_result` from conversation history, a
+//! stub saying *"re-read the file"* would be stale-unsafe: in an agent
+//! session files are edited or deleted between turns, so a re-read returns
+//! the *current* bytes (or fails), not the version the conversation showed,
+//! and the model would reason about the wrong content.
 //!
-//! CCR fixes this by persisting the **verbatim original** to the shared,
+//! CCR instead persists the **verbatim original** to the shared,
 //! content-addressed tee store (`{state}/tee/`, reused from the shell path) and
 //! embedding a **retrieval handle** — the absolute path of that file — in the
 //! stub. Retrieval is MCP-independent: the agent reads the path with its native

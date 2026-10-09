@@ -57,6 +57,11 @@ pub(super) fn workspace_scope_outcome(
     user_scope_mcp_locations: &BTreeSet<&'static str>,
 ) -> Option<Outcome> {
     let cwd = std::env::current_dir().ok()?;
+    // In the home directory `.cursor/mcp.json` is Cursor's user config, and
+    // the home directory is never a project.
+    if dirs::home_dir().is_some_and(|home| home == cwd) {
+        return None;
+    }
 
     let mut registered: Vec<(&WorkspaceLocation, String)> = Vec::new();
     let mut malformed: Vec<String> = Vec::new();

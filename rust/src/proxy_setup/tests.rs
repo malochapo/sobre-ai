@@ -10,13 +10,6 @@ fn uid_port_first_regular_user() {
 }
 
 #[test]
-fn proxy_timeout_default_200ms() {
-    // Private config without `proxy_timeout_ms` → the built-in default.
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    assert_eq!(proxy_timeout(), std::time::Duration::from_millis(200));
-}
-
-#[test]
 fn is_proxy_reachable_returns_false_on_unused_port() {
     assert!(!is_proxy_reachable(19999));
 }

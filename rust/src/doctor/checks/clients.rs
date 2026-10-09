@@ -4,7 +4,8 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RST, YELLOW};
 
-pub(crate) fn claude_truncation_outcome() -> Option<Outcome> {
+/// The skill check, when Claude Code is installed.
+pub(crate) fn claude_skill_outcome() -> Option<Outcome> {
     let home = dirs::home_dir()?;
     let claude_detected = crate::core::editor_registry::claude_mcp_json_path(&home).exists()
         || crate::core::editor_registry::claude_state_dir(&home).exists()
@@ -14,11 +15,12 @@ pub(crate) fn claude_truncation_outcome() -> Option<Outcome> {
         return None;
     }
 
-    Some(claude_instructions_check(&home))
+    Some(claude_skill_check(&home))
 }
+
 /// Verify Claude Code has the current `sobre` skill — the detailed guide the
 /// MCP instructions point to.
-pub(crate) fn claude_instructions_check(home: &std::path::Path) -> Outcome {
+pub(crate) fn claude_skill_check(home: &std::path::Path) -> Outcome {
     let current = crate::setup::skill::is_current("claude", home);
     let line = if current {
         format!("{BOLD}Claude Code skill{RST}  {GREEN}sobre skill installed{RST}")

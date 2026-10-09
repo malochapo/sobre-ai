@@ -25,7 +25,7 @@ async fn proxy_serves_health_and_enforces_auth() {
     let server = tokio::spawn({
         let token = token.clone();
         async move {
-            let _ = sobre::proxy::start_proxy_with_token(port, Some(token)).await;
+            let _ = sobre::proxy::start_proxy_with_token(port, token).await;
         }
     });
 

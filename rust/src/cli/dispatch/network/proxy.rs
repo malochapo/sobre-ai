@@ -113,21 +113,21 @@ pub(crate) fn cmd_proxy(command: &ProxyCommand) {
                     None => crate::outln!("  Config:  undecided (not yet configured)"),
                 }
                 crate::outln!("  Port:    {port}");
-                // Liveness comes from the *public* /health endpoint so a running
-                // proxy is never misreported as down — even mid-upgrade when the
-                // managed proxy still holds an old session token. The live
-                // upstreams come from the authenticated /status; if that 401s
-                // while /health is up, we still report it as running and point at
+                // Liveness comes from the public /health endpoint, so a proxy
+                // that refuses this shell's session token still reads as
+                // running. The live upstreams come from the authenticated
+                // /status; when that is refused, the output points at
                 // `proxy restart`. Usage and savings are in `sobre gain`.
-                let alive = ureq::get(&format!("http://127.0.0.1:{port}/health"))
-                    .call()
-                    .is_ok();
+                let alive = crate::proxy_autostart::proxy_pid_on_port(port).is_some();
                 if alive {
                     crate::outln!("  Process: running");
                     let token =
                         crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
                     let status = ureq::get(&format!("http://127.0.0.1:{port}/status"))
                         .header("Authorization", &format!("Bearer {token}"))
+                        .config()
+                        .timeout_global(Some(std::time::Duration::from_secs(3)))
+                        .build()
                         .call();
                     if let Ok(resp) = status {
                         let body = resp.into_body().read_to_string().unwrap_or_default();
@@ -171,17 +171,17 @@ pub(crate) fn cmd_proxy(command: &ProxyCommand) {
                 if crate::proxy_autostart::is_supported() {
                     if !crate::proxy_autostart::install(port, false) {
                         crate::errln!(
-                            "\x1b[31m✗\x1b[0m Proxy enable failed: the service manager did not start the proxy on port {port}. Nothing was changed.\n  Start it by hand with `sobre proxy start -d`, then run `sobre proxy enable` again."
+                            "\x1b[31m✗\x1b[0m Proxy enable failed: the service manager did not start the proxy on port {port}. Nothing was changed.\n  `sobre proxy start --port {port}` shows why it does not start."
                         );
                         std::process::exit(1);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(500));
                 } else if !crate::proxy_setup::is_proxy_reachable(port) {
-                    // No service manager integration here (Windows): the
-                    // proxy is started by hand, and only a running proxy is
-                    // wired into the agents.
+                    // No service manager here (Windows, Linux without a
+                    // systemd user session): the proxy is started by hand,
+                    // and only a running proxy is wired into the agents.
                     crate::errln!(
-                        "No autostart on this platform. Start the proxy first with `sobre proxy start -d --port {port}`,\nthen run `sobre proxy enable` again. Nothing was changed."
+                        "No autostart here (no launchd, no systemd user session). Start the proxy first with\n`sobre proxy start -d --port {port}`, then run `sobre proxy enable` again. Nothing was changed."
                     );
                     std::process::exit(1);
                 }
@@ -238,10 +238,11 @@ pub(crate) fn cmd_proxy(command: &ProxyCommand) {
             }
         }
     }
-    /// Fork a child process running `sobre proxy start --port=N` with
-    /// stdout/stderr appended to `<state>/proxy.log`, then exit the parent
-    /// immediately. Only the port is recorded (`proxy.port`); `sobre proxy
-    /// stop` asks `/health` on it for the PID.
+    /// Starts `sobre proxy start --port=N` in the background, its output
+    /// appended to `<state>/proxy.log`, and returns once it answers on the
+    /// port. Exits 1 when it does not: the port is taken, or it failed. Only
+    /// the port is recorded (`proxy.port`); `sobre proxy stop` asks `/health`
+    /// on it for the PID.
     fn start_detached(port: u16) {
         let exe = std::env::current_exe().unwrap_or_else(|_| "sobre".into());
         // The log lives in sobre's state dir, never a shared temporary one.
@@ -263,26 +264,53 @@ pub(crate) fn cmd_proxy(command: &ProxyCommand) {
             crate::errln!("Cannot clone log fd: {e}");
             std::process::exit(1);
         });
-        match std::process::Command::new(&exe)
+        let mut child = match std::process::Command::new(&exe)
             .args(["proxy", "start", &format!("--port={port}")])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::from(log_file))
             .stderr(std::process::Stdio::from(stderr_file))
             .spawn()
         {
-            Ok(child) => {
-                crate::proxy_setup::remember_started_port(port);
-                crate::outln!(
-                    "\x1b[32m✓\x1b[0m Proxy started in background (PID {}, port {port})",
-                    child.id()
-                );
-                crate::outln!("  Logs: {}", log_path.display());
-                crate::outln!("  Stop: sobre proxy stop");
-            }
+            Ok(child) => child,
             Err(e) => {
                 crate::errln!("Failed to start detached proxy: {e}");
                 std::process::exit(1);
             }
+        };
+        if let Some(reason) = wait_until_serving(&mut child, port) {
+            crate::errln!(
+                "\x1b[31m✗\x1b[0m The proxy did not start on port {port}: {reason}.\n  Log: {}",
+                log_path.display()
+            );
+            std::process::exit(1);
+        }
+        crate::proxy_setup::remember_started_port(port);
+        crate::outln!(
+            "\x1b[32m✓\x1b[0m Proxy started in background (PID {}, port {port})",
+            child.id()
+        );
+        crate::outln!("  Logs: {}", log_path.display());
+        crate::outln!("  Stop: sobre proxy stop");
+    }
+
+    /// Waits until `child` answers `/health` on `port` as itself. `None` once
+    /// it does; otherwise why not: it exited (the port is taken, or it
+    /// failed), or it did not answer within 10 seconds and was stopped.
+    fn wait_until_serving(child: &mut std::process::Child, port: u16) -> Option<String> {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Ok(Some(status)) = child.try_wait() {
+                return Some(format!("it exited ({status})"));
+            }
+            if crate::proxy_autostart::proxy_pid_on_port(port) == Some(child.id()) {
+                return None;
+            }
+            if std::time::Instant::now() >= deadline {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Some("it did not answer within 10 seconds, and was stopped".to_string());
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
         }
     }
 }
