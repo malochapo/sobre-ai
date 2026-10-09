@@ -106,11 +106,14 @@ the measured state of each.
 4. **Nothing to sell.** No accounts, no plans, no telemetry, no shared instance.
 5. **The agent host decides.** `sobre` allows, blocks and hides nothing: it
    labels every change it makes and keeps the original reachable.
+6. **Use what exists.** What a maintained library already does, `sobre` uses
+   rather than rewrites, copies or vendors.
 
-All five hold today: 15 tools, one fixed surface per build; one config file
-with 11 keys and no per-project files, profiles or behaviour-changing
+The first five hold today: 15 tools, one fixed surface per build; one config
+file with 11 keys and no per-project files, profiles or behaviour-changing
 environment variables; no network request you did not ask for; and no gate,
-approval or hidden transform of sobre's own.
+approval or hidden transform of sobre's own. The code written before the sixth
+is being brought in line; issue #69 lists it.
 
 ## Connect agents
 

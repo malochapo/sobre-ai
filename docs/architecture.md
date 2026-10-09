@@ -13,7 +13,7 @@ file, a search or a shell command, and `sobre` answers with the smallest
 output that still does the job. Every output it changes says so, and the
 original stays reachable.
 
-Five invariants ([INVARIANTS.md](../INVARIANTS.md)) define the project, and
+Six invariants ([INVARIANTS.md](../INVARIANTS.md)) define the project, and
 each one shows up in the code:
 
 | Invariant | Where it shows |
@@ -23,6 +23,7 @@ each one shows up in the code:
 | 3. One `tools/list` per build | the list never depends on the client, the config or the session; the dense build adds one parameter |
 | 4. Local and personal | no account, telemetry or remote store; the network is reached only by the proxy and by `embeddings provision` |
 | 5. The agent host decides | no allow or deny list, no path jail, no approval written into a host; every change to an output is labelled |
+| 6. Use what exists | maintained crates for the protocol, parsing, HTTP and file formats; the code that predates the rule is listed in issue #69 |
 
 ## 2. Component map
 
@@ -401,7 +402,8 @@ files are parsed through their script blocks. The post-edit syntax check covers
 
 - Start from the invariants. A new tool names the one it replaces. A new key
   replaces one: the cap is 15 and a test pins the list. No variable may change
-  behaviour.
+  behaviour. A need a maintained crate meets is met by the crate, not by new
+  code of our own.
 - The four reference pages are generated:
   `cargo run --example gen_docs --features dev-tools` rewrites them, and CI
   fails when they drift.
