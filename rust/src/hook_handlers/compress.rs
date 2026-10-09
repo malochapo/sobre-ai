@@ -80,7 +80,7 @@ fn claude_reply(cmd: &str, response: &Value) -> Option<String> {
         .as_ref()
         .map_or_else(|| stderr.to_string(), |e| e.0.clone());
     let after = count_tokens(&new_stdout) + count_tokens(&new_stderr);
-    let full = format!("{stdout}{stderr}");
+    let full = crate::shell::combine_streams(stdout, stderr, 0);
     let label = label(cmd, &full, before, after);
     let (new_stdout, new_stderr) = if new_stdout.trim().is_empty() {
         (new_stdout, format!("{}\n{label}", new_stderr.trim_end()))
@@ -203,6 +203,42 @@ mod tests {
             "got: {stdout}"
         );
         assert!(stdout.len() < long_output().len());
+    }
+
+    /// The kept full output holds stdout and stderr as two blocks, the last
+    /// stdout line not glued to the first stderr line.
+    #[test]
+    fn the_kept_full_output_separates_stdout_from_stderr() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let stdout = long_output();
+        let stdout = stdout.trim_end();
+        let input = json!({
+            "tool_name": "Bash",
+            "tool_input": { "command": "git log" },
+            "tool_response": {
+                "stdout": stdout,
+                "stderr": "warning: refname 'main' is ambiguous.",
+                "interrupted": false,
+                "isImage": false
+            }
+        })
+        .to_string();
+        let out = compute_compress(&input).expect("compresses");
+        let v: Value = serde_json::from_str(&out).unwrap();
+        let replaced = v["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
+            .as_str()
+            .unwrap();
+        let path = replaced
+            .rsplit("full output: ")
+            .next()
+            .and_then(|rest| rest.strip_suffix(']'))
+            .expect("label names the kept output");
+        let kept = std::fs::read_to_string(path).unwrap();
+        assert!(
+            kept.ends_with("change number 119\nwarning: refname 'main' is ambiguous."),
+            "{}",
+            &kept[kept.len().saturating_sub(120)..]
+        );
     }
 
     #[test]
