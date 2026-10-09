@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #53, #PRNUM) |
+| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #53, #54) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -215,10 +215,10 @@ documented:
 - [x] **G6 Instruction files ignore `start_line`/`limit`.**
   *Regression: B3.* The window applied at `tools/registered/sobre_read.rs:182`
   is replaced by `full` at `:214`. `AGENTS.md start_line=3 limit=2` returns
-  40 lines. (#PRNUM) Done: an instruction file is read whole only when the
+  40 lines. (#54) Done: an instruction file is read whole only when the
   agent asked for no mode, no window and no aggressiveness.
 - [x] **G7 Some windows on files over 4 MB still fail.** *Regression: B2.*
-  (#PRNUM)
+  (#54)
   - `BufRead::lines()` stops at the first invalid UTF-8 byte; the fallback
     `read_file_lossy` refuses the file as too large, and the error tells
     the agent to read it in windows, so it loops (`tools/sobre_read/mod.rs:194,252`).
@@ -260,7 +260,7 @@ documented:
   `impact` only.* `neighbors`, `path`, `related` and the `symbol` header
   still call `shorten_path` (`tools/sobre_graph_primitives.rs`,
   `tools/registered/sobre_graph.rs:108-118,238`).
-- [x] **G12 Search and glob stop at `max_results` without saying so.** (#PRNUM)
+- [x] **G12 Search and glob stop at `max_results` without saying so.** (#54)
   *Regression: B49 fixed the count wording only; invariant 5.*
   - 300 matches in 30 files come back as `20 matches in 2 files (3
     searched)`; "searched" counts the files read before the cap
