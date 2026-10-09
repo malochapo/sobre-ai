@@ -19,14 +19,15 @@ pub fn resolve_portable_binary() -> String {
         .ok()
         .map(|p| p.to_string_lossy().into_owned());
 
-    let which_cmd = if cfg!(windows) { "where" } else { "which" };
-    let which_raw = std::process::Command::new(which_cmd)
-        .arg("sobre")
-        .stderr(std::process::Stdio::null())
-        .output()
+    // Every `sobre` on PATH, one per line, in PATH order.
+    let which_raw = which::which_all("sobre")
         .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .map(|paths| {
+            paths
+                .map(|p| p.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
         .filter(|s| !s.is_empty());
 
     choose_binary_path(current.as_deref(), which_raw.as_deref())
@@ -40,7 +41,7 @@ pub fn resolve_portable_binary() -> String {
 /// Preference order:
 /// 1. `current_exe` when absolute and not inside a transient Cargo build dir —
 ///    by construction the build currently in use.
-/// 2. `which sobre` — the installed copy on PATH; used when the running binary
+/// 2. `sobre` on PATH — the installed copy; used when the running binary
 ///    lives in `target/{debug,release}` (`cargo run -- setup`), where the
 ///    installed copy is the intended target.
 /// 3. an absolute `current_exe` even from a build dir — still better than a bare
@@ -81,8 +82,8 @@ fn choose_binary_path(current_exe: Option<&str>, which_raw: Option<&str>) -> Str
     "sobre".to_string()
 }
 
-/// On Windows, `where sobre` can return multiple lines. Pick the `.exe`
-/// variant if available, otherwise the first line.
+/// On Windows, PATH can hold several `sobre`s (`sobre.exe`, an npm
+/// `sobre.cmd`). Pick the `.exe` if there is one, otherwise the first line.
 fn pick_best_binary_line(raw: &str) -> String {
     let lines: Vec<&str> = raw
         .lines()

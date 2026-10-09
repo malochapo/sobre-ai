@@ -1,11 +1,10 @@
 # sobre — Rust engine
 
-The project's rules are the five invariants in `../INVARIANTS.md`. The
-hard-won working practices for editing this inherited codebase are in
-`../docs/working-rules.md` (gitignored): the compiler is the only reliable
-oracle (`cargo check --all-targets`, and `--features dense` too), names lie so
-verify what a module does before acting on it, and a tool leaving `tools/list`
-does not mean its code is dead.
+The project's rules are the six invariants in `../INVARIANTS.md`; how to
+work in this codebase is in `../CONTRIBUTING.md`. In short: the compiler is
+the only reliable oracle (`cargo check --all-targets`, and `--features dense`
+too), names lie so verify what a module does before acting on it, and a tool
+leaving `tools/list` does not mean its code is dead.
 
 Nobody has ever installed sobre: every install is a fresh one. Never write
 migration code, legacy-format readers, fallbacks to old paths or old config

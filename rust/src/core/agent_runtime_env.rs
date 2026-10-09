@@ -317,7 +317,7 @@ mod tests {
         assert!(loaded.is_empty(), "expired capture must not be loaded");
     }
 
-    /// J14: capturing the same variables again keeps the capture alive.
+    /// Capturing the same variables again keeps the capture alive.
     #[test]
     fn an_old_capture_of_the_same_vars_is_refreshed() {
         let _iso = crate::core::data_dir::isolated_data_dir();

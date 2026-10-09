@@ -288,7 +288,7 @@ mod tests {
         );
     }
 
-    /// G3: uncommenting any one commented-out key, alone, sets that key —
+    /// Uncommenting any one commented-out key, alone, sets that key —
     /// with nothing set, and with a sub-table (`[proxy.upstreams]`) present.
     #[test]
     fn each_commented_key_works_once_uncommented_alone() {
@@ -365,7 +365,7 @@ mod tests {
         );
     }
 
-    /// C11: every key of the schema appears, set or commented out, and no
+    /// Every key of the schema appears, set or commented out, and no
     /// environment variable is claimed to override one.
     #[test]
     fn every_key_appears_and_no_env_var_is_claimed() {

@@ -1,42 +1,11 @@
 //! Shared edit-distance "did you mean" helper.
 //!
-//! One implementation for every typo-suggestion surface: CLI commands
+//! One policy for every typo-suggestion surface: CLI commands
 //! (`cli/dispatch/suggest.rs`), config keys (`cli/config_cmd.rs`) and MCP
-//! tool names (`server/dispatch`). Wagner-Fischer over Unicode scalar values
-//! with a single rolling row — candidate sets are tiny (dozens of names), so
-//! O(a·b) time per pair is irrelevant; what matters is that all callers agree
-//! on distances.
-
-/// Edit distance where inserting, deleting or replacing a character, or
-/// swapping two adjacent ones, costs one (optimal string alignment): `inti`
-/// is one edit from `init`.
-pub fn levenshtein(a: &str, b: &str) -> usize {
-    let a: Vec<char> = a.chars().collect();
-    let b: Vec<char> = b.chars().collect();
-    if a.is_empty() {
-        return b.len();
-    }
-    if b.is_empty() {
-        return a.len();
-    }
-    let mut prev2: Vec<usize> = vec![0; b.len() + 1];
-    let mut prev: Vec<usize> = (0..=b.len()).collect();
-    let mut curr = vec![0usize; b.len() + 1];
-    for i in 0..a.len() {
-        curr[0] = i + 1;
-        for j in 0..b.len() {
-            let cost = usize::from(a[i] != b[j]);
-            let mut d = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
-            if i > 0 && j > 0 && a[i] == b[j - 1] && a[i - 1] == b[j] {
-                d = d.min(prev2[j - 1] + 1);
-            }
-            curr[j + 1] = d;
-        }
-        std::mem::swap(&mut prev2, &mut prev);
-        std::mem::swap(&mut prev, &mut curr);
-    }
-    prev[b.len()]
-}
+//! tool names (`server/dispatch`), so all callers agree on what is close
+//! enough. The distance is `strsim`'s optimal string alignment over Unicode
+//! scalar values: inserting, deleting or replacing a character, or swapping
+//! two adjacent ones, costs one, so `inti` is one edit from `init`.
 
 /// The closest candidate within a length-scaled edit budget (one edit for
 /// short names, roughly a third of the length for longer ones), or `None`
@@ -53,7 +22,7 @@ where
     let budget = (input.chars().count() / 3).max(1);
     candidates
         .into_iter()
-        .map(|cand| (cand, levenshtein(input, cand)))
+        .map(|cand| (cand, strsim::osa_distance(input, cand)))
         .filter(|&(_, dist)| dist <= budget)
         .min_by_key(|&(_, dist)| dist)
         .map(|(cand, _)| cand)
@@ -63,19 +32,23 @@ where
 mod tests {
     use super::*;
 
+    /// A swap of two adjacent letters is one edit, as is a replacement.
     #[test]
     fn basic_distances() {
-        assert_eq!(levenshtein("", ""), 0);
-        assert_eq!(levenshtein("abc", "abc"), 0);
-        assert_eq!(levenshtein("abc", "abd"), 1);
-        // A swap of two adjacent letters is one edit.
-        assert_eq!(levenshtein("udpate", "update"), 1);
-        assert_eq!(levenshtein("kitten", "sitting"), 3);
+        assert_eq!(closest("abc", ["abc"]), Some("abc"));
+        assert_eq!(closest("abd", ["abc"]), Some("abc"));
+        assert_eq!(closest("inti", ["init"]), Some("init"));
+        assert_eq!(closest("udpate", ["update"]), Some("update"));
+        // Three edits exceed a six-letter name's budget of two.
+        assert_eq!(closest("kitten", ["sitting"]), None);
+        // The nearer candidate wins.
+        assert_eq!(closest("udpate", ["upgrade", "update"]), Some("update"));
     }
 
     #[test]
     fn unicode_scalars_not_bytes() {
-        assert_eq!(levenshtein("héllo", "hello"), 1);
+        // `é` is two bytes but one character: one edit within budget.
+        assert_eq!(closest("héllo", ["hello"]), Some("hello"));
     }
 
     #[test]

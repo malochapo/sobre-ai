@@ -651,7 +651,7 @@ mod exec_tests {
         assert!(output.status.success());
     }
 
-    /// J11: output past the cap is read and dropped, labelled; the command
+    /// Output past the cap is read and dropped, labelled; the command
     /// is never stopped for it.
     #[cfg(unix)]
     #[test]

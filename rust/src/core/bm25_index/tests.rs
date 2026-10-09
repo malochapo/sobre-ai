@@ -945,7 +945,7 @@ fn remove_chunks_with_prefix_evicts_only_matching() {
     assert_eq!(index.remove_chunks_with_prefix("nope://"), 0);
 }
 
-/// A plain-language question finds the snake_case function it describes (B16).
+/// A plain-language question finds the snake_case function it describes.
 #[test]
 fn plain_language_query_finds_snake_case_function() {
     let dir = tempdir().unwrap();

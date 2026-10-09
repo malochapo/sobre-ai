@@ -143,7 +143,7 @@ fn windowed_anchored_read_via_preread_slow_path_stays_windowed() {
     );
 }
 
-/// G7: a window on a file over the size limit holding one invalid UTF-8
+/// A window on a file over the size limit holding one invalid UTF-8
 /// byte is served (U+FFFD in its place), comma parts included, and a BOM
 /// is not part of line 1 — the error used to send the agent back to the
 /// windows that had just failed.
@@ -220,7 +220,7 @@ fn disk_windows_survive_invalid_utf8_and_serve_comma_ranges() {
     }
 }
 
-/// K6: a `raw` line window is those lines as they are on disk: endings
+/// A `raw` line window is those lines as they are on disk: endings
 /// kept, no numbers, no redaction.
 #[test]
 fn a_raw_window_is_the_lines_verbatim() {

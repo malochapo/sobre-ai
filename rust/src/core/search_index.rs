@@ -1,4 +1,4 @@
-//! Resident line-search index for `sobre_search` (Phase 1 of the efficiency epic).
+//! Resident line-search index for `sobre_search`.
 //!
 //! Historically `sobre_search` walked the filesystem, read every file, and ran a
 //! regex on every line on *every* call — `O(files × lines)`. That is the
@@ -35,7 +35,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
-use glob::Pattern;
+use globset::GlobMatcher;
 use ignore::WalkBuilder;
 
 use crate::tools::sobre_search::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
@@ -87,6 +87,9 @@ enum Narrowing {
 
 /// A per-file Bloom filter over the file's word-trigrams. No false negatives:
 /// if any probed bit for a trigram is unset, the file provably lacks it.
+/// Written here rather than taken from a Bloom crate: it hashes trigrams
+/// already packed into a `u32`, and its size and probe count are tuned to this
+/// index's posting budget.
 struct FileBloom {
     /// Bit storage; the filter width `m = bits.len() * 64` is a power of two.
     bits: Vec<u64>,
@@ -271,21 +274,21 @@ impl SearchIndex {
     pub fn candidate_paths(
         &self,
         pattern: &str,
-        includes: &[Pattern],
+        include: Option<&GlobMatcher>,
         root: &Path,
     ) -> CandidateSet {
         if let Some(ids) = self.literal_candidates(pattern) {
             let paths = ids
                 .into_iter()
                 .map(|id| self.files[id as usize].clone())
-                .filter(|p| glob_matches(p, includes, root))
+                .filter(|p| matches_include(p, include, root))
                 .collect();
             CandidateSet::Narrowed(paths)
         } else {
             let paths = self
                 .files
                 .iter()
-                .filter(|p| glob_matches(p, includes, root))
+                .filter(|p| matches_include(p, include, root))
                 .cloned()
                 .collect();
             CandidateSet::FullList(paths)
@@ -390,15 +393,10 @@ impl CandidateSet {
     }
 }
 
-/// True when `path` matches *any* of the `includes` globs (relative to `root`),
-/// or when there is no filter (`includes` empty).
-fn glob_matches(path: &Path, includes: &[Pattern], root: &Path) -> bool {
-    if includes.is_empty() {
-        return true;
-    }
-    let rel = path.strip_prefix(root).unwrap_or(path);
-    let rel_str = rel.to_string_lossy();
-    includes.iter().any(|p| p.matches(&rel_str))
+/// True when `path` (relative to `root`) matches the `include` glob, or when
+/// there is no filter.
+fn matches_include(path: &Path, include: Option<&GlobMatcher>, root: &Path) -> bool {
+    include.is_none_or(|glob| glob.is_match(path.strip_prefix(root).unwrap_or(path)))
 }
 
 /// Intersection of two ascending, deduped `u32` slices.
@@ -717,7 +715,6 @@ fn build_guarded(root: &str, respect_gitignore: bool) -> BuildOutcome {
     let lock = crate::core::startup_guard::try_acquire_lock(
         &search_index_lock_name(root),
         Duration::from_millis(200),
-        Duration::from_mins(3),
     );
     if lock.is_none() {
         // Another process owns the build. Clear the in-flight flag so a later
@@ -783,7 +780,7 @@ mod tests {
     fn narrows_to_files_containing_literal() {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
-        let cands = idx.candidate_paths("handler", &[], dir.path());
+        let cands = idx.candidate_paths("handler", None, dir.path());
         let paths = cands.into_paths();
         // a.rs and c.txt contain "handler"; b.rs must be excluded.
         assert!(paths.iter().any(|p| p.ends_with("a.rs")));
@@ -795,7 +792,7 @@ mod tests {
     fn absent_trigram_yields_empty_candidates() {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
-        match idx.candidate_paths("zzzqqq", &[], dir.path()) {
+        match idx.candidate_paths("zzzqqq", None, dir.path()) {
             CandidateSet::Narrowed(p) => assert!(p.is_empty()),
             CandidateSet::FullList(_) => panic!("pure literal should narrow"),
         }
@@ -808,7 +805,7 @@ mod tests {
         let paths = idx
             .candidate_paths(
                 "handler",
-                &[glob::Pattern::new("*.rs").unwrap()],
+                Some(&crate::tools::sobre_search::compile_glob("*.rs").unwrap()),
                 dir.path(),
             )
             .into_paths();
@@ -840,7 +837,7 @@ mod tests {
         std::thread::spawn(move || {
             let built = SearchIndex::build(&root, true);
             let _ = tx.send(built.map(|idx| {
-                idx.candidate_paths("handler", &[], std::path::Path::new(&root))
+                idx.candidate_paths("handler", None, std::path::Path::new(&root))
                     .into_paths()
             }));
         });
@@ -856,7 +853,7 @@ mod tests {
     fn regex_query_falls_back_to_full_list() {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
-        match idx.candidate_paths("fn .*\\(\\)", &[], dir.path()) {
+        match idx.candidate_paths("fn .*\\(\\)", None, dir.path()) {
             CandidateSet::FullList(p) => assert!(!p.is_empty()),
             CandidateSet::Narrowed(_) => panic!("metachar query must not narrow"),
         }
@@ -867,7 +864,7 @@ mod tests {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true).unwrap();
         assert!(matches!(
-            idx.candidate_paths("fn", &[], dir.path()),
+            idx.candidate_paths("fn", None, dir.path()),
             CandidateSet::FullList(_)
         ));
     }
@@ -921,7 +918,7 @@ mod tests {
 
         for query in ["authenticate", "Session", "retries", "token"] {
             let re = Regex::new(query).unwrap();
-            let candidates = idx.candidate_paths(query, &[], dir.path()).into_paths();
+            let candidates = idx.candidate_paths(query, None, dir.path()).into_paths();
             let mut narrowed = BTreeSet::new();
             for path in &candidates {
                 let content = std::fs::read_to_string(path).unwrap();
@@ -1065,7 +1062,7 @@ mod tests {
 
         for query in ["authenticate", "Session", "retries", "token"] {
             let cands: HashSet<String> = idx
-                .candidate_paths(query, &[], std::path::Path::new(""))
+                .candidate_paths(query, None, std::path::Path::new(""))
                 .into_paths()
                 .iter()
                 .map(|p| p.to_string_lossy().to_string())
@@ -1166,13 +1163,13 @@ mod tests {
 
         let dir = corpus();
         let root = dir.path().to_string_lossy().to_string();
-        // Pre-hold the cross-process lock with *this* (alive) PID and a fresh
-        // mtime, so neither the dead-owner nor the staleness reclaim can take it
-        // — exactly the "another session is already building" state.
-        let lock_path = data
-            .path()
-            .join(format!(".{}.lock", search_index_lock_name(&root)));
-        std::fs::write(&lock_path, format!("{}\n", std::process::id())).unwrap();
+        // Pre-hold the cross-process lock: exactly the "another session is
+        // already building" state.
+        let _held = crate::core::startup_guard::try_acquire_lock(
+            &search_index_lock_name(&root),
+            Duration::ZERO,
+        )
+        .expect("the lock is free before the build");
 
         {
             let mut map = cache()

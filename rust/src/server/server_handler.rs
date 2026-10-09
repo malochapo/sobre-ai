@@ -119,7 +119,6 @@ impl ServerHandler for SobreServer {
             let maintenance = crate::core::startup_guard::try_acquire_lock(
                 "startup-maintenance",
                 std::time::Duration::from_secs(2),
-                std::time::Duration::from_mins(2),
             );
             if maintenance.is_some() {
                 // Prune quarantined BM25 indexes and week-old sessions. Silent

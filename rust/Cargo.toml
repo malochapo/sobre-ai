@@ -117,12 +117,15 @@ serde = { version = "1.0", features = ["derive"] }
 # preserve_order: agent configs are edited in place, and their keys must keep
 # the order the user wrote them in.
 serde_json = { version = "1.0", features = ["preserve_order"] }
-# Edits agent JSON/JSONC configs while keeping comments and formatting.
-jsonc-parser = { version = "0.34", default-features = false, features = ["cst", "serde_json"] }
+# Reads agent JSON/JSONC configs and edits them while keeping comments and
+# formatting.
+jsonc-parser = { version = "0.34", default-features = false, features = ["cst", "serde", "serde_json"] }
 subtle = "2.6"
 anyhow = "1.0"
 regex = "1.12"
 ignore = "0.4"
+# `sobre_search` and `sobre_glob` globs, with `{a,b}` alternation.
+globset = "0.4.19"
 lru = "0.18.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -205,6 +208,8 @@ base64 = "0.22"
 sha2 = "0.11"
 glob = "0.3"
 urlencoding = "2.1"
+strsim = "0.11.1"
+strip-ansi-escapes = "0.2.1"
 getrandom = "0.4"
 reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
@@ -217,8 +222,30 @@ moka = { version = "0.12", features = ["sync"] }
 postcard = { version = "1.1", features = ["use-std"] }
 zstd = "0.13"
 lsp-types = "0.97"
-fs2 = "0.4"
+# Content-Length framing and JSON-RPC message types for the language-server
+# client (`lsp/client.rs`); the crate serves clients as well as servers.
+lsp-server = "0.10"
+# File paths to percent-encoded `file://` URIs for the language-server client.
+# Already in the tree through reqwest.
+url = "2.5.8"
+# PATH lookup with the executable bit on Unix and PATHEXT on Windows.
+which = "8.0"
+# Process RSS and system RAM for the memory guard, on Linux, macOS and Windows.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 yaml_serde = "0.10.4"
+# The command line (cli/args.rs). `suggestions` adds "did you mean" for a
+# mistyped command or flag, through strsim, already a dependency (about 8 KB
+# in the release binary). Left out: `color` (sobre's own help is plain text),
+# `wrap_help` (the help text is wrapped in the source) and `unicode` (every
+# name and value name is ASCII).
+clap = { version = "4.6.7", default-features = false, features = [
+  "std",
+  "derive",
+  "help",
+  "usage",
+  "error-context",
+  "suggestions",
+] }
 
 [lints.rust]
 unreachable_pub = "warn"
@@ -298,7 +325,6 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_Security",
   "Win32_System_Pipes",
-  "Win32_Storage_FileSystem",
 ] }
 
 [target.'cfg(not(windows))'.dependencies]

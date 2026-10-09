@@ -13,7 +13,7 @@ const MAX_RESULTS: usize = 500;
 ///
 /// Unlike `sobre_search` which matches file *content*, this matches file *paths*.
 /// Uses the `ignore` crate for gitignore-aware, hidden-aware walking and matches
-/// against the standard `glob` crate's pattern syntax (`*.rs`, `**/*.ts`, …).
+/// with its `globset` syntax (`*.rs`, `**/*.ts`, `*.{rs,ts}`, …).
 ///
 /// The walk is ordered by path (`sort_by_file_path`) so that — even when the
 /// result set is truncated to `max_results` — the *set* of returned files, not
@@ -85,10 +85,7 @@ pub fn handle(
         let path = entry.path();
         files_walked += 1;
 
-        let rel_path = path.strip_prefix(root).unwrap_or(path);
-        let rel_str = rel_path.to_string_lossy();
-
-        if crate::tools::sobre_search::glob_matches(&glob_matcher, &rel_str) {
+        if glob_matcher.is_match(path.strip_prefix(root).unwrap_or(path)) {
             let short_path =
                 protocol::shorten_path_relative(&path.to_string_lossy(), &root.to_string_lossy());
             matches.push(short_path);
@@ -133,7 +130,7 @@ pub fn handle(
 mod tests {
     use super::*;
 
-    /// G12: a glob that stops at `max_results` says so.
+    /// A glob that stops at `max_results` says so.
     #[test]
     fn stopping_at_max_results_is_said() {
         let dir = tempfile::tempdir().unwrap();
@@ -148,7 +145,7 @@ mod tests {
         assert!(!all.contains("stopped at max_results"), "{all}");
     }
 
-    /// K14: `*` stays within one directory; a glob without `/` names a file
+    /// `*` stays within one directory; a glob without `/` names a file
     /// at any depth.
     #[test]
     fn star_does_not_cross_a_directory() {
@@ -168,6 +165,10 @@ mod tests {
 
         let (recursive, _) = handle("src/**/*.ts", &root, true, 100);
         assert!(recursive.contains("deep.ts"), "{recursive}");
+
+        let (braced, _) = handle("src/{a,b}/**/*.ts", &root, true, 100);
+        assert!(braced.contains("deep.ts"), "{braced}");
+        assert!(!braced.contains("top.ts"), "{braced}");
     }
 
     #[test]

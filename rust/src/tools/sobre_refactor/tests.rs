@@ -473,7 +473,7 @@ fn name_path_with_path_edits_only_the_named_checkout() {
     );
 }
 
-/// J3: the symbol's lines are read from the file at edit time, so a second
+/// The symbol's lines are read from the file at edit time, so a second
 /// edit after the first moved the symbol lands on its new lines.
 #[test]
 fn a_second_symbol_edit_follows_the_moved_symbol() {
@@ -503,7 +503,7 @@ fn a_second_symbol_edit_follows_the_moved_symbol() {
     );
 }
 
-/// J4: `path`+`line` resolves the whole symbol around the line.
+/// `path`+`line` resolves the whole symbol around the line.
 #[test]
 fn path_and_line_replace_the_whole_symbol_around_it() {
     let dir = tempfile::tempdir().unwrap();

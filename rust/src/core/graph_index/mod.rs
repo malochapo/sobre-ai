@@ -628,17 +628,11 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     // Another scan of this project (the background warm-up, another
     // process) is waited for, and its result used when it is current: a
     // second scan never answers with an empty index while the first runs.
-    let stale_after = Duration::from_mins(3);
     let (_lock, waited) =
-        match crate::core::startup_guard::try_acquire_lock(&lock_name, Duration::ZERO, stale_after)
-        {
+        match crate::core::startup_guard::try_acquire_lock(&lock_name, Duration::ZERO) {
             Some(lock) => (Some(lock), false),
             None => (
-                crate::core::startup_guard::try_acquire_lock(
-                    &lock_name,
-                    SCAN_LOCK_WAIT,
-                    stale_after,
-                ),
+                crate::core::startup_guard::try_acquire_lock(&lock_name, SCAN_LOCK_WAIT),
                 true,
             ),
         };
@@ -746,9 +740,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
                     targets.len()
                 );
                 break;
-            }
-            if let Some(ref g) = _lock {
-                g.touch();
             }
         }
 

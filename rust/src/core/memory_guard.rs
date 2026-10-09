@@ -1,6 +1,6 @@
 //! Process-level RAM guardian with adaptive eviction and hard OOM protection.
 //!
-//! Monitors RSS via platform-specific APIs and triggers tiered cache eviction
+//! Monitors RSS through `sysinfo` and triggers tiered cache eviction
 //! when memory usage exceeds configurable thresholds (default: 5% of system RAM).
 //! At critical levels, performs aggressive eviction and signals background tasks
 //! to abort. It never exits the process — recovery is always via eviction.
@@ -15,34 +15,24 @@ static CURRENT_PRESSURE: AtomicU8 = AtomicU8::new(0);
 
 /// Current process RSS in bytes, or `None` if unavailable.
 pub fn get_rss_bytes() -> Option<u64> {
-    #[cfg(target_os = "linux")]
-    {
-        linux_rss()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        macos_rss()
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        None
-    }
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
+    let pid = sysinfo::get_current_pid().ok()?;
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        false,
+        ProcessRefreshKind::nothing().with_memory().without_tasks(),
+    );
+    sys.process(pid).map(sysinfo::Process::memory)
 }
 
 /// Total physical RAM in bytes, or `None` if unavailable.
 pub fn get_system_ram_bytes() -> Option<u64> {
-    #[cfg(target_os = "linux")]
-    {
-        linux_memtotal()
-    }
-    #[cfg(target_os = "macos")]
-    {
-        macos_memsize()
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    {
-        None
-    }
+    use sysinfo::{MemoryRefreshKind, RefreshKind, System};
+    let sys = System::new_with_specifics(
+        RefreshKind::nothing().with_memory(MemoryRefreshKind::nothing().with_ram()),
+    );
+    Some(sys.total_memory()).filter(|&bytes| bytes > 0)
 }
 
 /// Returns the RSS limit in bytes based on the built-in `MAX_RAM_PERCENT`.
@@ -362,118 +352,41 @@ pub fn force_purge() {
     tracing::info!("[memory_guard] force_purge completed");
 }
 
-// --- Platform-specific implementations ---
-
-#[cfg(target_os = "linux")]
-fn linux_rss() -> Option<u64> {
-    linux_rss_for_pid(std::process::id())
-}
-
-#[cfg(target_os = "linux")]
-fn linux_rss_for_pid(pid: u32) -> Option<u64> {
-    let path = format!("/proc/{pid}/status");
-    let status = std::fs::read_to_string(path).ok()?;
-    for line in status.lines() {
-        if let Some(val) = line.strip_prefix("VmRSS:") {
-            let kb: u64 = val.trim().trim_end_matches(" kB").trim().parse().ok()?;
-            return Some(kb * 1024);
-        }
-    }
-    None
-}
-
-#[cfg(target_os = "linux")]
-fn linux_memtotal() -> Option<u64> {
-    let info = std::fs::read_to_string("/proc/meminfo").ok()?;
-    for line in info.lines() {
-        if let Some(val) = line.strip_prefix("MemTotal:") {
-            let kb: u64 = val.trim().trim_end_matches(" kB").trim().parse().ok()?;
-            return Some(kb * 1024);
-        }
-    }
-    None
-}
-
-#[cfg(target_os = "macos")]
-#[allow(deprecated, clippy::borrow_as_ptr, clippy::ptr_as_ptr)]
-fn macos_rss() -> Option<u64> {
-    use std::mem;
-    // SAFETY: `mach_task_basic_info_data_t` is a plain C struct for which an
-    // all-zero bit pattern is a valid initial value.
-    let mut info: libc::mach_task_basic_info_data_t = unsafe { mem::zeroed() };
-    let mut count = (mem::size_of::<libc::mach_task_basic_info_data_t>()
-        / mem::size_of::<libc::natural_t>()) as libc::mach_msg_type_number_t;
-    // SAFETY: `mach_task_self()` returns the current task port; `info` and
-    // `count` are live stack locals passed as out-pointers, sized to match the
-    // requested `MACH_TASK_BASIC_INFO` flavour.
-    let kr = unsafe {
-        libc::task_info(
-            libc::mach_task_self(),
-            libc::MACH_TASK_BASIC_INFO,
-            std::ptr::from_mut(&mut info).cast::<i32>(),
-            std::ptr::from_mut(&mut count),
-        )
-    };
-    if kr == libc::KERN_SUCCESS {
-        Some(info.resident_size)
-    } else {
-        None
-    }
-}
-
-#[cfg(target_os = "macos")]
-#[allow(clippy::borrow_as_ptr, clippy::ptr_as_ptr)]
-fn macos_memsize() -> Option<u64> {
-    use std::mem;
-    let mut memsize: u64 = 0;
-    let mut len = mem::size_of::<u64>();
-    let name = b"hw.memsize\0";
-    // SAFETY: `name` is a static, NUL-terminated sysctl name; `memsize` and
-    // `len` are live stack out-pointers whose sizes match the queried value.
-    let ret = unsafe {
-        libc::sysctlbyname(
-            name.as_ptr().cast(),
-            std::ptr::from_mut(&mut memsize).cast::<libc::c_void>(),
-            std::ptr::from_mut(&mut len),
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if ret == 0 { Some(memsize) } else { None }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn rss_returns_some_on_supported_os() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
-            let rss = get_rss_bytes();
-            assert!(rss.is_some(), "RSS should be readable");
-            assert!(rss.unwrap() > 0, "RSS should be > 0");
-        }
+        let rss = get_rss_bytes();
+        assert!(rss.is_some(), "RSS should be readable");
+        assert!(rss.unwrap() > 0, "RSS should be > 0");
     }
 
     #[test]
     fn system_ram_returns_some_on_supported_os() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
-            let ram = get_system_ram_bytes();
-            assert!(ram.is_some(), "System RAM should be readable");
-            assert!(ram.unwrap() > 1_000_000, "System RAM should be > 1MB");
-        }
+        let ram = get_system_ram_bytes();
+        assert!(ram.is_some(), "System RAM should be readable");
+        assert!(ram.unwrap() > 1_000_000, "System RAM should be > 1MB");
+    }
+
+    /// Linux, macOS and Windows alike: the guard has numbers to work with.
+    #[test]
+    fn probes_return_some_on_this_platform() {
+        let rss = get_rss_bytes().expect("process RSS on this platform");
+        let ram = get_system_ram_bytes().expect("system RAM on this platform");
+        assert!(0 < rss && rss < ram, "rss={rss} ram={ram}");
+        assert!(rss_limit_bytes().is_some_and(|limit| limit > 0));
     }
 
     #[test]
     fn snapshot_captures_correctly() {
-        if cfg!(any(target_os = "linux", target_os = "macos")) {
-            let snap = MemorySnapshot::capture();
-            assert!(snap.is_some());
-            let s = snap.unwrap();
-            assert!(s.rss_bytes > 0);
-            assert!(s.system_ram_bytes > s.rss_bytes);
-            assert!(s.rss_percent > 0.0 && s.rss_percent < 100.0);
-        }
+        let snap = MemorySnapshot::capture();
+        assert!(snap.is_some());
+        let s = snap.unwrap();
+        assert!(s.rss_bytes > 0);
+        assert!(s.system_ram_bytes > s.rss_bytes);
+        assert!(s.rss_percent > 0.0 && s.rss_percent < 100.0);
     }
 
     #[test]

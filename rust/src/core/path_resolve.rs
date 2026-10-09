@@ -325,7 +325,7 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// G9: a nested repository or a submodule under the project is another
+    /// A nested repository or a submodule under the project is another
     /// repository: `cd` into it does not move relative paths there.
     #[test]
     fn nested_repository_and_submodule_are_not_divergent() {

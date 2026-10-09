@@ -33,5 +33,11 @@ Third-party contributions:
 - Almario Miano: various improvements
 --------------------------------------------------------------------------------
 
+The JSON, YAML and tabular crushers (rust/src/core/json_crush.rs,
+rust/src/core/yaml_crush.rs, rust/src/core/tabular_crush.rs) are ports of
+compressors from Headroom (https://github.com/headroomlabs-ai/headroom),
+licensed under the Apache License, Version 2.0.
+--------------------------------------------------------------------------------
+
 This product depends on third-party crates under permissive licences. The
 dependency licence policy is enforced by rust/deny.toml.

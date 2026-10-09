@@ -248,7 +248,7 @@ fn another_tools_observe_hook_is_neither_refreshed_nor_removed() {
     assert_eq!(entries[1]["command"], "/new/path/sobre hook observe");
 }
 
-/// J12: a binary path holding a space is one word in the hook command, and
+/// A binary path holding a space is one word in the hook command, and
 /// the command is still recognised as sobre's.
 #[test]
 fn a_binary_path_with_a_space_is_quoted_and_still_ours() {

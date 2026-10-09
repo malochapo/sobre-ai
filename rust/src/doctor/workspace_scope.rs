@@ -105,7 +105,7 @@ pub(super) fn workspace_scope_outcome(
     // Copilot "ws0 not found" errors, but a project may register sobre on
     // purpose. Marking it `ok: true` keeps it out of the failure count while
     // still surfacing the hint. `doctor --fix` leaves the file alone: sobre
-    // writes nothing into a repository (decision 12).
+    // writes nothing into a repository.
     let duplicated: Vec<String> = registered
         .iter()
         .filter(|(loc, _)| {

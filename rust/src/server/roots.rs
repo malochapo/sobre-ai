@@ -8,7 +8,8 @@ pub fn uri_to_path(uri: &str) -> Option<String> {
     if raw.contains("%00") {
         return None;
     }
-    let decoded = percent_decode(raw);
+    // `%C3%A9` is `é`; a `%` not followed by two hex digits stays as it is.
+    let decoded = String::from_utf8_lossy(&urlencoding::decode_binary(raw.as_bytes())).into_owned();
     if decoded.is_empty() || decoded.contains('\0') {
         return None;
     }
@@ -35,42 +36,6 @@ pub fn uri_to_path(uri: &str) -> Option<String> {
         return None;
     }
     Some(s)
-}
-
-/// Decode `%XX` escapes into bytes, then read the bytes as UTF-8: `%C3%A9`
-/// is `é`. A `%` not followed by two hex digits stays as it is; `%00` is
-/// dropped.
-fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && let (Some(h), Some(l)) = (
-                bytes.get(i + 1).copied().and_then(hex_val),
-                bytes.get(i + 2).copied().and_then(hex_val),
-            )
-        {
-            let byte = h << 4 | l;
-            if byte != 0 {
-                out.push(byte);
-            }
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-fn hex_val(b: u8) -> Option<u8> {
-    match b {
-        b'0'..=b'9' => Some(b - b'0'),
-        b'a'..=b'f' => Some(b - b'a' + 10),
-        b'A'..=b'F' => Some(b - b'A' + 10),
-        _ => None,
-    }
 }
 
 /// True for a `file://` URI path of the form `/C:/…` — a leading slash, an ASCII
@@ -196,16 +161,18 @@ pub fn workspace_roots_from_env() -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// L11: a non-ASCII directory name survives the URI decode.
+    /// A non-ASCII directory name survives the URI decode; a `%` without two
+    /// hex digits stays as it is; `%00` is refused.
+    #[cfg(unix)]
     #[test]
     fn percent_decode_reads_utf8() {
         assert_eq!(
-            percent_decode("/home/r%C3%A9mi/projet"),
-            "/home/rémi/projet"
+            uri_to_path("file:///home/r%C3%A9mi/projet").as_deref(),
+            Some("/home/rémi/projet")
         );
-        assert_eq!(percent_decode("/a%2"), "/a%2");
-        assert_eq!(percent_decode("/a%zz/b"), "/a%zz/b");
-        assert_eq!(percent_decode("/a%00b"), "/ab");
+        assert_eq!(uri_to_path("file:///a%2").as_deref(), Some("/a%2"));
+        assert_eq!(uri_to_path("file:///a%zz/b").as_deref(), Some("/a%zz/b"));
+        assert_eq!(uri_to_path("file:///a%00b"), None);
     }
 
     #[cfg(unix)]

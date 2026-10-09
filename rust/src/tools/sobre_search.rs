@@ -3,7 +3,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use glob::Pattern;
+use globset::{GlobBuilder, GlobMatcher};
 use ignore::WalkBuilder;
 use regex::RegexBuilder;
 
@@ -71,13 +71,12 @@ pub fn handle_filtered(
     // `include` is a glob matched against each file's path *relative to* `dir`
     // (e.g. `*.ts`, `*.{rs,ts}`, `src/**/*.tsx`). Bare globs without `/` match
     // at any directory depth (like `rg --glob`), so `*.ts` finds `a/b.ts` too.
-    // Brace alternation is expanded here because the `glob` crate has no native
-    // support for it. An empty result (no `include`, or only unparsable globs)
-    // means "no filter", so a typo never silently drops every match.
-    let include_patterns = compile_include(include);
-    // `exclude` is the negative complement of `include`: a file matching any
+    // No `include`, or one that does not parse, means "no filter", so a typo
+    // never silently drops every match.
+    let include_glob = compile_filter(include);
+    // `exclude` is the negative complement of `include`: a file matching the
     // exclude glob is dropped, even when it also matches `include`.
-    let exclude_patterns = compile_include(exclude);
+    let exclude_glob = compile_filter(exclude);
     const MAX_PATTERN_LEN: usize = 1024;
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
 
@@ -137,7 +136,7 @@ pub fn handle_filtered(
     let used_index = if let Some(idx) = crate::core::search_index::get_fresh(dir, respect_gitignore)
     {
         files = idx
-            .candidate_paths(pattern, &include_patterns, root)
+            .candidate_paths(pattern, include_glob.as_ref(), root)
             .into_paths();
         let skips = idx.skips();
         files_skipped_type += skips.by_type;
@@ -183,12 +182,10 @@ pub fn handle_filtered(
                 continue;
             }
 
-            if !include_patterns.is_empty() {
-                let rel = path.strip_prefix(root).unwrap_or(path);
-                let rel_str = rel.to_string_lossy();
-                if !include_patterns.iter().any(|p| glob_matches(p, &rel_str)) {
-                    continue;
-                }
+            if let Some(include) = &include_glob
+                && !include.is_match(path.strip_prefix(root).unwrap_or(path))
+            {
+                continue;
             }
 
             // Size / regular-file filtering happens once in the shared read loop
@@ -200,12 +197,8 @@ pub fn handle_filtered(
 
     // Drop excluded paths after both the index and walk populate `files`,
     // so the negative glob filter applies uniformly to either collection path.
-    if !exclude_patterns.is_empty() {
-        files.retain(|path| {
-            let rel = path.strip_prefix(root).unwrap_or(path);
-            let rel_str = rel.to_string_lossy();
-            !exclude_patterns.iter().any(|p| glob_matches(p, &rel_str))
-        });
+    if let Some(exclude) = &exclude_glob {
+        files.retain(|path| !exclude.is_match(path.strip_prefix(root).unwrap_or(path)));
     }
 
     // Deterministic search: stable file ordering makes max_results truncation reproducible.
@@ -581,78 +574,28 @@ impl EnclosingIndex {
 
 /// Compile one glob as `rg --glob` reads it: a glob without `/` (`*.rs`,
 /// `pathutil.rs`) names a file at any depth; a glob with `/` (`src/*.rs`,
-/// `src/**/*.rs`) is matched against the path from the root.
-pub(crate) fn compile_glob(glob: &str) -> Result<Pattern, glob::PatternError> {
-    if glob.contains('/') {
-        Pattern::new(glob)
+/// `src/**/*.rs`) is matched against the path from the root. `*` and `?` stay
+/// within one path segment (`src/*.ts` is not `src/a/b.ts`), `**` crosses
+/// segments, and `{a,b}` is either alternative.
+pub(crate) fn compile_glob(glob: &str) -> Result<GlobMatcher, globset::Error> {
+    let any_depth;
+    let glob = if glob.contains('/') {
+        glob
     } else {
-        Pattern::new(&format!("**/{glob}"))
-    }
+        any_depth = format!("**/{glob}");
+        &any_depth
+    };
+    Ok(GlobBuilder::new(glob)
+        .literal_separator(true)
+        .build()?
+        .compile_matcher())
 }
 
-/// Whether `path` matches `pattern` as a shell glob does: `*` and `?` stay
-/// within one path segment (`src/*.ts` is not `src/a/b.ts`); `**` crosses
-/// segments.
-pub(crate) fn glob_matches(pattern: &Pattern, path: &str) -> bool {
-    pattern.matches_with(
-        path,
-        glob::MatchOptions {
-            require_literal_separator: true,
-            ..glob::MatchOptions::default()
-        },
-    )
-}
-
-/// Upper bound on the number of globs a single `include` may expand to, so a
-/// pathological brace pattern (`{a,b}{c,d}{e,f}…`) can never blow up.
-const MAX_INCLUDE_GLOBS: usize = 64;
-
-/// Compile an `include` filter into one or more matchers.
-///
-/// Brace alternation (`*.{rs,ts}`) is expanded to multiple globs (`*.rs`,
-/// `*.ts`) because the `glob` crate matches `{` / `}` literally. A file is
-/// included when it matches *any* of the returned patterns. An empty vec means
-/// "no filter": `include` was `None`, or every expansion failed to parse.
-///
-/// Each glob is read by [`compile_glob`].
-fn compile_include(include: Option<&str>) -> Vec<Pattern> {
-    let Some(raw) = include else {
-        return Vec::new();
-    };
-    expand_braces(raw)
-        .into_iter()
-        .take(MAX_INCLUDE_GLOBS)
-        .filter(|g| !g.is_empty())
-        .filter_map(|g| compile_glob(&g).ok())
-        .collect()
-}
-
-/// Expand one or more `{a,b,c}` brace groups into the cartesian set of concrete
-/// globs. Patterns without braces (or with an unbalanced brace) are returned
-/// unchanged, so this is safe to call on any input.
-fn expand_braces(pattern: &str) -> Vec<String> {
-    let Some(open) = pattern.find('{') else {
-        return vec![pattern.to_string()];
-    };
-    let Some(close_rel) = pattern[open..].find('}') else {
-        return vec![pattern.to_string()];
-    };
-    let close = open + close_rel;
-    let prefix = &pattern[..open];
-    let inner = &pattern[open + 1..close];
-    let suffix = &pattern[close + 1..];
-
-    let mut out = Vec::new();
-    for alt in inner.split(',') {
-        let alt = alt.trim();
-        for expanded_suffix in expand_braces(suffix) {
-            out.push(format!("{prefix}{alt}{expanded_suffix}"));
-            if out.len() >= MAX_INCLUDE_GLOBS {
-                return out;
-            }
-        }
-    }
-    out
+/// Compile an `include` or `exclude` filter with [`compile_glob`]. `None`
+/// means "no filter": the glob is absent, empty or does not parse.
+fn compile_filter(glob: Option<&str>) -> Option<GlobMatcher> {
+    glob.filter(|g| !g.is_empty())
+        .and_then(|g| compile_glob(g).ok())
 }
 
 /// Extract file path from a grep match line, handling Windows drive letters (e.g. "C:").
@@ -742,7 +685,7 @@ mod tests {
         assert_eq!(run(), run(), "search output must be deterministic");
     }
 
-    /// K3: line 1 of a file with a UTF-8 BOM is anchored without the BOM,
+    /// Line 1 of a file with a UTF-8 BOM is anchored without the BOM,
     /// as `sobre_read` and `sobre_patch` hash it.
     #[test]
     fn anchored_search_hashes_line_one_without_the_bom() {
@@ -1057,7 +1000,7 @@ mod tests {
         );
     }
 
-    /// G12: a search that stops at `max_results` says so and counts against
+    /// A search that stops at `max_results` says so and counts against
     /// every candidate file; a complete one does not, and both name what the
     /// walk never looks at.
     #[test]
@@ -1241,6 +1184,23 @@ mod tests {
         assert!(out.contains("a.rs"), "rs file must match: {out}");
         assert!(out.contains("b.ts"), "ts file must match: {out}");
         assert!(!out.contains("c.py"), "py file must be excluded: {out}");
+    }
+
+    /// Braces nest, and an alternative may hold a `/`.
+    #[test]
+    fn include_glob_nested_braces() {
+        let matcher = compile_glob("{src/*.{rs,ts},docs/**/*.md}").unwrap();
+        for path in ["src/a.rs", "src/b.ts", "docs/x/y.md", "docs/z.md"] {
+            assert!(matcher.is_match(path), "{path} must match");
+        }
+        for path in ["src/a/b.rs", "src/c.py", "a.rs", "notes/z.md"] {
+            assert!(!matcher.is_match(path), "{path} must not match");
+        }
+        let any_depth = compile_glob("*.{rs,{ts,tsx}}").unwrap();
+        for path in ["a.rs", "x/b.ts", "x/y/c.tsx"] {
+            assert!(any_depth.is_match(path), "{path} must match");
+        }
+        assert!(!any_depth.is_match("d.py"));
     }
 
     #[test]

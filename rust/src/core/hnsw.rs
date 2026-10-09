@@ -11,6 +11,11 @@
 //! gives sequential memory access during the distance hot-loop — one dereference instead
 //! of `Arc → slice → Vec → f32 heap`, eliminates per-vector allocation overhead, and
 //! improves cache utilization for large corpora.
+//!
+//! Not an HNSW crate: the level draw here is deterministic (seeded by the
+//! insertion index), so one corpus always gives one graph and one ranking; the
+//! graph reads the flat vectors the dense scoring already holds, without a
+//! copy; and it is tuned for the 384-d embeddings sobre ships.
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;

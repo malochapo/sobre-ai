@@ -16,7 +16,15 @@ fn upstream_is_local_detects_loopback_hosts() {
         "http://127.0.0.1:11434",
         "http://localhost:8080/v1",
         "http://[::1]:9999",
+        "http://[::1]/v1",
         "http://0.0.0.0:4000",
+        // Every address of 127.0.0.0/8 is loopback.
+        "http://127.0.0.2:8080",
+        "http://127.255.255.254",
+        // Userinfo is not the host.
+        "http://u:p@localhost:8080/v1",
+        "http://user@127.0.0.1:11434",
+        "http://LOCALHOST:8080",
     ] {
         assert!(
             crate::proxy::codec::upstream_is_local(local),
@@ -27,6 +35,10 @@ fn upstream_is_local_detects_loopback_hosts() {
         "https://api.anthropic.com",
         "https://acme.services.ai.azure.com/openai",
         "https://localhost.evil.example.com", // subdomain trick ≠ local
+        "http://localhost@evil.example.com",  // userinfo trick ≠ local
+        "http://127.0.0.1.evil.example.com",
+        "http://[::2]:9999",
+        "http://128.0.0.1",
     ] {
         assert!(
             !crate::proxy::codec::upstream_is_local(remote),

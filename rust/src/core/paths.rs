@@ -10,6 +10,10 @@
 //!
 //! Determinism: every resolver is a pure function of environment + HOME;
 //! no timestamps, counters or randomness.
+//!
+//! Not `dirs`/`directories`: they give `~/Library/…` on macOS and `AppData`
+//! on Windows, where sobre keeps this XDG layout on every OS, with the
+//! `SOBRE_*_DIR` overrides on top.
 
 use std::path::{Path, PathBuf};
 

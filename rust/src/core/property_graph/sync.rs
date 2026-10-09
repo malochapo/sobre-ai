@@ -44,7 +44,7 @@ fn symbol_metadata(kind: &str, is_exported: bool) -> String {
 /// flag from a symbol node's metadata JSON. The property-graph `Node` only
 /// models a coarse `NodeKind`, so the precise graph_index kind (`function`,
 /// `struct`, …) and export flag live in this metadata blob — the provider
-/// facade must read them back to surface a lossless symbol (C1). Returns
+/// facade must read them back to surface a lossless symbol. Returns
 /// `(None, None)` for absent/malformed metadata so callers can fall back.
 pub fn parse_symbol_metadata(meta: Option<&str>) -> (Option<String>, Option<bool>) {
     let Some(raw) = meta else {

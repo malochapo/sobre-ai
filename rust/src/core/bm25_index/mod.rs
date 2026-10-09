@@ -141,6 +141,9 @@ pub struct SearchResult {
     pub snippet: String,
 }
 
+// Okapi BM25 over this module's own chunks, written here: the scoring is a few
+// lines in `search`, and `tantivy`, the crate that has it, is a full search
+// engine with its own on-disk index, far heavier than the index it would score.
 const BM25_K1: f64 = 1.2;
 const BM25_B: f64 = 0.75;
 

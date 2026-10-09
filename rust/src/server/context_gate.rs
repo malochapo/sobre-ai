@@ -23,7 +23,7 @@ pub struct PreDispatchResult {
 /// The mode a read is served in when this conversation's own reads call for
 /// another one. Only bounce-prevention does: a file read compressed and then
 /// re-read full (or edited) is read full. Neither the session nor knowledge
-/// changes the answer (decision 4).
+/// changes the answer.
 pub fn pre_dispatch_read(path: &str, requested_mode: &str) -> PreDispatchResult {
     let no_change = PreDispatchResult {
         overridden_mode: None,

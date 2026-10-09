@@ -334,7 +334,6 @@ fn run_build_worker(root: &str) {
             let _lock = crate::core::startup_guard::try_acquire_lock(
                 &lock_name,
                 std::time::Duration::from_millis(800),
-                std::time::Duration::from_mins(3),
             );
             if _lock.is_none() {
                 tracing::info!(
@@ -805,7 +804,7 @@ pub struct DiskStatusAll {
 }
 
 fn disk_status_for_graph(project_root: &str) -> DiskStatus {
-    // C4: the property graph is the sole store. The logical graph-index
+    // The property graph is the sole store. The logical graph-index
     // view (file count) is sized/timed by `graph.meta.json`, which the mirror
     // stamps on every build; `disk_status_for_code_graph` reports the raw
     // SQLite store (nodes, graph.db) as a distinct facet.

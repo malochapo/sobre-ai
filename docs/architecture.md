@@ -13,7 +13,7 @@ file, a search or a shell command, and `sobre` answers with the smallest
 output that still does the job. Every output it changes says so, and the
 original stays reachable.
 
-Five invariants ([INVARIANTS.md](../INVARIANTS.md)) define the project, and
+Six invariants ([INVARIANTS.md](../INVARIANTS.md)) define the project, and
 each one shows up in the code:
 
 | Invariant | Where it shows |
@@ -23,6 +23,7 @@ each one shows up in the code:
 | 3. One `tools/list` per build | the list never depends on the client, the config or the session; the dense build adds one parameter |
 | 4. Local and personal | no account, telemetry or remote store; the network is reached only by the proxy and by `embeddings provision` |
 | 5. The agent host decides | no allow or deny list, no path jail, no approval written into a host; every change to an output is labelled |
+| 6. Use what exists | maintained crates for the protocol, parsing, HTTP and file formats; the code that predates the rule is listed in issue #69 |
 
 ## 2. Component map
 
@@ -250,7 +251,7 @@ project hash: a short hash of the canonical project root
 | `session_token` | the proxy token (0600) | until uninstall |
 | `logs/crash.log` | panics (0600) | rotated at 1 MB |
 | `onnxruntime/<version>/` | ONNX Runtime from `embeddings provision` | until uninstall |
-| `.<name>.lock`, `.mcp-server-starts.log` | cross-process locks and the restart counter | released or reclaimed |
+| `.<name>.lock`, `.mcp-server-starts.log` | cross-process locks and the restart counter | a lock is released when its holder ends, the empty file stays; the counter is cleared after a handshake |
 
 **State** (`~/.local/state/sobre`)
 
@@ -286,10 +287,10 @@ pinned hashes (`model.lock.json`).
 
 **Between processes.** Several MCP servers, hooks, the CLI and the proxy share
 the data and state directories:
-- **Locks.** A lock is a `.<name>.lock` file created exclusively, holding its owner's PID, and reclaimed when that PID is dead or the lock is stale (`core/startup_guard.rs`).
+- **Locks.** A lock is an OS advisory lock (`flock`, `LockFileEx`) on a `.<name>.lock` file, taken with std's `File::try_lock` (`core/startup_guard.rs`). The OS releases it when its holder exits, crashed or not, so no lock outlives its process. `rust/LOCK_ORDERING.md` lists them.
   - Locks: server startup, startup maintenance, and each project's graph, BM25 and search builds.
   - The process that loses a build race waits for the winner and reuses its index; a graph scan waits up to 2 minutes.
-- **The usage ledger** is appended under an exclusive file lock.
+- **The usage ledger** is appended, and each project's knowledge rewritten, under an exclusive file lock of the same kind.
 - **Other writes** go to a temporary sibling, then a rename (`core/atomic_fs.rs`, `config_io.rs`, session and index writers). A reader sees the old file or the new one, never half of one.
 - **Per process:** the session, the read cache, the search index, background jobs and language servers. Every process starts an empty session; `sobre_session action=load` restores a saved one.
 
@@ -379,7 +380,9 @@ points, and runs commands as written. The agent host decides what may run
 | Go | `gopls` |
 | Java, Kotlin, Ruby, C, C++, C# | `<language>-language-server` when one is on `PATH` |
 
-Requests time out after 30 s, initialisation after 60 s.
+Requests time out after 30 s, initialisation after 60 s. Requests from the
+server are answered: an empty success for `workspace/configuration` and
+`client/registerCapability`, `MethodNotFound` for any other.
 
 `sobre_outline`, `sobre_read mode=signatures` and the graph parse 27 languages
 with tree-sitter: Rust, TypeScript (and TSX), JavaScript, Python, Go, Java, C,
@@ -394,7 +397,7 @@ files are parsed through their script blocks. The post-edit syntax check covers
 |---|---|---|
 | [mcp-tools.md](reference/generated/mcp-tools.md) | every tool, action and parameter | `tools/registered/` |
 | [config-keys.md](reference/generated/config-keys.md) | every config key | `core/config/schema/` |
-| [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/spec.rs` |
+| [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/args.rs` |
 | [env-vars.md](reference/generated/env-vars.md) | every environment variable | `core/env_vars.rs` |
 | [contracts/](contracts/) | on-disk formats and policies: usage ledger, graph, knowledge, gotchas | the contract files |
 | [LOCK_ORDERING.md](../rust/LOCK_ORDERING.md) | every lock and its order | checked by a test |
@@ -403,11 +406,12 @@ files are parsed through their script blocks. The post-edit syntax check covers
 
 - Start from the invariants. A new tool names the one it replaces. A new key
   replaces one: the cap is 15 and a test pins the list. No variable may change
-  behaviour.
+  behaviour. A need a maintained crate meets is met by the crate, not by new
+  code of our own.
 - The four reference pages are generated:
   `cargo run --example gen_docs --features dev-tools` rewrites them, and CI
   fails when they drift.
-  - A new command or flag goes into `cli/spec.rs`; a test fails when a handler reads a flag the table lacks.
+  - A new command or flag is declared with clap in `cli/args.rs`; its handler takes the parsed struct, so it reads no flag that is not declared.
   - A new variable goes into `core/env_vars.rs`; a test fails when the code reads one it does not list.
   - A tool argument goes into its schema; a test fails when a handler reads one the schema does not declare.
 - The fixed per-turn cost of the tool schemas and instructions is pinned by a

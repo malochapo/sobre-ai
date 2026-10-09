@@ -275,7 +275,7 @@ mod tests {
         );
     }
 
-    /// The core Phase 3 guarantee: a resolved hotspot is pruned from knowledge
+    /// The core guarantee: a resolved hotspot is pruned from knowledge
     /// and the property graph on the next pass, never lingering as stale signal.
     #[test]
     #[serial_test::serial(code_health_fabric)]

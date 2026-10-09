@@ -6,6 +6,7 @@
 //! Nothing here runs implicitly — the policy is "no silent
 //! download at first tool call, ever".
 
+use crate::cli::args::EmbeddingsCommand;
 #[cfg(feature = "dense")]
 use crate::core::artifacts_exec::ort_provision;
 
@@ -42,19 +43,15 @@ pub(crate) fn provision(force: bool) -> Result<(), String> {
     }
 }
 
-pub(crate) fn cmd_embeddings(rest: &[String]) {
-    let args = rest.get(1..).unwrap_or_default();
-    match rest.first().map(String::as_str) {
-        Some("provision") => {
-            crate::cli::spec::check_or_exit("embeddings provision", args);
-            if let Err(e) = provision(args.iter().any(|a| a == "--force")) {
+pub(crate) fn cmd_embeddings(command: Option<&EmbeddingsCommand>) {
+    match command {
+        Some(EmbeddingsCommand::Provision { force }) => {
+            if let Err(e) = provision(*force) {
                 eprintln!("Provisioning failed: {e}");
                 std::process::exit(1);
             }
         }
-        Some("--help" | "-h") => print!("{}", crate::cli::spec::group_text("embeddings")),
-        Some("status") | None => {
-            crate::cli::spec::check_or_exit("embeddings status", args);
+        Some(EmbeddingsCommand::Status) | None => {
             // Nothing to provision here, so nothing to report but that.
             #[cfg(not(feature = "dense"))]
             println!(
@@ -80,15 +77,6 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
                     crate::core::ort_execution_providers::execution_provider_help()
                 );
             }
-        }
-        Some(other) => {
-            eprintln!(
-                "Unknown subcommand `{other}`.\n\n\
-                 Usage:\n  \
-                 sobre embeddings status              Show the managed ONNX Runtime state\n  \
-                                 sobre embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
-            );
-            std::process::exit(2);
         }
     }
 }

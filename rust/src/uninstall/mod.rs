@@ -17,32 +17,9 @@ pub(super) fn shorten(path: &Path, home: &Path) -> String {
 // Main entry
 // ---------------------------------------------------------------------------
 
-/// What `sobre uninstall` was asked to keep.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub struct Options {
-    pub keep_config: bool,
-    pub keep_binary: bool,
-}
-
-/// Parses `uninstall`'s arguments. Anything it does not know is an error:
-/// uninstall removes everything, so a typo must never run it.
-pub fn parse_args(args: &[String]) -> Result<Options, String> {
-    let mut options = Options::default();
-    for arg in args {
-        match arg.as_str() {
-            "--keep-config" => options.keep_config = true,
-            "--keep-binary" => options.keep_binary = true,
-            other => {
-                return Err(format!(
-                    "uninstall: unknown argument '{other}' (it takes --keep-config and --keep-binary; see sobre uninstall --help)"
-                ));
-            }
-        }
-    }
-    Ok(options)
-}
-
-pub fn run(options: &Options) {
+/// Removes sobre. `options` says what to keep; any other argument stopped
+/// the command line before this runs, since uninstall removes everything.
+pub(crate) fn run(options: &crate::cli::args::UninstallArgs) {
     let Some(home) = dirs::home_dir() else {
         eprintln!("uninstall: cannot determine the home directory");
         return;

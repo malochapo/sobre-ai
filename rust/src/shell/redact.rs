@@ -147,7 +147,7 @@ mod tests {
         assert_eq!(hits, 1, "exactly one racer should win the cleanup slot");
     }
 
-    /// J7: a command in another script still gets an id `sobre_expand`
+    /// A command in another script still gets an id `sobre_expand`
     /// resolves.
     #[test]
     fn a_non_ascii_command_gets_a_resolvable_id() {

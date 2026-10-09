@@ -14,7 +14,7 @@ impl McpTool for SobreOutlineTool {
     }
 
     /// Errors, conflicts and unknown actions start with `ERROR`, `CONFLICT`
-    /// or `Unknown action` (B29).
+    /// or `Unknown action`.
     fn text_reports_failures(&self) -> bool {
         true
     }

@@ -154,7 +154,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         .unwrap_or("");
 
     // A syntax error the edit introduces is reported with the result; the
-    // edit is written either way (decision 3).
+    // edit is written either way.
     let syntax_notice = crate::core::syntax_validate::syntax_notice(ext, &pre.text, &new_content);
 
     if params.dry_run {

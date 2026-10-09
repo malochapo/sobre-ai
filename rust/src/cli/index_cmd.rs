@@ -1,30 +1,14 @@
 use std::path::Path;
 use std::time::Duration;
 
+use crate::cli::args::IndexCommand;
 use crate::terminal_ui::ProgressIndicator;
 
-pub(crate) fn cmd_index(args: &[String]) {
-    let sub = find_subcommand(args);
-    // The flags around the subcommand word.
-    let mut flags: Vec<String> = args.to_vec();
-    if let Some(pos) = sub.and_then(|s| args.iter().position(|a| a == s)) {
-        flags.remove(pos);
-    }
-    match sub {
-        Some(s @ ("status" | "build")) => {
-            crate::cli::spec::check_or_exit(&format!("index {s}"), &flags);
-        }
-        None if args.iter().any(|a| a == "--help" || a == "-h") => {
-            print!("{}", crate::cli::spec::group_text("index"));
-            return;
-        }
-        _ => {}
-    }
-    let project_root = super::common::detect_project_root(args);
-
-    match sub {
-        Some("status") => {
-            if args.iter().any(|a| a == "--json") {
+pub(crate) fn cmd_index(command: &IndexCommand) {
+    match command {
+        IndexCommand::Status { json, root } => {
+            let project_root = super::common::project_root(root.root.as_deref());
+            if *json {
                 println!(
                     "{}",
                     crate::core::index_orchestrator::status_json(&project_root)
@@ -33,25 +17,8 @@ pub(crate) fn cmd_index(args: &[String]) {
                 print_human_status(&project_root);
             }
         }
-        Some("build") => build(&project_root, args.iter().any(|a| a == "--force")),
-        other => {
-            // A `\` line continuation would eat the indentation.
-            eprintln!(
-                "{}",
-                [
-                    "Usage: sobre index <build|status> [--root <path>]",
-                    "  sobre index build            graph + BM25 indexes, and the dense index",
-                    "                               in builds with local embeddings",
-                    "  sobre index build --force    drop the indexes first, rebuild from scratch",
-                    "  sobre index status [--json]  what is built",
-                    "Leave files out of every index with `ignore` in config.toml.",
-                ]
-                .join("\n")
-            );
-            // `sobre index` alone asks for the usage; anything else is a mistake.
-            if other.is_some() {
-                std::process::exit(2);
-            }
+        IndexCommand::Build { force, root } => {
+            build(&super::common::project_root(root.root.as_deref()), *force);
         }
     }
 }
@@ -74,7 +41,7 @@ fn build(project_root: &str, force: bool) {
         if let Some(path) = crate::core::bm25_index::BM25Index::index_file_path(root) {
             let _ = std::fs::remove_file(path);
         }
-        // C4: purge the property graph (graph.db + wal/shm + meta) and
+        // Purge the property graph (graph.db + wal/shm + meta) and
         // the call-graph cache so the rebuild starts clean.
         crate::core::graph_index::purge_index(project_root);
         if let Some(dir) = crate::core::index_namespace::vectors_dir(root) {
@@ -188,23 +155,6 @@ fn apply_semantic_progress(
     }
 }
 
-/// First non-flag token, skipping the value of `--root`, so
-/// `index --root /x build` resolves the subcommand `build`, not the path.
-fn find_subcommand(args: &[String]) -> Option<&str> {
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        if a == "--root" {
-            let _ = it.next();
-            continue;
-        }
-        if a.starts_with("--") {
-            continue;
-        }
-        return Some(a.as_str());
-    }
-    None
-}
-
 fn print_human_status(project_root: &str) {
     let disk = crate::core::index_orchestrator::disk_status(project_root);
 
@@ -258,38 +208,5 @@ fn format_bytes(bytes: u64) -> String {
         format!("{:.1} KB", bytes as f64 / 1024.0)
     } else {
         format!("{bytes} B")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(ToString::to_string).collect()
-    }
-
-    #[test]
-    fn subcommand_found_before_flags() {
-        assert_eq!(
-            find_subcommand(&args(&["build", "--root", "/x"])),
-            Some("build")
-        );
-        assert_eq!(find_subcommand(&args(&["status"])), Some("status"));
-    }
-
-    #[test]
-    fn subcommand_skips_root_value() {
-        // The path must never be mistaken for the subcommand.
-        assert_eq!(
-            find_subcommand(&args(&["--root", "/x", "--force", "build"])),
-            Some("build")
-        );
-    }
-
-    #[test]
-    fn subcommand_none_for_flag_only_args() {
-        assert_eq!(find_subcommand(&args(&["--root", "/x"])), None);
-        assert_eq!(find_subcommand(&[]), None);
     }
 }

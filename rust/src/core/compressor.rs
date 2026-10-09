@@ -1,26 +1,20 @@
 use similar::{ChangeTag, TextDiff};
 
-/// Removes ANSI escape codes from a string, returning clean text.
+/// Removes ANSI escape sequences (colours, cursor moves, OSC hyperlinks and
+/// titles) from a string, returning clean text.
 pub fn strip_ansi(s: &str) -> String {
     if !s.contains('\x1b') {
         return s.to_string();
     }
-    let mut result = String::with_capacity(s.len());
-    let mut in_escape = false;
-    for c in s.chars() {
-        if c == '\x1b' {
-            in_escape = true;
-            continue;
-        }
-        if in_escape {
-            if c.is_ascii_alphabetic() {
-                in_escape = false;
-            }
-            continue;
-        }
-        result.push(c);
-    }
-    result
+    // `strip_ansi_escapes` also drops tabs and carriage returns
+    // (https://github.com/luser/strip-ansi-escapes/issues/20), which tool
+    // output needs; strip between them and keep them. Goes when that is fixed.
+    s.split_inclusive(['\t', '\r'])
+        .map(|run| {
+            let text = run.strip_suffix(['\t', '\r']).unwrap_or(run);
+            strip_ansi_escapes::strip_str(text) + &run[text.len()..]
+        })
+        .collect()
 }
 
 /// Strips comments, blank lines, and normalizes indentation for maximum token savings.
@@ -437,5 +431,23 @@ mod tests {
         let input = "clean text without escapes";
         let result = strip_ansi(input);
         assert_eq!(result, input);
+    }
+
+    /// An OSC 8 hyperlink keeps its visible text and loses its URL, whichever
+    /// terminator it uses; `ESC 7` / `ESC 8` take no text with them.
+    #[test]
+    fn test_strip_ansi_osc_hyperlink_and_cursor_save() {
+        let st = "see \x1b]8;;https://example.com/a\x1b\\the docs\x1b]8;;\x1b\\ now";
+        assert_eq!(strip_ansi(st), "see the docs now");
+        let bel = "see \x1b]8;id=1;file:///tmp/x\x07x.rs\x1b]8;;\x07 now";
+        assert_eq!(strip_ansi(bel), "see x.rs now");
+        assert_eq!(strip_ansi("\x1b7123 done\x1b8"), "123 done");
+    }
+
+    /// Tabs, carriage returns and newlines are text, not escapes.
+    #[test]
+    fn test_strip_ansi_keeps_whitespace_controls() {
+        let input = "\x1b[32mok\x1b[0m\tpkg/a\t0.01s\r\n\x1b[1m50%\x1b[0m\r100%\n";
+        assert_eq!(strip_ansi(input), "ok\tpkg/a\t0.01s\r\n50%\r100%\n");
     }
 }

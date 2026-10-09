@@ -437,7 +437,7 @@ mod tests {
         panic!("background job did not complete");
     }
 
-    /// J9: the same command started twice is two jobs.
+    /// The same command started twice is two jobs.
     #[test]
     #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn each_launch_gets_its_own_job() {
@@ -463,7 +463,7 @@ mod tests {
             std::collections::HashMap::default(),
             Some(10_000),
         );
-        // B45: the answer to a cancel is the cancelled job, not "running".
+        // The answer to a cancel is the cancelled job, not "running".
         match cancel(&id) {
             Some(JobState::Cancelled { output }) => {
                 assert!(output.contains("command cancelled"), "{output}");
