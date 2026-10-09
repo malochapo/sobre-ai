@@ -31,7 +31,6 @@ pub mod prospective_memory;
 // Domain: Graph
 // ---------------------------------------------------------------------------
 pub mod call_graph;
-pub mod graph_context;
 pub mod graph_index;
 pub mod graph_provider;
 pub mod property_graph;

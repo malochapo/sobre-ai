@@ -98,11 +98,6 @@ impl GraphProvider {
         self.graph.edge_count().ok()
     }
 
-    /// Files that reference `file_path`.
-    pub fn dependents(&self, file_path: &str) -> Vec<String> {
-        self.graph.dependents(file_path).unwrap_or_default()
-    }
-
     /// Files within `depth` hops of `file_path` over references and
     /// heuristics (co-change, same directory), in either direction.
     pub fn related(&self, file_path: &str, depth: usize) -> Vec<String> {

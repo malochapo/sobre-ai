@@ -1,13 +1,12 @@
-//! Graph traversal queries: dependents, dependencies, impact analysis,
-//! dependency chains (BFS-based shortest path).
+//! Graph traversal queries: impact analysis and related files.
 //!
 //! Two classes of edges. Code references (imports, module declarations and
-//! re-exports, type uses) say one file needs another: dependencies,
-//! dependents, impact and chains follow only these. Heuristics (files changed
-//! together in git, files in the same directory) say two files tend to be
-//! read together: only `related_files` adds them.
+//! re-exports, type uses) say one file needs another: impact follows only
+//! these. Heuristics (files changed together in git, files in the same
+//! directory) say two files tend to be read together: only `related_files`
+//! adds them.
 
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::HashMap;
 
 use rusqlite::{Connection, params};
 
@@ -36,34 +35,12 @@ pub(crate) fn edge_weight(kind: &str) -> f64 {
     }
 }
 
-/// Files that reference `file_path`.
-pub(super) fn dependents(conn: &Connection, file_path: &str) -> anyhow::Result<Vec<String>> {
-    let sql = format!(
-        "SELECT DISTINCT p_src.path
-         FROM edges e
-         JOIN nodes n_src ON e.source_id = n_src.id
-         JOIN nodes n_tgt ON e.target_id = n_tgt.id
-         JOIN paths p_src ON p_src.id = n_src.file_id
-         JOIN paths p_tgt ON p_tgt.id = n_tgt.file_id
-         WHERE p_tgt.path = ?1
-           AND p_src.path != ?1
-           AND e.kind IN ({REFERENCE_EDGE_KINDS})"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-
-    let mut results: Vec<String> = stmt
-        .query_map(params![file_path], |row| row.get(0))?
-        .filter_map(std::result::Result::ok)
-        .collect();
-
-    results.sort();
-    results.dedup();
-    Ok(results)
-}
-
-/// Weighted BFS from `file_path` following reverse reference edges up to `max_depth`.
-/// Edge weights attenuate propagation: a type use carries less impact than an import.
-/// Nodes only propagate when cumulative weight exceeds the threshold (0.1).
+/// The files that depend on `file_path` through reverse reference edges, at
+/// most `max_depth` hops away, sorted. Edge weights attenuate along a path (a
+/// type use carries less impact than an import): a file is affected when some
+/// path of at most `max_depth` hops keeps a weight product of at least 0.1.
+/// Each hop relaxes every file whose best weight just improved, so the answer
+/// does not depend on the order edges are visited in.
 pub(super) fn impact_analysis(
     conn: &Connection,
     file_path: &str,
@@ -76,41 +53,48 @@ pub(super) fn impact_analysis(
     let reverse_graph = build_weighted_reverse_graph(conn)?;
     const PROPAGATION_THRESHOLD: f64 = 0.1;
 
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut queue: VecDeque<(String, usize, f64)> = VecDeque::new();
+    // Best weight found so far for each reached file.
+    let mut best: HashMap<String, f64> = HashMap::from([(file_path.to_string(), 1.0)]);
+    let mut frontier: HashMap<String, f64> = best.clone();
     let mut max_depth_reached = 0;
     let mut edges_traversed = 0;
 
-    visited.insert(file_path.to_string());
-    queue.push_back((file_path.to_string(), 0, 1.0));
-
-    while let Some((current, depth, weight)) = queue.pop_front() {
-        if depth >= max_depth {
-            continue;
-        }
-
-        if let Some(dependents) = reverse_graph.get(&current) {
+    for depth in 1..=max_depth {
+        let mut next: HashMap<String, f64> = HashMap::new();
+        for (current, weight) in &frontier {
+            let Some(dependents) = reverse_graph.get(current) else {
+                continue;
+            };
             for (dep, ew) in dependents {
                 edges_traversed += 1;
                 let propagated = weight * ew;
                 if propagated < PROPAGATION_THRESHOLD {
                     continue;
                 }
-                if visited.insert(dep.clone()) {
-                    let new_depth = depth + 1;
-                    if new_depth > max_depth_reached {
-                        max_depth_reached = new_depth;
-                    }
-                    queue.push_back((dep.clone(), new_depth, propagated));
+                let known = best.get(dep).copied();
+                if known.is_some_and(|w| w >= propagated) {
+                    continue;
                 }
+                if known.is_none() {
+                    max_depth_reached = depth;
+                }
+                best.insert(dep.clone(), propagated);
+                let slot = next.entry(dep.clone()).or_insert(0.0);
+                *slot = slot.max(propagated);
             }
         }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
     }
 
-    visited.remove(file_path);
+    best.remove(file_path);
+    let mut affected_files: Vec<String> = best.into_keys().collect();
+    affected_files.sort();
 
     Ok(ImpactResult {
-        affected_files: visited.into_iter().collect(),
+        affected_files,
         max_depth_reached,
         edges_traversed,
     })
@@ -149,8 +133,14 @@ pub(crate) fn related_files(
         *scores.entry(path).or_default() += edge_weight(&kind);
     }
 
+    // Ties (same kinds of edges) are common and the map has no order: break
+    // them by path so the list, and the cut at `limit`, are stable.
     let mut results: Vec<(String, f64)> = scores.into_iter().collect();
-    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(&b.0))
+    });
     results.truncate(limit);
     Ok(results)
 }

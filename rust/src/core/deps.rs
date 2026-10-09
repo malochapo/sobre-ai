@@ -1,5 +1,5 @@
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 #[cfg(feature = "tree-sitter")]
 use super::deep_queries::{self, ImportKind};
@@ -60,7 +60,7 @@ pub fn extract_deps(content: &str, ext: &str) -> DepInfo {
             extract_kotlin_deps(content)
         }
         Some(crate::core::language_capabilities::LanguageId::Dart) => {
-            let mut imports = HashSet::new();
+            let mut imports = BTreeSet::new();
             let re = static_regex!(r#"^\s*(?:import|export|part)\s+['"]([^'"]+)['"]"#);
             for line in content.lines() {
                 let trimmed = line.trim();
@@ -77,7 +77,7 @@ pub fn extract_deps(content: &str, ext: &str) -> DepInfo {
             }
         }
         Some(crate::core::language_capabilities::LanguageId::Zig) => {
-            let mut imports = HashSet::new();
+            let mut imports = BTreeSet::new();
             let re = static_regex!(r#"@import\(\s*"([^"]+)"\s*\)"#);
             for line in content.lines() {
                 let trimmed = line.trim();
@@ -106,7 +106,7 @@ pub fn extract_deps(content: &str, ext: &str) -> DepInfo {
 }
 
 fn extract_ts_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let mut exports = Vec::new();
 
     for line in content.lines() {
@@ -139,7 +139,7 @@ fn extract_ts_deps(content: &str) -> DepInfo {
 }
 
 fn extract_rust_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let mut exports = Vec::new();
 
     for line in content.lines() {
@@ -177,7 +177,7 @@ fn extract_rust_deps(content: &str) -> DepInfo {
 }
 
 fn extract_python_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let mut exports = Vec::new();
 
     for line in content.lines() {
@@ -218,7 +218,7 @@ fn extract_python_deps(content: &str) -> DepInfo {
 }
 
 fn extract_go_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let mut exports = Vec::new();
 
     let mut in_import_block = false;
@@ -314,7 +314,7 @@ fn clean_path_like(path: &str) -> String {
 }
 
 fn extract_c_like_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let re = static_regex!(r#"^\s*#\s*include\s*[<"]([^">]+)[">]"#);
     for line in content.lines() {
         let trimmed = line.trim();
@@ -332,7 +332,7 @@ fn extract_c_like_deps(content: &str) -> DepInfo {
 }
 
 fn extract_ruby_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let re = static_regex!(r#"^\s*require(?:_relative)?\s+['"]([^'"]+)['"]"#);
     for line in content.lines() {
         let trimmed = line.trim();
@@ -350,7 +350,7 @@ fn extract_ruby_deps(content: &str) -> DepInfo {
 }
 
 fn extract_php_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let re = static_regex!(
         r#"\b(?:require|require_once|include|include_once)\s*\(?\s*['"]([^'"]+)['"]"#
     );
@@ -370,7 +370,7 @@ fn extract_php_deps(content: &str) -> DepInfo {
 }
 
 fn extract_bash_deps(content: &str) -> DepInfo {
-    let mut imports = HashSet::new();
+    let mut imports = BTreeSet::new();
     let re = static_regex!(r#"^\s*(?:source|\.)\s+['"]?([^'"\s;]+)['"]?"#);
     for line in content.lines() {
         let trimmed = line.trim();
@@ -419,6 +419,16 @@ fn extract_export_name(line: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `deps` line of a read lists the same imports in the same order on
+    /// every run.
+    #[test]
+    fn imports_come_out_sorted() {
+        let src = "import { b } from './b';\nimport { a } from './a';\nimport { c } from './c';\n";
+        for _ in 0..20 {
+            assert_eq!(extract_deps(src, "ts").imports, ["a", "b", "c"]);
+        }
+    }
 
     #[test]
     fn c_include_relative_is_extracted() {

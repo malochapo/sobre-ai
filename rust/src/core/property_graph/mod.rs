@@ -155,10 +155,6 @@ impl CodeGraph {
         edge::to_node(&self.conn, node_id)
     }
 
-    pub fn dependents(&self, file_path: &str) -> anyhow::Result<Vec<String>> {
-        queries::dependents(&self.conn, file_path)
-    }
-
     pub fn impact_analysis(
         &self,
         file_path: &str,
@@ -316,25 +312,6 @@ mod tests {
     }
 
     #[test]
-    fn dependents_query() {
-        let g = test_graph();
-
-        let main = g.upsert_node(&Node::file("src/main.rs")).unwrap();
-        let lib = g.upsert_node(&Node::file("src/lib.rs")).unwrap();
-        let utils = g.upsert_node(&Node::file("src/utils.rs")).unwrap();
-
-        g.upsert_edge(&Edge::new(main, lib, EdgeKind::Imports))
-            .unwrap();
-        g.upsert_edge(&Edge::new(utils, lib, EdgeKind::Imports))
-            .unwrap();
-
-        let deps = g.dependents("src/lib.rs").unwrap();
-        assert_eq!(deps.len(), 2);
-        assert!(deps.contains(&"src/main.rs".to_string()));
-        assert!(deps.contains(&"src/utils.rs".to_string()));
-    }
-
-    #[test]
     #[allow(clippy::many_single_char_names)] // graph test nodes: a, b, c, d, e
     fn impact_analysis_depth() {
         let g = test_graph();
@@ -382,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn dependents_follow_references_not_heuristics() {
+    fn direct_impact_follows_references_not_heuristics() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("src/a.rs")).unwrap();
@@ -398,9 +375,48 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            g.dependents("src/a.rs").unwrap(),
+            g.impact_analysis("src/a.rs", 1).unwrap().affected_files,
             vec!["src/b.rs".to_string(), "src/c.rs".to_string()]
         );
+    }
+
+    /// A file reached by a weak path and a strong one is weighed by the strong
+    /// one, whichever comes first: the answer is the same on every run.
+    #[test]
+    fn impact_keeps_the_strongest_path() {
+        let g = test_graph();
+
+        let node = |p: &str| g.upsert_node(&Node::file(p)).unwrap();
+        let (t, weak, strong, x, y, z) = (
+            node("t.rs"),
+            node("weak.rs"),
+            node("strong.rs"),
+            node("x.rs"),
+            node("y.rs"),
+            node("z.rs"),
+        );
+        // t ← weak (type use), t ← strong (import), both ← x ← y ← z (type uses).
+        g.upsert_edge(&Edge::new(weak, t, EdgeKind::TypeRef))
+            .unwrap();
+        g.upsert_edge(&Edge::new(strong, t, EdgeKind::Imports))
+            .unwrap();
+        g.upsert_edge(&Edge::new(x, weak, EdgeKind::TypeRef))
+            .unwrap();
+        g.upsert_edge(&Edge::new(x, strong, EdgeKind::TypeRef))
+            .unwrap();
+        g.upsert_edge(&Edge::new(y, x, EdgeKind::TypeRef)).unwrap();
+        g.upsert_edge(&Edge::new(z, y, EdgeKind::TypeRef)).unwrap();
+
+        // Through `strong`, z keeps 1.0 · 0.5³ = 0.125 ≥ 0.1; through `weak`
+        // only 0.5⁴ = 0.0625.
+        for _ in 0..20 {
+            let impact = g.impact_analysis("t.rs", 5).unwrap();
+            assert_eq!(
+                impact.affected_files,
+                ["strong.rs", "weak.rs", "x.rs", "y.rs", "z.rs"]
+            );
+            assert_eq!(impact.max_depth_reached, 4);
+        }
     }
 
     #[test]
@@ -439,6 +455,23 @@ mod tests {
         let related = g.related_files("a.rs", 10).unwrap();
         let order: Vec<&str> = related.iter().map(|(p, _)| p.as_str()).collect();
         assert_eq!(order, vec!["b.rs", "c.rs", "d.rs"]);
+    }
+
+    #[test]
+    fn related_files_break_ties_by_path() {
+        let g = test_graph();
+
+        let a = g.upsert_node(&Node::file("a.rs")).unwrap();
+        for p in ["e.rs", "c.rs", "d.rs", "b.rs"] {
+            let n = g.upsert_node(&Node::file(p)).unwrap();
+            g.upsert_edge(&Edge::new(a, n, EdgeKind::Imports)).unwrap();
+        }
+
+        for _ in 0..20 {
+            let related = g.related_files("a.rs", 3).unwrap();
+            let order: Vec<&str> = related.iter().map(|(p, _)| p.as_str()).collect();
+            assert_eq!(order, ["b.rs", "c.rs", "d.rs"]);
+        }
     }
 
     #[test]
