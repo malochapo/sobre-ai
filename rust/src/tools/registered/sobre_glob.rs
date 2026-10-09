@@ -2,7 +2,7 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_str, get_usize};
 use crate::tool_defs::tool_def;
 
 pub struct SobreGlobTool;
@@ -40,7 +40,7 @@ impl McpTool for SobreGlobTool {
             .ok_or_else(|| ErrorData::invalid_params("pattern is required", None))?;
         let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
             .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
-        let max = (get_int(args, "max_results").unwrap_or(200) as usize).min(500);
+        let max = get_usize(args, "max_results").unwrap_or(200).min(500);
         let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
 
         let respect = !no_gitignore;
@@ -75,11 +75,10 @@ impl McpTool for SobreGlobTool {
             }
         }
 
-        let final_out = combined.clone();
         let saved = total_original.saturating_sub(total_sent);
 
         Ok(ToolOutput {
-            text: final_out,
+            text: combined,
             saved_tokens: saved,
             shell_outcome: None,
             content_blocks: None,
@@ -110,10 +109,9 @@ fn handle_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = original.saturating_sub(sent);
-    let final_out = result.clone();
 
     Ok(ToolOutput {
-        text: final_out,
+        text: result,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,
