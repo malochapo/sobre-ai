@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #PRNUM) |
+| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #53) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -197,7 +197,7 @@ documented:
     config`. A test uncomments each listed key alone, with nothing set and
     with an upstream set, and checks the file parses and the key took.
 - [x] **G4 The whitespace-insensitive fallback of `replace_unique` and
-  `replace_all` reports edits it did not make** (#PRNUM) (`tools/impl_edit.rs:257-276`,
+  `replace_all` reports edits it did not make** (#53) (`tools/impl_edit.rs:257-276`,
   `:403-425`, `:643-664`). *Regression: B9 added it to `replace_all`.*
   - On a CRLF file it answers "1 replacement" and changes nothing.
   - `replace_unique` accepts a match without checking that it is unique
@@ -211,7 +211,7 @@ documented:
 - [x] **G5 `sobre_patch` failures lose `isError` when the path holds a
   space.** *Regression: B29.* `is_section_label`
   (`server/tool_trait.rs:138-141`) rejects any label with a space.
-  (#PRNUM) Done: a `[path]` label may hold spaces.
+  (#53) Done: a `[path]` label may hold spaces.
 - [ ] **G6 Instruction files ignore `start_line`/`limit`.**
   *Regression: B3.* The window applied at `tools/registered/sobre_read.rs:182`
   is replaced by `full` at `:214`. `AGENTS.md start_line=3 limit=2` returns
@@ -233,7 +233,7 @@ documented:
   - `passthrough_commands` promises output "passed through uncompressed".
   - Fix: keep the full output whenever the text changes, and never touch a
     passthrough command's output.
-- [x] **G9 A relative path follows a `cd` into another checkout.** (#PRNUM)
+- [x] **G9 A relative path follows a `cd` into another checkout.** (#53)
   *Regression: B37 extended it to `ops[]`.*
   - After `cd vendor/lib` in `sobre_shell` (a nested repository or a
     submodule), `sobre_patch path=src/lib.rs` edits `vendor/lib/src/lib.rs`
