@@ -1132,7 +1132,7 @@ dead code) and #46 (the reachability sweep).
     `--json` and `--agent`, an interactive proxy question that writes
     config and installs autostart, and the ~120 MB model question in dense
     builds.
-  - Open: an `invariant:` PR (#PR_INV), which both maintainers approve.
+  - Open: an `invariant:` PR (#48), which both maintainers approve.
 - [x] **E6 `README.md:81` says `uninstall` removes "everything init
   wrote".** Document what it really removes once A3 is settled.
   - Done: the README's Uninstall section says what goes, including data,
@@ -1145,7 +1145,7 @@ dead code) and #46 (the reachability sweep).
   - Document that the list is fixed per build; with a published dense
     binary there are two lists.
   - The README says so (one fixed surface per build). INVARIANTS.md is in
-    the `invariant:` PR (#PR_INV).
+    the `invariant:` PR (#48).
 - [x] **E8 The proxy section is incomplete.**
   - `proxy enable` installs a login service:
     `~/Library/LaunchAgents/com.sobre.proxy.plist` on macOS,
@@ -1184,7 +1184,7 @@ dead code) and #46 (the reachability sweep).
 - [ ] **E13 INVARIANTS.md:152-153 says "No generated artefacts in the
   repository"**, yet `docs/reference/generated/*.md` is committed and
   drift-checked.
-  - Open: the `invariant:` PR (#PR_INV).
+  - Open: the `invariant:` PR (#48).
 - [x] **E14 CONTRIBUTING.md:31-32 says "git hooks run the same script"**,
   but the hooks are opt-in through `make setup-hooks`, which it never
   mentions.
