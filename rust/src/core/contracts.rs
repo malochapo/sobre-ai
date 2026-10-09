@@ -1,5 +1,4 @@
 // Machine-verified contract versions.
-pub const CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION: u32 = 1;
 pub const GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION: u32 = 1;
 
 /// Stability classification of a contract document.

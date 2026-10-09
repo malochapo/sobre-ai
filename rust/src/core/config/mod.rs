@@ -154,19 +154,8 @@ impl Config {
         Ok(cfg)
     }
 
-    /// Persists the current config to the global config file.
-    ///
-    /// Preserves user comments, formatting, and unknown keys, keeps the file
-    /// minimal (defaults that were never set on disk stay implicit), and writes
-    /// atomically with a `.bak` backup so customizations are always recoverable.
-    pub fn save(&self) -> std::result::Result<(), super::error::SobreError> {
-        let path = Self::path().ok_or_else(|| {
-            super::error::SobreError::Config("cannot determine home directory".into())
-        })?;
-        self.save_to(&path)
-    }
-
-    /// Path-parameterized core of [`Config::save`] (unit-testable).
+    /// Writes the config to `path`, keeping the file's comments, formatting
+    /// and unknown keys, and leaving defaults that were never set implicit.
     fn save_to(&self, path: &Path) -> std::result::Result<(), super::error::SobreError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
