@@ -933,12 +933,15 @@ fn prepare_inner(
             if let Some(out) = try_stub_hit_readonly(cache, path) {
                 return Ok(out);
             }
-            let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
-            let out = crate::core::redaction::redact_text(&out);
+            let (out, resolved_mode) =
+                match handle_full_with_auto_delta(cache, path, &short, ext, task) {
+                    Ok((out, _)) => (crate::core::redaction::redact_text(&out), "full"),
+                    Err(e) => (e, "error"),
+                };
             let sent = count_tokens(&out);
             return Ok(ReadOutput {
                 content: out,
-                resolved_mode: "full".into(),
+                resolved_mode: resolved_mode.into(),
                 output_tokens: sent,
             });
         }
@@ -1093,31 +1096,21 @@ pub(crate) fn resolve_auto_mode(
 const AUTO_DELTA_THRESHOLD: f64 = 0.6;
 
 /// Re-reads from disk; if content changed and delta is compact, sends auto-delta.
+/// A file that can no longer be read is an error (`ERROR: …`) and leaves the
+/// cache: its cached copy is not the file any more.
 fn handle_full_with_auto_delta(
     cache: &mut SessionCache,
     path: &str,
-    file_ref: &str,
     short: &str,
     ext: &str,
     task: Option<&str>,
-) -> (String, usize) {
-    let Ok(disk_content) = read_file_lossy(path) else {
-        cache.record_cache_hit(path);
-        if let Some(existing) = cache.get(path) {
-            if let Some(cached) = existing.content() {
-                return format_full_output(short, ext, &cached, existing.line_count, task);
-            }
-            let out = format!(
-                "[using cached version — file read failed]\n{file_ref}={short} cached {}t {}L",
-                existing.read_count(),
-                existing.line_count
-            );
-            let sent = count_tokens(&out);
-            return (out, sent);
+) -> Result<(String, usize), String> {
+    let disk_content = match read_file_lossy(path) {
+        Ok(c) => c,
+        Err(e) => {
+            cache.invalidate(path);
+            return Err(format!("ERROR: {short}: {e}"));
         }
-        let out = format!("[file read failed and no cached version available] {short}");
-        let sent = count_tokens(&out);
-        return (out, sent);
     };
 
     let old_content = cache
@@ -1138,7 +1131,13 @@ fn handle_full_with_auto_delta(
         // carried over from the cache entry, so it answers "some conversation got
         // this", which is the question the gate exists to stop trusting.
         cache.mark_full_delivered(path);
-        return format_full_output(short, ext, &disk_content, store_result.line_count, task);
+        return Ok(format_full_output(
+            short,
+            ext,
+            &disk_content,
+            store_result.line_count,
+            task,
+        ));
     }
 
     let diff = compressor::diff_content(&old_content, &disk_content);
@@ -1154,10 +1153,16 @@ fn handle_full_with_auto_delta(
             "{head} [auto-delta] ∆{}L\n{diff}",
             disk_content.lines().count()
         );
-        return (out, diff_tokens);
+        return Ok((out, diff_tokens));
     }
 
-    format_full_output(short, ext, &disk_content, store_result.line_count, task)
+    Ok(format_full_output(
+        short,
+        ext,
+        &disk_content,
+        store_result.line_count,
+        task,
+    ))
 }
 
 fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String, usize) {

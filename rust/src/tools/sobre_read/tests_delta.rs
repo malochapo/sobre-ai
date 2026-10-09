@@ -26,6 +26,25 @@ fn primed_full_cache(p: &str) -> SessionCache {
     cache
 }
 
+/// A file that can no longer be read is an error, never the cached copy of
+/// what it was, and the cache forgets it.
+#[test]
+fn a_deleted_file_is_an_error_not_its_cached_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("gone.rs");
+    let p = path.to_string_lossy().to_string();
+    std::fs::write(&path, "fn old_body() {}\n").unwrap();
+    let mut cache = primed_full_cache(&p);
+    std::fs::remove_file(&path).unwrap();
+
+    for mode in ["full", "auto"] {
+        let out = handle_with_task_resolved(&mut cache, &p, mode, CrpMode::Off, None);
+        assert_eq!(out.resolved_mode, "error", "{mode}: {}", out.content);
+        assert!(!out.content.contains("old_body"), "{mode}: {}", out.content);
+    }
+    assert!(cache.get(&p).is_none(), "the cache still holds the deleted file");
+}
+
 /// Regression: an `auto` re-read of an unchanged, already-fully-delivered file
 /// must collapse to the cheap `[unchanged]` stub — not re-deliver the whole body.
 /// The auto path used to resolve modes with `cache: None`, so the resolver's
@@ -244,7 +263,7 @@ fn full_read_fallback_never_serves_a_stub() {
     let mut cache = primed_full_cache(&p);
     // Same bytes on disk, so `store` reports a hit and the old code took the
     // ungated `full_content_delivered` branch here.
-    let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, "F1", &p, "rs", None);
+    let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, &p, "rs", None).unwrap();
     assert!(
         !out.contains("[unchanged"),
         "full-read fallback must not decide stubbing on its own: {out}"
