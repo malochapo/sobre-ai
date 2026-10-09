@@ -9,39 +9,27 @@
 
 use std::path::{Path, PathBuf};
 
+use clap::Parser;
 use sobre::core::reference_docs;
 
+/// Write the generated reference pages (default: <repo_root>/docs/reference/generated/).
+#[derive(Parser)]
+#[command(name = "gen_docs")]
+struct Args {
+    /// Write the pages here instead
+    #[arg(long, value_name = "dir")]
+    out_dir: Option<PathBuf>,
+    /// Write nothing; exit 1 when a page is out of date
+    #[arg(long)]
+    check: bool,
+}
+
 fn main() {
-    let mut out_dir: Option<PathBuf> = None;
-    let mut check_only = false;
-
-    let mut args = std::env::args().skip(1);
-    while let Some(a) = args.next() {
-        match a.as_str() {
-            "--out-dir" => {
-                let Some(p) = args.next() else {
-                    eprintln!("ERROR: --out-dir requires a path");
-                    std::process::exit(2);
-                };
-                out_dir = Some(PathBuf::from(p));
-            }
-            "--check" => check_only = true,
-            "-h" | "--help" => {
-                print_help();
-                return;
-            }
-            other => {
-                eprintln!("ERROR: unknown arg: {other}");
-                print_help();
-                std::process::exit(2);
-            }
-        }
-    }
-
-    let dir = out_dir.unwrap_or_else(reference_docs::generated_dir);
+    let args = Args::parse();
+    let dir = args.out_dir.unwrap_or_else(reference_docs::generated_dir);
     let docs = reference_docs::generated_docs();
 
-    if check_only {
+    if args.check {
         let mut stale = Vec::new();
         for (name, expected) in &docs {
             let path = dir.join(name);
@@ -90,10 +78,4 @@ fn write_if_changed(path: &Path, content: &str) -> Result<bool, String> {
     }
     std::fs::write(path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
     Ok(true)
-}
-
-fn print_help() {
-    println!(
-        "gen_docs\n\nUSAGE:\n  cargo run --example gen_docs --features dev-tools [-- --out-dir <dir>] [--check]\n\nDEFAULT OUT:\n  <repo_root>/docs/reference/generated/"
-    );
 }

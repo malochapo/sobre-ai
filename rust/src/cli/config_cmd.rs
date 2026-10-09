@@ -1,48 +1,17 @@
+use crate::cli::args::ConfigCommand;
 use crate::core::config;
 
-pub fn cmd_config(args: &[String]) {
-    let rest = args.get(1..).unwrap_or_default();
-    match args.first().map(String::as_str) {
-        None | Some("show") => {
-            crate::cli::spec::check_or_exit(
-                if args.is_empty() {
-                    "config"
-                } else {
-                    "config show"
-                },
-                rest,
-            );
+pub(crate) fn cmd_config(command: Option<&ConfigCommand>) {
+    match command {
+        None | Some(ConfigCommand::Show) => {
             crate::outln!("{}", show());
             crate::outln!(
                 "\nChange a key with `sobre config set <key> <value>`; `sobre config init`\nwrites the file with every key documented. `sobre doctor` flags unknown keys."
             );
         }
-        Some("init") => {
-            crate::cli::spec::check_or_exit("config init", rest);
-            init_config();
-        }
-        Some("set") => {
-            crate::cli::spec::check_or_exit("config set", rest);
-            let words: Vec<&String> = rest.iter().filter(|a| !a.starts_with('-')).collect();
-            let [key, value] = words.as_slice() else {
-                crate::errln!(
-                    "usage: {}",
-                    crate::cli::spec::usage(crate::cli::spec::command("config set"))
-                );
-                std::process::exit(2);
-            };
-            write_config_key(key, value, args);
-        }
-        Some("path") => {
-            crate::cli::spec::check_or_exit("config path", rest);
-            cmd_config_path();
-        }
-        Some("--help" | "-h") => print!("{}", crate::cli::spec::group_text("config")),
-        Some(other) => {
-            crate::errln!("sobre config: unknown command '{other}'");
-            crate::errln!("{}", crate::cli::spec::group_text("config"));
-            std::process::exit(2);
-        }
+        Some(ConfigCommand::Init) => init_config(),
+        Some(ConfigCommand::Set(set)) => write_config_key(&set.key, &set.value, set.yes),
+        Some(ConfigCommand::Path) => cmd_config_path(),
     }
 }
 
@@ -55,7 +24,7 @@ pub fn cmd_config(args: &[String]) {
 ///
 /// `default` (or an empty value) removes the key, as does the key's default
 /// value: the documented default then applies.
-fn write_config_key(key: &str, value: &str, args: &[String]) {
+fn write_config_key(key: &str, value: &str, assume_yes: bool) {
     const BOLD: &str = "\x1b[1m";
     const DIM: &str = "\x1b[2m";
     const YELLOW: &str = "\x1b[33m";
@@ -101,10 +70,7 @@ fn write_config_key(key: &str, value: &str, args: &[String]) {
         crate::outln!("{BOLD}Review change to {key}{RST}");
         crate::outln!("  {before}  →  {after}");
         crate::outln!("  {YELLOW}{}{RST}", risk.note);
-        if !super::prompt::confirm(
-            &format!("Apply {key} = {after}?"),
-            super::prompt::wants_yes(args),
-        ) {
+        if !super::prompt::confirm(&format!("Apply {key} = {after}?"), assume_yes) {
             crate::errln!("{DIM}Aborted — {key} left unchanged.{RST}");
             std::process::exit(1);
         }

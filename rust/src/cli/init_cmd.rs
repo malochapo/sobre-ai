@@ -2,43 +2,18 @@
 // `sobre init` — the one installation command
 // ═══════════════════════════════════════════════════════════════════════
 
+use crate::cli::args::InitArgs;
+
 /// `sobre init` — connect sobre to this machine's agents.
 ///
 /// One question is asked, and only once: the proxy sees every request, so
 /// turning it on is a real decision. Everything else takes a safe default and
 /// is changed afterwards through `sobre config`.
-pub fn cmd_init(args: &[String]) {
-    // An unknown flag must never fall through to a run that rewrites agent
-    // configs; `--agent` without its value neither.
-    crate::cli::spec::check_or_exit("init", args);
-
-    // `init <agent>…`, `init --agent <agent>` and `init --agent=<agent>`:
-    // anything else (a typo) is an error, since falling through would connect
-    // every agent.
-    let mut named: Vec<&'static str> = Vec::new();
-    let positionals = args
-        .iter()
-        .filter(|a| !a.starts_with('-'))
-        .map(String::as_str)
-        .chain(args.iter().filter_map(|a| a.strip_prefix("--agent=")));
-    for arg in positionals {
-        match crate::setup::agent_key(arg) {
-            Some(key) if !named.contains(&key) => named.push(key),
-            Some(_) => {}
-            None => {
-                crate::errln!("init: unknown agent '{arg}'");
-                crate::errln!(
-                    "usage: {}",
-                    crate::cli::spec::usage(crate::cli::spec::command("init"))
-                );
-                std::process::exit(2);
-            }
-        }
-    }
-
-    let json = args.iter().any(|a| a == "--json");
-    let check = args.iter().any(|a| a == "--check");
-    let repair = args.iter().any(|a| a == "--repair");
+pub(crate) fn cmd_init(args: &InitArgs) {
+    // An unknown agent (a typo) exits 2 when the line is parsed: running on
+    // would connect every agent.
+    let named = args.named();
+    let (json, check, repair) = (args.json, args.check, args.repair);
     let _quiet = json.then(crate::core::runtime_flags::scoped_quiet);
 
     // `--repair` and `--json` are the machine entry points: no prompt, and a

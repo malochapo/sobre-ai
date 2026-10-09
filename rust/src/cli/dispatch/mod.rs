@@ -1,3 +1,8 @@
+use std::ffi::OsString;
+
+use clap::{CommandFactory, FromArgMatches};
+
+use crate::cli::args::{Cli, Command, HelpTopic, HookAction};
 use crate::{core, doctor, hook_handlers, shell, uninstall};
 
 mod analytics;
@@ -5,7 +10,6 @@ mod help;
 mod lifecycle;
 mod network;
 mod server;
-pub(crate) mod suggest;
 
 #[allow(clippy::wildcard_imports)]
 use analytics::*;
@@ -17,7 +21,7 @@ use network::*;
 use server::*;
 
 pub fn run() {
-    let mut args: Vec<String> = std::env::args().collect();
+    let mut args: Vec<OsString> = std::env::args_os().collect();
 
     // On Linux, if the binary was replaced while running, systemd may write
     // the path with " (deleted)" suffix into ExecStart, causing "(deleted)"
@@ -26,164 +30,108 @@ pub fn run() {
         args.remove(1);
     }
 
-    if !is_server_mode(&args) {
+    // A usage error exits 2 here, `--help` and `--version` exit 0: nothing
+    // has run yet.
+    let cli = parse(args);
+
+    if !is_server_mode(&cli) {
         restore_sigpipe_default();
     }
 
-    let enters_mcp = args.len() == 1 || args.get(1).is_some_and(|a| a == "mcp");
-    if !enters_mcp {
+    if !matches!(cli.command, None | Some(Command::Mcp)) {
         crate::core::logging::init_logging("warn");
     }
 
-    if args.len() > 1 {
-        let rest = args[2..].to_vec();
-
-        match args[1].as_str() {
-            // `-c` is the wire form the Cursor/Gemini pre-run hooks emit
-            // (`<binary> -c '<command>'`, hook_handlers/rewrite.rs). Removing it
-            // makes every wrapped command fail. shell/exec.rs also matches on
-            // it when collapsing nesting.
-            "-c" => handle_exec(&args),
-            "gain" => {
-                cmd_gain(&rest);
-                return;
-            }
-            "embeddings" => {
-                crate::cli::embeddings_cmd::cmd_embeddings(&rest);
-                return;
-            }
-            "index" => {
-                crate::cli::cmd_index(&rest);
-                return;
-            }
-            "proxy" => {
-                cmd_proxy(&rest);
-                return;
-            }
-            "init" => {
-                super::cmd_init(&rest);
-                return;
-            }
-            "call" => {
-                super::cmd_call(&rest);
-                return;
-            }
-            "config" => {
-                super::cmd_config(&rest);
-                return;
-            }
-            "doctor" => {
-                let code = doctor::run_cli(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
-            "hook" => {
-                // Hooks run inside the agent shell environment, so they can see
-                // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived
-                // MCP server process never receives. Bridge them for sobre_shell.
-                core::agent_runtime_env::capture();
-                let action = rest.first().map_or("help", std::string::String::as_str);
-                // Rewrite hooks self-bound their work and FAIL OPEN inside the
-                // handler, so they must NOT also carry the force-exit
-                // watchdog (which would `exit(1)` with no reply and wedge the
-                // host). The remaining hooks keep the simple zombie-guard.
-                if !matches!(action, "cursor" | "gemini") {
-                    hook_handlers::arm_watchdog(std::time::Duration::from_secs(5));
-                }
-                match action {
-                    "compress" => hook_handlers::handle_compress(),
-                    "cursor" => hook_handlers::handle_cursor(),
-                    "gemini" => hook_handlers::handle_gemini(),
-                    "read-dedup" => hook_handlers::handle_read_dedup(),
-                    "observe" => hook_handlers::handle_observe(),
-                    _ => {
-                        eprintln!("Usage: sobre hook <compress|cursor|gemini|read-dedup|observe>");
-                        eprintln!("  Internal commands used by agent hooks");
-                        std::process::exit(2);
-                    }
-                }
-                return;
-            }
-            "uninstall" => {
-                // Safety: `--help` and any argument the table does not list
-                // stop here, before any removal.
-                crate::cli::spec::check_or_exit("uninstall", &rest);
-                match uninstall::parse_args(&rest) {
-                    Ok(options) => uninstall::run(&options),
-                    Err(e) => {
-                        eprintln!("{e}");
-                        std::process::exit(2);
-                    }
-                }
-                return;
-            }
-            // `raw` runs the command with its output passed through unchanged.
-            "raw" => handle_raw(&args, &rest),
-            "--version" | "-V" => {
-                println!("sobre {}", env!("CARGO_PKG_VERSION"));
-                return;
-            }
-            "help" | "--help" | "-h" => {
-                crate::cli::spec::check_or_exit("help", &rest);
-                match rest.first().map(String::as_str) {
-                    None => print_help_concise(),
-                    Some("all") => print_help(),
-                    Some(other) => {
-                        eprintln!("sobre help: unknown topic '{other}' (try `sobre help all`)");
-                        std::process::exit(2);
-                    }
-                }
-                return;
-            }
-            "mcp" => crate::cli::spec::check_or_exit("mcp", &rest),
-            _ => {
-                let unknown = &args[1];
-                eprintln!("sobre: unknown command '{unknown}'");
-                if let Some(suggestion) = suggest::closest_command(unknown) {
-                    eprintln!("       did you mean '{suggestion}'?");
-                }
-                eprintln!("       run 'sobre help' for the full command list");
-                std::process::exit(2);
+    match cli.command {
+        // Bare `sobre` in an interactive terminal: a human almost certainly
+        // did not mean to start a silent stdio MCP server (which just hangs
+        // waiting for JSON-RPC). Show a short quickstart instead. MCP clients
+        // pipe stdin (not a TTY) so they still get the server, and explicit
+        // `sobre mcp` always serves regardless of TTY.
+        None if std::io::IsTerminal::is_terminal(&std::io::stdin()) => print_quickstart(),
+        None | Some(Command::Mcp) => {
+            if let Err(e) = run_mcp_server() {
+                tracing::error!("sobre: {e}");
+                std::process::exit(1);
             }
         }
-    }
-
-    // Bare `sobre` in an interactive terminal: a human almost certainly did
-    // not mean to start a silent stdio MCP server (which just hangs waiting for
-    // JSON-RPC). Show a short quickstart instead. MCP clients pipe stdin (not a
-    // TTY) so they still get the server, and explicit `sobre mcp` always
-    // serves regardless of TTY.
-    if args.len() == 1 && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-        print_quickstart();
-        return;
-    }
-
-    if let Err(e) = run_mcp_server() {
-        tracing::error!("sobre: {e}");
-        std::process::exit(1);
+        Some(Command::Exec(sh)) => handle_exec(&sh.command),
+        Some(Command::Raw(sh)) => handle_raw(&sh.command),
+        Some(Command::Call(call)) => super::cmd_call(&call),
+        Some(Command::Init(init)) => super::cmd_init(&init),
+        Some(Command::Doctor(doctor)) => {
+            let code = doctor::run_cli(&doctor);
+            if code != 0 {
+                std::process::exit(code);
+            }
+        }
+        Some(Command::Gain(gain)) => cmd_gain(&gain),
+        Some(Command::Index { command }) => super::cmd_index(&command),
+        Some(Command::Config { command }) => super::cmd_config(command.as_ref()),
+        Some(Command::Embeddings { command }) => {
+            super::embeddings_cmd::cmd_embeddings(command.as_ref());
+        }
+        Some(Command::Proxy { command }) => cmd_proxy(&command),
+        Some(Command::Hook { action }) => run_hook(action),
+        Some(Command::Uninstall(options)) => uninstall::run(&options),
+        Some(Command::Help { topic: None }) => print_help_concise(),
+        Some(Command::Help {
+            topic: Some(HelpTopic::All),
+        }) => print_help(),
     }
 }
 
-fn is_server_mode(args: &[String]) -> bool {
-    args.len() == 1
-        || args
-            .get(1)
-            .is_some_and(|a| matches!(a.as_str(), "mcp" | "proxy"))
+/// The command line, or the process exits: 2 on a usage error, 0 after
+/// `--help` or `--version`. `sobre --help` prints what `sobre help` prints.
+fn parse(args: Vec<OsString>) -> Cli {
+    let matches = Cli::command()
+        .override_help(concise_help_text())
+        .get_matches_from(args);
+    Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit())
 }
 
-fn handle_exec(args: &[String]) -> ! {
-    let cmd_args = &args[2..];
-    if cmd_args.iter().all(|a| a.trim().is_empty()) {
-        eprintln!("Usage: sobre -c \"command\"");
-        std::process::exit(2);
+fn is_server_mode(cli: &Cli) -> bool {
+    matches!(
+        cli.command,
+        None | Some(Command::Mcp | Command::Proxy { .. })
+    )
+}
+
+fn run_hook(action: HookAction) {
+    // Hooks run inside the agent shell environment, so they can see
+    // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived MCP
+    // server process never receives. Bridge them for sobre_shell.
+    core::agent_runtime_env::capture();
+    // Rewrite hooks self-bound their work and FAIL OPEN inside the handler,
+    // so they must NOT also carry the force-exit watchdog (which would
+    // `exit(1)` with no reply and wedge the host). The remaining hooks keep
+    // the simple zombie-guard.
+    if !matches!(action, HookAction::Cursor | HookAction::Gemini) {
+        hook_handlers::arm_watchdog(std::time::Duration::from_secs(5));
     }
-    let command = if cmd_args.len() == 1 {
-        cmd_args[0].clone()
-    } else {
-        shell::join_command(cmd_args)
-    };
+    match action {
+        HookAction::Compress => hook_handlers::handle_compress(),
+        HookAction::Cursor => hook_handlers::handle_cursor(),
+        HookAction::Gemini => hook_handlers::handle_gemini(),
+        HookAction::ReadDedup => hook_handlers::handle_read_dedup(),
+        HookAction::Observe => hook_handlers::handle_observe(),
+    }
+}
+
+/// The shell command `-c` and `raw` were given: one argument as it is,
+/// several joined with spaces. A blank command is a usage error (exit 2).
+fn shell_command(name: &str, words: &[String]) -> String {
+    if words.iter().all(|w| w.trim().is_empty()) {
+        crate::cli::args::usage_error(name, "the command is empty");
+    }
+    match words {
+        [one] => one.clone(),
+        _ => shell::join_command(words),
+    }
+}
+
+fn handle_exec(words: &[String]) -> ! {
+    let command = shell_command("-c", words);
     // The `sobre -c` wrapper runs inside the agent shell, which carries
     // runtime/session vars the MCP server never sees. Bridge them so sobre_shell
     // can forward them too.
@@ -195,17 +143,8 @@ fn handle_exec(args: &[String]) -> ! {
     std::process::exit(code);
 }
 
-fn handle_raw(args: &[String], rest: &[String]) -> ! {
-    if rest.is_empty() {
-        eprintln!("Usage: sobre raw \"command\"");
-        eprintln!("Runs the command with output passed through unchanged (no compression).");
-        std::process::exit(2);
-    }
-    let command = if rest.len() == 1 {
-        rest[0].clone()
-    } else {
-        shell::join_command(&args[2..])
-    };
+fn handle_raw(words: &[String]) -> ! {
+    let command = shell_command("raw", words);
     let code = shell::exec(&command, shell::ExecMode::Raw);
     std::process::exit(code);
 }
@@ -256,30 +195,39 @@ pub(super) fn run_async<F: std::future::Future>(future: F) -> F::Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
     use serial_test::serial;
 
-    fn args_of(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|s| (*s).to_string()).collect()
+    fn parsed(args: &[&str]) -> Cli {
+        Cli::try_parse_from(std::iter::once("sobre").chain(args.iter().copied()))
+            .unwrap_or_else(|e| panic!("{args:?}: {e}"))
     }
 
     #[test]
     fn server_modes_keep_ignored_sigpipe() {
-        for mode in ["mcp", "proxy"] {
+        for args in [&["mcp"][..], &["proxy", "status"]] {
             assert!(
-                is_server_mode(&args_of(&["sobre", mode])),
-                "{mode} must count as server mode"
+                is_server_mode(&parsed(args)),
+                "{args:?} must count as server mode"
             );
         }
         // Bare invocation = MCP server spawned by a client.
-        assert!(is_server_mode(&args_of(&["sobre"])));
+        assert!(is_server_mode(&parsed(&[])));
     }
 
     #[test]
     fn cli_modes_restore_default_sigpipe() {
-        for mode in ["doctor", "-c", "index", "call", "gain", "help"] {
+        for args in [
+            &["doctor"][..],
+            &["-c", "ls"],
+            &["index", "status"],
+            &["call", "sobre_tree"],
+            &["gain"],
+            &["help"],
+        ] {
             assert!(
-                !is_server_mode(&args_of(&["sobre", mode])),
-                "{mode} must count as CLI mode (SIGPIPE default)"
+                !is_server_mode(&parsed(args)),
+                "{args:?} must count as CLI mode (SIGPIPE default)"
             );
         }
     }

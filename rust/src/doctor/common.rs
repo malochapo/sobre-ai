@@ -67,10 +67,6 @@ pub(super) fn print_check(outcome: &Outcome) {
     crate::outln!("  {mark}  {}", tildify_home(&outcome.line));
 }
 
-pub(super) fn path_in_path_env() -> bool {
-    resolve_sobre_binary().is_some()
-}
-
 pub(super) fn resolve_sobre_binary() -> Option<PathBuf> {
     which::which("sobre").ok()
 }

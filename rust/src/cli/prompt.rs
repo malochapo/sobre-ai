@@ -14,12 +14,6 @@ const BOLD: &str = "\x1b[1m";
 const YELLOW: &str = "\x1b[33m";
 const RST: &str = "\x1b[0m";
 
-/// True if the user passed the approval flag (`--yes`, `-y`), which bypasses
-/// the interactive prompt for scripts/CI.
-pub(crate) fn wants_yes(args: &[String]) -> bool {
-    args.iter().any(|a| matches!(a.as_str(), "-y" | "--yes"))
-}
-
 /// Confirm a consequential change.
 ///
 /// - `assume_yes` short-circuits to `true` (for `--yes` / scripted use).
@@ -48,15 +42,6 @@ pub(crate) fn confirm(prompt: &str, assume_yes: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn wants_yes_detects_flags() {
-        assert!(wants_yes(&["--yes".to_string()]));
-        assert!(wants_yes(&["-y".to_string()]));
-        assert!(!wants_yes(&["--force".to_string()]));
-        assert!(!wants_yes(&["open".to_string()]));
-        assert!(!wants_yes(&[]));
-    }
 
     #[test]
     fn confirm_assume_yes_short_circuits() {

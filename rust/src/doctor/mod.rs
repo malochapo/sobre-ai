@@ -106,14 +106,9 @@ pub fn run(json: bool) -> u32 {
 
     // Binary on PATH
     let path_bin = resolve_sobre_binary();
-    let also_in_path_dirs = path_in_path_env();
-    let bin_ok = path_bin.is_some() || also_in_path_dirs;
+    let bin_ok = path_bin.is_some();
     let bin_line = if let Some(p) = path_bin {
         format!("{BOLD}sobre in PATH{RST}  {WHITE}{}{RST}", p.display())
-    } else if also_in_path_dirs {
-        format!(
-            "{BOLD}sobre in PATH{RST}  {YELLOW}found via PATH walk (not resolved by `command -v`){RST}"
-        )
     } else {
         format!("{BOLD}sobre in PATH{RST}  {RED}not found{RST}")
     };
@@ -428,40 +423,21 @@ fn debug_log_line() -> String {
     }
 }
 
-pub fn run_cli(args: &[String]) -> i32 {
-    let (sub, rest) = match args.first().map(String::as_str) {
-        Some("integrations") => ("integrations", &args[1..]),
-        Some("overhead") => ("overhead", &args[1..]),
-        Some("lint-context") => ("lint-context", &args[1..]),
-        _ => ("", args),
-    };
+pub(crate) fn run_cli(args: &crate::cli::args::DoctorArgs) -> i32 {
+    use crate::cli::args::DoctorCheck;
 
-    crate::cli::spec::check_or_exit(
-        &if sub.is_empty() {
-            "doctor".to_string()
-        } else {
-            format!("doctor {sub}")
-        },
-        rest,
-    );
-    let fix = rest.iter().any(|a| a == "--fix");
-    let json = rest.iter().any(|a| a == "--json");
-    let gate = rest.iter().any(|a| a == "--gate");
-
-    if sub == "overhead" {
-        return overhead::run_overhead(json, gate);
-    }
-
-    if sub == "lint-context" {
-        return lint_context::run_lint_context(json);
-    }
-
-    if sub == "integrations" {
-        if fix {
-            let _ = fix::run_fix(&fix::DoctorFixOptions { json: false });
+    match args.check {
+        Some(DoctorCheck::Overhead { json, gate }) => return overhead::run_overhead(json, gate),
+        Some(DoctorCheck::LintContext { json }) => return lint_context::run_lint_context(json),
+        Some(DoctorCheck::Integrations { fix, json }) => {
+            if fix {
+                let _ = fix::run_fix(&fix::DoctorFixOptions { json: false });
+            }
+            return integrations::run_integrations(&integrations::IntegrationsOptions { json });
         }
-        return integrations::run_integrations(&integrations::IntegrationsOptions { json });
+        None => {}
     }
+    let (fix, json) = (args.fix, args.json);
 
     if !fix {
         // Non-zero exit when checks need attention so `sobre doctor` works
@@ -482,7 +458,7 @@ pub fn compact_score() -> (u32, u32) {
     let mut passed = 0u32;
     let total = 4u32;
 
-    if resolve_sobre_binary().is_some() || path_in_path_env() {
+    if resolve_sobre_binary().is_some() {
         passed += 1;
     }
     let lean_dir = crate::core::data_dir::sobre_data_dir().ok();

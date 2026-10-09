@@ -4,14 +4,14 @@
 //! [`crate::core::usage`]). Measured cost needs the proxy: without it the
 //! command shows tokens saved and an estimated value, labeled as such.
 
+use crate::cli::args::GainArgs;
 use crate::cli::common::format_tokens_cli as fmt_tokens;
 use crate::core::pricing::{ModelPricing, ModelQuote};
 use crate::core::theme;
-use crate::core::usage::{self, Period, Summary};
+use crate::core::usage::{self, Summary};
 
-pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
-    crate::cli::spec::check_or_exit("gain", rest);
-    if rest.iter().any(|a| a == "--reset") {
+pub(in crate::cli::dispatch) fn cmd_gain(args: &GainArgs) {
+    if args.reset {
         if usage::reset() {
             println!("Usage ledger cleared.");
         } else {
@@ -20,18 +20,10 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         return;
     }
 
-    let period_arg = flag_value(rest, "--period").unwrap_or_else(|| "all".to_string());
-    let Some(period) = Period::parse(&period_arg) else {
-        eprintln!("Unknown period '{period_arg}'. Use: all, today, or <n>d (7d, 30d).");
-        std::process::exit(2);
-    };
-    let limit = flag_value(rest, "--limit")
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(10);
-
+    let period_arg = args.period.label.as_str();
     let pricing = ModelPricing::load();
-    let summary = usage::summarize(&usage::load(), period, &pricing);
-    let asked = flag_value(rest, "--model");
+    let summary = usage::summarize(&usage::load(), args.period.period, &pricing);
+    let asked = args.model.clone();
     let model = asked
         .clone()
         .or_else(|| summary.dominant_model().map(str::to_string))
@@ -49,23 +41,15 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         std::process::exit(2);
     }
 
-    if rest.iter().any(|a| a == "--json") {
-        println!("{}", to_json(&summary, &quote, &period_arg));
-    } else if rest.iter().any(|a| a == "--by-tool") {
-        print_by_tool(&summary, limit);
-    } else if rest.iter().any(|a| a == "--daily") {
+    if args.json {
+        println!("{}", to_json(&summary, &quote, period_arg));
+    } else if args.by_tool {
+        print_by_tool(&summary, args.limit);
+    } else if args.daily {
         print_daily(&summary);
     } else {
-        print_summary(&summary, &quote, &period_arg);
+        print_summary(&summary, &quote, period_arg);
     }
-}
-
-fn flag_value(rest: &[String], name: &str) -> Option<String> {
-    rest.iter().enumerate().find_map(|(i, a)| {
-        a.strip_prefix(&format!("{name}="))
-            .map(str::to_string)
-            .or_else(|| (a == name).then(|| rest.get(i + 1).cloned()).flatten())
-    })
 }
 
 /// The model a host hook last reported, when the proxy saw no calls.
@@ -278,17 +262,6 @@ fn to_json(s: &Summary, quote: &ModelQuote, period: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn flag_value_reads_both_forms() {
-        let args: Vec<String> = ["--period=7d", "--limit", "5"]
-            .iter()
-            .map(ToString::to_string)
-            .collect();
-        assert_eq!(flag_value(&args, "--period").as_deref(), Some("7d"));
-        assert_eq!(flag_value(&args, "--limit").as_deref(), Some("5"));
-        assert_eq!(flag_value(&args, "--model"), None);
-    }
 
     #[test]
     fn json_reports_no_measured_cost_without_calls() {

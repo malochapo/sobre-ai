@@ -1,31 +1,11 @@
 //! `sobre proxy …` — proxy lifecycle and live upstreams.
 
-/// The port named by `--port N`, `--port=N`, `-p N` or `-p=N`. A missing or
-/// unparseable value is a usage error (exit 2).
-fn port_flag(rest: &[String]) -> Option<u16> {
-    let mut args = rest.iter();
-    while let Some(arg) = args.next() {
-        let value = match arg.as_str() {
-            "--port" | "-p" => args.next().map(String::as_str),
-            a => match a.strip_prefix("--port=").or_else(|| a.strip_prefix("-p=")) {
-                Some(v) => Some(v),
-                None => continue,
-            },
-        };
-        if let Some(port) = value.and_then(|v| v.parse::<u16>().ok()) {
-            return Some(port);
-        }
-        crate::errln!("Error: {arg} needs a port number (1-65535).");
-        std::process::exit(2);
-    }
-    None
-}
+use crate::cli::args::{PortArg, ProxyCommand};
 
 /// The port to talk to: `--port`, else the last port a proxy was started on,
 /// else the configured one.
-fn proxy_port(rest: &[String]) -> u16 {
-    port_flag(rest)
-        .or_else(crate::proxy_setup::last_started_port)
+fn proxy_port(port: Option<u16>) -> u16 {
+    port.or_else(crate::proxy_setup::last_started_port)
         .unwrap_or_else(crate::proxy_setup::default_port)
 }
 
@@ -71,26 +51,12 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
     }
 }
 
-pub(crate) fn cmd_proxy(rest: &[String]) {
+pub(crate) fn cmd_proxy(command: &ProxyCommand) {
     {
-        let Some(sub) = rest.first().map(String::as_str) else {
-            crate::errln!("{}", crate::cli::spec::group_text("proxy"));
-            std::process::exit(2);
-        };
-        if matches!(sub, "--help" | "-h" | "help") {
-            crate::outln!("{}", crate::cli::spec::group_text("proxy"));
-            return;
-        }
-        // `--help` after the verb prints its entry and never runs it.
-        let path = format!("proxy {sub}");
-        if crate::cli::spec::COMMANDS.iter().any(|c| c.path == path) {
-            crate::cli::spec::check_or_exit(&path, &rest[1..]);
-        }
-        match sub {
-            "start" => {
-                let port = port_flag(rest).unwrap_or_else(crate::proxy_setup::default_port);
-                let detach = rest.iter().any(|a| a == "--detach" || a == "-d");
-                if detach {
+        match command {
+            ProxyCommand::Start { port, detach } => {
+                let port = port.unwrap_or_else(crate::proxy_setup::default_port);
+                if *detach {
                     start_detached(port);
                     return;
                 }
@@ -100,8 +66,8 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     std::process::exit(1);
                 }
             }
-            "stop" => {
-                let port = proxy_port(rest);
+            ProxyCommand::Stop(PortArg { port }) => {
+                let port = proxy_port(*port);
                 // Unload the unit first, or launchd/systemd would start the
                 // proxy again as soon as its process exits.
                 let managed = crate::proxy_autostart::is_loaded();
@@ -112,8 +78,8 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     crate::outln!("No proxy running on port {port}.");
                 }
             }
-            "restart" => {
-                let port = proxy_port(rest);
+            ProxyCommand::Restart(PortArg { port }) => {
+                let port = proxy_port(*port);
                 if crate::proxy_autostart::is_installed() {
                     // Managed service (LaunchAgent / systemd): a clean bootout +
                     // bootstrap restarts the proxy so it re-reads config.toml. It
@@ -137,8 +103,8 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     crate::outln!("  Start it: sobre proxy start --port {port}");
                 }
             }
-            "status" => {
-                let port = proxy_port(rest);
+            ProxyCommand::Status(PortArg { port }) => {
+                let port = proxy_port(*port);
                 let cfg = crate::core::config::Config::load();
                 crate::outln!("sobre proxy:");
                 match cfg.proxy.enabled {
@@ -199,8 +165,8 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     }
                 }
             }
-            "enable" => {
-                let force = rest.iter().any(|a| a == "--force");
+            ProxyCommand::Enable { force } => {
+                let force = *force;
                 let port = crate::proxy_setup::default_port();
                 if crate::proxy_autostart::is_supported() {
                     if !crate::proxy_autostart::install(port, false) {
@@ -231,7 +197,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     "\x1b[32m✓\x1b[0m Proxy enabled on port {port}. LLM requests will be compressed."
                 );
             }
-            "disable" => {
+            ProxyCommand::Disable => {
                 if let Err(e) =
                     crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(false))
                 {
@@ -252,7 +218,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 }
                 crate::outln!("  Re-enable anytime: sobre proxy enable");
             }
-            "cleanup" => {
+            ProxyCommand::Cleanup => {
                 let home = dirs::home_dir().unwrap_or_default();
                 let removed = crate::proxy_setup::cleanup_stale_proxy_env(&home);
                 if removed > 0 {
@@ -262,21 +228,13 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                     crate::outln!("  No stale proxy URLs found. Nothing to clean up.");
                 }
             }
-            "token" => {
+            ProxyCommand::Token { quiet } => {
                 let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
-                let quiet = rest.iter().any(|a| a == "--quiet" || a == "-q");
-                if quiet {
+                if *quiet {
                     print!("{token}");
                 } else {
                     crate::outln!("{token}");
                 }
-            }
-            other => {
-                crate::errln!(
-                    "sobre proxy: unknown command '{other}'\n{}",
-                    crate::cli::spec::group_text("proxy")
-                );
-                std::process::exit(2);
             }
         }
     }
