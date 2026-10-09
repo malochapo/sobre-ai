@@ -14,9 +14,11 @@ It also checks that no documentation is published outside the repository.
 
 The audit combined eight passes:
 
-- an end-to-end run of the release binary in a sandbox HOME (`init`,
-  `uninstall`, `doctor`, `config`, `call`, `-c`, hooks, the MCP server over
-  stdio, the proxy);
+- an end-to-end run of the release binary in a sandbox HOME, under
+  `env -i`, with nine agents' configs as a user would have them, no
+  `claude` on the PATH and no systemd user bus (`init`, `uninstall`,
+  `doctor`, `config`, `call`, `-c`, hooks, the MCP server over stdio, the
+  proxy);
 - three read-only reviews of the 15 MCP tools: editing and shell
   (`sobre_patch`, `sobre_refactor`, `sobre_shell`, `sobre_expand`,
   `sobre_checkpoint`); reading and search (`sobre_read`, `sobre_search`,
@@ -65,6 +67,7 @@ Pending. Each line gives the recommendation.
 | 9 | The reference is incomplete (N2, N4, N8) | Generate `mcp-tools.md` with full schemas, actions and modes, and `env-vars.md` from a registry the code reads through. Extend `config-keys.md`. Write `docs/architecture.md` by hand. All plain `.md` in the repository. |
 | 10 | `proxy enable` on Windows wires nothing and reports success (H4) | Say so: on Windows `proxy enable` refuses with a clear message and the README says the proxy is started by hand there. Autostart waits for someone who can test it. |
 | 11 | `docs/phase1-audit*.md` are private notes in the repository, which the process rules forbid | Keep them until phase 1 closes, then delete them in the release PR; history keeps them. |
+| 12 | `doctor --fix` rewrites MCP entries in the user's repository (H13) | Report only: `doctor` names the project file and the entry; the user edits it. sobre writes nothing into a repository. |
 
 ## Plan
 
@@ -79,9 +82,60 @@ Pending. Each line gives the recommendation.
 | P | CI and release | open |
 | N | Documentation: complete reference and architecture, written last | open |
 
+Three findings go first, before any decision, in their own PR: H12 (a
+local user can get commands run through the hooks' shared `/tmp`
+directory), H1 (`uninstall --dryrun` uninstalls) and G1 (`uninstall`
+leaves debris).
+
 E20 from the first audit stays open (see [below](#e20-still-open)).
 
-<!-- E2E-WORKS -->
+## What already works
+
+The end-to-end run found no crash and no panic. These behaved as
+documented:
+
+- **Basic CLI.** `--version`/`-V`; `help`, `--help` and `help all`;
+  suggestions for typos (`inti` → `init`, exit 2).
+- **`init`.**
+  - Without a terminal, per agent, `--json` (valid JSON) and `--repair`;
+    an unknown agent or flag exits 2; a broken config is reported and
+    exits 1.
+  - `--check` writes nothing, and a second run is byte-identical.
+  - The terminal question writes `proxy.enabled`.
+  - Comments, key order and the user's entries are kept; `.sobre.bak`
+    files are made; new files are 0600.
+- **`doctor`.** 15/15 and JSON; `overhead` matches `gain` (the C7 fix
+  holds); `lint-context`; `--fix` after the binary moved.
+- **`config`.** `set` ranges and types, `--yes` gating, `path`.
+- **The 15 tools through `sobre call`.** `.env` redacted unless
+  `raw=true`; anchored and dry-run patches; checkpoint snapshot, diff and
+  restore; session and knowledge in the compose overview; `sobre_expand`
+  slices and refuses `../`; `mode=dense` refused in the default build.
+- **Shell.** `-c` labels its output on stderr and passes through file
+  redirects; `raw`; exit codes propagate.
+- **`gain` and `index`.** Every `gain` variant (a bad period, model or
+  flag exits 2); `index build` and `status`.
+- **Hooks.**
+  - Claude Code, Copilot and OpenCode compression keep their reply shapes,
+    each with a `[sobre: …]` label; `cat` and interrupted runs are left
+    alone.
+  - The read-dedup stub resets on a new session, a changed file and
+    PreCompact.
+  - Observe records the session; the Cursor and Gemini rewrites keep
+    `description`/`dir_path` and honour Cursor's allow and deny rules.
+- **MCP over stdio.** Protocols 2025-06-18 and 2024-11-05, `roots/list`,
+  15 tools, instructions under 2,048 characters, -32602 and -32601
+  errors, ping, malformed lines skipped, the re-read stub, `fresh=true`,
+  background jobs, nothing stray on stdout.
+- **Proxy.** `start -d --port N`, `status`, `token`, `restart`, `stop`;
+  `/health` 200, `/status` 401 without auth, 426 on an Upgrade header; a
+  request through a mock upstream comes back labelled, with the user's key
+  forwarded and none added.
+- **`uninstall`.** `--dry-run` changes nothing. A real run restored every
+  agent file byte for byte (except H2), kept entries the user added after
+  `init`, and removed the data directories and the binary.
+- **Leftovers.** No `ctx_` or `lean-ctx` text in any output or in the
+  binary; no ANSI codes off a terminal.
 
 ---
 
@@ -103,8 +157,8 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
 - [ ] **G2 The observe-hook refresh takes over other tools' hooks.**
   *Regression: E19.*
   - `refresh_command` (`hooks/agents/mod.rs:13-26`) points every hook
-    command containing `hook observe` at sobre (`claude.rs:118`,
-    `codex.rs:56`, `cursor.rs:28`, `windsurf.rs:41`).
+    command containing `hook observe` at sobre (`hooks/agents/claude.rs:118`,
+    `hooks/agents/codex.rs:56`, `hooks/agents/cursor.rs:28`, `hooks/agents/windsurf.rs:41`).
   - A user's `/opt/acme/bin/acme hook observe` becomes sobre's command, and
     `uninstall` then deletes it.
   - Fix: match sobre's own command only.
@@ -115,10 +169,14 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   - Uncommenting `# port = …` alone puts `port` in `[proxy.upstreams]`: the
     file no longer parses and every key falls back to its default, with a
     warning on stderr only.
-  - Fix: render `[proxy]` before its sub-table; a test that uncomments each
-    key alone and parses the file.
+  - Uncommenting `[proxy]`, `enabled` and `upstreams.anthropic`, as the
+    header says to, gives "duplicate key": the live `[proxy.upstreams]`
+    table already exists.
+  - Fix: render `[proxy]` before its sub-table, and no empty live table; a
+    test that uncomments each key, and each documented group, and parses
+    the file.
 - [ ] **G4 The whitespace-insensitive fallback of `replace_unique` and
-  `replace_all` reports edits it did not make** (`impl_edit.rs:257-276`,
+  `replace_all` reports edits it did not make** (`tools/impl_edit.rs:257-276`,
   `:403-425`, `:643-664`). *Regression: B9 added it to `replace_all`.*
   - On a CRLF file it answers "1 replacement" and changes nothing.
   - `replace_unique` accepts a match without checking that it is unique
@@ -129,7 +187,7 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   space.** *Regression: B29.* `is_section_label`
   (`server/tool_trait.rs:138-141`) rejects any label with a space.
 - [ ] **G6 Instruction files ignore `start_line`/`limit`.**
-  *Regression: B3.* The window applied at `registered/sobre_read.rs:182`
+  *Regression: B3.* The window applied at `tools/registered/sobre_read.rs:182`
   is replaced by `full` at `:214`. `AGENTS.md start_line=3 limit=2` returns
   40 lines.
 - [ ] **G7 Some windows on files over 4 MB still fail.** *Regression: B2.*
@@ -142,7 +200,7 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
 - [ ] **G8 Shell output is condensed with no way back.** *Regression: B58;
   invariant 5.*
   - Terse post-processing (`server/post_process.rs:19-28`,
-    `registered/sobre_shell.rs:279`) runs after the decision to keep the
+    `tools/registered/sobre_shell.rs:279`) runs after the decision to keep the
     full output. Failed commands, small outputs, background status and
     commands in `passthrough_commands` come back labelled
     `[sobre: condensed]` with no `sobre_expand` id.
@@ -159,11 +217,11 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
 - [ ] **G10 `sobre_session restore` can return another project's snapshot.**
   *Regression: B38 missed this path.* It filters snapshots on a substring
   of the process's working directory (`core/session/compaction.rs:394-420`,
-  `registered/sobre_session.rs:262`); `list` shows every project's.
+  `tools/registered/sobre_session.rs:262`); `list` shows every project's.
 - [ ] **G11 Graph outputs print bare file names.** *Regression: B63 fixed
   `impact` only.* `neighbors`, `path`, `related` and the `symbol` header
-  still call `shorten_path` (`registered/sobre_graph_primitives.rs`,
-  `registered/sobre_graph.rs:108-118,238`).
+  still call `shorten_path` (`tools/sobre_graph_primitives.rs`,
+  `tools/registered/sobre_graph.rs:108-118,238`).
 - [ ] **G12 Search and glob stop at `max_results` without saying so.**
   *Regression: B49 fixed the count wording only; invariant 5.*
   - 300 matches in 30 files come back as `20 matches in 2 files (3
@@ -177,7 +235,7 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   the keys to BLAKE3 but not these.* `DefaultHasher` is not stable across
   Rust releases, so a toolchain update makes every stored hash mismatch.
   - Gotcha ids (`core/gotcha_tracker/model.rs:252`, matched at
-    `gotcha_tracker/mod.rs:127,140,146`): known gotchas come back as new.
+    `core/gotcha_tracker/mod.rs:127,140,146`): known gotchas come back as new.
   - The graph index content hash (`core/graph_index/mod.rs:1112`, stored
     at `:886`, compared at `:562`) and the call graph
     (`core/call_graph.rs:462`, saved at `:172`, compared at `:131`): both
@@ -196,54 +254,90 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   - `core/session_token.rs:19` is a second hex encoder.
   - `proxy_autostart.rs:473` imports something unused in the Windows test
     build.
+- [ ] **G15 `uninstall` leaves a proxy running on a port other than the
+  default.** *Regression: C12 left this path.* `uninstall` stops the proxy
+  on `default_port()` (`uninstall/binary.rs:13-24`), not on the port
+  recorded in `proxy.port` that `proxy stop` reads
+  (`cli/dispatch/network/proxy.rs:28-52`), then deletes that file with the
+  state dir. Reproduced: after `proxy start --port 18778 -d` and
+  `uninstall`, `:18778/health` still answers.
 
 ## Lot H — the user's machine
 
 - [ ] **H1 `uninstall` ignores arguments it does not know.**
   - `sobre uninstall --dryrun`, `-n`, `uninstall claude` or any typo runs a
     real uninstall and exits 0 (`cli/dispatch/mod.rs:109-120`).
-  - `doctor`, `index`, `embeddings`, `proxy` and `config` ignore unknown
-    flags too.
+  - `doctor bogus` and `doctor --bogus` run the full doctor and exit 0
+    (`doctor/mod.rs:432-437`). `index`, `embeddings`, `proxy` and `config`
+    also ignore unknown flags.
   - Decision 8. `uninstall` gets the fix first, whatever the decision.
 - [ ] **H2 Any localhost URL is taken for sobre's proxy.**
-  - `is_local_sobre_url` (`proxy_setup/util.rs:5`, `codex.rs:207-210`)
-    matches every `localhost`/`127.0.0.1` URL.
-  - `doctor --fix` (`cleanup_stale_proxy_env`, `proxy_setup/mod.rs:98-135`),
-    `uninstall` and the Claude subscription guard (`claude.rs:140-160`)
-    therefore remove a user's LiteLLM (`localhost:4000`) or Ollama
-    (`localhost:11434`) base URL, even when the proxy was never enabled.
-  - Fix: match sobre's port only, and only a value sobre wrote.
-- [ ] **H3 `proxy disable` and `uninstall` rebuild Claude's base URL
-  instead of restoring it** (`proxy_setup/claude.rs:93-101,152-160`,
+  - `is_local_sobre_url` (`proxy_setup/util.rs:5`,
+    `proxy_setup/codex.rs:207-210`) matches every `localhost`/`127.0.0.1`
+    URL.
+  - Reproduced: `~/.claude/settings.json` points `ANTHROPIC_BASE_URL` at
+    Ollama (`http://localhost:11434`); `init claude`, then `uninstall`
+    prints "Removed ANTHROPIC_BASE_URL" and the URL is gone. The
+    `.sobre.bak` is deleted too: `uninstall/mod.rs:71` rewrites the file
+    before comparing it with the backup, so they never match.
+  - `proxy status` warns that Claude Code "still points to the local
+    proxy" and suggests `proxy cleanup`, which removes the URL as well.
+    `doctor --fix` (`cleanup_stale_proxy_env`, `proxy_setup/mod.rs:98-135`)
+    and the Claude subscription guard (`proxy_setup/claude.rs:140-160`)
+    do the same, even when the proxy was never enabled.
+  - Fix: match the exact proxy URL on sobre's port, and only a value sobre
+    wrote.
+- [ ] **H3 `proxy disable` and `uninstall` invent Claude's base URL
+  instead of restoring it** (`proxy_setup/claude.rs:65-110,152-160`,
   `proxy_setup/mod.rs:67,109`).
-  - After `config set proxy.upstreams.anthropic http://127.0.0.1:11434`,
-    `disable` writes Ollama's URL into Claude's settings as
-    `ANTHROPIC_BASE_URL`.
+  - Reproduced with the README's own Ollama example: after `config set
+    proxy.upstreams.anthropic http://127.0.0.1:11434`, `disable` and
+    `uninstall` print "Restored ANTHROPIC_BASE_URL → http://127.0.0.1:11434"
+    and "Original endpoint restored". Claude's settings never held that
+    URL.
+  - sobre cannot tell an endpoint it saved with `--force` from one the user
+    configured. `proxy cleanup` reports "Cleaned up 1 stale proxy URL(s)"
+    on every run.
   - `config set proxy.upstreams.anthropic default` stores `""`, and
     `disable` then writes `ANTHROPIC_BASE_URL=""`.
-  - Fix: restore the value the user had before `enable`, or remove the
-    key.
+  - Fix: record what sobre wrote and what it displaced, and undo exactly
+    that.
 - [ ] **H4 The proxy on Windows.**
   - There is no autostart on Windows. `proxy enable` skips the agent wiring
     because the proxy is not running, and still reports success.
-  - The README says `disable` stops the proxy; it never stops a detached
-    one.
-  - `uninstall` stops the proxy on the default port, not on `proxy.port`
-    (`network/proxy.rs:257-277`).
   - Decision 10.
 - [ ] **H5 `claude mcp add-json` never succeeds.** sobre pipes the JSON on
-  stdin; the CLI wants it as an argument and fails with "missing required
-  argument 'json'" (`editor_registry/writers/mod.rs:166-230`). The file
-  edit always runs instead. Fix: remove the CLI path; the file edit is the
-  one writer, and the tested one.
-- [ ] **H6 `config set` accepts bad values** (`cli/config_cmd.rs:21-27`,
+  stdin; the CLI's usage is `claude mcp add-json [options] <name> <json>`,
+  and it fails with "missing required argument 'json'"
+  (`core/editor_registry/writers/mod.rs:166-230`).
+  - The file edit always runs instead, after spawning the CLI for up to
+    3 s on each `init`.
+  - When the CLI exits 0, `init` reports `~/.claude.json` updated without
+    checking it.
+  - The README says the entry goes "through `claude mcp add-json` when the
+    claude CLI is installed".
+  - Fix: remove the CLI path; the file edit is the one writer, and the
+    tested one.
+- [ ] **H6 `config set`** (`cli/config_cmd.rs:21-27`,
   `core/config/setter.rs:176-190`).
-  - `not-a-url` as an upstream (`validate_upstream_url` is not called
-    there), and port 0.
+  - Setting a key to its default is ignored. With `compression_level =
+    0.7` in the file, `config set compression_level 0.3` prints "Updated"
+    and the file still says 0.7: the default is skipped when serialising
+    (`core/config/mod.rs:85-89`) and `write_toml_preserving_minimal`
+    (`config_io.rs:211`) keeps the old line.
+  - Invalid upstreams are accepted: `127.0.0.1:11434`, `notaurl`,
+    `ftp://x.y` (`validate_upstream_url` is not called). Each load then
+    warns and uses the default, so requests meant for a local model go to
+    api.anthropic.com, and `doctor` still scores `✓ Proxy upstream`.
+    Port 0 is accepted too.
   - `config set proxy.upstreams x` answers "did you mean
-    'proxy.upstreams'".
+    'proxy.upstreams'"; the key list it prints has 14 names for 11 keys.
+    The risk review prints before an unknown-key failure
+    (`proxy.upstreams.gemini`).
   - `default` stores `""` instead of removing the key, and nothing removes
     a key from the command line.
+  - `sobre config` omits `compression_level` and the proxy keys, and shows
+    an empty `[proxy.upstreams]`.
 - [ ] **H7 `init --check --json` looks like a real run.** Its JSON says
   "connected" and "created", with no dry-run field
   (`setup/mod.rs:200-226,255`).
@@ -268,10 +362,67 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   - `uninstall --dry-run` always says "Would remove the proxy autostart
     unit", even when there is none.
   - `sobre call` exits 0 when the tool returned an error.
-  - `config init` exits 0 on an unparseable file.
   - `index`'s usage text loses its indentation (`cli/index_cmd.rs:23-28`).
   - In the build without embeddings, `embeddings status` says to run
-    `sobre embeddings provision`, which that build does not have.
+    `sobre embeddings provision`, which that build refuses (exit 1).
+  - `sobre` with stdin closed before `initialize` exits 1 with an ERROR
+    line.
+- [ ] **H12 The hooks trust a shared directory in `/tmp`.** *Security.*
+  - The Cursor and Gemini rewrite dedup and the read dedup keep their state
+    in `<tmp>/sobre-hook/` (`hook_handlers/dedup.rs:146`,
+    `hook_handlers/read_dedup.rs:286-291`). `create_dir_all` succeeds on a
+    directory another user created, and the failed `chmod 0700` is
+    ignored.
+  - A fresh `<key>.claim` with a `<key>.resp` makes the hook replay the
+    response verbatim. The key is predictable (BLAKE3 of
+    `rewrite\0Cursor\0git status`). Reproduced: a planted response made
+    `sobre hook cursor` rewrite `git status` into `echo PLANTED`.
+  - On Linux `TMPDIR` is usually unset, so the path is fixed: a local user
+    who creates `/tmp/sobre-hook` first can get commands of their choice
+    run by another user's Cursor or Gemini.
+  - The directory is outside the documented data layout and survives
+    `uninstall`.
+  - Fix: keep it under sobre's state dir (owner-only, like the rest), and
+    remove it on uninstall.
+- [ ] **H13 `doctor --fix` rewrites files in the user's repository.**
+  - Reproduced on a repo with a committed JSONC `.cursor/mcp.json`
+    (comments, a `team-db` entry and `sobre`) and `.vscode/mcp.json`:
+    `doctor --fix` printed only "All 4 checks passed". `git diff` shows
+    the `sobre` entries removed, the comments stripped, everything
+    reformatted, the trailing newline dropped, and no backup
+    (`doctor/workspace_scope.rs:147-188`).
+  - `.zed/settings.json` is flagged but never fixed; a `user-sobre` key
+    name is looked for that sobre no longer writes.
+  - The README says "never into a repository"; A5 made every edit
+    in place.
+  - Decision 12.
+- [ ] **H14 `doctor` says things that are not true.**
+  - Codex: "hooks auto-compress when trusted (/hooks)"
+    (`doctor/integrations/codex.rs:130`); sobre installs only observe hooks
+    for Codex, and the README says Codex gets no shell compression.
+  - Claude: "Read redirect … sobre_read + Grep/Glob still compress"
+    (`doctor/integrations/editors.rs:139`); there is no redirect, and no
+    hook touches Grep or Glob.
+  - A `config.toml` that does not parse prints its warning twice on every
+    command, with "Run `sobre doctor --fix` to repair"
+    (`core/config/loader.rs:102`, `cli/config_cmd.rs:135`,
+    `core/config/mod.rs:171`). `doctor --fix` never touches the file,
+    says "All 4 checks passed" and exits 0, while `doctor` shows the
+    failure and exits 1. `config init` refuses to overwrite it and exits 0.
+  - `--fix` counts 4 checks, `doctor` 15: a C6 leftover.
+- [ ] **H15 `proxy enable` and `disable` leave state behind and report
+  what did not happen.**
+  - Without a systemd user bus, `proxy enable` prints "managed service did
+    not acquire port 4444" (the cause is "Failed to connect to bus") and
+    exits 1, yet leaves `proxy.enabled = true`, the unit file and its
+    `default.target.wants` link.
+  - `init` on a terminal, answered `y`, hits the same failure and prints
+    "Proxy enabled.": `cli/init_cmd.rs:96-107` ignores what `install()`
+    returns.
+  - `proxy disable` (the README: "stop it") leaves a proxy started by the
+    MCP server answering `/health`, and prints "Original endpoint
+    restored" when nothing was.
+  - `uninstall` leaves an empty `~/.config/systemd/user`.
 
 ## Lot J — editing and shell tools
 
@@ -283,7 +434,7 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
 - [ ] **J2 A stale anchor is moved silently.** *Invariant 5.* When the
   anchored line changed, sobre searches the whole file for a unique line
   with the same 16-bit hash and edits there: no CONFLICT, no label
-  (`apply.rs:86-97,167-174,301-312`). Decision 1.
+  (`tools/sobre_patch/apply.rs:86-97,167-174,301-312`). Decision 1.
 - [ ] **J3 `replace_symbol` and `sobre_refactor` edit a stale range.**
   They take the symbol's lines from the graph without checking it is
   current (`tools/sobre_refactor/mod.rs:189-252`,
@@ -292,13 +443,13 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   wrong lines. Fix: resolve the symbol with tree-sitter at edit time.
 - [ ] **J4 `replace_symbol` with `path`+`line` replaces only `line` to
   `end_line`** (`end_line` defaults to `line`), with no symbol lookup
-  (`sobre_refactor/mod.rs:268-281`). The schema says it resolves the
+  (`tools/sobre_refactor/mod.rs:268-281`). The schema says it resolves the
   symbol.
 - [ ] **J5 An anchored edit turns a mixed-EOL file into CRLF**
-  (`apply.rs:38-47`), unlabelled.
+  (`tools/sobre_patch/apply.rs:38-47`), unlabelled.
 - [ ] **J6 An escalated read is recorded as fully delivered.** When an edit
   escalates to a read, sobre sends 300 lines but records the whole file as
-  delivered (`registered/impl_edit.rs:368-399`). The next full read returns
+  delivered (`tools/impl_edit.rs:368-399`). The next full read returns
   the "unchanged" stub and the agent never sees the rest. `replace_all`
   reaches this since B9.
 - [ ] **J7 Non-ASCII commands get ids `sobre_expand` refuses.** The id slug
@@ -310,7 +461,7 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
     not errors.
   - Decision 5.
 - [ ] **J9 Background job ids come from the command text**
-  (`shell/background_shell.rs:84-131,186-200`).
+  (`server/background_shell.rs:84-131,186-200`).
   - Starting a command again while the first run is going returns the
     first run's output.
   - A foreground run of the same command deletes the background result.
@@ -334,14 +485,27 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   - It clears `BASH_ENV` and `ENV`.
   - Fix: past the cap, keep draining and drop the excess, labelled; no
     timeout of its own (the host has one); keep the environment.
-- [ ] **J12 The rewrite hook quotes badly** (`hooks/hook_handlers/rewrite.rs:114-122`).
-  The binary path is not quoted (a space breaks it), `\"` is not
-  PowerShell's escape, and `$x` inside single quotes gets expanded. Likely,
-  from reading.
+- [ ] **J12 Hook commands break when the binary path holds a space.**
+  - Claude, Cursor, Gemini, Codex and Windsurf hooks are built as
+    `format!("{binary} hook …")`, unquoted (`hooks/agents/claude.rs:166-168`,
+    `hooks/agents/cursor.rs:62,67`, `hooks/agents/gemini.rs:33-42`,
+    `hooks/agents/codex.rs:11`, `hooks/agents/windsurf.rs:7`).
+    Copilot and OpenCode quote it.
+  - Reproduced with a HOME holding a space: the hook command fails with
+    exit 126. The Cursor and Gemini rewrite
+    (`hook_handlers/rewrite.rs:114-122`) turns `git status` into a command
+    that fails the same way, so the agent's own command stops working.
+  - `doctor integrations` then reports a stale binary at the path's last
+    word, and `init --repair` changes nothing. A Windows user named
+    `Jane Doe` hits this.
+  - From reading the rewrite: `\"` is not PowerShell's escape, and `$x`
+    inside single quotes gets expanded.
+  - Fix: quote the binary in every hook and in the rewrite; parse quoted
+    paths in `doctor`.
 - [ ] **J13 The syntax check blocks writes.** *Invariant 5.*
   - An edit that leaves a syntax error is refused.
   - `validate_syntax=false` is not honoured by `replace_symbol` and
-    `sobre_refactor` (`sobre_refactor/mod.rs:391`,
+    `sobre_refactor` (`tools/sobre_refactor/mod.rs:391`,
     `tools/sobre_patch/symbol.rs`), and is undeclared for anchored ops.
   - Decision 3.
 - [ ] **J14 Smaller ones.**
@@ -354,6 +518,17 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
     2-hour expiry hits during a session.
   - `sobre_refactor` checks for the language server before the action: an
     unknown action answers "pylsp not found".
+  - `sobre_patch`'s not-found error names `old_string` for the parameter
+    `old_text`, and its list of ops leaves out `replace_unique`,
+    `replace_symbol` and `replace_all` (`tools/sobre_patch/anchors.rs:91`).
+
+- [ ] **J15 Compressed `git log --stat` states wrong totals.** On this
+  repository's `git log -n 40 --stat`, the hook prints `[40 commits,
+  +0/-119 total]`; the real totals are +19,855/−116,368.
+  `compress_log_summary` (`core/patterns/git/log.rs:250-258,288-293`)
+  counts lines that start with `+` or `-`, which in `--stat` output are
+  bullet lines from commit messages. Fix: read the "insertions(+),
+  deletions(-)" lines, or print no total.
 
 ## Lot K — reading and search tools
 
@@ -369,50 +544,50 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
 - [ ] **K2 An explicit `lines:N-M` can return the whole file, unlabelled.**
   Whether the file was delivered is not scoped to the conversation, and the
   delta decision runs before the compaction sync
-  (`registered/sobre_read.rs:229-244` before `:295-300`). Conversation B
+  (`tools/registered/sobre_read.rs:229-244` before `:295-300`). Conversation B
   asking `lines:5-7` after conversation A read the file gets 302 lines.
 - [ ] **K3 Files that start with a UTF-8 BOM.**
   - The cache hashes the bytes with the BOM (`core/cache.rs:716`), the
-    store without it (`sobre_read/mod.rs:144-147`). The entry is always
+    store without it (`tools/sobre_read/mod.rs:144-147`). The entry is always
     stale: an explicit re-read returns "changed" with "(no changes)", and
     the requested lines never come.
   - A window read and `sobre_search anchored=true` hash line 1 with the BOM
-    (`mod.rs:194`, `tools/sobre_search.rs:255`); a full anchored read and
+    (`tools/sobre_read/mod.rs:194`, `tools/sobre_search.rs:255`); a full anchored read and
     `sobre_patch` without it. A `sobre_patch` with the window's hash gets
     CONFLICT.
   - Fix: strip the BOM in all three places.
 - [ ] **K4 Under lock contention `sobre_read` runs a second copy of its
-  core** (`registered/sobre_read.rs:375-790`), which differs.
+  core** (`tools/registered/sobre_read.rs:375-790`), which differs.
   - `diff` is unknown there: `[WARNING: unknown mode 'diff', falling back
-    to full]` and the whole file (`sobre_read/render.rs:313`). The
+    to full]` and the whole file (`tools/sobre_read/render.rs:313`). The
     `auto`→`diff` path of K1 lands there too.
   - It has no disk window, so windows on files over 4 MB fail (likely).
   - Non-full modes do not clear `full_content_delivered`.
   - Fix: one core function for both paths.
 - [ ] **K5 The fast path holds the global cache write lock during the whole
-  render** (`registered/sobre_read.rs:343-372`). A 3.3 MB `entropy` read
+  render** (`tools/registered/sobre_read.rs:343-372`). A 3.3 MB `entropy` read
   held it 27 s in a debug build; a concurrent read of a 50-line file failed
   with "cache lock contention… retry in a moment".
 - [ ] **K6 `raw` is not raw on three paths.** The schema says "the bytes on
   disk: no framing, no redaction".
-  - In a batch, `mode:"raw"` is redacted (`batch_read.rs:28-35`,
-    `sobre_read/mod.rs:869`); the batch refuses `raw:true` but not this.
+  - In a batch, `mode:"raw"` is redacted (`tools/registered/batch_read.rs:28-35`,
+    `tools/sobre_read/mod.rs:869`); the batch refuses `raw:true` but not this.
   - `raw:true` with `start_line`/`limit` returns a numbered, redacted
-    window (`registered/sobre_read.rs:1008-1012`).
+    window (`tools/registered/sobre_read.rs:1008-1012`).
   - The degraded-compression note is appended to raw output too
     (`server/call_tool.rs:114-116`; from reading).
 - [ ] **K7 Batch `queries[]` ignores the top-level `include`, `exclude` and
-  `exclude_pattern`** (`registered/sobre_search.rs:564`).
+  `exclude_pattern`** (`tools/registered/sobre_search.rs:564`).
 - [ ] **K8 `find_related` fails in its default form.**
   - It reads the raw `file_path`, not the resolved path, while the index
     stores relative keys: an absolute path gets "no indexed chunk found"
-    (`registered/sobre_search.rs:417`).
+    (`tools/registered/sobre_search.rs:417`).
   - In the default (non-compact) output, `top_k` counts output lines, and
     the self-exclusion never matches (`tools/impl_semantic_search/mod.rs:234-235`):
     `top_k=3` returned only the source chunk's own header.
 - [ ] **K9 `sobre_search` honours parameters `tools/list` does not show.**
   *Invariant 3.* `languages`, `path_glob` and `ignore_gitignore`
-  (`registered/sobre_search.rs:205,318-319,536`); `languages:["python"]`
+  (`tools/registered/sobre_search.rs:205,318-319,536`); `languages:["python"]`
   changes the results. Decision 7.
 - [ ] **K10 Secrets are masked by some tools and not others.** For the same
   `api_key = "sk-ant-…"`, `sobre_read` and a regex search show
@@ -424,7 +599,7 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
     neither vendor directories nor git-ignored files
     (`tools/sobre_tree.rs:36,118-147`): `node_modules` counts as saved.
   - A windowed `sobre_read` records the whole file as the original
-    (`registered/sobre_read.rs:811-812,936`): `lines:1-3` logs 1,800
+    (`tools/registered/sobre_read.rs:811-812,936`): `lines:1-3` logs 1,800
     tokens original, 51 sent.
 - [ ] **K12 `sobre_tree` counts and labels.**
   - Directories at the depth limit show `(0)`.
@@ -441,12 +616,16 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   `sobre_search`'s `include`/`exclude` (`tools/sobre_search.rs:574`). Fix:
   `require_literal_separator`.
 - [ ] **K15 `lines:N` means two things.** On a normal file it is one line
-  (`sobre_read/render.rs:421`); `anchored:N`, files over 4 MB and the
-  parser's own doc read it as N to the end (`sobre_read/mode.rs:192`).
+  (`tools/sobre_read/render.rs:421`); `anchored:N`, files over 4 MB and the
+  parser's own doc read it as N to the end (`tools/sobre_read/mode.rs:192`).
 - [ ] **K16 B62's guard compares the raw path argument**
-  (`registered/sobre_search.rs:350`). With a different case or `\` on
+  (`tools/registered/sobre_search.rs:350`). With a different case or `\` on
   Windows, or `/var` against `/private/var` on macOS, it misses and the
   symbol lookup moves to the nearest git root. Likely.
+
+- [ ] **K17 `sobre_read paths=[…]` does not name the files.** Full
+  sections are joined with `---` under "Read 2 files", with no path; only
+  stubs carry one (`tools/impl_multi_read.rs:69`).
 
 ## Lot L — graph, session, knowledge, review, `gain`
 
@@ -457,10 +636,17 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   - `callers`, `callees` and `trace` miss every such call; `sobre_review`
     finds no callers in other files.
   - `sobre_graph symbol=Config::load` splits on `::` as if it were a file
-    (`registered/sobre_graph.rs:131`).
+    (`tools/registered/sobre_graph.rs:131`).
+  - Reproduced on a small crate: `callers helper` finds none while
+    `callees add` lists `util::helper`; `trace main→helper` finds no path.
+    `sobre_review src/lib.rs` says "no file depends on it" and, in the same
+    output, lists callers in `src/main.rs` and `tests/basic.rs`; it finds
+    no related tests, and the checklist says "No tests found".
+  - Imports through the crate's own name (`use demo::{add, Counter}`) are
+    not edges either: `neighbors src/lib.rs` shows no incoming file.
 - [ ] **L2 The graph is never refreshed after its first build in a
   process.** `open_or_build` (`core/graph_provider.rs:370`) and
-  `open_graph_fresh` (`registered/sobre_graph_impact.rs:97-112`) rebuild
+  `open_graph_fresh` (`tools/sobre_graph_impact.rs:97-112`) rebuild
   only when the graph is empty or of another version; `index_looks_stale`
   (`core/graph_index/mod.rs:359-480`) is never what decides.
   `impact`, `changes` and `callers` answer from stale data, unlabelled.
@@ -470,13 +656,13 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   empty call graph is then saved.
 - [ ] **L4 `sobre_session reset`, `load` and `import` drop the project
   root, the shell directory and the extra roots**
-  (`registered/sobre_session.rs:21-40,211-216`,
+  (`tools/registered/sobre_session.rs:21-40,211-216`,
   `core/ccp_session_bundle.rs:190-205`; `extra_roots` is
   `serde(skip)`). Reads then resolve against `/`, and `search_roots` stops
   applying.
 - [ ] **L5 One absolute read moves the session to another root.** The
   session's task and findings are relabelled to the new root and saved
-  over (`server/call_tool.rs:295-312`, `server/server_paths.rs:31-49`),
+  over (`server/call_tool.rs:295-312`, `tools/server_paths.rs:31-49`),
   with no note.
 - [ ] **L6 Concurrent first calls race `roots/list`**
   (`server/call_tool.rs:216-221`). `roots_resolved.swap(true)` lets the
@@ -488,39 +674,39 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
     (`tools/server_lifecycle.rs:38-41`, `core/session/persistence.rs:35-56`).
   - Decision 4.
 - [ ] **L8 `consolidate` and `load` read the session from disk, not the
-  live one** (`core/consolidate.rs:49`, `registered/sobre_session.rs:21-40`).
+  live one** (`tools/sobre_knowledge/consolidate.rs:49`, `tools/registered/sobre_session.rs:21-40`).
   Fresh decisions are not imported, `load` drops unsaved ones, and each
   `consolidate` re-imports the same facts: "confirmed ×4" and an inflated
   quality score.
 - [ ] **L9 `sobre_knowledge search` returns superseded and archived facts,
-  unlabelled** (`core/knowledge/search.rs:25-37`).
+  unlabelled** (`tools/sobre_knowledge/search.rs:25-37`).
 - [ ] **L10 Every new server wipes the stub index.** The compaction marker
-  starts at 0 (`core/compaction_sync.rs:6,15-30`), so after the first
+  starts at 0 (`server/compaction_sync.rs:6,15-30`), so after the first
   PreCompact ever, each new process treats it as new and clears the stubs.
 - [ ] **L11 Root URIs with non-ASCII characters are rejected.**
-  `percent_decode` pushes each byte as a char (`core/roots.rs:41-60`).
+  `percent_decode` pushes each byte as a char (`server/roots.rs:41-60`).
 - [ ] **L12 The previous run steers `mode=auto`.** *Invariant 2.*
   - Each process reloads the latest session (`tools/server_lifecycle.rs:38-41`);
     its task then drives `mode=auto` (`core/auto_mode_resolver.rs:92-104`,
-    `core/context_gate.rs:52-63`).
+    `server/context_gate.rs:52-63`).
   - `context_gate` switches a read to `map` when three facts mention the
-    file, archived ones included (`context_gate.rs:97-112`).
+    file, archived ones included (`server/context_gate.rs:97-112`).
   - Decision 4.
 - [ ] **L13 State that is written and never read.** `latest.json`
   (`core/session/persistence.rs:45-49`), `SessionState.evidence` (read only
   by `export`, `core/session/state.rs:167-197`),
-  `stats.total_tokens_input` and `stats.cache_hits` (`state.rs:160-164,219-222`).
+  `stats.total_tokens_input` and `stats.cache_hits` (`core/session/state.rs:160-164,219-222`).
 - [ ] **L14 `context_gate`'s graph branches never fire.** They look up an
   absolute path in a graph keyed by relative paths
-  (`core/context_gate.rs:66-95`, `core/property_graph/queries.rs:40-62,121-140`).
+  (`server/context_gate.rs:66-95`, `core/property_graph/queries.rs:40-62,121-140`).
 - [ ] **L15 `sobre_graph` holds the cache write lock for its whole run**
-  (`registered/sobre_graph.rs:177-195`); concurrent reads fail meanwhile.
+  (`tools/registered/sobre_graph.rs:177-195`); concurrent reads fail meanwhile.
   Likely.
 - [ ] **L16 `gain` overstates the proxy's savings.** The proxy recompresses
   the whole history on every request (`proxy/anthropic.rs:61-90`) and
   records each request's difference (`proxy/forward/prepare.rs:68-70`),
   priced as uncached input (`core/usage/summary.rs:116-121`). `gain`
-  (`cli/gain.rs:168-173`) and `usage-ledger-v1.md` call the figure a lower
+  (`cli/dispatch/analytics/gain.rs:168-173`) and `docs/contracts/usage-ledger-v1.md` call the figure a lower
   bound "priced once". Likely, from reading.
 - [ ] **L17 Stores disagree on what a project is.**
   - `hash_project_root` mixes the root with an identity (the git remote,
@@ -538,12 +724,12 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
 - [ ] **L18 Smaller ones.**
   - The observe hook treats any model name containing "mini" as a
     background model, so "gemini" is never detected
-    (`hooks/hook_handlers/observe.rs:76-86`).
+    (`hook_handlers/observe.rs:76-86`).
   - `sobre_review`'s diff review ignores `depth`
-    (`registered/sobre_review.rs:186`); `review` and `checklist` resolve the
+    (`tools/registered/sobre_review.rs:186`); `review` and `checklist` resolve the
     raw path, skipping the B37 rule.
   - `recall` with both `category` and `query` ignores the query
-    (`core/knowledge/remember.rs:299-319`).
+    (`tools/sobre_knowledge/remember.rs:299-319`).
   - Failures returned as success: graph not found, session save failed,
     unknown knowledge store, and "No session found… Starting fresh" when
     one exists.
@@ -552,6 +738,11 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   - `sobre call` resolves only `path` (`cli/call_cmd.rs:183-205`), so
     `sobre_graph`'s `path`/`to` arguments fail from the CLI.
   - `server/multi_path.rs` documents a `repo` argument nothing reads.
+  - With only a local upstream, `gain` says "Real cost $0.00 (… local,
+    free)" and "Gain $0.56 (100.0%)", priced at a hosted model's rate.
+- [ ] **L19 `sobre call` compressions are not in `usage.jsonl`.** The same
+  `sobre_shell` call adds a line over MCP and none through `sobre call`;
+  the README says every compression is recorded "on every path".
 
 ## Lot M — code
 
@@ -570,9 +761,9 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   macOS is clean.
 - [ ] **M3 `SobreEditTool` still implements an MCP tool named
   `sobre_edit`**, with a stale `tool_def`, never registered; only
-  `.handle()` is used (`registered/impl_edit.rs:10-38`). Comments still
+  `.handle()` is used (`tools/registered/impl_edit.rs:10-38`). Comments still
   name a `sobre_edit` tool (`tools/sobre_patch/mod.rs:13,45,268`,
-  `anchors.rs:44`, `edit_recovery.rs:1`). Fix: a plain function.
+  `tools/sobre_patch/anchors.rs:44`, `tools/edit_recovery.rs:1`). Fix: a plain function.
 - [ ] **M4 BLAKE3 hashes labelled MD5.** `sobre_patch` prints `md5=`
   (`tools/sobre_patch/mod.rs:310-312,352,372-378`); `lsp/backend.rs:28`
   says "md5-hex"; the manifest has a `schema_md5`.
@@ -581,18 +772,18 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
 - [ ] **M6 Tests that assert nothing.** `core/task_briefing.rs:152-157,159-172`
   evaluate a bare `matches!`.
 - [ ] **M7 `MaintenanceResult` is an empty struct**, returned and discarded
-  (`core/storage_maintenance.rs:10-12,50-58`, `server_handler.rs:113`).
+  (`core/storage_maintenance.rs:10-12,50-58`, `server/server_handler.rs:113`).
 - [ ] **M8 Stale comments and contracts.**
-  - `knowledge-policy-contract-v1.md:47-48` names removed sub-policies;
+  - `docs/contracts/knowledge-policy-contract-v1.md:47-48` names removed sub-policies;
     `:90` cites an upstream ticket.
   - Removed features still described: auto-consolidation
     (`server/post_dispatch.rs:14-16`), knowledge consolidation at shutdown
-    (`tools/server_lifecycle.rs:132`), `tool_lifecycle.rs:1-3`, the
+    (`tools/server_lifecycle.rs:132`), `core/tool_lifecycle.rs:1-3`, the
     auto-context briefing (`server/tool_trait.rs:97`), the daemon and
     auto-updater (`core/pathutil.rs:9-10,272,376-379`,
-    `setup/launchd.rs:57-58`), an `embeddings` feature
+    `core/launchd.rs:57-58`), an `embeddings` feature
     (`core/code_health/fabric.rs:142`).
-  - `tool_defs/mod.rs:57` names `sobre_ctx_expand`; `memory_policy.rs:53`
+  - `tool_defs/mod.rs:57` names `sobre_ctx_expand`; `core/memory_policy.rs:53`
     says "Set None/off".
   - `shell/reentry.rs:7-8` misdescribes `SOBRE_WRAPPED`;
     `core/agent_runtime_env.rs:11` says the data dir for a file in the state
@@ -600,7 +791,7 @@ E20 from the first audit stays open (see [below](#e20-still-open)).
   - `apply_line_window` says an explicit `map`/`signatures` is never
     replaced; it is (`signatures` with `start_line=10` becomes
     `lines:10-999999`).
-  - `registered/sobre_glob.rs:58` says `block_in_place`; dispatch uses
+  - `tools/registered/sobre_glob.rs:58` says `block_in_place`; dispatch uses
     `spawn_blocking`. The `sobre_read` warning at `:850` says 5 s; the
     timeout is 10 s.
 
@@ -673,11 +864,11 @@ down, in `.md` files in the repository.
   - `sobre_search`: `languages`, `path_glob`, `ignore_gitignore`, `mode`
     in the default build, the aliases `grep`/`pattern`/`search`/`related`,
     and a fallback that takes any unknown string argument as the pattern
-    (`registered/sobre_search.rs:153-197`).
+    (`tools/registered/sobre_search.rs:153-197`).
   - `sobre_patch`: `expected_hash`, `backup`, `backup_path`, `evidence`,
     `diff_max_lines`, `validate_syntax`, `expected_size`,
     `expected_mtime_ms`, and the `old_string`/`new_string` aliases
-    (`registered/sobre_patch.rs:23-27,117-139,283-299`).
+    (`tools/registered/sobre_patch.rs:23-27,117-139,283-299`).
   - `sobre_review`: `project_root`, `root`. `sobre_read`: `full-compact`.
   - Decision 7.
 - [ ] **N4 About 30 environment variables are undocumented**; about 9 are.
@@ -729,12 +920,14 @@ down, in `.md` files in the repository.
     applies to the BM25 and graph indexes only, not to glob, tree or regex
     search.
   - A `~` in `search_roots` is not expanded on the multi-root route
-    (`server_handler.rs:73-89`, `server/multi_path.rs:62-80`): the root is
+    (`server/server_handler.rs:73-89`, `server/multi_path.rs:62-80`): the root is
     dropped silently.
-  - `doctor --fix` rewrites project files (`.vscode/mcp.json`,
-    `.cursor/mcp.json`, `.zed/settings.json`) as pretty JSON with no
-    `.sobre.bak` (`doctor/workspace_scope.rs:149-188`), against "never
-    writes into a repository".
+  - "Never into a repository" (`README.md:134`): `doctor --fix` rewrites
+    project files (H13).
+  - "Through `claude mcp add-json` when the claude CLI is installed": it
+    never is (H5).
+  - "`proxy disable` stops it": it does not stop a proxy the MCP server
+    started (H15).
 - [ ] **N7 Config keys: what `config-keys.md` does not say.**
   - The value syntax of `config set` (booleans `true|1|yes…`, arrays
     comma-separated), and that no command removes a key.
