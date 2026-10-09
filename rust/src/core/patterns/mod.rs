@@ -302,10 +302,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| playwright::compress(c, output),
     ),
     (
-        |c| c.starts_with("vitest") || c.starts_with("npx vitest") || c.starts_with("pnpm vitest"),
-        |_c, output| test::compress(output),
-    ),
-    (
         |c| {
             c.starts_with("next ")
                 || c.starts_with("npx next")
@@ -425,7 +421,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |_c, output| artisan::compress("php artisan test", output),
     ),
     (
-        |c| c.starts_with("mix ") || c.starts_with("iex "),
+        |c| c.starts_with("mix "),
         |c, output| mix::compress(c, output),
     ),
     (
@@ -441,10 +437,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |_c, output| test::compress(output),
     ),
     (
-        |c| c.starts_with("mocha") || c.starts_with("npx mocha"),
-        |_c, output| test::compress(output),
-    ),
-    (
         |c| c.starts_with("tofu "),
         |c, output| terraform::compress(c, output),
     ),
@@ -453,28 +445,8 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |_c, output| sysinfo::compress_ps(output),
     ),
     (
-        |c| c.starts_with("df ") || c == "df",
-        |_c, output| sysinfo::compress_df(output),
-    ),
-    (
-        |c| c.starts_with("du ") || c == "du",
-        |_c, output| sysinfo::compress_du(output),
-    ),
-    (
-        |c| c.starts_with("ping "),
-        |_c, output| sysinfo::compress_ping(output),
-    ),
-    (
-        |c| c.starts_with("jq ") || c == "jq",
-        |_c, output| json_schema::compress(output),
-    ),
-    (
         |c| c.starts_with("pyright") || c.starts_with("basedpyright"),
         |c, output| mypy::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("turbo ") || c.starts_with("npx turbo"),
-        |c, output| npm::compress(c, output),
     ),
     (
         |c| c.starts_with("nx ") || c.starts_with("npx nx"),
@@ -806,13 +778,6 @@ mod tests {
     }
 
     #[test]
-    fn routes_mocha_commands() {
-        let output = "  3 passing (50ms)\n  1 failing\n\n  1) Array #indexOf():\n     Error: expected -1 to equal 0";
-        assert!(try_specific_pattern("mocha", output).is_some());
-        assert!(try_specific_pattern("npx mocha tests/", output).is_some());
-    }
-
-    #[test]
     fn routes_tofu_commands() {
         let output = "Initializing the backend...\nInitializing provider plugins...\nTerraform has been successfully initialized!";
         assert!(try_specific_pattern("tofu init", output).is_some());
@@ -826,18 +791,6 @@ mod tests {
         }
         let output = lines.join("\n");
         assert!(try_specific_pattern("ps aux", &output).is_some());
-    }
-
-    #[test]
-    fn routes_ping_commands() {
-        let output = "PING google.com (1.2.3.4): 56 data bytes\n64 bytes from 1.2.3.4: icmp_seq=0 ttl=116 time=12ms\n3 packets transmitted, 3 packets received, 0.0% packet loss\nrtt min/avg/max/stddev = 11/12/13/1 ms";
-        assert!(try_specific_pattern("ping -c 3 google.com", output).is_some());
-    }
-
-    #[test]
-    fn routes_jq_to_json_schema() {
-        let output = "{\"name\": \"test\", \"version\": \"1.0\", \"items\": [{\"id\": 1}, {\"id\": 2}, {\"id\": 3}, {\"id\": 4}, {\"id\": 5}, {\"id\": 6}, {\"id\": 7}, {\"id\": 8}, {\"id\": 9}, {\"id\": 10}]}";
-        assert!(try_specific_pattern("jq '.items' data.json", output).is_some());
     }
 
     #[test]
@@ -915,7 +868,6 @@ mod tests {
     #[test]
     fn routes_monorepo_tools() {
         let output = "npm warn deprecated inflight@1.0.6\nnpm warn deprecated rimraf@3.0.2\nadded 150 packages, and audited 151 packages in 5s\n\n25 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities";
-        assert!(try_specific_pattern("turbo install", output).is_some());
         assert!(try_specific_pattern("nx install", output).is_some());
     }
 
