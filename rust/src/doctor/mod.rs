@@ -514,7 +514,7 @@ pub fn compact_score() -> (u32, u32) {
 
 pub(super) fn print_compact_status(passed: u32, total: u32) {
     let status = if passed == total {
-        format!("{GREEN}✓ All {total} checks passed{RST}")
+        format!("{GREEN}✓ {total} quick checks passed{RST} {DIM}(sobre doctor runs them all){RST}")
     } else {
         format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}sobre doctor{RST} for details")
     };

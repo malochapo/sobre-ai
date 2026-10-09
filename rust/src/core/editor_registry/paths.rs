@@ -13,20 +13,25 @@ pub fn opencode_config_path(home: &Path) -> PathBuf {
     home.join(".config/opencode/opencode.json")
 }
 
-pub fn zed_settings_path(home: &std::path::Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/Zed/settings.json")
-    } else {
-        home.join(".config/zed/settings.json")
-    }
+/// Zed's `settings.json`, which holds its `context_servers`.
+pub fn zed_settings_path(home: &Path) -> PathBuf {
+    zed_config_dir(home).join("settings.json")
 }
 
-pub fn zed_config_dir(home: &std::path::Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
-        home.join("Library/Application Support/Zed")
-    } else {
-        home.join(".config/zed")
+/// Zed's config directory: `~/.config/zed` on macOS, `$XDG_CONFIG_HOME/zed`
+/// (default `~/.config/zed`) on Linux, `%APPDATA%\Zed` on Windows.
+pub fn zed_config_dir(home: &Path) -> PathBuf {
+    #[cfg(windows)]
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        return PathBuf::from(appdata).join("Zed");
     }
+    #[cfg(not(any(windows, target_os = "macos")))]
+    if let Some(xdg) = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from)
+        && xdg.is_absolute()
+    {
+        return xdg.join("zed");
+    }
+    home.join(".config/zed")
 }
 
 pub fn vscode_mcp_path() -> PathBuf {

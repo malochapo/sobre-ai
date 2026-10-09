@@ -81,10 +81,15 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
 
 pub fn detect_claude_path() -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    // `where` lists every match, one per line: the first is the one run.
     if let Ok(output) = std::process::Command::new(which_cmd).arg("claude").output()
         && output.status.success()
+        && let Some(first) = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
     {
-        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        return PathBuf::from(first);
     }
     if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
         let dir = dir.trim();

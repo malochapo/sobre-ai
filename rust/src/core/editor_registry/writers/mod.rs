@@ -22,14 +22,11 @@ pub fn write_config(target: &EditorTarget, binary: &str) -> Result<WriteAction, 
     }
     let (container, entry) = json_entry(target.config_type, binary);
     if matches!(target.agent_key.as_str(), "claude" | "claude-code") {
-        // The Claude CLI may store the entry in its own shape; the command is
-        // what has to match.
+        // Claude Code may store the entry in its own shape (`type`, `args`,
+        // `env`); the command is what has to match.
         let current = current_entry(&target.config_path, container);
         if current.as_ref().and_then(|c| c.get("command")) == entry.get("command") {
             return Ok(WriteAction::Already);
-        }
-        if let Some(action) = try_claude_mcp_add(&target.config_path, &entry) {
-            return Ok(action);
         }
     }
     upsert_json_entry(&target.config_path, container, entry)
@@ -154,95 +151,6 @@ pub(crate) fn upsert_codex_toml(existing: &str, binary: &str) -> Result<String, 
         sobre["args"] = toml_edit::value(toml_edit::Array::new());
     }
     Ok(doc.to_string())
-}
-
-pub(crate) fn find_in_path(binary: &str) -> Option<std::path::PathBuf> {
-    let path_var = std::env::var("PATH").ok()?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join(binary);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-pub(crate) fn validate_claude_binary() -> Result<std::path::PathBuf, String> {
-    let path = find_in_path("claude").ok_or("claude binary not found in PATH")?;
-    std::fs::canonicalize(&path).map_err(|e| format!("cannot resolve claude path: {e}"))
-}
-
-/// Registers sobre through `claude mcp add-json` when the Claude CLI is on
-/// PATH: Claude Code rewrites `~/.claude.json` while it runs, and its own CLI
-/// is the write it will not undo. `None` when the CLI is missing or fails,
-/// and always under `init --check` and in quiet runs (`--json`, `--repair`),
-/// where a spawned CLI could stall; the caller then edits the file itself.
-fn try_claude_mcp_add(config_path: &std::path::Path, desired: &Value) -> Option<WriteAction> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-    use std::time::{Duration, Instant};
-
-    if crate::config_io::journal::dry_run() || crate::core::runtime_flags::quiet_enabled() {
-        return None;
-    }
-    let server_json = serde_json::to_string(desired).ok()?;
-    let existed = config_path.exists();
-
-    let mut cmd = if cfg!(windows) {
-        let mut c = Command::new("cmd");
-        c.args([
-            "/C", "claude", "mcp", "add-json", "--scope", "user", "sobre",
-        ]);
-        c
-    } else {
-        let mut c = Command::new(validate_claude_binary().ok()?);
-        c.args(["mcp", "add-json", "--scope", "user", "sobre"]);
-        c
-    };
-
-    let mut child = cmd
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    // A `claude` that exits without reading stdin must not take this
-    // process down with SIGPIPE: write from a thread that blocks it.
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = std::thread::spawn(move || {
-            crate::shell::platform::block_sigpipe_in_current_thread();
-            let _ = stdin.write_all(server_json.as_bytes());
-        })
-        .join();
-    }
-
-    let deadline = Duration::from_secs(3);
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) if status.success() => {
-                let change = if existed {
-                    crate::config_io::journal::Change::Updated
-                } else {
-                    crate::config_io::journal::Change::Created
-                };
-                crate::config_io::journal::record(config_path, change);
-                return Some(if existed {
-                    WriteAction::Updated
-                } else {
-                    WriteAction::Created
-                });
-            }
-            Ok(Some(_)) | Err(_) => return None,
-            Ok(None) if start.elapsed() > deadline => {
-                let _ = child.kill();
-                let _ = child.wait();
-                return None;
-            }
-            Ok(None) => std::thread::sleep(Duration::from_millis(20)),
-        }
-    }
 }
 
 #[cfg(test)]

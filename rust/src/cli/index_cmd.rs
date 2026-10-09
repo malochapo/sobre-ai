@@ -19,13 +19,18 @@ pub(crate) fn cmd_index(args: &[String]) {
         }
         Some("build") => build(&project_root, args.iter().any(|a| a == "--force")),
         other => {
+            // A `\` line continuation would eat the indentation.
             eprintln!(
-                "Usage: sobre index <build|status> [--root <path>]\n\
-                   sobre index build            graph + BM25 indexes, and the dense index\n\
-                                                   in builds with local embeddings\n\
-                   sobre index build --force    drop the indexes first, rebuild from scratch\n\
-                   sobre index status [--json]  what is built\n\
-                 Leave files out of every index with `ignore` in config.toml."
+                "{}",
+                [
+                    "Usage: sobre index <build|status> [--root <path>]",
+                    "  sobre index build            graph + BM25 indexes, and the dense index",
+                    "                               in builds with local embeddings",
+                    "  sobre index build --force    drop the indexes first, rebuild from scratch",
+                    "  sobre index status [--json]  what is built",
+                    "Leave files out of every index with `ignore` in config.toml.",
+                ]
+                .join("\n")
             );
             // `sobre index` alone asks for the usage; anything else is a mistake.
             if other.is_some() {

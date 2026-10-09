@@ -63,8 +63,8 @@ fn setup_bootstrap_doctor_json_smoke() {
 
     let home_str = home.to_string_lossy().to_string();
 
-    // Fake claude binary so we can verify `claude mcp add-json` integration.
-    // It writes stdin JSON to $HOME/claude-mcp.json and exits 0.
+    // A `claude` CLI on PATH that leaves a trace if it is ever run: sobre
+    // writes its entry into `.claude.json` itself and never calls the CLI.
     let claude_path = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
     } else {
@@ -102,6 +102,29 @@ fn setup_bootstrap_doctor_json_smoke() {
     let new_path = format!("{}{sep}{}", bin_dir.to_string_lossy(), old_path);
     envs.push(("PATH", new_path.as_str()));
 
+    // init --check --json says it is a preview, and writes nothing.
+    let (code, out) = run_json(
+        bin,
+        &["init", "--check", "--json", "--agent", "claude"],
+        &envs,
+    );
+    assert_eq!(code, 0, "init --check exit code");
+    let preview: SetupReport = serde_json::from_str(&out).expect("init --check JSON parse");
+    assert!(preview.dry_run, "a preview is marked as one: {out}");
+    let claude = &preview.steps[0].items[0];
+    assert_eq!(claude.status, "would_connect", "{out}");
+    assert!(
+        claude
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("would create ~/.claude.json")),
+        "{out}"
+    );
+    assert!(
+        !home.join(".claude.json").exists(),
+        "init --check must write nothing"
+    );
+
     // bootstrap --json returns clean JSON (SetupReport)
     let (code, out) = run_json(bin, &["init", "--repair", "--json"], &envs);
     assert_eq!(code, 0, "bootstrap exit code");
@@ -121,9 +144,8 @@ fn setup_bootstrap_doctor_json_smoke() {
         );
     }
 
-    // init --agent claude should prefer `claude mcp add-json` when available.
-    // The `--json` run above wrote the entry itself (no CLI in quiet runs);
-    // without it, the entry is missing again and the CLI is used.
+    // init --agent claude writes the entry into `.claude.json` itself, with
+    // the Claude CLI on PATH too: one writer.
     let _ = std::fs::remove_file(home.join(".claude.json"));
     let out = Command::new(bin)
         .args(["init", "--agent", "claude"])
@@ -131,11 +153,15 @@ fn setup_bootstrap_doctor_json_smoke() {
         .output()
         .expect("init --agent claude");
     assert!(out.status.success(), "init --agent claude exit");
-    let saved = std::fs::read_to_string(home.join("claude-mcp.json")).expect("claude-mcp.json");
+    let saved = std::fs::read_to_string(home.join(".claude.json")).expect(".claude.json");
     let v: serde_json::Value = serde_json::from_str(&saved).expect("claude json parse");
     assert!(
-        v.get("command").is_some(),
-        "claude input should be server entry json"
+        v["mcpServers"]["sobre"].get("command").is_some(),
+        "the entry is in .claude.json: {saved}"
+    );
+    assert!(
+        !home.join("claude-mcp.json").exists(),
+        "the claude CLI must not be run"
     );
 
     // doctor --fix --json returns clean JSON (SetupReport shape)
@@ -177,7 +203,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     let home_str = home.to_string_lossy().to_string();
     let claude_cfg_str = claude_cfg.to_string_lossy().to_string();
 
-    // Fake claude that fails (forces sobre to fallback to file merge/write).
+    // A `claude` CLI on PATH that fails if run.
     let claude_path = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
     } else {
@@ -271,7 +297,7 @@ fn init_agent_leaves_agent_instruction_files_untouched() {
 
     let home_str = home.to_string_lossy().to_string();
 
-    // Fake claude (success) so init --agent claude prefers `claude mcp add-json`.
+    // A `claude` CLI on PATH.
     let claude_path = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
     } else {

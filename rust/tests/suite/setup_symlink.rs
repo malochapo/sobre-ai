@@ -86,10 +86,6 @@ fn claude_json_symlink_is_written_through() {
     let link = sb.home.join(".claude.json");
     symlink(&dotfile, &link).unwrap();
 
-    // Fake `claude` that fails so sobre falls back to the file-merge/write
-    // path (where the symlink guard lives) instead of `claude mcp add-json`.
-    write_exe(&sb.bin_dir.join("claude"), "#!/bin/sh\nexit 1\n");
-
     let out = run_init(&sb, "claude");
     assert!(
         out.status.success(),

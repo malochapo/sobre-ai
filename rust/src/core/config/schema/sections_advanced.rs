@@ -20,7 +20,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u16?",
             serde_json::json!(null),
-            "Port the proxy listens on (default: 4444 on Windows and for system users; 4444 + (uid - 1000) mod 1000 for other Unix users)",
+            "Port the proxy listens on (default: 4444 + uid mod 1000 on Unix, 4444 on Windows)",
         ),
     );
     for id in crate::core::config::upstream_ids() {
