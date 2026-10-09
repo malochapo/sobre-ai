@@ -1,8 +1,8 @@
 //! `sobre doctor overhead` — honest fixed-cost accounting.
 //!
 //! Shows what a session costs BEFORE sobre saves anything:
-//!  1. advertised MCP tool schemas (mirrors the live `tools/list` policy),
-//!  2. the MCP server instructions block — sobre's only guidance channel.
+//!  1. the advertised MCP tool schemas (what `tools/list` returns),
+//!  2. the MCP server instructions block.
 //!
 //! Research context: fixed context costs both money and model attention
 //! (context degradation starts well below typical window limits), so every
@@ -19,9 +19,9 @@ pub(super) struct OverheadReport {
     pub tool_count: usize,
     pub tool_schema_tokens: usize,
     pub instruction_tokens: usize,
-    /// The per-session budget; 0 disables the check.
+    /// The per-session budget.
     pub budget_tokens: usize,
-    /// Whether `total_tokens` exceeds a non-zero `budget_tokens`.
+    /// Whether `total_tokens` exceeds `budget_tokens`.
     pub over_budget: bool,
 }
 
@@ -30,9 +30,9 @@ impl OverheadReport {
         self.tool_schema_tokens + self.instruction_tokens
     }
 
-    /// Strictly above a non-zero budget; a budget of 0 disables the check.
+    /// Strictly above the budget.
     fn is_over_budget(&self) -> bool {
-        self.budget_tokens > 0 && self.total_tokens() > self.budget_tokens
+        self.total_tokens() > self.budget_tokens
     }
 }
 
@@ -91,23 +91,21 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     let total = report.total_tokens();
     let color = if report.over_budget { YELLOW } else { GREEN };
     crate::outln!("  {BOLD}Total fixed cost{RST}      {color}{total:>6} tok / session{RST}");
-    if report.budget_tokens > 0 {
-        if report.over_budget {
-            // Machine-readable so CI/log scrapers can key on a stable token.
-            crate::outln!(
-                "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok {RST}",
-                report.budget_tokens
-            );
-        } else {
-            crate::outln!(
-                "  {DIM}Within budget ({} / {} tok).{RST}",
-                total,
-                report.budget_tokens
-            );
-        }
+    if report.over_budget {
+        // Machine-readable so CI/log scrapers can key on a stable token.
+        crate::outln!(
+            "  {YELLOW}⚠ OVER_BUDGET: {total} tok > budget {} tok {RST}",
+            report.budget_tokens
+        );
+    } else {
+        crate::outln!(
+            "  {DIM}Within budget ({} / {} tok).{RST}",
+            total,
+            report.budget_tokens
+        );
     }
     crate::outln!(
-        "  {DIM}With provider prompt caching, repeated turns re-bill this at ~10% — but only if the prefix stays byte-stable.{RST}"
+        "  {DIM}Every turn re-bills it; prompt caching makes that cheaper while the prefix stays byte-stable, at a rate that depends on the provider.{RST}"
     );
 
     exit_code
@@ -140,10 +138,6 @@ mod tests {
         assert!(
             !report(150, 200, 8000).is_over_budget(),
             "350 < 8000 is within budget"
-        );
-        assert!(
-            !report(150, 200, 0).is_over_budget(),
-            "budget 0 disables the check"
         );
     }
 }
