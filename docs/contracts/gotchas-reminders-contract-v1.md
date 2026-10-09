@@ -49,5 +49,10 @@ Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:
 
 `sobre_knowledge action=gotcha` records a gotcha for the current project:
 `trigger` and `resolution` are required, `severity` and `category` optional
-(category defaults to `convention`). Recorded gotchas are recalled through the
-knowledge search.
+(category defaults to `convention`). A command run through `sobre -c` that
+fails and then succeeds within 15 minutes adds an auto-detected gotcha.
+
+Known gap: no tool output shows recorded gotchas. The reminders
+(`rust/src/core/prospective_memory.rs::reminders_for_task`, at most 2 per
+task) are built only by the project overview when it is given a task, and
+`sobre_compose` builds the overview without one.
