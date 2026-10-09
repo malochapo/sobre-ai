@@ -1,17 +1,11 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
-pub(super) const MAX_GOTCHAS: usize = 100;
+pub(crate) const MAX_GOTCHAS: usize = 100;
 pub(super) const MAX_SESSION_LOGS: usize = 20;
 pub(super) const MAX_PENDING: usize = 10;
 pub(super) const PENDING_TIMEOUT_SECS: i64 = 900; // 15 minutes
 pub(super) const DECAY_ARCHIVE_THRESHOLD: f32 = 0.15;
-const PROMOTION_CONFIDENCE: f32 = 0.9;
-const PROMOTION_OCCURRENCES: u32 = 5;
-const PROMOTION_SESSIONS: usize = 3;
-const PROMOTION_PREVENTED: u32 = 2;
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -78,13 +72,6 @@ impl GotchaSeverity {
             Self::Info => 0.7,
         }
     }
-
-    pub fn prefix(&self) -> &'static str {
-        match self {
-            Self::Critical | Self::Warning => "!",
-            Self::Info => "",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,27 +79,16 @@ pub enum GotchaSource {
     AutoDetected { command: String, exit_code: i32 },
     AgentReported { session_id: String },
     CrossSessionCorrelated { sessions: Vec<String> },
-    Promoted { from_knowledge_key: String },
 }
 
 impl GotchaSource {
     pub fn decay_rate(&self) -> f32 {
         match self {
-            Self::Promoted { .. } => 0.01,
             Self::AgentReported { .. } => 0.02,
             Self::CrossSessionCorrelated { .. } => 0.03,
             Self::AutoDetected { .. } => 0.05,
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProvenanceRef {
-    pub kind: String,
-    pub url: Option<String>,
-    pub commit_hash: Option<String>,
-    pub tool_call_id: Option<String>,
-    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,12 +107,6 @@ pub struct Gotcha {
     pub source: GotchaSource,
     pub prevented_count: u32,
     pub tags: Vec<String>,
-    #[serde(default)]
-    pub provenance: Vec<ProvenanceRef>,
-    #[serde(default)]
-    pub expires_at: Option<DateTime<Utc>>,
-    #[serde(default)]
-    pub decay_rate_override: Option<f32>,
 }
 
 impl Gotcha {
@@ -153,7 +123,6 @@ impl Gotcha {
             GotchaSource::AgentReported { .. } => 0.9,
             GotchaSource::CrossSessionCorrelated { .. } => 0.85,
             GotchaSource::AutoDetected { .. } => 0.6,
-            GotchaSource::Promoted { .. } => 0.95,
         };
         Self {
             id: gotcha_id(trigger, &category),
@@ -170,9 +139,6 @@ impl Gotcha {
             source,
             prevented_count: 0,
             tags: Vec::new(),
-            provenance: Vec::new(),
-            expires_at: None,
-            decay_rate_override: None,
         }
     }
 
@@ -193,13 +159,6 @@ impl Gotcha {
             self.resolution.clone_from(&other.resolution);
         }
         self.confidence = self.confidence.max(other.confidence);
-    }
-
-    pub fn is_promotable(&self) -> bool {
-        self.confidence >= PROMOTION_CONFIDENCE
-            && self.occurrences >= PROMOTION_OCCURRENCES
-            && self.session_ids.len() >= PROMOTION_SESSIONS
-            && self.prevented_count >= PROMOTION_PREVENTED
     }
 }
 
@@ -254,19 +213,6 @@ pub struct FixEntry {
 }
 
 // ---------------------------------------------------------------------------
-// Stats
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct GotchaStats {
-    pub total_errors_detected: u64,
-    pub total_fixes_correlated: u64,
-    pub total_prevented: u64,
-    pub gotchas_promoted: u64,
-    pub gotchas_decayed: u64,
-}
-
-// ---------------------------------------------------------------------------
 // GotchaStore
 // ---------------------------------------------------------------------------
 
@@ -274,19 +220,14 @@ pub struct GotchaStats {
 pub struct GotchaStore {
     pub project_hash: String,
     pub gotchas: Vec<Gotcha>,
-    #[serde(default)]
     pub error_log: Vec<SessionErrorLog>,
-    #[serde(default)]
-    pub stats: GotchaStats,
     pub updated_at: DateTime<Utc>,
 
-    // Persisted (#451 shell-ding): a fail→fix spanning two `lean-ctx -c`
+    // Persisted (shell-ding): a fail→fix spanning two `sobre -c`
     // invocations is two separate processes, so the in-memory active store
     // cannot bridge them. Persisting pending errors lets the later process load
     // and correlate the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on
-    // load and on every detect/resolve), so the file stays tiny. `default`
-    // keeps older gotchas.json files (written without the field) loadable.
-    #[serde(default)]
+    // load and on every detect/resolve), so the file stays tiny.
     pub pending_errors: Vec<PendingError>,
 }
 
@@ -296,16 +237,9 @@ impl GotchaStore {
             project_hash: project_hash.to_string(),
             gotchas: Vec::new(),
             error_log: Vec::new(),
-            stats: GotchaStats::default(),
             updated_at: Utc::now(),
             pending_errors: Vec::new(),
         }
-    }
-
-    pub fn clear(&mut self) {
-        self.gotchas.clear();
-        self.pending_errors.clear();
-        self.updated_at = Utc::now();
     }
 }
 
@@ -313,9 +247,8 @@ impl GotchaStore {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// A gotcha's id, stored with it and matched again later: a stable hash,
+/// the same with any Rust toolchain.
 pub(super) fn gotcha_id(trigger: &str, category: &GotchaCategory) -> String {
-    let mut hasher = DefaultHasher::new();
-    trigger.hash(&mut hasher);
-    category.short_label().hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    crate::core::hasher::hash_short(&format!("{trigger}\0{}", category.short_label()))
 }

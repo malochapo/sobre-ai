@@ -12,40 +12,6 @@ macro_rules! static_regex {
 
 const MIN_DENSITY: f64 = 0.15;
 
-#[derive(Debug, Clone)]
-pub struct QualityScore {
-    pub ast_score: f64,
-    pub identifier_score: f64,
-    pub line_score: f64,
-    pub density: f64,
-    pub composite: f64,
-    pub passed: bool,
-}
-
-impl QualityScore {
-    pub fn format_compact(&self) -> String {
-        if self.passed {
-            format!(
-                "Q:{:.0}% (ast:{:.0} id:{:.0} ln:{:.0} ρ:{:.0}) ✓",
-                self.composite * 100.0,
-                self.ast_score * 100.0,
-                self.identifier_score * 100.0,
-                self.line_score * 100.0,
-                self.density * 100.0,
-            )
-        } else {
-            format!(
-                "Q:{:.0}% (ast:{:.0} id:{:.0} ln:{:.0} ρ:{:.0}) ✗ BELOW THRESHOLD",
-                self.composite * 100.0,
-                self.ast_score * 100.0,
-                self.identifier_score * 100.0,
-                self.line_score * 100.0,
-                self.density * 100.0,
-            )
-        }
-    }
-}
-
 /// Information density: ratio of semantic tokens to total output tokens.
 /// Measures how much "meaning" per output token is preserved.
 pub fn information_density(original: &str, compressed: &str, ext: &str) -> f64 {
@@ -64,25 +30,16 @@ pub fn information_density(original: &str, compressed: &str, ext: &str) -> f64 {
     (semantic_token_estimate as f64 / output_tokens as f64).min(1.0)
 }
 
-/// #940: density-specific guard that does NOT penalise line reduction.
-///
-/// The standard `score()` composite weights `line_score` at 20% and the
-/// adaptive threshold rises as `line_score` drops — so a density target of
-/// 0.4 (which *intentionally* discards ~60% of lines) always fails by
-/// construction. Density mode needs a structure-only gate: AST + identifiers.
-pub fn guard_density(
-    original: &str,
-    compressed: &str,
-    ext: &str,
-    target: f64,
-) -> (String, QualityScore) {
+/// Density-mode quality gate: returns `compressed` unless it damaged the
+/// code's structure (AST items and identifiers), in which case it returns
+/// `original`. Line count is not scored: density mode drops lines on purpose.
+pub fn guard_density(original: &str, compressed: &str, ext: &str, target: f64) -> String {
     let pres = preservation::measure(original, compressed, ext);
     let ast_score = pres.overall();
     let identifier_score = measure_identifier_preservation(original, compressed);
-    let line_score = measure_line_preservation(original, compressed);
     let density = information_density(original, compressed, ext);
 
-    // Structure-only composite: ignore line_score for density mode.
+    // Structure only: density mode drops lines on purpose.
     let structure_composite = ast_score * 0.6 + identifier_score * 0.4;
 
     // Fixed threshold: only reject when real structure is damaged, not when
@@ -90,17 +47,8 @@ pub fn guard_density(
     let structure_threshold = 0.85;
     let passed = structure_composite >= structure_threshold && density >= MIN_DENSITY;
 
-    let q = QualityScore {
-        ast_score,
-        identifier_score,
-        line_score,
-        density,
-        composite: structure_composite,
-        passed,
-    };
-
     if passed {
-        (compressed.to_string(), q)
+        compressed.to_string()
     } else {
         tracing::debug!(
             target = target,
@@ -108,7 +56,7 @@ pub fn guard_density(
             threshold = structure_threshold,
             "density quality gate rejected → full fallback"
         );
-        (original.to_string(), q)
+        original.to_string()
     }
 }
 
@@ -128,18 +76,6 @@ fn measure_identifier_preservation(original: &str, compressed: &str) -> f64 {
         .count();
 
     preserved as f64 / original_idents.len() as f64
-}
-
-fn measure_line_preservation(original: &str, compressed: &str) -> f64 {
-    let original_lines: usize = original.lines().filter(|l| !l.trim().is_empty()).count();
-    if original_lines == 0 {
-        return 1.0;
-    }
-
-    let compressed_lines: usize = compressed.lines().filter(|l| !l.trim().is_empty()).count();
-    let ratio = compressed_lines as f64 / original_lines as f64;
-
-    ratio.min(1.0)
 }
 
 #[cfg(test)]

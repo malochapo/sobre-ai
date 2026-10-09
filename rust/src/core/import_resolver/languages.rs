@@ -143,6 +143,21 @@ pub(super) fn resolve_rust(
         return (None, true);
     }
 
+    // `use my_crate::…` from a binary, a test or an example of the same
+    // project: the path inside that crate, or its `lib.rs` for an item
+    // defined there.
+    if let Some(src_dir) = ctx.rust_crate_src(parts[0]) {
+        let rest = parts[1..].join("/");
+        let found = (!rest.is_empty())
+            .then(|| try_rust_paths(&format!("{src_dir}{rest}"), ctx))
+            .flatten()
+            .or_else(|| {
+                let lib = format!("{src_dir}lib.rs");
+                ctx.file_exists(&lib).then_some(lib)
+            });
+        return (found, false);
+    }
+
     let is_external = !source.starts_with("crate")
         && !source.starts_with("super")
         && !source.starts_with("self")
@@ -761,7 +776,7 @@ pub(super) fn resolve_gd(
 
     // Probe the verbatim path first (the common `preload("…/Foo.tscn")` form
     // already carries its extension), then Godot resource suffixes for imports
-    // that omit one (`extends "res://actors/Player"`). #315
+    // that omit one (`extends "res://actors/Player"`).
     let try_paths = |rel: &str| -> Option<String> {
         let rel = rel.trim();
         if ctx.file_exists(rel) {
@@ -785,8 +800,8 @@ pub(super) fn resolve_gd(
         }
         // `res://` always names an intra-project resource. When the target is a
         // concrete file (carries a resource extension) that simply isn't indexed
-        // yet — e.g. a `.tscn` scene before scene indexing exists (#316) — still
-        // emit the edge to the declared path so scene references survive. #315
+        // yet — e.g. a `.tscn` scene before scene indexing exists — still
+        // emit the edge to the declared path so scene references survive.
         if !rel.is_empty() && Path::new(rel).extension().is_some() {
             return (Some(rel.to_string()), false);
         }

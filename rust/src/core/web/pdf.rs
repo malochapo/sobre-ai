@@ -1,9 +1,9 @@
-//! PDF → text extraction for the research context layer.
+//! PDF → text for the search index.
 //!
-//! Delegates to the `pdf-extract` crate. Because PDF parsers can panic on
-//! malformed or unusual input — and `ctx_url_read` accepts arbitrary
-//! agent-supplied URLs — extraction is wrapped in [`std::panic::catch_unwind`]
-//! so a bad document yields an error instead of taking down the handler.
+//! Delegates to the `pdf-extract` crate. PDF parsers can panic on malformed
+//! or unusual input, and the indexer reads whatever PDFs a project holds, so
+//! extraction is wrapped in [`std::panic::catch_unwind`]: a bad document
+//! yields an error instead of taking down the indexer.
 
 /// Extract and normalize the text content of a PDF byte buffer.
 pub fn extract_text(bytes: &[u8]) -> Result<String, String> {

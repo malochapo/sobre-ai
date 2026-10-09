@@ -9,7 +9,7 @@ use super::{Config, ConfigCacheSlot};
 /// fails to parse. When that happens `Config::load()` silently falls back to the
 /// built-in defaults and only logs to stderr — which is invisible over an MCP/stdio
 /// transport. Recording it here lets callers (e.g. the shell-allowlist diagnostic
-/// and `lean-ctx doctor`) surface "you're on defaults because your config is broken".
+/// and `sobre doctor`) surface "you're on defaults because your config is broken".
 static LAST_PARSE_ERROR: Mutex<Option<String>> = Mutex::new(None);
 
 /// Returns the most recent global config parse error, or `None` if the current
@@ -26,26 +26,27 @@ fn record_parse_error(err: Option<String>) {
 }
 
 impl Config {
-    /// Returns the path to the global config file (`$XDG_CONFIG_HOME/lean-ctx/config.toml`).
+    /// Returns the path to the global config file (`$XDG_CONFIG_HOME/sobre/config.toml`).
     ///
     /// Resolves via [`crate::core::paths::config_dir`] so config lives in the
-    /// RO-safe config category (GH #408 / GL #602).
+    /// RO-safe config category.
     pub fn path() -> Option<PathBuf> {
         crate::core::paths::config_dir()
             .ok()
             .map(|d| d.join("config.toml"))
     }
 
+    #[cfg(test)]
     /// `Some(path)` when the global config the runtime *resolves* does not exist,
-    /// so lean-ctx is silently on built-in defaults. `None` when a config file is
+    /// so sobre is silently on built-in defaults. `None` when a config file is
     /// present (or HOME is unresolvable).
     ///
-    /// The directory is layout-dependent (XDG `~/.config/lean-ctx` vs
-    /// `$LEAN_CTX_CONFIG_DIR` vs `$LEAN_CTX_DATA_DIR`) and an MCP client may launch the
+    /// The directory is layout-dependent (XDG `~/.config/sobre` vs
+    /// `$SOBRE_CONFIG_DIR`) and an MCP client may launch the
     /// server in a sandbox/container with a different `$HOME`. An edit made to a
     /// *different* `config.toml` than this one is silently ignored; the block
     /// messages use this to say so out loud over MCP, where the stderr path is
-    /// invisible (#540).
+    /// invisible.
     #[must_use]
     pub fn missing_config_path() -> Option<PathBuf> {
         match Self::path() {
@@ -54,84 +55,14 @@ impl Config {
         }
     }
 
-    /// Resolves the active project root (env override → session → git toplevel →
-    /// cwd), cached for the process.
-    pub(crate) fn find_project_root() -> Option<String> {
-        static ROOT_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
-        ROOT_CACHE
-            .get_or_init(Self::find_project_root_inner)
-            .clone()
-    }
-
-    fn find_project_root_inner() -> Option<String> {
-        if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
-            && !env_root.is_empty()
-        {
-            return Some(env_root);
-        }
-
-        let cwd = std::env::current_dir().ok();
-
-        if let Some(root) =
-            crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
-        {
-            let root_path = std::path::Path::new(&root);
-            let cwd_is_under_root = cwd.as_ref().is_some_and(|c| c.starts_with(root_path));
-            // Route the marker probe through the TCC-guarded helper and never
-            // adopt a ~/Documents project root from a launchd-standalone process
-            // (#356): doing so would later stat its markers and pop the macOS
-            // privacy prompt in lean-ctx's own name.
-            let has_marker = crate::core::pathutil::has_project_marker(root_path);
-
-            if (cwd_is_under_root || has_marker) && crate::core::pathutil::may_probe_path(root_path)
-            {
-                return Some(root);
-            }
-        }
-
-        if let Some(ref cwd) = cwd {
-            // A launchd-standalone process must not shell out to `git` (which
-            // stats the working tree) or adopt cwd as the project root when cwd
-            // is under a TCC-protected dir (#356).
-            let may_probe_cwd = crate::core::pathutil::may_probe_path(cwd);
-            let git_root = if may_probe_cwd {
-                std::process::Command::new("git")
-                    .args(["rev-parse", "--show-toplevel"])
-                    .current_dir(cwd)
-                    .stdout(std::process::Stdio::piped())
-                    .stderr(std::process::Stdio::null())
-                    .output()
-                    .ok()
-                    .and_then(|o| {
-                        if o.status.success() {
-                            String::from_utf8(o.stdout)
-                                .ok()
-                                .map(|s| s.trim().to_string())
-                        } else {
-                            None
-                        }
-                    })
-            } else {
-                None
-            };
-            if let Some(root) = git_root {
-                return Some(root);
-            }
-            if may_probe_cwd && !crate::core::pathutil::is_broad_or_unsafe_root(cwd) {
-                return Some(cwd.to_string_lossy().to_string());
-            }
-        }
-        None
-    }
-
     /// Loads the config file, cached.
     ///
     /// The cache is keyed on a **content hash** of the file, not its mtime.
     /// mtime-only invalidation silently served a stale `Config` whenever a
     /// content edit preserved the mtime (coarse filesystem mtime resolution,
     /// `cp -p`, atomic save-then-rename, two edits within the same second). A
-    /// long-lived MCP server then kept the old value while a fresh `lean-ctx
-    /// doctor` process saw the new one (#406). The file is tiny, so reading +
+    /// long-lived MCP server then kept the old value while a fresh `sobre
+    /// doctor` process saw the new one. The file is tiny, so reading +
     /// hashing it on every load is negligible and guarantees liveness.
     pub fn load() -> Self {
         (*Self::load_arc()).clone()
@@ -165,10 +96,12 @@ impl Config {
                 }
                 Err(e) => {
                     record_parse_error(Some(format!("{e}")));
-                    tracing::warn!("config parse error in {}: {e}", path.display());
-                    eprintln!(
-                        "\x1b[33m[lean-ctx] WARNING: config parse error in {}: {e}\n  \
-                         Using defaults. Run `lean-ctx doctor --fix` to repair.\x1b[0m",
+                    // Said once, on stderr: a tracing warning as well printed
+                    // it twice on every command.
+                    tracing::debug!("config parse error in {}: {e}", path.display());
+                    crate::errln!(
+                        "\x1b[33m[sobre] WARNING: config parse error in {}: {e}\n  \
+                         Every key is at its default until the file is fixed by hand.\x1b[0m",
                         path.display()
                     );
                     Self::default()

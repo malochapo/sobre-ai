@@ -3,11 +3,7 @@ use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 
 /// Delegates to the unified `auto_mode_resolver::resolve()`.
-pub(crate) fn select_mode_with_task(
-    cache: &SessionCache,
-    path: &str,
-    task: Option<&str>,
-) -> String {
+pub(crate) fn select_mode(cache: &SessionCache, path: &str) -> String {
     if let Ok(meta) = std::fs::metadata(path) {
         let cap = crate::core::limits::max_read_bytes() as u64;
         if meta.len() > cap {
@@ -15,7 +11,7 @@ pub(crate) fn select_mode_with_task(
         }
     }
 
-    // Avoid a redundant disk read: ctx_read::handle re-reads the file anyway.
+    // Avoid a redundant disk read: sobre_read::handle re-reads the file anyway.
     // For files already in the session cache (the common agent-loop case of
     // re-reading a file), reuse the stored token count instead of reading from
     // disk a second time just to pick a mode.
@@ -29,7 +25,6 @@ pub(crate) fn select_mode_with_task(
     let ctx = AutoModeContext {
         path,
         token_count,
-        task,
         cache: Some(cache),
     };
     auto_mode_resolver::resolve(&ctx).mode

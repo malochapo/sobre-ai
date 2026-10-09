@@ -14,7 +14,7 @@ pub fn compress(output: &str) -> Option<String> {
 
     // Prefer the lossless crusher when the payload is redundant: it keeps all
     // data (reconstructible via `json_crush::reconstruct`) instead of the
-    // schema outline that drops every value (#934 / #936).
+    // schema outline that drops every value.
     if let Some(text) = json_crush::crush_value_if_beneficial(&val, trimmed.len()) {
         return Some(text);
     }

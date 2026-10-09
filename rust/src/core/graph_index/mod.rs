@@ -1,31 +1,26 @@
-// DEPRECATED: This module is being replaced by PropertyGraph (core/property_graph/).
-// New code should use GraphProvider (core/graph_provider.rs) instead of accessing
-// ProjectIndex directly. The dashboard now resolves graphs through
-// `graph_coordinator` (PropertyGraph-first); the remaining direct consumers are
-// the build pipeline (index_orchestrator) and the extractor itself.
-// See OPT-14/15 (#696) plan for the full migration path.
+// Graph index build pipeline: scans the project (files, exports, symbols,
+// import/type edges) into a `ProjectIndex` and mirrors it into the property
+// graph (core/property_graph/), its only store. New readers should go through
+// GraphProvider (core/graph_provider.rs) instead of accessing ProjectIndex
+// directly.
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
 
 use crate::core::import_resolver;
 use crate::core::signatures;
 mod edges;
 pub(crate) use edges::*;
 #[allow(unreachable_pub)]
-pub(crate) mod file_id;
 #[cfg(test)]
 mod tests;
 
-const INDEX_VERSION: u32 = 6;
-
-// Path-key utilities moved to `core::index_paths` (#682); re-exported so existing
-// `graph_index::…` call sites keep compiling during the migration.
-use crate::core::index_paths::normalize_absolute_path;
-pub use crate::core::index_paths::{graph_match_key, graph_relative_key, normalize_project_root};
+use crate::core::index_paths::{
+    graph_relative_key, normalize_absolute_path, normalize_project_root,
+};
 
 pub fn is_safe_scan_root_public(path: &str) -> bool {
     is_safe_scan_root(path)
@@ -38,7 +33,7 @@ fn is_filesystem_root(path: &str) -> bool {
 
 /// Returns `true` if `dir` contains a known project marker.
 ///
-/// Delegates to the single TCC-guarded probe in `pathutil` (#356) so a
+/// Delegates to the single TCC-guarded probe in `pathutil` so a
 /// launchd-standalone process never stats marker files under ~/Documents, and
 /// the marker set stays defined in exactly one place (`pathutil::PROJECT_MARKERS`).
 fn dir_has_project_marker(dir: &Path) -> bool {
@@ -49,7 +44,7 @@ fn dir_has_project_marker(dir: &Path) -> bool {
 /// marker. Subdirectories of a real project (e.g. `repo/rust/src`) are
 /// legitimate scan roots even though the marker lives at the repo root —
 /// refusing them produced WARN noise on every grep/ls inside ~/Documents
-/// projects (GL#438). `stop` itself is never checked, so a marker-less
+/// projects. `stop` itself is never checked, so a marker-less
 /// `~/Documents` stays refused.
 fn has_marker_in_ancestry(p: &Path, stop: &Path) -> bool {
     let mut cur = Some(p);
@@ -69,7 +64,7 @@ fn is_safe_scan_root(path: &str) -> bool {
     let normalized = normalize_project_root(path);
     let p = Path::new(&normalized);
 
-    // macOS TCC (#356): a launchd-standalone process must never stat or
+    // macOS TCC: a launchd-standalone process must never stat or
     // enumerate under ~/Documents/Desktop/Downloads. Refuse such roots before
     // any marker probe / read_dir runs. Editor- and CLI-attached processes
     // inherit a TCC grant and keep indexing those projects normally.
@@ -95,13 +90,13 @@ fn is_safe_scan_root(path: &str) -> bool {
             HOME_WARN.call_once(|| {
                 tracing::warn!(
                     "[graph_index: skipping — cannot index home directory {normalized}.\n  \
-                     Run from inside a project, or set LEAN_CTX_PROJECT_ROOT=/path/to/project]"
+                     Run from inside a project.]"
                 );
             });
             return false;
         }
         // macOS TCC: Documents/Desktop/Downloads pop a privacy prompt the moment
-        // we stat or enumerate inside them (#356). They are never valid scan roots,
+        // we stat or enumerate inside them. They are never valid scan roots,
         // so refuse here before any has_marker stat or read_dir runs.
         if crate::core::pathutil::is_tcc_sensitive_home_dir(p) {
             tracing::warn!(
@@ -126,7 +121,7 @@ fn is_safe_scan_root(path: &str) -> bool {
             "snap",
             "Applications",
             // Cloud-sync roots: scanning these forces on-demand providers to
-            // hydrate (download) every placeholder file/folder (#363). iCloud's
+            // hydrate (download) every placeholder file/folder. iCloud's
             // backing dir (~/Library/Mobile Documents) is already covered by
             // "Library" above.
             "OneDrive",
@@ -137,7 +132,7 @@ fn is_safe_scan_root(path: &str) -> bool {
             let blocked_path = home_path.join(blocked);
             let is_inside_blocked = p == blocked_path || p.starts_with(&blocked_path);
             // Markers may live in an *ancestor*: `repo/rust/src` is a legitimate
-            // scan root of the project rooted at `repo` (GL#438). Walk up to (but
+            // scan root of the project rooted at `repo`. Walk up to (but
             // not past) the blocked dir itself, so `~/Documents` without any
             // project stays refused.
             let has_marker = has_marker_in_ancestry(p, &blocked_path);
@@ -224,22 +219,16 @@ fn dir_has_dotnet_project(dir: &Path) -> bool {
     })
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ProjectIndex {
-    pub version: u32,
     pub project_root: String,
     pub last_scan: String,
     pub files: HashMap<String, FileEntry>,
     pub edges: Vec<IndexEdge>,
     pub symbols: HashMap<String, SymbolEntry>,
-    /// Graph-local path interner: one owned allocation per distinct file path.
-    /// Populated during scan; used for O(1) path→id lookups in queries.
-    /// Skipped during serde — rebuilt from `files` keys on deserialization.
-    #[serde(skip)]
-    pub(crate) interner: file_id::PathInterner,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FileEntry {
     pub path: String,
     pub hash: String,
@@ -250,7 +239,7 @@ pub struct FileEntry {
     pub summary: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SymbolEntry {
     pub file: String,
     pub name: String,
@@ -260,96 +249,72 @@ pub struct SymbolEntry {
     pub is_exported: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IndexEdge {
     pub from: String,
     pub to: String,
     pub kind: String,
-    #[serde(default = "default_edge_weight")]
     pub weight: f32,
-}
-
-fn default_edge_weight() -> f32 {
-    1.0
 }
 
 impl ProjectIndex {
     pub fn new(project_root: &str) -> Self {
         Self {
-            version: INDEX_VERSION,
             project_root: normalize_project_root(project_root),
             last_scan: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             files: HashMap::new(),
             edges: Vec::new(),
             symbols: HashMap::new(),
-            interner: file_id::PathInterner::new(),
         }
-    }
-
-    /// Rebuild the interner from the current `files` keys. Called after
-    /// deserialization or materialization from the property graph, where
-    /// `interner` is skipped/absent.
-    pub(crate) fn rebuild_interner(&mut self) {
-        let mut interner = file_id::PathInterner::with_capacity(self.files.len());
-        for key in self.files.keys() {
-            interner.intern(key);
-        }
-        self.interner = interner;
     }
 
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
         let normalized = normalize_project_root(project_root);
         let hash = crate::core::project_hash::hash_project_root(&normalized);
-        crate::core::data_dir::lean_ctx_data_dir()
+        crate::core::data_dir::sobre_data_dir()
             .ok()
             .map(|d| d.join("graphs").join(hash))
     }
 
-    /// Reconstruct the index from the property graph — the sole persistence
-    /// store since #696 C4. The PG is a parity-proven lossless superset of the
-    /// former JSON index, so this is a faithful round-trip (see
-    /// `graph_provider::materialize_project_index` + its round-trip test).
+    /// Reconstruct the index from the property graph, its only store (see
+    /// `graph_provider::materialize_project_index` and its round-trip test).
     /// `None` when the graph has not been built yet (empty file catalog).
     pub fn load(project_root: &str) -> Option<Self> {
         let graph = crate::core::property_graph::CodeGraph::open(project_root).ok()?;
         if graph.file_catalog_count().unwrap_or(0) == 0 {
             return None;
         }
-        let provider = crate::core::graph_provider::GraphProvider::PropertyGraph(graph);
-        let mut index = provider.materialize_project_index(project_root);
-        index.rebuild_interner();
-        Some(index)
+        let provider = crate::core::graph_provider::GraphProvider::new(graph, project_root);
+        Some(provider.materialize_project_index())
     }
 
-    /// Persist the index by mirroring it into the property graph (the sole store
-    /// since #696 C4). Replaces the former `index.json.zst` write; the mirror
-    /// also stamps `graph.meta.json`, which the resident graph cache fingerprints
-    /// for invalidation.
+    /// Persist the index by mirroring it into the property graph, its only
+    /// store. The mirror also stamps `graph.meta.json`, which the resident graph
+    /// cache fingerprints for invalidation.
     pub fn save(&self) -> Result<(), String> {
         crate::core::property_graph::mirror_index(&self.project_root, self)
             .map_err(|e| e.to_string())
     }
 
     /// Remove all cached graph indices that are older than max_age_hours.
-    /// Called on startup/update to prevent stale data from persisting.
+    /// Called on server startup to prevent stale data from persisting.
     pub fn purge_stale_indices() {
-        let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+        let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
             return;
         };
         let graphs_dir = data_dir.join("graphs");
         let Ok(entries) = std::fs::read_dir(&graphs_dir) else {
             return;
         };
-        let max_age_secs = crate::core::config::ARCHIVE_MAX_AGE_HOURS * 3600;
+        let max_age_secs = crate::core::config::GRAPH_INDEX_MAX_AGE_HOURS * 3600;
 
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
             if !path.is_dir() {
                 continue;
             }
-            // #696 C4: the property graph (graph.db, stamped by graph.meta.json)
-            // is the sole store; age the directory by its last build instead of
-            // the retired JSON index.
+            // The property graph (graph.db, stamped by graph.meta.json) is the
+            // only store; age the directory by its last build.
             let meta = path.join("graph.meta.json");
             let db = path.join("graph.db");
             let index_file = if meta.exists() {
@@ -386,36 +351,6 @@ impl ProjectIndex {
 
     pub fn edge_count(&self) -> usize {
         self.edges.len()
-    }
-
-    pub fn get_symbol(&self, key: &str) -> Option<&SymbolEntry> {
-        self.symbols.get(key)
-    }
-
-    pub fn get_related(&self, path: &str, depth: usize) -> Vec<String> {
-        let mut result = Vec::new();
-        let mut visited = std::collections::HashSet::new();
-        let mut queue: Vec<(String, usize)> = vec![(path.to_string(), 0)];
-
-        while let Some((current, d)) = queue.pop() {
-            if d > depth || visited.contains(&current) {
-                continue;
-            }
-            visited.insert(current.clone());
-            if current != path {
-                result.push(current.clone());
-            }
-
-            for edge in &self.edges {
-                if edge.from == current && !visited.contains(&edge.to) {
-                    queue.push((edge.to.clone(), d + 1));
-                }
-                if edge.to == current && !visited.contains(&edge.from) {
-                    queue.push((edge.from.clone(), d + 1));
-                }
-            }
-        }
-        result
     }
 }
 
@@ -468,15 +403,29 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
 }
 
 fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
-    if index.files.is_empty() {
+    let paths: Vec<&String> = index.files.keys().collect();
+    is_stale(root_abs, &index.last_scan, &paths, |rel| {
+        index.files.get(rel).map(|f| f.hash.clone())
+    })
+}
+
+/// Whether a built index no longer matches the source: older than the TTL,
+/// built from a too-broad root, a listed file gone, or a source file edited or
+/// added since. `paths` are the indexed files; `hash_of` gives one's stored
+/// content hash (`None` when it is not indexed).
+pub(crate) fn is_stale(
+    root_abs: &str,
+    last_scan: &str,
+    paths: &[&String],
+    hash_of: impl Fn(&str) -> Option<String>,
+) -> bool {
+    if paths.is_empty() {
         return true;
     }
 
     // TTL check: rebuild if index is older than configured max_age_hours
-    if let Ok(scan_time) =
-        chrono::NaiveDateTime::parse_from_str(&index.last_scan, "%Y-%m-%d %H:%M:%S")
-    {
-        let effective_hours = crate::core::config::ARCHIVE_MAX_AGE_HOURS;
+    if let Ok(scan_time) = chrono::NaiveDateTime::parse_from_str(last_scan, "%Y-%m-%d %H:%M:%S") {
+        let effective_hours = crate::core::config::GRAPH_INDEX_MAX_AGE_HOURS;
         let max_age = chrono::Duration::hours(effective_hours as i64);
         let now = chrono::Local::now().naive_local();
         if now.signed_duration_since(scan_time) > max_age {
@@ -502,7 +451,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
         ".cache/",
         "snap/",
     ];
-    let contaminated = index.files.keys().take(200).any(|rel| {
+    let contaminated = paths.iter().take(200).any(|rel| {
         CONTAMINATION_MARKERS
             .iter()
             .any(|m| rel.starts_with(m) || rel.contains(&format!("/{m}")))
@@ -517,8 +466,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
 
     let root_path = Path::new(root_abs);
     // Sample up to 20 files for existence check (avoid scanning all files in large indices)
-    let sample_size = index.files.len().min(20);
-    for rel in index.files.keys().take(sample_size) {
+    for rel in paths.iter().take(20) {
         let rel = rel.trim_start_matches(['/', '\\']);
         if rel.is_empty() {
             continue;
@@ -533,7 +481,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
     // changed. mtime is a cheap prefilter; the change is then confirmed against
     // the stored content hash so a `touch`/checkout/format that leaves bytes
     // unchanged never forces a needless rescan (covers edits and new files).
-    if source_content_changed_since_index(index, root_abs) {
+    if source_content_changed_since_index(root_abs, &hash_of) {
         tracing::info!("[graph_index: source content changed since last scan — marking stale]");
         return true;
     }
@@ -543,9 +491,9 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
 
 /// Modified time of the persisted index artifact, if one exists.
 ///
-/// Since #696 C4 the property graph is the sole store, so staleness is measured
-/// against `graph.meta.json` (rewritten on every mirror) with the `graph.db`
-/// file as a fallback.
+/// The property graph is the only store, so staleness is measured against
+/// `graph.meta.json` (rewritten on every mirror) with the `graph.db` file as a
+/// fallback.
 fn index_file_mtime(root_abs: &str) -> Option<std::time::SystemTime> {
     let dir = ProjectIndex::index_dir(root_abs)?;
     for name in ["graph.meta.json", "graph.db"] {
@@ -570,19 +518,19 @@ fn index_file_mtime(root_abs: &str) -> Option<std::time::SystemTime> {
 /// Both the traversal and the number of confirming reads are capped: exceeding
 /// the read cap returns `true` (conservatively stale) instead of reading an
 /// unbounded amount. Removed files are handled by the earlier existence check.
-fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> bool {
+fn source_content_changed_since_index(
+    root_abs: &str,
+    hash_of: &impl Fn(&str) -> Option<String>,
+) -> bool {
     let Some(index_mtime) = index_file_mtime(root_abs) else {
         // No persisted index yet — the existence/TTL checks above already decided.
         return false;
     };
-    // #735: excluded files must not flag the index stale (a change to CSV seed
+    // Excluded files must not flag the index stale (a change to CSV seed
     // data would otherwise force needless graph rescans forever).
     let index_filter = crate::core::index_filter::IndexFileFilter::effective();
     let walker = ignore::WalkBuilder::new(root_abs)
         .hidden(true)
-        .git_ignore(index_filter.respect_gitignore)
-        .git_global(index_filter.respect_gitignore)
-        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)
@@ -617,7 +565,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         if index_filter.is_excluded(&rel.replace('\\', "/")) {
             continue;
         }
-        let Some(file_entry) = index.files.get(&rel) else {
+        let Some(stored_hash) = hash_of(&rel) else {
             // A newly added indexable file is genuinely new content.
             return true;
         };
@@ -628,7 +576,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         }
         match std::fs::read_to_string(path) {
             // Bytes unchanged despite a newer mtime → not a real change.
-            Ok(content) if compute_hash(&content) == file_entry.hash => {}
+            Ok(content) if compute_hash(&content) == stored_hash => {}
             // Edited content, or no longer readable as it was at scan time.
             _ => return true,
         }
@@ -637,7 +585,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
 }
 
 /// Delete the persisted graph-index artifacts for a project so the next scan
-/// rebuilds from scratch. Backs `graph build --force`.
+/// rebuilds from scratch. Backs `sobre index build --force`.
 ///
 /// The property graph (`graph.db` + `graph.meta.json`) is the sole store.
 pub fn purge_index(project_root: &str) {
@@ -653,6 +601,9 @@ pub fn purge_index(project_root: &str) {
         }
     }
 }
+
+/// How long a scan waits for another scan of the same project to finish.
+const SCAN_LOCK_WAIT: Duration = Duration::from_mins(2);
 
 pub fn scan(project_root: &str) -> ProjectIndex {
     scan_inner(project_root).0
@@ -674,19 +625,37 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         "graph-idx-{}",
         &crate::core::index_namespace::namespace_hash(Path::new(&project_root))[..8]
     );
-    let _lock = crate::core::startup_guard::try_acquire_lock(
-        &lock_name,
-        std::time::Duration::from_millis(800),
-        std::time::Duration::from_mins(3),
-    );
+    // Another scan of this project (the background warm-up, another
+    // process) is waited for, and its result used when it is current: a
+    // second scan never answers with an empty index while the first runs.
+    let stale_after = Duration::from_mins(3);
+    let (_lock, waited) =
+        match crate::core::startup_guard::try_acquire_lock(&lock_name, Duration::ZERO, stale_after)
+        {
+            Some(lock) => (Some(lock), false),
+            None => (
+                crate::core::startup_guard::try_acquire_lock(
+                    &lock_name,
+                    SCAN_LOCK_WAIT,
+                    stale_after,
+                ),
+                true,
+            ),
+        };
     if _lock.is_none() {
         tracing::info!(
-            "[graph_index: another process is scanning {project_root} — returning cached or empty]"
+            "[graph_index: another scan of {project_root} still runs — returning the last index]"
         );
         return (
             ProjectIndex::load(&project_root).unwrap_or_else(|| ProjectIndex::new(&project_root)),
             HashMap::new(),
         );
+    }
+    if waited
+        && let Some(done) = ProjectIndex::load(&project_root)
+        && !index_looks_stale(&done, &project_root)
+    {
+        return (done, HashMap::new());
     }
 
     let existing = ProjectIndex::load(&project_root);
@@ -701,14 +670,11 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         .unwrap_or_default();
 
     let cfg = crate::core::config::Config::load();
-    // #735: shared corpus filter — same membership decision as the BM25 walk.
+    // Shared corpus filter — same membership decision as the BM25 walk.
     let index_filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);
 
     let walker = ignore::WalkBuilder::new(&project_root)
         .hidden(true)
-        .git_ignore(index_filter.respect_gitignore)
-        .git_global(index_filter.respect_gitignore)
-        .git_exclude(index_filter.respect_gitignore)
         .require_git(false)
         .max_depth(Some(20))
         .filter_entry(crate::core::walk_filter::keep_entry)
@@ -725,12 +691,8 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let mut entries_visited = 0usize;
     let mut content_cache: HashMap<String, String> = HashMap::new();
     let mut content_cache_bytes: usize = 0;
-    const CONTENT_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024; // #790: cap at 256MB
-    let max_files = if crate::core::config::GRAPH_INDEX_MAX_FILES == 0 {
-        usize::MAX // unlimited
-    } else {
-        crate::core::config::GRAPH_INDEX_MAX_FILES as usize
-    };
+    const CONTENT_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024; // cap at 256MB
+    let max_files = crate::core::config::GRAPH_INDEX_MAX_FILES as usize;
     const MAX_ENTRIES_VISITED: usize = 500_000;
     const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024; // 2 MB per file
     /// Maximum phase-2 fan-out. Actual batches shrink with guardian headroom.
@@ -742,7 +704,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     const SCAN_EST_TRANSIENT_PER_FILE: u64 = 192 * 1024;
     let scan_deadline = std::time::Instant::now() + std::time::Duration::from_mins(5);
 
-    // #934: two-phase scan. Phase 1 walks the tree sequentially (cheap; it
+    // Two-phase scan. Phase 1 walks the tree sequentially (cheap; it
     // carries the traversal caps / timeout / memory early-breaks) and collects
     // the files to index. Phase 2 fans the expensive per-file signature
     // extraction across a rayon pool — pure and thread-safe (the tree-sitter
@@ -834,11 +796,8 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
             continue;
         }
 
-        if max_files != usize::MAX && targets.len() >= max_files {
-            tracing::info!(
-                "[graph_index: reached configured limit of {} files. Set graph_index_max_files = 0 for unlimited.]",
-                max_files
-            );
+        if targets.len() >= max_files {
+            tracing::info!("[graph_index: reached the {max_files} file limit]");
             break;
         }
 
@@ -847,7 +806,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         targets.push((file_path, rel, ext));
     }
 
-    // #790: admission control — check if parallel fan-out fits memory headroom.
+    // Admission control — check if parallel fan-out fits memory headroom.
     // Degrades to sequential (with per-file pressure breaks) on huge corpora,
     // mirroring BM25's admission gate.
     let target_rels: Vec<String> = targets.iter().map(|(_, r, _)| r.clone()).collect();
@@ -902,7 +861,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         crate::core::memory_guard::jemalloc_purge();
     }
 
-    index.rebuild_interner();
     build_edges_cached(&mut index, &content_cache);
 
     if let Err(e) = index.save() {
@@ -1069,6 +1027,21 @@ fn process_scan_targets(
     }
 }
 
+/// The symbols of `content` as the index records them — name and 1-based
+/// inclusive line span — read from the text as it is now.
+pub(crate) fn symbol_spans(content: &str, ext: &str) -> Vec<(String, usize, usize)> {
+    signatures::extract_signatures(content, ext)
+        .iter()
+        .map(|sig| {
+            let (start, end) = sig
+                .start_line
+                .zip(sig.end_line)
+                .unwrap_or_else(|| find_symbol_range(content, sig));
+            (sig.name.clone(), start, end)
+        })
+        .collect()
+}
+
 fn find_symbol_range(content: &str, sig: &signatures::Signature) -> (usize, usize) {
     let lines: Vec<&str> = content.lines().collect();
     let mut start = 0;
@@ -1189,23 +1162,10 @@ fn extract_summary(content: &str) -> String {
     String::new()
 }
 
+/// A file's content hash, stored in the index and compared on the next
+/// build: stable across Rust toolchains.
 fn compute_hash(content: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
-}
-
-#[cfg(test)]
-fn short_hash(input: &str) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = DefaultHasher::new();
-    input.hash(&mut hasher);
-    format!("{:08x}", hasher.finish() & 0xFFFF_FFFF)
+    crate::core::hasher::hash_short(content)
 }
 
 fn make_relative(path: &str, root: &str) -> String {

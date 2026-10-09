@@ -1,510 +1,102 @@
-use serde::{Deserialize, Serialize};
+//! Terminal text helpers: the ANSI attributes the CLI uses, switched off under
+//! `NO_COLOR` or when the stream is not a terminal.
+//!
+//! Code that formats colour into a string prints it with [`crate::outln!`] or
+//! [`crate::errln!`], which drop every colour code when colour is off.
+
+use std::borrow::Cow;
 use std::io::IsTerminal;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Color {
-    Hex(String),
+fn no_color() -> bool {
+    std::env::var_os("NO_COLOR").is_some() || !std::io::stdout().is_terminal()
 }
 
-impl Color {
-    pub fn rgb(&self) -> (u8, u8, u8) {
-        let Color::Hex(hex) = self;
-        let hex = hex.trim_start_matches('#');
-        if hex.len() < 6 {
-            return (255, 255, 255);
-        }
-        let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(255);
-        let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(255);
-        let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(255);
-        (r, g, b)
-    }
-
-    pub fn fg(&self) -> String {
-        if no_color() {
-            return String::new();
-        }
-        let (r, g, b) = self.rgb();
-        format!("\x1b[38;2;{r};{g};{b}m")
-    }
-
-    pub fn bg(&self) -> String {
-        if no_color() {
-            return String::new();
-        }
-        let (r, g, b) = self.rgb();
-        format!("\x1b[48;2;{r};{g};{b}m")
-    }
-
-    fn lerp_channel(a: u8, b: u8, t: f64) -> u8 {
-        (a as f64 + (b as f64 - a as f64) * t).round() as u8
-    }
-
-    pub fn lerp(&self, other: &Color, t: f64) -> Color {
-        let (r1, g1, b1) = self.rgb();
-        let (r2, g2, b2) = other.rgb();
-        let r = Self::lerp_channel(r1, r2, t);
-        let g = Self::lerp_channel(g1, g2, t);
-        let b = Self::lerp_channel(b1, b2, t);
-        Color::Hex(format!("#{r:02X}{g:02X}{b:02X}"))
-    }
+fn no_color_stderr() -> bool {
+    std::env::var_os("NO_COLOR").is_some() || !std::io::stderr().is_terminal()
 }
-
-impl Default for Color {
-    fn default() -> Self {
-        Color::Hex("#FFFFFF".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Theme {
-    pub name: String,
-    pub primary: Color,
-    pub secondary: Color,
-    pub accent: Color,
-    pub success: Color,
-    pub warning: Color,
-    #[serde(default = "default_danger")]
-    pub danger: Color,
-    pub muted: Color,
-    pub text: Color,
-    #[serde(default = "default_surface")]
-    pub surface: Color,
-    #[serde(default = "default_background")]
-    pub background: Color,
-    pub bar_start: Color,
-    pub bar_end: Color,
-    pub highlight: Color,
-    pub border: Color,
-}
-
-fn default_danger() -> Color {
-    Color::Hex("#EF4444".to_string())
-}
-fn default_surface() -> Color {
-    Color::Hex("#0A0A12".to_string())
-}
-fn default_background() -> Color {
-    Color::Hex("#06060A".to_string())
-}
-
-impl Default for Theme {
-    fn default() -> Self {
-        preset_default()
-    }
-}
-
-pub fn no_color() -> bool {
-    std::env::var("NO_COLOR").is_ok() || !std::io::stdout().is_terminal()
-}
-
-pub const RST: &str = "\x1b[0m";
-pub const BOLD: &str = "\x1b[1m";
-pub const DIM: &str = "\x1b[2m";
 
 pub fn rst() -> &'static str {
-    if no_color() { "" } else { RST }
+    if no_color() { "" } else { "\x1b[0m" }
 }
 
 pub fn bold() -> &'static str {
-    if no_color() { "" } else { BOLD }
+    if no_color() { "" } else { "\x1b[1m" }
 }
 
 pub fn dim() -> &'static str {
-    if no_color() { "" } else { DIM }
+    if no_color() { "" } else { "\x1b[2m" }
 }
 
-impl Theme {
-    pub fn pct_color(&self, pct: f64) -> String {
-        if no_color() {
-            return String::new();
-        }
-        if pct >= 90.0 {
-            self.success.fg()
-        } else if pct >= 70.0 {
-            self.secondary.fg()
-        } else if pct >= 50.0 {
-            self.warning.fg()
-        } else if pct >= 30.0 {
-            self.accent.fg()
-        } else {
-            self.muted.fg()
-        }
-    }
-
-    pub fn gradient_bar(&self, ratio: f64, width: usize) -> String {
-        let blocks = ['▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
-        let full = (ratio * width as f64).max(0.0);
-        let whole = full as usize;
-        let frac = ((full - whole as f64) * 8.0) as usize;
-
-        if no_color() {
-            let mut s = "█".repeat(whole);
-            if whole < width && frac > 0 {
-                s.push(blocks[frac.min(7)]);
-            }
-            if s.is_empty() && ratio > 0.0 {
-                s.push('▏');
-            }
-            return s;
-        }
-
-        let mut buf = String::with_capacity(whole * 20 + 30);
-        let total_chars = if whole < width && frac > 0 {
-            whole + 1
-        } else if whole == 0 && ratio > 0.0 {
-            1
-        } else {
-            whole
-        };
-
-        for i in 0..whole {
-            let t = if total_chars > 1 {
-                i as f64 / (total_chars - 1) as f64
-            } else {
-                0.5
-            };
-            let c = self.bar_start.lerp(&self.bar_end, t);
-            buf.push_str(&c.fg());
-            buf.push('█');
-        }
-
-        if whole < width && frac > 0 {
-            let t = if total_chars > 1 {
-                whole as f64 / (total_chars - 1) as f64
-            } else {
-                1.0
-            };
-            let c = self.bar_start.lerp(&self.bar_end, t);
-            buf.push_str(&c.fg());
-            buf.push(blocks[frac.min(7)]);
-        } else if whole == 0 && ratio > 0.0 {
-            buf.push_str(&self.bar_start.fg());
-            buf.push('▏');
-        }
-
-        if !buf.is_empty() {
-            buf.push_str(RST);
-        }
-        buf
-    }
-
-    pub fn gradient_sparkline(&self, values: &[u64]) -> String {
-        let ticks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-        let max = *values.iter().max().unwrap_or(&1) as f64;
-        if max == 0.0 {
-            return " ".repeat(values.len());
-        }
-
-        let nc = no_color();
-        let mut buf = String::with_capacity(values.len() * 20);
-        let len = values.len();
-
-        for (i, v) in values.iter().enumerate() {
-            let idx = ((*v as f64 / max) * 7.0).round() as usize;
-            let ch = ticks[idx.min(7)];
-            if nc {
-                buf.push(ch);
-            } else {
-                let t = if len > 1 {
-                    i as f64 / (len - 1) as f64
-                } else {
-                    0.5
-                };
-                let c = self.bar_start.lerp(&self.bar_end, t);
-                buf.push_str(&c.fg());
-                buf.push(ch);
-            }
-        }
-        if !nc && !buf.is_empty() {
-            buf.push_str(RST);
-        }
-        buf
-    }
-
-    pub fn badge(&self, _label: &str, value: &str, color: &Color) -> String {
-        if no_color() {
-            return format!(" {value:<12}");
-        }
-        format!("{bg}{BOLD} {value} {RST}", bg = color.bg())
-    }
-
-    pub fn border_line(&self, width: usize) -> String {
-        if no_color() {
-            return "─".repeat(width);
-        }
-        let line: String = std::iter::repeat_n('─', width).collect();
-        format!("{}{line}{RST}", self.border.fg())
-    }
-
-    pub fn box_top(&self, width: usize) -> String {
-        if no_color() {
-            let line: String = std::iter::repeat_n('─', width).collect();
-            return format!("╭{line}╮");
-        }
-        let line: String = std::iter::repeat_n('─', width).collect();
-        format!("{}╭{line}╮{RST}", self.border.fg())
-    }
-
-    pub fn box_bottom(&self, width: usize) -> String {
-        if no_color() {
-            let line: String = std::iter::repeat_n('─', width).collect();
-            return format!("╰{line}╯");
-        }
-        let line: String = std::iter::repeat_n('─', width).collect();
-        format!("{}╰{line}╯{RST}", self.border.fg())
-    }
-
-    pub fn box_mid(&self, width: usize) -> String {
-        if no_color() {
-            let line: String = std::iter::repeat_n('─', width).collect();
-            return format!("├{line}┤");
-        }
-        let line: String = std::iter::repeat_n('─', width).collect();
-        format!("{}├{line}┤{RST}", self.border.fg())
-    }
-
-    pub fn box_side(&self) -> String {
-        if no_color() {
-            return "│".to_string();
-        }
-        format!("{}│{RST}", self.border.fg())
-    }
-
-    pub fn header_icon(&self) -> String {
-        if no_color() {
-            return "◆".to_string();
-        }
-        format!("{}◆{RST}", self.accent.fg())
-    }
-
-    pub fn brand_title(&self) -> String {
-        if no_color() {
-            return "lean-ctx".to_string();
-        }
-        let p = self.primary.fg();
-        let s = self.secondary.fg();
-        format!("{p}{BOLD}lean{RST}{s}{BOLD}-ctx{RST}")
-    }
-
-    pub fn section_title(&self, title: &str) -> String {
-        if no_color() {
-            return title.to_string();
-        }
-        format!("{}{BOLD}{title}{RST}", self.text.fg())
-    }
-
-    pub fn to_toml(&self) -> String {
-        toml::to_string_pretty(self).unwrap_or_default()
-    }
-
-    /// Export theme as CSS custom properties for the web dashboard.
-    pub fn to_css_vars(&self) -> String {
-        let Color::Hex(ref primary) = self.primary;
-        let Color::Hex(ref secondary) = self.secondary;
-        let Color::Hex(ref accent) = self.accent;
-        let Color::Hex(ref success) = self.success;
-        let Color::Hex(ref warning) = self.warning;
-        let Color::Hex(ref danger) = self.danger;
-        let Color::Hex(ref muted) = self.muted;
-        let Color::Hex(ref text) = self.text;
-        let Color::Hex(ref surface) = self.surface;
-        let Color::Hex(ref background) = self.background;
-        let Color::Hex(ref bar_start) = self.bar_start;
-        let Color::Hex(ref bar_end) = self.bar_end;
-        let Color::Hex(ref border) = self.border;
-        format!(
-            ":root {{\n\
-             \x20 --lctx-primary: {primary};\n\
-             \x20 --lctx-secondary: {secondary};\n\
-             \x20 --lctx-accent: {accent};\n\
-             \x20 --lctx-success: {success};\n\
-             \x20 --lctx-warning: {warning};\n\
-             \x20 --lctx-danger: {danger};\n\
-             \x20 --lctx-muted: {muted};\n\
-             \x20 --lctx-text: {text};\n\
-             \x20 --lctx-surface: {surface};\n\
-             \x20 --lctx-background: {background};\n\
-             \x20 --lctx-bar-start: {bar_start};\n\
-             \x20 --lctx-bar-end: {bar_end};\n\
-             \x20 --lctx-border: {border};\n\
-             }}"
-        )
-    }
-
-    /// Labeled section box top: `┌─ LABEL ──────────────────┐`
-    pub fn box_top_labeled(&self, width: usize, label: &str) -> String {
-        let max_label = width.saturating_sub(4);
-        let label_display = if visual_len(label) > max_label {
-            truncate_visual(label, max_label)
-        } else {
-            label.to_string()
-        };
-        let label_part = format!("─ {label_display} ");
-        let remaining = width.saturating_sub(visual_len(&label_part));
-        let fill: String = std::iter::repeat_n('─', remaining).collect();
-        if no_color() {
-            return format!("┌{label_part}{fill}┐");
-        }
-        let a = self.accent.fg();
-        let b = self.border.fg();
-        format!("{b}┌─ {a}{BOLD}{label_display}{RST}{b} {fill}┐{RST}")
-    }
-
-    /// Labeled section box bottom: `└──────────────────────────┘`
-    pub fn box_bottom_square(&self, width: usize) -> String {
-        let line: String = std::iter::repeat_n('─', width).collect();
-        if no_color() {
-            return format!("└{line}┘");
-        }
-        format!("{}└{line}┘{RST}", self.border.fg())
-    }
-
-    /// Square box side: `│`
-    pub fn box_side_square(&self) -> String {
-        if no_color() {
-            return "│".to_string();
-        }
-        format!("{}│{RST}", self.border.fg())
-    }
-
-    /// KPI underline using bold unicode lines, colored with the metric's color.
-    pub fn kpi_underline(&self, width: usize, color: &Color) -> String {
-        let line: String = std::iter::repeat_n('━', width).collect();
-        if no_color() {
-            return line;
-        }
-        format!("{}{line}{RST}", color.fg())
-    }
-
-    /// Export theme as a JS module for the web dashboard.
-    pub fn to_js_tokens(&self) -> String {
-        let Color::Hex(ref primary) = self.primary;
-        let Color::Hex(ref secondary) = self.secondary;
-        let Color::Hex(ref accent) = self.accent;
-        let Color::Hex(ref success) = self.success;
-        let Color::Hex(ref warning) = self.warning;
-        let Color::Hex(ref danger) = self.danger;
-        let Color::Hex(ref muted) = self.muted;
-        let Color::Hex(ref text) = self.text;
-        let Color::Hex(ref surface) = self.surface;
-        let Color::Hex(ref background) = self.background;
-        let Color::Hex(ref bar_start) = self.bar_start;
-        let Color::Hex(ref bar_end) = self.bar_end;
-        let Color::Hex(ref border) = self.border;
-        format!(
-            "// Auto-generated by lean-ctx — do not edit manually\n\
-             export const tokens = {{\n\
-             \x20 name: \"{name}\",\n\
-             \x20 primary: \"{primary}\",\n\
-             \x20 secondary: \"{secondary}\",\n\
-             \x20 accent: \"{accent}\",\n\
-             \x20 success: \"{success}\",\n\
-             \x20 warning: \"{warning}\",\n\
-             \x20 danger: \"{danger}\",\n\
-             \x20 muted: \"{muted}\",\n\
-             \x20 text: \"{text}\",\n\
-             \x20 surface: \"{surface}\",\n\
-             \x20 background: \"{background}\",\n\
-             \x20 barStart: \"{bar_start}\",\n\
-             \x20 barEnd: \"{bar_end}\",\n\
-             \x20 border: \"{border}\",\n\
-             }};\n",
-            name = self.name,
-        )
+/// `text` for stdout: unchanged on a colour terminal, without its ANSI colour
+/// codes otherwise.
+#[must_use]
+pub fn paint(text: &str) -> Cow<'_, str> {
+    if no_color() {
+        strip_ansi(text)
+    } else {
+        Cow::Borrowed(text)
     }
 }
 
-/// Visual width of a string in terminal columns, ignoring ANSI escape sequences
-/// and accounting for wide characters (emoji, CJK = 2 columns).
-pub fn visual_len(s: &str) -> usize {
-    use unicode_width::UnicodeWidthChar;
-    let mut len = 0usize;
-    let mut in_escape = false;
-    for ch in s.chars() {
-        if in_escape {
-            if ch == 'm' {
-                in_escape = false;
+/// [`paint`] for stderr.
+#[must_use]
+pub fn paint_err(text: &str) -> Cow<'_, str> {
+    if no_color_stderr() {
+        strip_ansi(text)
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+/// Whether tracing output on stderr may carry colour.
+#[must_use]
+pub fn stderr_color() -> bool {
+    !no_color_stderr()
+}
+
+/// `text` without its `ESC [ … m` colour sequences.
+#[must_use]
+pub fn strip_ansi(text: &str) -> Cow<'_, str> {
+    if !text.contains('\x1b') {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\x1b' && chars.peek() == Some(&'[') {
+            chars.next();
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
             }
-        } else if ch == '\x1b' {
-            in_escape = true;
-        } else {
-            len += UnicodeWidthChar::width(ch).unwrap_or(0);
+            continue;
         }
+        out.push(c);
     }
-    len
+    Cow::Owned(out)
 }
 
-/// Pad a string to `target` visual width with spaces on the right.
-/// If the string exceeds `target`, it is visually truncated.
-pub fn pad_right(s: &str, target: usize) -> String {
-    use std::cmp::Ordering;
-    let vlen = visual_len(s);
-    match vlen.cmp(&target) {
-        Ordering::Equal => s.to_string(),
-        Ordering::Less => format!("{s}{pad}", pad = " ".repeat(target - vlen)),
-        Ordering::Greater => truncate_visual(s, target),
-    }
+/// `println!` that drops colour codes under `NO_COLOR` or off a terminal.
+#[macro_export]
+macro_rules! outln {
+    () => {
+        println!()
+    };
+    ($($arg:tt)*) => {
+        println!("{}", $crate::core::theme::paint(&format!($($arg)*)))
+    };
 }
 
-/// Truncate a string to at most `max_cols` terminal columns,
-/// preserving ANSI escape sequences and respecting wide characters.
-pub fn truncate_visual(s: &str, max_cols: usize) -> String {
-    use unicode_width::UnicodeWidthChar;
-    let mut out = String::with_capacity(s.len());
-    let mut cols = 0usize;
-    let mut in_escape = false;
-    for ch in s.chars() {
-        if in_escape {
-            out.push(ch);
-            if ch == 'm' {
-                in_escape = false;
-            }
-        } else if ch == '\x1b' {
-            in_escape = true;
-            out.push(ch);
-        } else {
-            let w = UnicodeWidthChar::width(ch).unwrap_or(0);
-            if cols + w > max_cols {
-                break;
-            }
-            cols += w;
-            out.push(ch);
-        }
-    }
-    if cols < max_cols {
-        out.push_str(&" ".repeat(max_cols - cols));
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
-// Built-in presets
-// ---------------------------------------------------------------------------
-
-fn c(hex: &str) -> Color {
-    Color::Hex(hex.to_string())
-}
-
-pub fn preset_default() -> Theme {
-    Theme {
-        name: "default".into(),
-        primary: c("#36D399"),
-        secondary: c("#66CCFF"),
-        accent: c("#CC66FF"),
-        success: c("#36D399"),
-        warning: c("#FFCC33"),
-        danger: c("#EF4444"),
-        muted: c("#888888"),
-        text: c("#F5F5F5"),
-        surface: c("#0A0A12"),
-        background: c("#06060A"),
-        bar_start: c("#36D399"),
-        bar_end: c("#66CCFF"),
-        highlight: c("#FF6633"),
-        border: c("#555555"),
-    }
+/// `eprintln!` that drops colour codes under `NO_COLOR` or off a terminal.
+#[macro_export]
+macro_rules! errln {
+    () => {
+        eprintln!()
+    };
+    ($($arg:tt)*) => {
+        eprintln!("{}", $crate::core::theme::paint_err(&format!($($arg)*)))
+    };
 }
 
 #[cfg(test)]
@@ -512,76 +104,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hex_to_rgb() {
-        let c = Color::Hex("#FF8800".into());
-        assert_eq!(c.rgb(), (255, 136, 0));
-    }
-
-    #[test]
-    fn lerp_colors() {
-        let a = Color::Hex("#000000".into());
-        let b = Color::Hex("#FF0000".into());
-        let mid = a.lerp(&b, 0.5);
-        let (r, g, bl) = mid.rgb();
-        assert!((r as i16 - 128).abs() <= 1);
-        assert_eq!(g, 0);
-        assert_eq!(bl, 0);
-    }
-
-    #[test]
-    fn gradient_bar_produces_output() {
-        let theme = preset_default();
-        let bar = theme.gradient_bar(0.5, 20);
-        assert!(!bar.is_empty());
-    }
-
-    #[test]
-    fn gradient_sparkline_produces_output() {
-        let theme = preset_default();
-        let spark = theme.gradient_sparkline(&[10, 50, 30, 80, 20]);
-        assert!(!spark.is_empty());
-        assert!(spark.chars().count() >= 5);
-    }
-
-    #[test]
-    fn border_line_width() {
-        crate::test_env::set_var("NO_COLOR", "1");
-        let theme = preset_default();
-        let line = theme.border_line(10);
-        assert_eq!(line.chars().count(), 10);
-        crate::test_env::remove_var("NO_COLOR");
-    }
-
-    #[test]
-    fn box_top_bottom_symmetric() {
-        crate::test_env::set_var("NO_COLOR", "1");
-        let theme = preset_default();
-        let top = theme.box_top(20);
-        let bot = theme.box_bottom(20);
-        assert_eq!(top.chars().count(), bot.chars().count());
-        crate::test_env::remove_var("NO_COLOR");
-    }
-
-    #[test]
-    fn visual_len_plain() {
-        assert_eq!(visual_len("hello"), 5);
-        assert_eq!(visual_len(""), 0);
-    }
-
-    #[test]
-    fn visual_len_with_ansi() {
-        assert_eq!(visual_len("\x1b[32mhello\x1b[0m"), 5);
-        assert_eq!(visual_len("\x1b[38;2;255;0;0mX\x1b[0m"), 1);
-    }
-
-    #[test]
-    fn pad_right_works() {
-        assert_eq!(pad_right("hi", 5), "hi   ");
-        assert_eq!(pad_right("hello", 3), "hel");
-        assert_eq!(visual_len(&pad_right("hello", 3)), 3);
-        let ansi = "\x1b[32mhi\x1b[0m";
-        let padded = pad_right(ansi, 5);
-        assert_eq!(visual_len(&padded), 5);
-        assert!(padded.starts_with("\x1b[32m"));
+    fn strip_ansi_removes_colour_sequences_only() {
+        assert_eq!(strip_ansi("\x1b[32m✓\x1b[0m ok"), "✓ ok");
+        assert_eq!(strip_ansi("\x1b[1m\x1b[97mtitle\x1b[0m"), "title");
+        assert_eq!(strip_ansi("plain [text]"), "plain [text]");
     }
 }

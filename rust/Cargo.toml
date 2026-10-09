@@ -1,7 +1,3 @@
-# Workspace root. The SDK (Track A) is an opt-in member; `default-members` keeps
-# every existing `cargo build`/`test`/`clippy`/`publish` scoped to the engine
-# crate exactly as before — build the SDK explicitly with `-p lean-ctx-sdk` or
-# the whole workspace with `--workspace`.
 [workspace]
 members = [
   ".",
@@ -9,49 +5,30 @@ members = [
 default-members = ["."]
 
 [package]
-name = "lean-ctx"
-version = "3.9.12"
+name = "sobre"
+version = "0.1.0"
 edition = "2024"
+# The toolchain pinned in rust-toolchain.toml; older compilers are untested.
+rust-version = "1.99"
 autobins = false
-description = "Context Runtime for AI Agents with CCP. 71 MCP tools, 10 read modes, 95+ compression patterns, cross-session memory (CCP), persistent AI knowledge with temporal facts + contradiction detection, multi-agent context sharing, LITM-aware positioning, AAAK compact format, adaptive compression with Thompson Sampling bandits. Supports 24+ AI tools. Reduces LLM token consumption by up to 99%."
+description = "sobre: a local context layer for AI coding agents — 15 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
 license = "Apache-2.0"
-repository = "https://github.com/yvgude/lean-ctx"
-homepage = "https://leanctx.com"
-readme = "README.md"
-keywords = ["mcp", "llm", "tokens", "compression", "ai"]
-categories = ["command-line-utilities", "development-tools"]
-exclude = ["examples/", "tests/", "crates/"]
-
-[package.metadata.binstall]
-bin-dir = "{ bin }{ binary-ext }"
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-fmt = "zip"
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.zip"
+repository = "https://github.com/malochapo/sobre-ai"
+# Distributed as release binaries from the repository only: never on crates.io.
+publish = false
 
 [lib]
-name = "lean_ctx"
+name = "sobre"
 path = "src/lib.rs"
 # No doctests exist (doc comments hold only `text` and `toml` blocks); without
 # this, every `cargo test` runs rustdoc over the whole crate for nothing.
 doctest = false
 
 [[bin]]
-name = "lean-ctx"
+name = "sobre"
 path = "src/main.rs"
 # main.rs has no tests: skip building an empty test harness for the binary.
 test = false
-
-[[example]]
-name = "gen_mcp_manifest"
-path = "src/bin/gen_mcp_manifest.rs"
-required-features = ["dev-tools"]
-
-[[example]]
-name = "gen_tdd_schema"
-path = "src/bin/gen_tdd_schema.rs"
-required-features = ["dev-tools"]
 
 [[example]]
 name = "gen_docs"
@@ -59,37 +36,36 @@ path = "src/bin/gen_docs.rs"
 required-features = ["dev-tools"]
 
 
-[[example]]
-name = "gen_rules"
-path = "src/bin/gen_rules.rs"
-required-features = ["dev-tools"]
-
 [features]
 default = [
   "tree-sitter",
-  "secure-update",
   "jemalloc",
 ]
 
-# Local dense retrieval: ONNX embeddings + in-process HNSW, with the optional
-# GPU execution providers below. Opt-in rather than default so `cargo install
-# sobre` needs no model download and no ORT runtime preflight before the tool
-# is useful. Invariant: everything under `dense` runs on the user's machine —
-# no external service.
-dense = ["embeddings"]
+# Local dense retrieval: ONNX embeddings + in-process HNSW. Opt-in rather
+# than default so a plain build needs no model download and no ORT runtime
+# preflight before the tool is useful. Invariant: everything under
+# `dense` runs on the user's machine — no external service.
+dense = [
+    "dep:ort",
+    "dep:ndarray",
+    "dep:libloading",
+    "dep:tokenizers",
+    "dep:tar",
+    "dep:zip",
+]
+# Dense retrieval on a GPU, for source builds (`--features ort-cuda` …).
+# Each one turns on `dense`.
+ort-cuda = ["dense", "ort/cuda"]
+ort-webgpu = ["dense", "ort/webgpu"]
+ort-rocm = ["dense", "ort/rocm"]
+ort-directml = ["dense", "ort/directml"]
+ort-coreml = ["dense", "ort/coreml"]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
-no-jail = []
-neural = ["dep:ort", "dep:ndarray", "dep:libloading"]
-embeddings = ["dep:ort", "dep:ndarray", "dep:libloading", "dep:tokenizers"]
-ort-cuda = ["ort?/cuda"]
-ort-webgpu = ["ort?/webgpu"]
-ort-rocm = ["ort?/rocm"]
-ort-directml = ["ort?/directml"]
-ort-coreml = ["ort?/coreml"]
-shape-xlat = []
-secure-update = []
-experimental = []
+# Helpers only the integration tests and benches call. Enabled for them by
+# the self dev-dependency below; never part of a release build.
+test-support = []
 tree-sitter = [
   "dep:tree-sitter",
   "dep:tree-sitter-rust",
@@ -122,11 +98,9 @@ tree-sitter = [
 ]
 
 [dependencies]
-rmcp = { version = "2", features = [
-  "server",
-  "transport-io",
-  "transport-streamable-http-server",
-] }
+# At least 3.5.1: its service loop releases each response-send task as soon as
+# it completes, so a long-lived stdio session does not grow in memory.
+rmcp = { version = "3.5.1", default-features = false, features = ["server"] }
 tiktoken-rs = "0.12"
 tokio = { version = "1.52", features = [
   "rt",
@@ -138,22 +112,22 @@ tokio = { version = "1.52", features = [
   "sync",
   "time",
   "signal",
-  "process",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# preserve_order: agent configs are edited in place, and their keys must keep
+# the order the user wrote them in.
+serde_json = { version = "1.0", features = ["preserve_order"] }
+# Edits agent JSON/JSONC configs while keeping comments and formatting.
+jsonc-parser = { version = "0.34", default-features = false, features = ["cst", "serde_json"] }
 subtle = "2.6"
-md-5 = "0.11"
 anyhow = "1.0"
 regex = "1.12"
-walkdir = "2.5"
 ignore = "0.4"
 lru = "0.18.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 thiserror = "2.0"
 futures = "0.3"
-tokio-util = { version = "0.7", features = ["codec"] }
 dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
 toml = "1.1"
@@ -179,11 +153,11 @@ tree-sitter-php = { version = "0.24", optional = true }
 # platform-verifier: validate TLS against the OS trust store (corp proxy CAs),
 # not just compiled-in webpki-roots. Opt-in per-agent via RootCerts::PlatformVerifier.
 ureq = { version = "3.3", features = ["platform-verifier"] }
-# PDF → text extraction for ctx_url_read (research context layer).
+# PDF → text for the search index (core::extractors).
 # 0.12 pulls lopdf >=0.42 (RUSTSEC-2026-0187: stack overflow on deeply nested PDFs).
 pdf-extract = "0.12"
-tar = "0.4"
-zip = "8.6"
+tar = { version = "0.4", optional = true }
+zip = { version = "8.6", optional = true }
 tree-sitter-bash = { version = "0.25", optional = true }
 tree-sitter-scala = { version = "0.26", optional = true }
 tree-sitter-elixir = { version = "0.3", optional = true }
@@ -226,19 +200,15 @@ ndarray = { version = "0.17", optional = true }
 # Reads any HuggingFace `tokenizer.json` (WordPiece, BPE, Unigram), so every
 # embedding model tokenizes exactly as it was trained. Pure Rust regex backend.
 tokenizers = { version = "0.22", optional = true, default-features = false, features = ["fancy-regex"] }
-axum = { version = "0.8", features = ["ws"] }
+axum = "0.8"
 base64 = "0.22"
-hmac = "0.13"
 sha2 = "0.11"
 glob = "0.3"
 urlencoding = "2.1"
-ed25519-dalek = { version = "2.2", features = ["rand_core"] }
 getrandom = "0.4"
-tempfile = "3.27"
 reqwest = { version = "0.13", default-features = false, features = [
   "rustls",
   "stream",
-  "json",
 ] }
 bytecount = "0.6"
 blake3 = "1.8"
@@ -248,20 +218,13 @@ postcard = { version = "1.1", features = ["use-std"] }
 zstd = "0.13"
 lsp-types = "0.97"
 fs2 = "0.4"
-unicode-width = "0.2"
 yaml_serde = "0.10.4"
 
 [lints.rust]
 unreachable_pub = "warn"
-# sobre: dead code is an error, not a warning. Upstream accumulated ~15k lines
-# of never-referenced modules partly because `pub mod` in a library crate is
-# public API, so rustc never lints it, and partly because a module-level
-# `#![allow(dead_code)]` silenced a 900-line island in proxy/. Flip to "warn"
-# if a green build proves too noisy — but flip it back.
+# Dead code is an error. It only catches private items: `pub` items of a
+# library are public API, which rustc never reports as unused.
 dead_code = "deny"
-# CI coverage (cargo-tarpaulin) injects `--cfg tarpaulin`; declare it to avoid
-# `-D unexpected_cfgs` failures when using `cfg_attr(tarpaulin, ...)`.
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(tarpaulin)"] }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
@@ -273,6 +236,8 @@ must_use_candidate = "allow"
 return_self_not_must_use = "allow"
 similar_names = "allow"
 unreadable_literal = "allow"
+# Rust 1.99: prefers assert_eq!(x, "") over assert!(x.is_empty()) in tests.
+assert_is_empty = "allow"
 
 # --- Documentation: covered by separate doc-coverage tooling ---
 missing_errors_doc = "allow"
@@ -286,11 +251,13 @@ cast_sign_loss = "allow"
 cast_possible_wrap = "allow"
 cast_lossless = "allow"
 
-# --- Performance: format_push_string would require 276 refactors for minimal gain ---
+# --- Performance: `push_str(&format!(…))` is common and cheap enough here ---
 format_push_string = "allow"
 
-# --- Struct design: Config/StatsStore legitimately use many bools ---
+# --- Struct design: option and parameter structs (ConsolidateOptions,
+# PatchParams, EditParams, ProjectBuild) are made of flags ---
 struct_excessive_bools = "allow"
+
 
 # --- Float: intentional comparisons in stats/benchmarks ---
 float_cmp = "allow"
@@ -348,23 +315,13 @@ jsonschema = { version = "0.46", default-features = false }
 proptest = "1.11"
 serial_test = "3.5"
 tempfile = "3.27"
-wat = "1.252"
+walkdir = "2.5"
+sobre = { path = ".", features = ["test-support"] }
 
 [[bench]]
 name = "compression"
 harness = false
 
 [[bench]]
-name = "graph_export"
-harness = false
-
-[[bench]]
 name = "efficiency"
 harness = false
-
-# rmcp 2.0.0 keeps completed response-send tasks in a JoinSet until shutdown,
-# which grows RSS for long-lived MCP sessions. Keep this vendored patch until
-# modelcontextprotocol/rust-sdk ships the continuous drain fix.
-[patch.crates-io]
-rmcp = { path = "crates/vendor/rmcp" }
-rmcp-macros = { path = "crates/vendor/rmcp-macros" }

@@ -1,4 +1,4 @@
-use super::ranking::{confidence_stars, sort_fact_for_output};
+use super::ranking::sort_fact_for_output;
 use super::types::{ConsolidatedInsight, KnowledgeFact, ProjectKnowledge};
 use crate::core::memory_policy::MemoryPolicy;
 
@@ -24,7 +24,6 @@ impl ProjectKnowledge {
             &mut self.history,
             policy.knowledge.max_history,
             policy.lifecycle.reclaim_headroom_pct,
-            policy.lifecycle.reclaim_enabled,
             |a, b| {
                 b.timestamp
                     .cmp(&a.timestamp)
@@ -87,100 +86,10 @@ impl ProjectKnowledge {
             }
         }
 
-        if !self.patterns.is_empty() {
-            out.push_str("PROJECT PATTERNS:\n");
-            let mut patterns = self.patterns.clone();
-            patterns.sort_by(|a, b| {
-                b.created_at
-                    .cmp(&a.created_at)
-                    .then_with(|| a.pattern_type.cmp(&b.pattern_type))
-                    .then_with(|| a.description.cmp(&b.description))
-            });
-            let total = patterns.len();
-            patterns.truncate(crate::core::budgets::KNOWLEDGE_PATTERNS_LIMIT);
-            for p in &patterns {
-                let ty = crate::core::sanitize::neutralize_metadata(&p.pattern_type);
-                let desc = crate::core::sanitize::neutralize_metadata(&p.description);
-                out.push_str(&format!("  [{ty}] {desc}\n"));
-            }
-            if total > crate::core::budgets::KNOWLEDGE_PATTERNS_LIMIT {
-                out.push_str(&format!(
-                    "  … +{} more\n",
-                    total - crate::core::budgets::KNOWLEDGE_PATTERNS_LIMIT
-                ));
-            }
-        }
-
         if out.is_empty() {
             out
         } else {
             crate::core::sanitize::fence_content("project_knowledge", out.trim_end())
-        }
-    }
-
-    pub fn format_aaak(&self) -> String {
-        let current_facts: Vec<&KnowledgeFact> =
-            self.facts.iter().filter(|f| f.is_current()).collect();
-
-        if current_facts.is_empty() && self.patterns.is_empty() {
-            return String::new();
-        }
-
-        let mut out = String::new();
-
-        let mut rooms: Vec<(String, usize)> = self.list_rooms();
-        rooms.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        rooms.truncate(crate::core::budgets::KNOWLEDGE_AAAK_ROOMS_LIMIT);
-
-        for (cat, _count) in rooms {
-            let mut facts_in_cat: Vec<&KnowledgeFact> = current_facts
-                .iter()
-                .copied()
-                .filter(|f| f.category == cat)
-                .collect();
-            facts_in_cat.sort_by(|a, b| sort_fact_for_output(a, b));
-            facts_in_cat.truncate(crate::core::budgets::KNOWLEDGE_AAAK_FACTS_PER_ROOM_LIMIT);
-
-            let items: Vec<String> = facts_in_cat
-                .iter()
-                .map(|f| {
-                    let stars = confidence_stars(f.confidence);
-                    let key = crate::core::sanitize::neutralize_metadata(&f.key);
-                    let val = crate::core::sanitize::neutralize_metadata(&f.value);
-                    format!("{key}={val}{stars}")
-                })
-                .collect();
-            out.push_str(&format!(
-                "{}:{}\n",
-                crate::core::sanitize::neutralize_metadata(&cat.to_uppercase()),
-                items.join("|")
-            ));
-        }
-
-        if !self.patterns.is_empty() {
-            let mut patterns = self.patterns.clone();
-            patterns.sort_by(|a, b| {
-                b.created_at
-                    .cmp(&a.created_at)
-                    .then_with(|| a.pattern_type.cmp(&b.pattern_type))
-                    .then_with(|| a.description.cmp(&b.description))
-            });
-            patterns.truncate(crate::core::budgets::KNOWLEDGE_PATTERNS_LIMIT);
-            let pat_items: Vec<String> = patterns
-                .iter()
-                .map(|p| {
-                    let ty = crate::core::sanitize::neutralize_metadata(&p.pattern_type);
-                    let desc = crate::core::sanitize::neutralize_metadata(&p.description);
-                    format!("{ty}.{desc}")
-                })
-                .collect();
-            out.push_str(&format!("PAT:{}\n", pat_items.join("|")));
-        }
-
-        if out.is_empty() {
-            out
-        } else {
-            crate::core::sanitize::fence_content("project_memory_aaak", out.trim_end())
         }
     }
 
@@ -195,7 +104,7 @@ impl ProjectKnowledge {
             return String::new();
         }
 
-        // Theta-gamma chunking (#543): salience-ordered top-K facts grouped
+        // Theta-gamma chunking: salience-ordered top-K facts grouped
         // into 4±1-sized thematic chunks; shared headers amortize category
         // prefixes (token savings) and prime related facts (recall).
         let mut top_facts: Vec<&KnowledgeFact> = current_facts;

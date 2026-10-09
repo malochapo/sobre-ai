@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
-use super::{cache_safety, prefix_cache_stats, prefix_replay, prose, sticky_tools};
+use super::usage::Provider;
 
 pub(crate) async fn handler(
     State(state): State<ProxyState>,
@@ -22,8 +22,7 @@ pub(crate) async fn handler(
         &upstream,
         "/v1/messages",
         compress_request_body,
-        "Anthropic",
-        &[],
+        Provider::Anthropic,
     )
     .await
 }
@@ -43,24 +42,6 @@ pub(super) fn compress_request_body(
         .and_then(|m| m.as_array())
         .map_or(0, |m| super::history_prune::cached_prefix_len(m));
 
-    // #986: cache-economics miss attribution (measurement-only). Classify
-    // why this turn hits or misses the provider prompt-cache (TTL lapse vs prefix
-    // change) and bump the `/status` gauges. Reads the cacheable prefix only — the
-    // body is never touched — so it is strictly cache-safe.
-    if let Some(m) = doc.get("messages").and_then(|m| m.as_array())
-        && let Some(outcome) = super::cache_attribution::record_request(m, cached)
-    {
-        match outcome {
-            super::cache_attribution::CacheOutcome::WarmReuse => {
-                prefix_cache_stats::record_hit();
-            }
-            super::cache_attribution::CacheOutcome::ColdStart => {}
-            _ => {
-                prefix_cache_stats::record_miss();
-            }
-        }
-    }
-
     if let Some(messages) = doc.get_mut("messages").and_then(|m| m.as_array_mut()) {
         // Resolve tool-call id → tool name so file/source reads can be protected
         // from lossy compression that would force the model to re-read mid-task.
@@ -72,7 +53,7 @@ pub(super) fn compress_request_body(
         let boundary = super::history_prune::prune_boundary(messages.len());
         // Never rewrite content the client has marked with `cache_control`:
         // pruning inside the already-cached prefix invalidates Anthropic's
-        // prompt cache from the first changed message (#448). Pruning therefore
+        // prompt cache from the first changed message. Pruning therefore
         // starts after the last breakpoint; with no breakpoint this is 0, i.e.
         // the previous behaviour.
         modified |=
@@ -97,7 +78,7 @@ pub(super) fn compress_request_body(
                         .map(String::as_str);
                     let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
-                    // #481: skip live compression when the originating tool is
+                    // Skip live compression when the originating tool is
                     // on the exclusion list (Serena).
                     let excluded =
                         name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n));
@@ -109,61 +90,7 @@ pub(super) fn compress_request_body(
         }
     }
 
-    // #940: cache-aligner telemetry. On an unanchored system prompt (the prefix a
-    // provider would cache), count the volatile fields that would bust that cache
-    // turn-to-turn. Pure measurement — runs before any breakpoint injection and
-    // never mutates the body — so it is strictly cache-safe. Skipped once the
-    // client has anchored the prefix itself.
-    if cached == 0
-        && let Some(system) = doc.get("system")
-        && !prose::value_has_cache_control(system)
-        && let Some(text) = super::cache_aligner::system_text(system)
-    {
-        let scan = super::cache_aligner::scan_volatile(&text);
-        cache_safety::record_volatile_system(scan.fields as u64);
-    }
-
-    // Sticky CCR tool injection: once a conversation has used CCR, keep
-    // ctx_expand in tools[] to avoid prefix-cache-busting tool-list changes.
-    let system_val = doc.get("system");
-    let messages_for_id = doc.get("messages").and_then(Value::as_array);
-    if let Some(msgs) = messages_for_id {
-        let conv_id = prefix_replay::conversation_id(system_val, msgs);
-        if sticky_tools::ensure_tool_present(conv_id, &mut doc) {
-            modified = true;
-            prefix_cache_stats::record_sticky_injection();
-        }
-    }
-
-    prefix_cache_stats::record_frozen_count(cached as u64);
-
-    // Prefix replay: if this is an append-only turn, overlay the cached
-    // forwarded prefix bytes with the fresh delta for byte-identical prefix.
-    let system_val_replay = doc.get("system");
-    let msgs_replay = doc.get("messages").and_then(Value::as_array);
-    let out = if let Some(msgs) = msgs_replay {
-        let conv_id = prefix_replay::conversation_id(system_val_replay, msgs);
-        if let Some(delta) = prefix_replay::detect_append_only(conv_id, msgs) {
-            let delta_msgs = &msgs[delta.delta_start..];
-            if let Some(replayed) = prefix_replay::overlay_prefix(&delta.prefix_bytes, delta_msgs) {
-                prefix_cache_stats::record_replay_hit();
-                let original_bytes = serde_json::to_vec(&doc).unwrap_or_default();
-                prefix_cache_stats::record_delta(
-                    original_bytes.len() as u64,
-                    replayed.len() as u64,
-                );
-                replayed
-            } else {
-                prefix_cache_stats::record_replay_miss();
-                serde_json::to_vec(&doc).unwrap_or_default()
-            }
-        } else {
-            prefix_cache_stats::record_replay_miss();
-            serde_json::to_vec(&doc).unwrap_or_default()
-        }
-    } else {
-        serde_json::to_vec(&doc).unwrap_or_default()
-    };
+    let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };
     (out, original_size, compressed_size)
 }
@@ -255,7 +182,7 @@ mod tests {
     #[test]
     fn forge_shell_tool_result_compresses() {
         // A vendor-prefixed foreign shell tool reaches the proxy; its log output
-        // must still be compressed (rtk/ctx_* never see another server's tools).
+        // must still be compressed (rtk/sobre_* never see another server's tools).
         let body = forge_log_body("forge_shell");
         let bytes = serde_json::to_vec(&body).unwrap();
         let (_out, orig, comp) = compress_request_body(body, bytes.len());
@@ -291,9 +218,9 @@ mod tests {
     #[test]
     fn compress_request_body_is_deterministic() {
         // tee path depends on the data dir; serialize env access so a parallel
-        // test never swaps LEAN_CTX_DATA_DIR between the two compressions.
+        // test never swaps SOBRE_DATA_DIR between the two compressions.
         let _lock = crate::core::data_dir::test_env_lock();
-        // #498: the proxy rewrite must be a pure function of the body so the
+        // The proxy rewrite must be a pure function of the body so the
         // provider prompt-cache prefix stays byte-identical across turns.
         let bytes = serde_json::to_vec(&forge_log_body("Bash")).unwrap();
         let a = compress_request_body(serde_json::from_slice(&bytes).unwrap(), bytes.len()).0;
@@ -311,7 +238,7 @@ mod tests {
 
     #[test]
     fn prose_passes_through_verbatim() {
-        // #710: role aggressiveness is off, so system, user and assistant prose
+        // Role aggressiveness is off, so system, user and assistant prose
         // all reach the provider unchanged.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let prose = big_prose();
@@ -410,7 +337,7 @@ mod tests {
 
     #[test]
     fn effort_control_is_off() {
-        // #834: effort control is off, so even a request that asked for
+        // Effort control is off, so even a request that asked for
         // adaptive thinking gets no `output_config` added.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let adaptive = serde_json::json!({
@@ -429,7 +356,7 @@ mod tests {
     }
 
     /// A system prompt comfortably over Anthropic's minimum cacheable size, so
-    /// the #939 breakpoint gate fires.
+    /// the breakpoint gate fires.
     fn cacheable_system() -> String {
         "You are a careful, senior software engineer who writes maintainable code. ".repeat(400)
     }
@@ -451,7 +378,7 @@ mod tests {
 
     #[test]
     fn cache_aligner_measures_without_mutating_body() {
-        // #940: the volatile-field scan is telemetry-only — it is on and must leave
+        // The volatile-field scan is telemetry-only — it is on and must leave
         // the request byte-identical (measurement, not a rewrite), even on a
         // volatile-field-rich system prompt.
         let _iso = crate::core::data_dir::isolated_data_dir();
@@ -469,7 +396,7 @@ mod tests {
     }
 
     /// A cacheable-size system prompt that carries one volatile field (a date),
-    /// so the #974 relocate has something to move and clears the size floor.
+    /// so the relocate has something to move and clears the size floor.
     fn cacheable_system_with_date() -> String {
         format!("Today is 2026-06-27. {}", cacheable_system())
     }

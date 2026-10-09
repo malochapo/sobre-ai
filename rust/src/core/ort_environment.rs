@@ -1,13 +1,13 @@
 //! ONNX Runtime global environment: single init per process, runtime dylib loading.
 //!
-//! With the `load-dynamic` Cargo feature (always enabled in lean-ctx's `ort`
+//! With the `load-dynamic` Cargo feature (always enabled in sobre's `ort`
 //! dependency), `libonnxruntime` is loaded at runtime via [`ort::init_from`].
 //! This module resolves the library path across platforms, including NixOS.
 //!
 //! # Search order
 //!
 //! 1. `ORT_DYLIB_PATH` env var (resolved relative to the executable directory)
-//! 2. The lean-ctx managed runtime (`lean-ctx embeddings provision`, GH #732)
+//! 2. The sobre managed runtime (`sobre embeddings provision`)
 //!    — version-matched to this build's `ort` API level by construction
 //! 3. Nix profile paths (Linux):
 //!    - `/run/current-system/sw/lib/` (system profile)
@@ -65,7 +65,7 @@ fn init_ort(eps: &[ExecutionProviderDispatch]) -> anyhow::Result<()> {
     let init = ort::init_from(&path)
         .map_err(|e| anyhow::anyhow!("ort::init_from({}) failed: {e}", path.display()))?;
     tracing::debug!("ort::init_from returned; committing ONNX Runtime environment");
-    init.with_name("lean-ctx")
+    init.with_name("sobre")
         .with_execution_providers(eps)
         .commit();
     tracing::debug!("ONNX Runtime environment commit returned");
@@ -119,7 +119,7 @@ fn validate_ort_dylib_version(path: &Path) -> anyhow::Result<()> {
         .unwrap_or(0);
     anyhow::ensure!(
         minor >= ort::MINOR_VERSION,
-        "{} is ONNX Runtime {version}, but this lean-ctx build requires ONNX Runtime >= 1.{}.x; install a matching onnxruntime package or point ORT_DYLIB_PATH at a newer libonnxruntime",
+        "{} is ONNX Runtime {version}, but this sobre build requires ONNX Runtime >= 1.{}.x; install a matching onnxruntime package or point ORT_DYLIB_PATH at a newer libonnxruntime",
         path.display(),
         ort::MINOR_VERSION,
     );
@@ -166,7 +166,7 @@ fn resolve_ort_dylib() -> anyhow::Result<PathBuf> {
         anyhow::bail!("ORT_DYLIB_PATH={p} set but file does not exist");
     }
 
-    // 2. Managed runtime (GH #732) — installed by `lean-ctx embeddings
+    // 2. Managed runtime — installed by `sobre embeddings
     //    provision`, SHA-256 pinned to the official release and version-
     //    matched to this build's ort API level. After ORT_DYLIB_PATH so an
     //    operator override always wins.
@@ -193,7 +193,7 @@ fn resolve_ort_dylib() -> anyhow::Result<PathBuf> {
 
     anyhow::bail!(
         "libonnxruntime not found.\n\
-         Managed:  lean-ctx embeddings provision  (official CPU runtime, sha256-pinned)\n\
+         Managed:  sobre embeddings provision  (official CPU runtime, sha256-pinned)\n\
          Or set ORT_DYLIB_PATH=<path> to point to the shared library.\n\
          Install:  pip install onnxruntime  (Python bundles the .so)\n\
          NixOS:    nix-shell -p onnxruntime\n\
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn homebrew_prefix_lib_is_searched() {
         // A dylib under $HOMEBREW_PREFIX/lib is discovered (covers Homebrew on
-        // any platform / custom prefix, incl. Linuxbrew). See issue #544.
+        // any platform / custom prefix, incl. Linuxbrew).
         let tmp = std::env::temp_dir().join(format!("lc-ort-hb-{}", std::process::id()));
         let libdir = tmp.join("lib");
         std::fs::create_dir_all(&libdir).unwrap();

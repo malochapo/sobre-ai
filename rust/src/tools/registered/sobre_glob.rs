@@ -1,0 +1,123 @@
+use rmcp::ErrorData;
+use rmcp::model::Tool;
+use serde_json::{Map, Value, json};
+
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str};
+use crate::tool_defs::tool_def;
+
+pub struct SobreGlobTool;
+
+impl McpTool for SobreGlobTool {
+    fn name(&self) -> &'static str {
+        "sobre_glob"
+    }
+
+    fn tool_def(&self) -> Tool {
+        tool_def(
+            "sobre_glob",
+            "Find files by glob pattern (respects .gitignore; multi-root via paths).\n\
+             For file CONTENT search use sobre_search.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "*.ts names a file at any depth; a glob with / (src/*.ts, src/**/*.ts) matches the path from the root, * staying within one directory" },
+                    "path": { "type": "string" },
+                    "paths": { "type": "array", "items": { "type": "string" } },
+                    "max_results": { "type": "integer", "description": "default 200" },
+                    "ignore_gitignore": { "type": "boolean", "description": "Also match .gitignore'd files" }
+                },
+                "required": ["pattern"]
+            }),
+        )
+    }
+
+    fn handle(
+        &self,
+        args: &Map<String, Value>,
+        ctx: &ToolContext,
+    ) -> Result<ToolOutput, ErrorData> {
+        let pattern = get_str(args, "pattern")
+            .ok_or_else(|| ErrorData::invalid_params("pattern is required", None))?;
+        let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
+            .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
+        let max = (get_int(args, "max_results").unwrap_or(200) as usize).min(500);
+        let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
+
+        let respect = !no_gitignore;
+
+        if !resolved.is_multi {
+            return handle_single(&pattern, &resolved.roots[0], respect, max);
+        }
+
+        let per_root_max = (max / resolved.roots.len()).max(5);
+        let mut combined = String::new();
+        let mut total_original: usize = 0;
+        let mut total_sent: usize = 0;
+
+        for root in &resolved.roots {
+            // The dispatch layer already runs `handle()` on the blocking pool
+            // (`spawn_blocking`, server/dispatch/mod.rs); the per-root walk is
+            // synchronous, so we call it directly and only guard against
+            // panics.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::tools::sobre_glob::handle(&pattern, root, respect, per_root_max)
+            }));
+
+            let Ok((result, original)) = result else {
+                combined.push_str(&format!("── {root} ──\nERROR: internal panic\n\n"));
+                continue;
+            };
+
+            combined.push_str(&format!("── {root} ──\n{result}\n\n"));
+            if !result.starts_with("ERROR:") {
+                total_original += original;
+                total_sent += crate::core::tokens::count_tokens(&result);
+            }
+        }
+
+        let final_out = combined.clone();
+        let saved = total_original.saturating_sub(total_sent);
+
+        Ok(ToolOutput {
+            text: final_out,
+            original_tokens: total_original,
+            saved_tokens: saved,
+            shell_outcome: None,
+            content_blocks: None,
+        })
+    }
+}
+
+fn handle_single(
+    pattern: &str,
+    path: &str,
+    respect_gitignore: bool,
+    max_results: usize,
+) -> Result<ToolOutput, ErrorData> {
+    let Ok((result, original)) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::tools::sobre_glob::handle(pattern, path, respect_gitignore, max_results)
+    })) else {
+        return Err(ErrorData::internal_error(
+            format!(
+                "sobre_glob panicked while processing '{path}'. This is a bug — please report it."
+            ),
+            None,
+        ));
+    };
+
+    if result.starts_with("ERROR:") {
+        return Err(ErrorData::invalid_params(result, None));
+    }
+
+    let sent = crate::core::tokens::count_tokens(&result);
+    let saved = original.saturating_sub(sent);
+    let final_out = result.clone();
+
+    Ok(ToolOutput {
+        text: final_out,
+        original_tokens: original,
+        saved_tokens: saved,
+        shell_outcome: None,
+        content_blocks: None,
+    })
+}

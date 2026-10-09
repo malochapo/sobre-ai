@@ -6,10 +6,10 @@ async fn context_engine_call_tool_text_reads_file() {
     let file_path = dir.path().join("a.txt");
     std::fs::write(&file_path, "hello-engine\n").expect("write file");
 
-    let engine = lean_ctx::engine::ContextEngine::with_project_root(dir.path());
+    let engine = sobre::engine::ContextEngine::with_project_root(dir.path());
     let out = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({
                 "path": file_path.to_string_lossy().to_string(),
                 "mode": "full"
@@ -21,7 +21,7 @@ async fn context_engine_call_tool_text_reads_file() {
     assert!(out.contains("hello-engine"));
 }
 
-/// #271 regression: many concurrent reads must all return through the
+/// Regression: many concurrent reads must all return through the
 /// `spawn_blocking` dispatch path without starving the core workers or hanging.
 /// Before the dispatch watchdog, a single hung handler could swallow its
 /// response (client crash: "Cannot read properties of undefined (reading
@@ -41,9 +41,7 @@ async fn context_engine_handles_concurrent_reads_without_hang() {
         .expect("write file");
     }
 
-    let engine = std::sync::Arc::new(lean_ctx::engine::ContextEngine::with_project_root(
-        dir.path(),
-    ));
+    let engine = std::sync::Arc::new(sobre::engine::ContextEngine::with_project_root(dir.path()));
     let mut handles = Vec::with_capacity(CALLS);
     for i in 0..CALLS {
         let engine = engine.clone();
@@ -54,7 +52,7 @@ async fn context_engine_handles_concurrent_reads_without_hang() {
             .to_string();
         handles.push(tokio::spawn(async move {
             engine
-                .call_tool_text("ctx_read", Some(json!({ "path": path, "mode": "full" })))
+                .call_tool_text("sobre_read", Some(json!({ "path": path, "mode": "full" })))
                 .await
         }));
     }

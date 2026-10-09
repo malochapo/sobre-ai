@@ -3,12 +3,12 @@
 //! Both the config installer ([`crate::config_io`]) and the edit tools
 //! (`crate::tools::edit_io`) need the same durable write dance: a
 //! same-directory temp file + `rename`, with an in-place-overwrite fallback when
-//! the directory is read-only but the file inode is writable (#459). Only the
+//! the directory is read-only but the file inode is writable. Only the
 //! *mechanism* lives here — one audited implementation. The differing *policy*
 //! stays in each caller:
 //!
 //! * `edit_io` rejects symlinks (`reject_symlink` + `O_NOFOLLOW`) and guards
-//!   TOCTOU/read-only-roots before calling in;
+//!   TOCTOU before calling in;
 //! * `config_io` resolves a user-managed symlink to its real target (within
 //!   `$HOME`) and then writes through to it.
 
@@ -38,7 +38,7 @@ pub(crate) fn try_atomic_write(
         .ok_or_else(|| invalid_input("invalid path (no filename)"))?
         .to_string_lossy();
 
-    // #958: sweep this directory for temps orphaned by a previous crash
+    // Sweep this directory for temps orphaned by a previous crash
     // between temp-file creation and rename — the only place these were
     // ever cleaned up before was the rename error path, so a hard crash
     // left them behind for good with no separate startup pass to catch
@@ -50,7 +50,7 @@ pub(crate) fn try_atomic_write(
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_nanos());
-    let tmp = parent.join(format!(".{filename}.lean-ctx.tmp.{pid}.{nanos}"));
+    let tmp = parent.join(format!(".{filename}.sobre.tmp.{pid}.{nanos}"));
 
     {
         let mut f = std::fs::OpenOptions::new()
@@ -66,7 +66,7 @@ pub(crate) fn try_atomic_write(
         let _ = std::fs::set_permissions(&tmp, perms.clone());
     }
 
-    // #956: on Windows, `rename` fails outright if `path` already exists, so
+    // On Windows, `rename` fails outright if `path` already exists, so
     // this used to `remove_file(path)` first and rename second — two
     // non-atomic syscalls. A reader landing in that window sees ENOENT for a
     // file that "exists", and a process that dies after the remove but
@@ -111,6 +111,8 @@ fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
     let tmp_w = to_wide(tmp);
     let path_w = to_wide(path);
 
+    // SAFETY: both buffers are NUL-terminated UTF-16 strings that outlive the
+    // call; MoveFileExW only reads them.
     let ok = unsafe { MoveFileExW(tmp_w.as_ptr(), path_w.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
     if ok == 0 {
         return Err(std::io::Error::last_os_error());
@@ -127,11 +129,11 @@ fn fsync_dir(dir: &Path) {
     }
 }
 
-/// Removes `.{filename}.lean-ctx.tmp.{pid}.{nanos}` leftovers in `parent` from
-/// a crash between temp-file creation and rename (#958).
+/// Removes `.{filename}.sobre.tmp.{pid}.{nanos}` leftovers in `parent` from
+/// a crash between temp-file creation and rename.
 fn cleanup_orphaned_temps(parent: &Path, filename: &str) {
     const STALE_AGE: std::time::Duration = std::time::Duration::from_hours(1);
-    let prefix = format!(".{filename}.lean-ctx.tmp.");
+    let prefix = format!(".{filename}.sobre.tmp.");
 
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
@@ -212,7 +214,7 @@ pub(crate) fn is_readonly_dir_error(e: &std::io::Error) -> bool {
     }
 }
 
-/// Atomic write with the read-only-directory in-place fallback (#459). Tries the
+/// Atomic write with the read-only-directory in-place fallback. Tries the
 /// crash-atomic temp+rename first; if that fails because the *directory* is
 /// read-only/permission-denied but an existing file inode is writable, overwrite
 /// it in place. `permissions`, when given, is applied to the written file.
@@ -261,7 +263,7 @@ mod tests {
         }
     }
 
-    // --- #958: orphaned-temp sweep ---
+    // --- orphaned-temp sweep ---
 
     #[test]
     fn cleanup_orphaned_temps_removes_dead_pid_leftovers() {
@@ -270,7 +272,7 @@ mod tests {
         let dead_pid = 999_999_999u32;
         let orphan = dir
             .path()
-            .join(format!(".{filename}.lean-ctx.tmp.{dead_pid}.123"));
+            .join(format!(".{filename}.sobre.tmp.{dead_pid}.123"));
         std::fs::write(&orphan, b"stale").unwrap();
 
         cleanup_orphaned_temps(dir.path(), filename);
@@ -288,7 +290,7 @@ mod tests {
         let my_pid = std::process::id();
         let in_progress = dir
             .path()
-            .join(format!(".{filename}.lean-ctx.tmp.{my_pid}.123"));
+            .join(format!(".{filename}.sobre.tmp.{my_pid}.123"));
         std::fs::write(&in_progress, b"still writing").unwrap();
 
         cleanup_orphaned_temps(dir.path(), filename);
@@ -306,7 +308,7 @@ mod tests {
         let my_pid = std::process::id();
         let ancient = dir
             .path()
-            .join(format!(".{filename}.lean-ctx.tmp.{my_pid}.123"));
+            .join(format!(".{filename}.sobre.tmp.{my_pid}.123"));
         std::fs::write(&ancient, b"ancient").unwrap();
         filetime::set_file_mtime(&ancient, filetime::FileTime::from_unix_time(0, 0)).unwrap();
 
@@ -339,7 +341,7 @@ mod tests {
         let strays: Vec<_> = std::fs::read_dir(dir.path())
             .unwrap()
             .flatten()
-            .filter(|e| e.file_name().to_string_lossy().contains(".lean-ctx.tmp."))
+            .filter(|e| e.file_name().to_string_lossy().contains(".sobre.tmp."))
             .collect();
         assert!(strays.is_empty(), "temp file must not linger");
         try_atomic_write(&path, b"second", None).unwrap();

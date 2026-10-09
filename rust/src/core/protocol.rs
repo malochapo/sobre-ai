@@ -21,17 +21,6 @@ impl CrpMode {
     }
 }
 
-/// Recorded metrics for a single MCP tool invocation.
-#[derive(Clone, Debug)]
-pub struct ToolCallRecord {
-    pub tool: String,
-    pub original_tokens: usize,
-    pub saved_tokens: usize,
-    pub mode: Option<String>,
-    pub duration_ms: u64,
-    pub timestamp: String,
-}
-
 /// Finds the outermost project root by walking up from `file_path`.
 /// For monorepos with nested `.git` dirs (e.g. `mono/backend/.git` + `mono/frontend/.git`),
 /// returns the outermost ancestor containing `.git`, a workspace marker, or a known
@@ -79,14 +68,8 @@ fn is_project_root_marker(dir: &Path) -> bool {
 }
 
 /// Returns the project root for `file_path`, falling back to cwd if none found.
-/// Checks LEAN_CTX_PROJECT_ROOT env var and config.toml `project_root` first.
 /// Logs a warning when the fallback is a broad directory (home, root).
 pub fn detect_project_root_or_cwd(file_path: &str) -> String {
-    if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
-        && !env_root.is_empty()
-    {
-        return env_root;
-    }
     if let Some(root) = detect_project_root(file_path) {
         return root;
     }
@@ -114,8 +97,7 @@ pub fn detect_project_root_or_cwd(file_path: &str) -> String {
         WARN_ONCE.call_once(|| {
             tracing::warn!(
                 "[protocol: no project detected — current directory is {fallback} which is not a project root.\n  \
-                 To fix: run from inside a project (with .git, Cargo.toml, package.json, etc.)\n  \
-                 Or set: export LEAN_CTX_PROJECT_ROOT=/path/to/your/project]"
+                 To fix: run from inside a project (with .git, Cargo.toml, package.json, etc.)]"
             );
         });
     }
@@ -141,7 +123,7 @@ fn is_broad_directory(path: &str) -> bool {
 /// slashes. Forward slashes are valid path separators on Windows, and unlike
 /// backslashes they are never misinterpreted as escape sequences by the JSON,
 /// markdown, or terminal layers of MCP clients — which corrupted Windows paths
-/// in tool output (e.g. `C:\Users\…` rendered as `CUsers…`). See issue #324.
+/// in tool output (e.g. `C:\Users\…` rendered as `CUsers…`).
 pub fn display_path(path: &str) -> String {
     path.replace('\\', "/")
 }
@@ -174,69 +156,13 @@ pub fn shorten_path_relative(path: &str, root: &str) -> String {
     shorten_path(&norm_path)
 }
 
-/// Removes a single trailing savings footer line, if present.
-///
-/// The compression funnel appends at most one footer as the final line — either
-/// the box-drawing form (`─── 4,200 → 840 tok (↓80%) ───`) or the verbatim
-/// truncation form (`[lean-ctx: 4200→840 tok, verbatim truncated]`). The
-/// `/v1/compress` contract surfaces savings in a structured `stats` field, so
-/// message bodies must stay footer-free and byte-stable for prompt caching
-/// (#498). This strips that trailing line regardless of the ambient
-/// `savings_footer` setting; content without a footer is returned untouched.
-pub fn strip_trailing_savings_footer(output: &str) -> &str {
-    let body = output.trim_end_matches('\n');
-    let (head, last_line) = match body.rfind('\n') {
-        Some(nl) => (&body[..nl], &body[nl + 1..]),
-        None => ("", body),
-    };
-    if is_savings_footer_line(last_line) {
-        head
-    } else {
-        output
-    }
-}
-
-fn is_savings_footer_line(line: &str) -> bool {
-    let l = line.trim();
-    (l.starts_with("\u{2500}\u{2500}\u{2500} ") && l.ends_with(" \u{2500}\u{2500}\u{2500}"))
-        || (l.starts_with("[lean-ctx: ") && l.ends_with(']'))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn strip_trailing_savings_footer_handles_both_styles() {
-        // Box-drawing footer.
-        let boxed = "body line one\nbody line two\n\u{2500}\u{2500}\u{2500} 4,200 \u{2192} 840 tok (\u{2193}80%) \u{2500}\u{2500}\u{2500}";
-        assert_eq!(
-            strip_trailing_savings_footer(boxed),
-            "body line one\nbody line two"
-        );
-        // Verbatim-truncation footer.
-        let verbatim = "out\n[lean-ctx: 4200\u{2192}840 tok, verbatim truncated]";
-        assert_eq!(strip_trailing_savings_footer(verbatim), "out");
-        // No footer → untouched (including trailing newline).
-        assert_eq!(
-            strip_trailing_savings_footer("plain body\n"),
-            "plain body\n"
-        );
-        // A footer-only string collapses to empty.
-        assert_eq!(
-            strip_trailing_savings_footer("[lean-ctx: 10\u{2192}5 tok, verbatim truncated]"),
-            ""
-        );
-        // A body line that merely mentions the marker mid-text is preserved.
-        assert_eq!(
-            strip_trailing_savings_footer("see [lean-ctx: docs] for details"),
-            "see [lean-ctx: docs] for details"
-        );
-    }
-
-    #[test]
     fn display_path_normalizes_windows_separators() {
-        // Issue #324: backslashes were dropped/escaped by client render layers.
+        // Backslashes were dropped/escaped by client render layers.
         assert_eq!(
             display_path(r"C:\Users\zir\AppData\Local\Temp\win-build-log.txt"),
             "C:/Users/zir/AppData/Local/Temp/win-build-log.txt"
@@ -282,7 +208,7 @@ mod tests {
 
     #[test]
     fn is_project_root_marker_detects_git() {
-        let tmp = std::env::temp_dir().join("lean-ctx-test-root-marker");
+        let tmp = std::env::temp_dir().join("sobre-test-root-marker");
         let _ = std::fs::create_dir_all(&tmp);
         let git_dir = tmp.join(".git");
         let _ = std::fs::create_dir_all(&git_dir);
@@ -292,7 +218,7 @@ mod tests {
 
     #[test]
     fn is_project_root_marker_detects_cargo_toml() {
-        let tmp = std::env::temp_dir().join("lean-ctx-test-cargo-marker");
+        let tmp = std::env::temp_dir().join("sobre-test-cargo-marker");
         let _ = std::fs::create_dir_all(&tmp);
         let _ = std::fs::write(tmp.join("Cargo.toml"), "[package]");
         assert!(is_project_root_marker(&tmp));
@@ -301,7 +227,7 @@ mod tests {
 
     #[test]
     fn detect_project_root_finds_outermost() {
-        let base = std::env::temp_dir().join("lean-ctx-test-monorepo");
+        let base = std::env::temp_dir().join("sobre-test-monorepo");
         let inner = base.join("packages").join("app");
         let _ = std::fs::create_dir_all(&inner);
         let _ = std::fs::create_dir_all(base.join(".git"));

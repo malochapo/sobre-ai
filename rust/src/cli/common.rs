@@ -1,48 +1,3 @@
-pub(crate) fn load_shell_history() -> Vec<String> {
-    let shell = std::env::var("SHELL").unwrap_or_default();
-    let Some(home) = dirs::home_dir() else {
-        return Vec::new();
-    };
-
-    let history_file = if shell.contains("zsh") {
-        home.join(".zsh_history")
-    } else if shell.contains("fish") {
-        home.join(".local/share/fish/fish_history")
-    } else if cfg!(windows) && shell.is_empty() {
-        home.join("AppData")
-            .join("Roaming")
-            .join("Microsoft")
-            .join("Windows")
-            .join("PowerShell")
-            .join("PSReadLine")
-            .join("ConsoleHost_history.txt")
-    } else {
-        home.join(".bash_history")
-    };
-
-    // Shell history files (especially zsh's metafied format) frequently contain
-    // non-UTF-8 bytes; `read_to_string` would reject the whole file. Read raw and
-    // decode lossily so a single bad byte never hides 900 lines of real history.
-    match std::fs::read(&history_file) {
-        Ok(bytes) => String::from_utf8_lossy(&bytes)
-            .lines()
-            .filter_map(|l| {
-                let trimmed = l.trim();
-                if trimmed.starts_with(':') {
-                    trimmed
-                        .split(';')
-                        .nth(1)
-                        .map(std::string::ToString::to_string)
-                } else {
-                    Some(trimmed.to_string())
-                }
-            })
-            .filter(|l| !l.is_empty())
-            .collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
 pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     if tokens >= 1_000_000_000_000 {
         format!("{:.2}T", tokens as f64 / 1_000_000_000_000.0)
@@ -58,68 +13,6 @@ pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     }
 }
 
-pub(crate) fn cli_track_read(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    output: &str,
-    duration: std::time::Duration,
-) {
-    crate::core::tool_lifecycle::record_file_read(
-        path,
-        mode,
-        original_tokens,
-        output_tokens,
-        false,
-        duration,
-        output,
-    );
-}
-
-pub(crate) fn cli_track_read_cached(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    output: &str,
-    duration: std::time::Duration,
-) {
-    crate::core::tool_lifecycle::record_file_read(
-        path,
-        mode,
-        original_tokens,
-        output_tokens,
-        true,
-        duration,
-        output,
-    );
-}
-
-pub(crate) fn cli_track_search(
-    modeled_baseline: usize,
-    observed_tokens: usize,
-    output_tokens: usize,
-    pattern: &str,
-    path: &str,
-    output: &str,
-    duration: std::time::Duration,
-) {
-    crate::core::tool_lifecycle::record_search(
-        modeled_baseline,
-        observed_tokens,
-        output_tokens,
-        pattern,
-        path,
-        duration,
-        output,
-    );
-}
-
-pub(crate) fn cli_track_tree(original_tokens: usize, output_tokens: usize) {
-    crate::core::tool_lifecycle::record_tree(original_tokens, output_tokens);
-}
-
 pub(crate) fn detect_project_root(args: &[String]) -> String {
     let mut it = args.iter().peekable();
     while let Some(a) = it.next() {
@@ -128,23 +21,13 @@ pub(crate) fn detect_project_root(args: &[String]) -> String {
         {
             return normalize_explicit_root(v);
         }
-        if let Some(v) = a.strip_prefix("--project-root=")
-            && !v.trim().is_empty()
-        {
-            return normalize_explicit_root(v);
-        }
-        if (a == "--root" || a == "--project-root")
+        if a == "--root"
             && let Some(v) = it.peek()
             && !v.starts_with("--")
             && !v.trim().is_empty()
         {
             return normalize_explicit_root(v);
         }
-    }
-    if let Ok(root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
-        && !root.trim().is_empty()
-    {
-        return normalize_explicit_root(&root);
     }
     let cwd = std::env::current_dir()
         .ok()

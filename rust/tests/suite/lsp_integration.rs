@@ -3,7 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 
 fn test_project_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join("lean-ctx-lsp-test");
+    let dir = std::env::temp_dir().join("sobre-lsp-test");
     let src = dir.join("src");
     fs::create_dir_all(&src).unwrap();
 
@@ -26,7 +26,7 @@ edition = "2021"
 fn main() {
     let msg = greet("world");
     println!("{msg}");
-    let msg2 = greet("lean-ctx");
+    let msg2 = greet("sobre");
     println!("{msg2}");
 }
 "#,
@@ -48,7 +48,7 @@ fn call_refactor(args: &serde_json::Value, root: &str) -> String {
         .get("path")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
-    lean_ctx::tools::ctx_refactor::handle(args, root, abs_path)
+    sobre::tools::sobre_refactor::handle(args, root, abs_path)
 }
 
 fn wait_for_lsp_ready(dir: &std::path::Path, root: &str) {
@@ -150,7 +150,7 @@ fn test_lsp_unknown_action() {
 
 #[test]
 fn test_lsp_unsupported_extension() {
-    let dir = std::env::temp_dir().join("lean-ctx-lsp-test-ext");
+    let dir = std::env::temp_dir().join("sobre-lsp-test-ext");
     fs::create_dir_all(&dir).unwrap();
     let test_file = dir.join("test.xyz");
     fs::write(&test_file, "content").unwrap();

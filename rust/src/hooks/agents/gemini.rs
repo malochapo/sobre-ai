@@ -1,166 +1,105 @@
-use super::super::{mcp_server_quiet_mode, resolve_hook_command_binary, write_file};
-use super::shared::install_standard_hook_scripts;
+use super::super::resolve_hook_command_binary;
 
-pub(crate) fn install_gemini_hook() {
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        tracing::error!("Cannot resolve home directory");
-        return;
-    };
-
-    install_gemini_hook_scripts(&home);
-    install_gemini_hook_config(&home);
+pub(crate) fn install_gemini_hook_config(home: &std::path::Path) -> Result<(), String> {
+    let binary = resolve_hook_command_binary();
+    let settings_path = home.join(".gemini").join("settings.json");
+    crate::config_io::edit_json(&settings_path, |root| {
+        let mut value = serde_json::Value::Object(std::mem::take(root));
+        merge_gemini_hooks(&mut value, &binary);
+        if let serde_json::Value::Object(map) = value {
+            *root = map;
+        }
+    })
 }
 
-pub(crate) fn install_gemini_hook_scripts(home: &std::path::Path) {
-    let hooks_dir = home.join(".gemini").join("hooks");
-    install_standard_hook_scripts(
-        &hooks_dir,
-        home,
-        "lean-ctx-rewrite-gemini.sh",
-        "lean-ctx-redirect-gemini.sh",
+fn merge_gemini_hooks(root: &mut serde_json::Value, binary: &str) {
+    if !root.is_object() {
+        *root = serde_json::json!({});
+    }
+    let Some(obj) = root.as_object_mut() else {
+        return;
+    };
+    let hooks = obj
+        .entry("hooks".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !hooks.is_object() {
+        *hooks = serde_json::json!({});
+    }
+    let Some(hooks_obj) = hooks.as_object_mut() else {
+        return;
+    };
+    ensure_entry(
+        hooks_obj,
+        "BeforeTool",
+        "run_shell_command",
+        &format!("{binary} hook gemini"),
+    );
+    ensure_entry(
+        hooks_obj,
+        "AfterTool",
+        ".*",
+        &format!("{binary} hook observe"),
     );
 }
 
-pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
-    let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let redirect_cmd = format!("{binary} hook redirect");
-
-    let settings_path = home.join(".gemini").join("settings.json");
-    let settings_content = if settings_path.exists() {
-        std::fs::read_to_string(&settings_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    let has_new_format = settings_content.contains("hook rewrite")
-        && settings_content.contains("hook redirect")
-        && settings_content.contains("\"type\"")
-        && settings_content.contains("\"matcher\"");
-    let has_old_hooks = settings_content.contains("lean-ctx-rewrite")
-        || settings_content.contains("lean-ctx-redirect")
-        || (settings_content.contains("hook rewrite") && !settings_content.contains("\"matcher\""));
-    let missing_observe = !settings_content.contains("hook observe");
-
-    if has_new_format && !has_old_hooks && !missing_observe {
+fn ensure_entry(
+    hooks_obj: &mut serde_json::Map<String, serde_json::Value>,
+    event: &str,
+    matcher: &str,
+    command: &str,
+) {
+    let arr = hooks_obj
+        .entry(event.to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    if !arr.is_array() {
+        *arr = serde_json::json!([]);
+    }
+    let Some(entries) = arr.as_array_mut() else {
         return;
-    }
-
-    let observe_cmd = format!("{binary} hook observe");
-    let hook_config = serde_json::json!({
-        "hooks": {
-            "BeforeTool": [
-                {
-                    "matcher": "shell|execute_command|run_shell_command",
-                    "hooks": [{
-                        "type": "command",
-                        "command": rewrite_cmd
-                    }]
-                },
-                {
-                    "matcher": "read_file|read_many_files|grep|search|list_dir|glob|list_files",
-                    "hooks": [{
-                        "type": "command",
-                        "command": redirect_cmd
-                    }]
-                }
-            ],
-            "AfterTool": [
-                {
-                    "matcher": ".*",
-                    "hooks": [{
-                        "type": "command",
-                        "command": observe_cmd
-                    }]
-                }
-            ]
-        }
-    });
-
-    if settings_content.is_empty() {
-        write_file(
-            &settings_path,
-            &serde_json::to_string_pretty(&hook_config).unwrap_or_default(),
-        );
-    } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content)
-        && let Some(obj) = existing.as_object_mut()
-    {
-        obj.insert("hooks".to_string(), hook_config["hooks"].clone());
-        write_file(
-            &settings_path,
-            &serde_json::to_string_pretty(&existing).unwrap_or_default(),
-        );
-    }
-    if !mcp_server_quiet_mode() {
-        eprintln!(
-            "Installed Gemini CLI hooks at {}",
-            settings_path.parent().unwrap_or(&settings_path).display()
-        );
-    }
+    };
+    entries.retain(|group| !is_sobre_group(group));
+    entries.push(serde_json::json!({
+        "matcher": matcher,
+        "hooks": [{ "type": "command", "command": command }]
+    }));
 }
 
-/// Install deny-variant hooks for Gemini in Replace mode.
-/// Replaces the redirect BeforeTool hook with a deny hook.
-pub(crate) fn install_gemini_deny_hook(home: &std::path::Path) {
-    let binary = resolve_hook_command_binary();
-    let rewrite_cmd = format!("{binary} hook rewrite");
-    let deny_cmd = format!("{binary} hook deny");
-    let observe_cmd = format!("{binary} hook observe");
+fn is_sobre_group(group: &serde_json::Value) -> bool {
+    group
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .is_some_and(|hooks| {
+            hooks.iter().any(|h| {
+                h.get("command")
+                    .and_then(|c| c.as_str())
+                    .is_some_and(crate::hooks::is_sobre_hook_command)
+            })
+        })
+}
 
-    let settings_path = home.join(".gemini").join("settings.json");
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let hook_config = serde_json::json!({
-        "hooks": {
-            "BeforeTool": [
-                {
-                    "matcher": "shell|execute_command|run_shell_command",
-                    "hooks": [{
-                        "type": "command",
-                        "command": rewrite_cmd
-                    }]
-                },
-                {
-                    "matcher": "read_file|read_many_files|grep|search|list_dir|glob|list_files",
-                    "hooks": [{
-                        "type": "command",
-                        "command": deny_cmd
-                    }]
-                }
-            ],
-            "AfterTool": [
-                {
-                    "matcher": ".*",
-                    "hooks": [{
-                        "type": "command",
-                        "command": observe_cmd
-                    }]
-                }
-            ]
-        }
-    });
+    #[test]
+    fn merge_keeps_foreign_hooks_and_is_idempotent() {
+        let mut v = serde_json::json!({
+            "theme": "dark",
+            "hooks": {
+                "BeforeTool": [
+                    { "matcher": "write_file", "hooks": [{ "type": "command", "command": "my-check" }] }
+                ]
+            }
+        });
+        merge_gemini_hooks(&mut v, "/bin/sobre");
+        merge_gemini_hooks(&mut v, "/bin/sobre");
 
-    let settings_content = if settings_path.exists() {
-        std::fs::read_to_string(&settings_path).unwrap_or_default()
-    } else {
-        String::new()
-    };
-
-    if settings_content.is_empty() {
-        write_file(
-            &settings_path,
-            &serde_json::to_string_pretty(&hook_config).unwrap_or_default(),
-        );
-    } else if let Ok(mut existing) = crate::core::jsonc::parse_jsonc(&settings_content)
-        && let Some(obj) = existing.as_object_mut()
-    {
-        obj.insert("hooks".to_string(), hook_config["hooks"].clone());
-        write_file(
-            &settings_path,
-            &serde_json::to_string_pretty(&existing).unwrap_or_default(),
-        );
-    }
-
-    if !mcp_server_quiet_mode() {
-        eprintln!("  \x1b[32m✓\x1b[0m Gemini deny hook installed (Replace mode)");
+        assert_eq!(v["theme"], "dark");
+        let before = v["hooks"]["BeforeTool"].as_array().unwrap();
+        assert_eq!(before.len(), 2);
+        assert_eq!(before[0]["hooks"][0]["command"], "my-check");
+        assert_eq!(before[1]["matcher"], "run_shell_command");
+        assert_eq!(before[1]["hooks"][0]["command"], "/bin/sobre hook gemini");
+        assert_eq!(v["hooks"]["AfterTool"].as_array().unwrap().len(), 1);
     }
 }

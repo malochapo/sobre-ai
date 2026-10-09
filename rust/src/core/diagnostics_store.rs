@@ -1,14 +1,14 @@
-//! Active compiler/linter diagnostics as a context-priority signal (#499).
+//! Active compiler/linter diagnostics as a context-priority signal.
 //!
 //! When `cargo`/`tsc`/`eslint` fail, the files they point at are the most
 //! task-relevant files in the project — the agent will read them next to fix
-//! the build. The shell layer already sees this output (CLI `lean-ctx -c` and
-//! MCP `ctx_shell`); this store extracts the structured `(file, line)` pairs
+//! the build. The shell layer already sees this output (CLI `sobre -c` and
+//! MCP `sobre_shell`); this store extracts the structured `(file, line)` pairs
 //! and makes them available to auto-mode, relevance ranking and the triage.
 //!
-//! Persistence: `~/.lean-ctx/diagnostics.json` — the CLI runs as a separate
+//! Persistence: `<data dir>/diagnostics.json` — the CLI runs as a separate
 //! process from the MCP server, so an in-memory store would never be seen by
-//! `ctx_read`'s auto-mode. Entries expire after `TTL_SECS`; a succeeding run
+//! `sobre_read`'s auto-mode. Entries expire after `TTL_SECS`; a succeeding run
 //! of the same tool clears its diagnostics.
 
 use std::collections::HashMap;
@@ -69,11 +69,11 @@ fn tool_of_command(command: &str) -> Option<&'static str> {
 
 impl DiagnosticsStore {
     fn load_from_disk() -> Self {
-        let Ok(raw) = std::fs::read_to_string(store_path()) else {
+        let Some(Ok(raw)) = store_path().map(std::fs::read_to_string) else {
             return Self::default();
         };
         let mut store: Self = serde_json::from_str(&raw).unwrap_or_default();
-        store.expire(now_unix());
+        store.expire(crate::core::clock::now_unix());
         store
     }
 
@@ -108,6 +108,7 @@ impl DiagnosticsStore {
         })
     }
 
+    #[cfg(test)]
     pub fn severity_for(&self, path: &str) -> Option<Severity> {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         let mut found: Option<Severity> = None;
@@ -122,16 +123,8 @@ impl DiagnosticsStore {
         found
     }
 
-    pub fn for_path(&self, path: &str) -> Vec<&Diagnostic> {
-        let norm = crate::core::pathutil::normalize_tool_path(path);
-        self.diagnostics
-            .iter()
-            .filter(|d| norm.ends_with(&d.path) || d.path.ends_with(&norm))
-            .collect()
-    }
-
     pub fn save(&self) -> std::io::Result<()> {
-        let path = store_path();
+        let path = store_path().ok_or_else(|| std::io::Error::other("no data dir"))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -142,16 +135,12 @@ impl DiagnosticsStore {
     }
 }
 
-fn store_path() -> PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(STORE_FILE)
-}
-
-fn now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
+fn store_path() -> Option<PathBuf> {
+    Some(
+        crate::core::data_dir::sobre_data_dir()
+            .ok()?
+            .join(STORE_FILE),
+    )
 }
 
 fn global() -> &'static Mutex<DiagnosticsStore> {
@@ -201,19 +190,6 @@ pub fn snapshot() -> Vec<(String, Severity)> {
         .unwrap_or_default()
 }
 
-/// Diagnostics for one path: `(line, severity, message)` triples.
-pub fn details_for(path: &str) -> Vec<(Option<u32>, Severity, String)> {
-    global()
-        .lock()
-        .map(|s| {
-            s.for_path(path)
-                .into_iter()
-                .map(|d| (d.line, d.severity, d.message.clone()))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
 fn parse_output(tool: &str, output: &str) -> Vec<Diagnostic> {
     match tool {
         "cargo" => parse_cargo(output),
@@ -239,7 +215,7 @@ fn cap_message(msg: &str) -> String {
 /// Cargo/rustc: severity line (`error[E0308]: ...` / `warning: ...`) followed
 /// by a location line (`  --> src/main.rs:12:5`).
 fn parse_cargo(output: &str) -> Vec<Diagnostic> {
-    let now = now_unix();
+    let now = crate::core::clock::now_unix();
     let mut out = Vec::new();
     let mut pending: Option<(Severity, String)> = None;
 
@@ -286,7 +262,7 @@ fn parse_cargo(output: &str) -> Vec<Diagnostic> {
 /// tsc emits two formats:
 /// `src/a.ts(12,5): error TS2304: ...` and `src/a.ts:12:5 - error TS2304: ...`
 fn parse_tsc(output: &str) -> Vec<Diagnostic> {
-    let now = now_unix();
+    let now = crate::core::clock::now_unix();
     let mut out = Vec::new();
     for line in output.lines() {
         let line = line.trim();
@@ -338,7 +314,7 @@ fn parse_tsc(output: &str) -> Vec<Diagnostic> {
 
 /// eslint (stylish): file header line, then `  12:5  error  msg  rule`.
 fn parse_eslint(output: &str) -> Vec<Diagnostic> {
-    let now = now_unix();
+    let now = crate::core::clock::now_unix();
     let mut out = Vec::new();
     let mut current_file: Option<String> = None;
 
@@ -424,14 +400,14 @@ mod tests {
     use super::*;
 
     const CARGO_OUT: &str = r#"
-   Compiling lean-ctx v3.7.5
+   Compiling sobre v3.7.5
 error[E0308]: mismatched types
   --> src/core/cache.rs:42:9
    |
 42 |         "x"
    |         ^^^ expected `usize`, found `&str`
 warning: unused variable: `foo`
-  --> src/tools/ctx_read.rs:10:9
+  --> src/tools/sobre_read.rs:10:9
 error: aborting due to 1 previous error
 "#;
 
@@ -442,7 +418,7 @@ error: aborting due to 1 previous error
         assert_eq!(diags[0].path, "src/core/cache.rs");
         assert_eq!(diags[0].line, Some(42));
         assert_eq!(diags[0].severity, Severity::Error);
-        assert_eq!(diags[1].path, "src/tools/ctx_read.rs");
+        assert_eq!(diags[1].path, "src/tools/sobre_read.rs");
         assert_eq!(diags[1].severity, Severity::Warning);
     }
 
@@ -483,14 +459,14 @@ error: aborting due to 1 previous error
     fn expiry_drops_stale_entries() {
         let mut store = DiagnosticsStore::default();
         store.replace_for_tool("cargo", parse_cargo(CARGO_OUT));
-        store.expire(now_unix() + TTL_SECS + 10);
+        store.expire(crate::core::clock::now_unix() + TTL_SECS + 10);
         assert!(store.diagnostics.is_empty());
     }
 
     #[test]
     fn severity_prefers_error_over_warning() {
         let mut store = DiagnosticsStore::default();
-        let now = now_unix();
+        let now = crate::core::clock::now_unix();
         store.replace_for_tool(
             "cargo",
             vec![

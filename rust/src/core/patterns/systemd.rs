@@ -1,3 +1,4 @@
+use crate::core::patterns::compact_lines;
 use std::collections::HashMap;
 
 pub fn compress(cmd: &str, output: &str) -> Option<String> {
@@ -116,17 +117,5 @@ fn compress_journal(output: &str) -> String {
         lines.len(),
         top.len(),
         top.join("\n")
-    )
-}
-
-fn compact_lines(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
     )
 }

@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
+use super::usage::Provider;
 
 /// Proxy handler for OpenAI's Responses API (`POST /v1/responses`).
 ///
@@ -34,24 +35,9 @@ pub(crate) async fn handler(
         &upstream,
         "/v1/responses",
         compress_request_body,
-        "OpenAI",
-        &[],
+        Provider::OpenAi,
     )
     .await
-}
-
-/// Handles the WebSocket Responses transport on `GET /v1/responses`.
-///
-/// Codex (and the OpenAI SDK) default to `ws://…/responses` with one
-/// `response.create` event per turn. Bridging the upgrade here lets the proxy be
-/// a drop-in for Codex without forcing `supports_websockets = false` (#440); the
-/// actual WS↔HTTP/SSE bridging lives in `openai_responses_ws`.
-pub(crate) async fn ws_handler(
-    State(state): State<ProxyState>,
-    headers: axum::http::HeaderMap,
-    ws: axum::extract::ws::WebSocketUpgrade,
-) -> Response {
-    super::openai_responses_ws::upgrade(state, ws, &headers)
 }
 
 pub(super) fn compress_request_body(
@@ -83,9 +69,7 @@ pub(super) fn compress_request_body(
 /// The boundary is the same monotone staircase as every other rail
 /// ([`history_prune::prune_boundary`]), so the request prefix stays byte-stable
 /// for up to a full stride and OpenAI's automatic prompt cache keeps hitting.
-///
-/// Shared with the WebSocket bridge (#440) so Codex/WS turns prune identically.
-pub(super) fn prune_responses_input(doc: &mut Value) -> bool {
+fn prune_responses_input(doc: &mut Value) -> bool {
     let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) else {
         return false;
     };
@@ -119,8 +103,7 @@ fn prune_output_field(output: &mut Value, kind: ToolResultKind) -> bool {
 }
 
 /// Compresses the `function_call_output.output` entries of a Responses-API body
-/// in place, returning whether anything changed. Shared by the HTTP handler and
-/// the WebSocket bridge (#440) so both paths get identical, safe savings.
+/// in place, returning whether anything changed.
 ///
 /// The only token sink we shrink is each `function_call_output.output` — the
 /// Responses-API analogue of a Chat Completions `role:"tool"` message. We never
@@ -129,7 +112,7 @@ fn prune_output_field(output: &mut Value, kind: ToolResultKind) -> bool {
 /// their originating call), so all token reclamation happens *in place* on the
 /// output text. Cache-aware pruning of the frozen OLD region lives in
 /// [`prune_responses_input`]; this pass compresses whatever recent outputs remain.
-pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
+fn compress_responses_input(doc: &mut Value) -> bool {
     let cfg = crate::core::config::Config::load();
     let mut modified = false;
     if let Some(input) = doc.get_mut("input").and_then(|i| i.as_array_mut()) {
@@ -143,7 +126,7 @@ pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
                 .and_then(|v| v.as_str())
                 .and_then(|id| tool_names.get(id))
                 .map(String::as_str);
-            // #481: per-tool exclusion (Serena default) — skip live compression
+            // Per-tool exclusion (Serena default) — skip live compression
             // for excluded tools; history pruning above still applies.
             if name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
                 continue;
@@ -289,7 +272,7 @@ mod tests {
     #[test]
     fn string_output_mirrors_engine_and_shrinks() {
         // tee path depends on the data dir; serialize env access so a parallel
-        // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
+        // test never swaps SOBRE_DATA_DIR between the two compressions.
         let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
@@ -319,7 +302,7 @@ mod tests {
     #[test]
     fn array_output_text_is_compressed() {
         // tee path depends on the data dir; serialize env access so a parallel
-        // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
+        // test never swaps SOBRE_DATA_DIR between the two compressions.
         let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
@@ -439,7 +422,7 @@ mod tests {
 
     #[test]
     fn responses_instructions_and_assistant_prose_pass_through_verbatim() {
-        // #710: role aggressiveness is off, so prose is never rewritten.
+        // Role aggressiveness is off, so prose is never rewritten.
         let _iso = crate::core::data_dir::isolated_data_dir();
 
         let prose = big_prose();
@@ -463,7 +446,7 @@ mod tests {
         assert_eq!(
             parsed["input"][1]["content"].as_str().unwrap(),
             prose,
-            "assistant turns must pass through verbatim (#710)"
+            "assistant turns must pass through verbatim"
         );
     }
 
@@ -487,7 +470,7 @@ mod tests {
         assert_eq!(
             compress_request_body(a, la).0,
             compress_request_body(b, lb).0,
-            "identical input must yield byte-identical output (#498)"
+            "identical input must yield byte-identical output"
         );
     }
 
@@ -565,7 +548,7 @@ mod tests {
 
     #[test]
     fn responses_compression_is_deterministic() {
-        // #498: the same request must compress to byte-identical output so the
+        // The same request must compress to byte-identical output so the
         // provider's prompt cache (and our regression diffs) stay stable.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let mk = || serde_json::json!({"model": "gpt-5", "input": responses_read_turns(14)});
@@ -613,7 +596,7 @@ mod tests {
 
     #[test]
     fn effort_control_is_off() {
-        // #834: effort control is off, so no `reasoning` object is added.
+        // Effort control is off, so no `reasoning` object is added.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let body = serde_json::json!({"model": "gpt-5.5", "input": []});
         let bytes = serde_json::to_vec(&body).unwrap();

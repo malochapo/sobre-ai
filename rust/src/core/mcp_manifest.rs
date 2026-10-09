@@ -1,9 +1,7 @@
-use std::path::PathBuf;
-
 use rmcp::model::Tool;
 use serde_json::{Value, json};
 
-use crate::core::contracts::MCP_MANIFEST_SCHEMA_VERSION;
+const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 const READ_MODES: [&str; 10] = [
     "auto",
@@ -41,20 +39,14 @@ fn normalize_tool_entry(tool_json: &Value) -> Value {
         .cloned()
         .unwrap_or(Value::Null);
     let schema_str = serde_json::to_string(&schema).unwrap_or_default();
-    let schema_md5 = crate::core::hasher::hash_str(&schema_str);
+    let schema_hash = crate::core::hasher::hash_str(&schema_str);
 
     json!({
         "name": name,
         "description": description,
         "input_schema": schema,
-        "schema_md5": schema_md5
+        "schema_hash": schema_hash
     })
-}
-
-pub fn default_manifest_path() -> PathBuf {
-    let rust_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let repo_root = rust_dir.parent().unwrap_or(&rust_dir);
-    repo_root.join("website/generated/mcp-tools.json")
 }
 
 pub fn manifest_value() -> Value {

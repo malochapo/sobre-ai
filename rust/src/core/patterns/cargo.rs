@@ -559,7 +559,7 @@ mod tests {
 
     #[test]
     fn cargo_build_success() {
-        let output = "   Compiling lean-ctx v2.1.1\n    Finished release profile [optimized] target(s) in 30.5s";
+        let output = "   Compiling sobre v2.1.1\n    Finished release profile [optimized] target(s) in 30.5s";
         let result = compress("cargo build", output).unwrap();
         assert!(result.contains("compiled"), "should mention compilation");
         assert!(result.contains("30.5s"), "should include build time");
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn cargo_build_with_errors() {
-        let output = "   Compiling lean-ctx v2.1.1\nerror[E0308]: mismatched types\n --> src/main.rs:10:5\n  |\n10|     1 + \"hello\"\n  |         ^^^^^^^ expected integer, found &str";
+        let output = "   Compiling sobre v2.1.1\nerror[E0308]: mismatched types\n --> src/main.rs:10:5\n  |\n10|     1 + \"hello\"\n  |         ^^^^^^^ expected integer, found &str";
         let result = compress("cargo build", output).unwrap();
         assert!(result.contains("E0308"), "should contain error code");
     }
@@ -588,14 +588,14 @@ mod tests {
 
     #[test]
     fn cargo_clippy_clean() {
-        let output = "    Checking lean-ctx v2.1.1\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.2s";
+        let output = "    Checking sobre v2.1.1\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.2s";
         let result = compress("cargo clippy", output).unwrap();
         assert!(result.contains("clean"), "clean clippy should say clean");
     }
 
     #[test]
     fn cargo_check_routes_to_build() {
-        let output = "    Checking lean-ctx v2.1.1\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.1s";
+        let output = "    Checking sobre v2.1.1\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.1s";
         let result = compress("cargo check", output);
         assert!(
             result.is_some(),
@@ -607,15 +607,15 @@ mod tests {
     fn cargo_metadata_json() {
         let json = r#"{
             "packages": [
-                {"name": "lean-ctx", "version": "3.2.9", "features": {"tree-sitter": ["dep:tree-sitter"]}},
+                {"name": "sobre", "version": "3.2.9", "features": {"tree-sitter": ["dep:tree-sitter"]}},
                 {"name": "serde", "version": "1.0.200", "features": {"derive": ["serde_derive"]}}
             ],
-            "workspace_members": ["lean-ctx 3.2.9 (path+file:///foo)"],
+            "workspace_members": ["sobre 3.2.9 (path+file:///foo)"],
             "workspace_root": "/foo",
             "target_directory": "/foo/target",
             "resolve": {
                 "nodes": [
-                    {"id": "lean-ctx", "deps": [{"name": "serde"}]},
+                    {"id": "sobre", "deps": [{"name": "serde"}]},
                     {"id": "serde", "deps": []}
                 ]
             }
@@ -638,7 +638,7 @@ mod tests {
 
     #[test]
     fn cargo_run_strips_compilation() {
-        let output = "   Compiling lean-ctx v2.1.1\n    Finished `dev` profile [unoptimized] target(s) in 5.2s\n     Running `target/debug/lean-ctx`\nHello, world!\nResult: 42";
+        let output = "   Compiling sobre v2.1.1\n    Finished `dev` profile [unoptimized] target(s) in 5.2s\n     Running `target/debug/sobre`\nHello, world!\nResult: 42";
         let result = compress("cargo run", output).unwrap();
         assert!(
             !result.contains("Running `target"),
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn cargo_bench_keeps_results() {
-        let output = "   Compiling lean-ctx v2.1.1\n    Finished `bench` profile [optimized] target(s) in 12.0s\n     Running benches/main.rs\ntest bench_parse  ... bench:     1,234 ns/iter (+/- 56)\ntest bench_render ... bench:     5,678 ns/iter (+/- 123)\n\ntest result: ok. 0 passed; 0 failed; 2 ignored";
+        let output = "   Compiling sobre v2.1.1\n    Finished `bench` profile [optimized] target(s) in 12.0s\n     Running benches/main.rs\ntest bench_parse  ... bench:     1,234 ns/iter (+/- 56)\ntest bench_render ... bench:     5,678 ns/iter (+/- 123)\n\ntest result: ok. 0 passed; 0 failed; 2 ignored";
         let result = compress("cargo bench", output).unwrap();
         assert!(result.contains("bench_parse"), "should keep bench results");
         assert!(result.contains("bench_render"), "should keep bench results");

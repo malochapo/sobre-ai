@@ -1,9 +1,5 @@
-//! Configuration enums and their behavior.
-//!
-//! Extracted from `config::mod` to keep the top-level config module focused on
-//! the `Config` struct and loading logic. These types are re-exported from the
-//! `config` module root, so external paths like `config::CompressionLevel`
-//! continue to work unchanged.
+//! Configuration enums and their behavior, re-exported from the `config`
+//! module root (`config::CompressionLevel`).
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicU8;
@@ -12,90 +8,9 @@ use super::Config;
 
 static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 
-/// Controls when shell output is tee'd to disk for later retrieval.
-///
-/// Default is `HighCompression` (not `Failures`): a heavily compressed but
-/// *successful* command is exactly the case where an agent later needs the raw
-/// bytes, and teeing them guarantees the MCP-free recovery path (a real file the
-/// agent can read with any tool) always exists. The archive GC (TTL + size cap)
-/// covers the extra files.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum TeeMode {
-    Never,
-    Failures,
-    #[default]
-    HighCompression,
-    Always,
-}
-
-/// Controls the reactive recovery footer surfaced on compressed tool output
-/// (`ctx_read`, archive/firewall/spill handles, `ctx_shell` tee).
-///
-/// The proactive `RECOVER` rule teaches the vocabulary once in the system
-/// prompt; this knob governs the per-output reminder that names the concrete
-/// file path / handle at point-of-need:
-/// * `Minimal` (default) — a single, non-MCP-first line on the *first* compressed
-///   view of a file/handle per session.
-/// * `Full` — the richer ladder (`mode=full` · `raw=true` · `ctx_expand`).
-/// * `Off` — suppresses the footer entirely (the proactive rule still ships, so
-///   reversibility is never undiscoverable).
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum RecoveryHints {
-    Off,
-    #[default]
-    Minimal,
-    Full,
-}
-
-impl RecoveryHints {
-    /// Parse a config/env token. Returns `None` for unrecognized input so a typo
-    /// falls back to the default rather than silently disabling the feature.
-    #[must_use]
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "off" | "none" | "false" => Some(Self::Off),
-            "minimal" | "min" | "on" | "true" => Some(Self::Minimal),
-            "full" => Some(Self::Full),
-            _ => None,
-        }
-    }
-
-    /// Stable lowercase label (config display, schema, `/status`).
-    #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Minimal => "minimal",
-            Self::Full => "full",
-        }
-    }
-}
-
-/// Compression level of tool responses.
-///
-/// Controls how much detail tool responses include.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ResponseVerbosity {
-    #[default]
-    Full,
-    HeadersOnly,
-}
-
-impl ResponseVerbosity {
-    pub fn effective() -> Self {
-        crate::core::config::ResponseVerbosity::default()
-    }
-
-    pub fn is_headers_only(&self) -> bool {
-        matches!(self, Self::HeadersOnly)
-    }
-}
-
 /// Each level maps to specific component settings via `to_components()`.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+/// Variants are declared from least to most compressed, so `<` compares them.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum CompressionLevel {
     Off,
@@ -111,7 +26,7 @@ pub enum CompressionLevel {
     Max,
     /// Ultra-dense bullet-point-only mode — zero prose, diff-style facts,
     /// strictest token budget (<=50 tokens per non-code response). Maps to
-    /// CrpMode::Tdd with tighter output constraints (#795).
+    /// CrpMode::Tdd with tighter output constraints.
     Raw,
 }
 
@@ -139,16 +54,22 @@ impl CompressionLevel {
         }
     }
 
-    /// Returns the effective prose level: a session-level degrade (set by
-    /// correction-loop feedback) wins, then the band of the configured
-    /// `compression_level`, else [`Self::Lite`].
+    /// Returns the effective prose level: the band of `compression_level`,
+    /// lowered by a session degrade (re-fetch feedback) but never raised.
     pub fn effective(config: &Config) -> Self {
-        if let Some(degraded) = Self::session_degrade_level() {
-            return degraded;
-        }
-        config
-            .compression_level
-            .map_or(Self::Lite, Self::from_value)
+        Self::capped(
+            Self::from_value(config.compression_level),
+            Self::session_degrade_level(),
+        )
+    }
+
+    /// The level `compression_level` alone selects, ignoring any degrade.
+    pub fn effective_configured(config: &Config) -> Self {
+        Self::from_value(config.compression_level)
+    }
+
+    fn capped(configured: Self, degraded: Option<Self>) -> Self {
+        degraded.map_or(configured, |d| d.min(configured))
     }
 
     /// The prose level for a continuous `compression_level` value: five equal
@@ -164,20 +85,7 @@ impl CompressionLevel {
         }
     }
 
-    /// The `compression_level` value a level name stands for: `off` is 0, the
-    /// others sit in the middle of their band.
-    #[must_use]
-    pub fn value(self) -> f64 {
-        match self {
-            Self::Off => 0.0,
-            Self::Lite => 0.3,
-            Self::Standard => 0.5,
-            Self::Max => 0.7,
-            Self::Raw => 0.9,
-        }
-    }
-
-    /// Session-level degrade: correction loop detected, temporarily reduce compression.
+    /// Session-level degrade: re-fetches detected, temporarily reduce compression.
     /// 0 = no override, 1 = Off, 2 = Lite
     pub fn session_degrade_level() -> Option<Self> {
         match SESSION_DEGRADE_LEVEL.load(std::sync::atomic::Ordering::Relaxed) {
@@ -187,7 +95,7 @@ impl CompressionLevel {
         }
     }
 
-    /// Sets a session-level compression degrade (called by correction loop detection).
+    /// Sets a session-level compression degrade (called on re-fetch pressure).
     pub fn set_session_degrade(level: &Self) {
         let val = match level {
             Self::Off => 1u8,
@@ -204,13 +112,12 @@ impl CompressionLevel {
 
     /// Maps re-fetch *pressure* to a session-degrade decision. Pressure is the
     /// stronger of the correction-loop count (re-reads/re-runs) and the CCR
-    /// retrieve count (`ctx_expand`) — two views of the same "too
-    /// aggressive" signal (#941): 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
+    /// retrieve count (`sobre_expand`) — two views of the same "too
+    /// aggressive" signal: 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
     /// and the 1–2 band leaves the current degrade untouched.
     ///
     /// Pure and total so the thresholds are unit-testable without the dispatch
-    /// path — the regression guard for the brittle source-grep test this replaced
-    /// (#957).
+    /// path — the regression guard for the brittle source-grep test this replaced.
     pub fn degrade_action(correction_count: u32, retrieve_count: u32) -> SessionDegrade {
         let pressure = correction_count.max(retrieve_count);
         if pressure >= 5 {
@@ -224,24 +131,18 @@ impl CompressionLevel {
         }
     }
 
-    /// Applies a [`SessionDegrade`] decision to the process-global session state.
-    pub fn apply_degrade_action(action: SessionDegrade) {
+    /// Applies a [`SessionDegrade`] decision to the process-global session
+    /// state. Returns the effective level when it changed, so the caller can
+    /// say so in the tool output.
+    pub fn apply_degrade_action(action: SessionDegrade, config: &Config) -> Option<Self> {
+        let before = Self::effective(config);
         match action {
             SessionDegrade::Set(level) => Self::set_session_degrade(&level),
             SessionDegrade::Clear => Self::clear_session_degrade(),
             SessionDegrade::Leave => {}
         }
-    }
-
-    pub fn from_str_label(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "off" => Some(Self::Off),
-            "lite" => Some(Self::Lite),
-            "standard" | "std" => Some(Self::Standard),
-            "max" => Some(Self::Max),
-            "raw" => Some(Self::Raw),
-            _ => None,
-        }
+        let after = Self::effective(config);
+        (after != before).then_some(after)
     }
 
     pub fn is_active(&self) -> bool {
@@ -257,18 +158,6 @@ impl CompressionLevel {
             Self::Raw => "raw",
         }
     }
-
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::Off => "No compression — full verbose output",
-            Self::Lite => "Light compression — concise output, basic terse filtering",
-            Self::Standard => {
-                "Standard compression — dense output, compact protocol, pattern-aware"
-            }
-            Self::Max => "Maximum compression — expert mode, TDD protocol, all layers active",
-            Self::Raw => "Raw-dense compression — bullet points only, zero prose, diff-style facts",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -280,7 +169,7 @@ mod tests {
         use CompressionLevel::{Lite, Off};
         use SessionDegrade::{Clear, Leave, Set};
         // 5+ pressure → Off, driven by EITHER the correction-loop or the CCR
-        // retrieve count (the stronger of the two), per #941.
+        // retrieve count (the stronger of the two).
         assert_eq!(CompressionLevel::degrade_action(5, 0), Set(Off));
         assert_eq!(CompressionLevel::degrade_action(0, 5), Set(Off));
         assert_eq!(CompressionLevel::degrade_action(9, 1), Set(Off));
@@ -292,5 +181,13 @@ mod tests {
         assert_eq!(CompressionLevel::degrade_action(0, 0), Clear);
         assert_eq!(CompressionLevel::degrade_action(2, 1), Leave);
         assert_eq!(CompressionLevel::degrade_action(1, 2), Leave);
+    }
+
+    #[test]
+    fn degrade_lowers_but_never_raises_the_configured_level() {
+        use CompressionLevel::{Lite, Max, Off};
+        assert_eq!(CompressionLevel::capped(Max, Some(Lite)), Lite);
+        assert_eq!(CompressionLevel::capped(Off, Some(Lite)), Off);
+        assert_eq!(CompressionLevel::capped(Max, None), Max);
     }
 }

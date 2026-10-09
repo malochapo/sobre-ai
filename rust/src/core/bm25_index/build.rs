@@ -1,7 +1,7 @@
-//! Parallel, deterministic BM25 index construction (#933).
+//! Parallel, deterministic BM25 index construction.
 //!
 //! The full directory build was a sequential parse + tokenize loop over every
-//! file that pinned a single core for ~2.85 s on the lean-ctx repo. Fanning that
+//! file that pinned a single core for ~2.85 s on the sobre repo. Fanning that
 //! work across a rayon pool brings it down to ~0.69 s (~4x), measured.
 //!
 //! The per-file work — tree-sitter chunking + tokenization — is pure and
@@ -10,8 +10,8 @@
 //! `collect`, then **merge the results sequentially in the original sorted file
 //! order**. The merge replays exactly what [`BM25Index::add_chunk`] does, so the
 //! resulting index is identical to the sequential build (same chunk order, same
-//! inverted postings, same `doc_freqs`) — upholding the determinism contract
-//! (#498). See `tests.rs` (`parallel_build_matches_sequential_*`).
+//! inverted postings, same `doc_freqs`) — upholding the determinism contract.
+//! See `tests.rs` (`parallel_build_matches_sequential_*`).
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -62,7 +62,7 @@ struct PreparedFile {
     chunks: Vec<PreparedChunk>,
 }
 
-/// Between-batch guardian check for the parallel paths (#685). Returns `true`
+/// Between-batch guardian check for the parallel paths. Returns `true`
 /// when the build must stop now — either the guardian requested an abort
 /// (Hard/Critical RSS) or soft pressure is on. Logs once with the position so
 /// operators can see why an index ended up partial.
@@ -91,7 +91,7 @@ fn prepare_chunk(mut chunk: CodeChunk) -> PreparedChunk {
     let lowered: Vec<String> = tokens.iter().map(|t| t.to_lowercase()).collect();
     let token_count = tokens.len();
 
-    // #790: truncate content AFTER tokenization (full text used for BM25 scoring
+    // Truncate content AFTER tokenization (full text used for BM25 scoring
     // above). Must mirror add_chunk's SNIPPET_LINES to keep parallel ≡ sequential.
     const SNIPPET_LINES: usize = 10;
     if chunk.content.lines().nth(SNIPPET_LINES).is_some() {
@@ -141,7 +141,7 @@ fn prepare_file(
         // extraction yields nothing. Never populates the UTF-8 content cache.
         match std::fs::read(&abs) {
             Ok(bytes) => {
-                let text = crate::core::extractors::extract(&abs, &bytes).text;
+                let text = crate::core::extractors::text(&bytes);
                 if text.is_empty() {
                     return None;
                 }
@@ -277,13 +277,13 @@ impl BM25Index {
         index
     }
 
-    /// Deterministic parallel incremental rebuild (#581). Fans **all** per-file
+    /// Deterministic parallel incremental rebuild. Fans **all** per-file
     /// tokenization across the rayon pool — changed files through the full
     /// `prepare_file`, unchanged files by re-`prepare_chunk`-ing their reused
     /// chunks — then merges sequentially in file order via `add_prepared`. The
     /// result is identical to [`Self::rebuild_incremental_sequential`] for the same
     /// inputs (same file order, same chunk order, same postings / `doc_freqs`),
-    /// upholding the determinism contract (#498). See `tests.rs`
+    /// upholding the determinism contract. See `tests.rs`
     /// (`parallel_incremental_matches_sequential`).
     pub(crate) fn rebuild_incremental_parallel(
         root: &Path,
@@ -363,7 +363,7 @@ impl BM25Index {
 
             // Content sources, cheapest first: an explicit per-build hint, then
             // the shared resident content cache (populated by the search-index
-            // build / ctx_search, issue #148) validated by `(mtime, size)`, then
+            // build / sobre_search) validated by `(mtime, size)`, then
             // a one-time disk read that also publishes into the shared cache.
             let cache_state = crate::core::content_cache::FileState {
                 mtime_ms: state.mtime_ms,
@@ -372,7 +372,7 @@ impl BM25Index {
             let content = if crate::core::extractors::is_binary_document(&abs) {
                 match std::fs::read(&abs) {
                     Ok(bytes) => {
-                        let text = crate::core::extractors::extract(&abs, &bytes).text;
+                        let text = crate::core::extractors::text(&bytes);
                         if text.is_empty() {
                             continue;
                         }

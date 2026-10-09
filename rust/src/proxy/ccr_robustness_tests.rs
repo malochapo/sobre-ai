@@ -1,6 +1,6 @@
-//! CCR robustness regression suite (#983) — guards the content-addressed
+//! CCR robustness regression suite — guards the content-addressed
 //! recovery path against the classes of bug that bit comparable context layers
-//! (Headroom #1023/#1209/#1236/#389/#1141/#1182/#709/#1450): a lossy rewrite
+//! (found in Headroom): a lossy rewrite
 //! that drops a handle it cannot back, a retrieval after the tee file is gone
 //! past its TTL, an in-band splice on a streaming request, the tee store
 //! colliding with the read-stub bookkeeping, and the cold-stub index resurrecting
@@ -16,7 +16,7 @@ use serde_json::json;
 use crate::core::data_dir::test_env_lock;
 use crate::core::hasher::hash_short;
 use crate::proxy::ccr::{MIN_TEE_BYTES, persist, resolve_tee};
-use crate::tools::ctx_expand;
+use crate::tools::sobre_expand;
 
 /// A verbatim original comfortably above [`MIN_TEE_BYTES`], so the persist gate
 /// always mints a handle (the sub-threshold case is its own test).
@@ -40,7 +40,7 @@ fn persist_below_min_tee_bytes_yields_no_handle() {
     assert!(persist(small).is_none());
 }
 
-/// Gap 2 — handles are content-addressed (idempotent, cache-safe #448/#498).
+/// Gap 2 — handles are content-addressed (idempotent, cache-safe, deterministic).
 #[test]
 fn persist_is_idempotent_and_content_addressed() {
     let _lock = test_env_lock();
@@ -58,16 +58,16 @@ fn persist_is_idempotent_and_content_addressed() {
 /// Gap 3 — once the tee file is gone (24h TTL cleanup), retrieval degrades to a
 /// graceful not-found message; it never panics and never serves stale content.
 #[test]
-fn ctx_expand_is_graceful_when_tee_file_deleted_past_ttl() {
+fn sobre_expand_is_graceful_when_tee_file_deleted_past_ttl() {
     let _lock = test_env_lock();
     let body = big("recoverable until the ttl lapses");
     let handle = persist(&body).unwrap();
     let path = resolve_tee(&handle).expect("resolves before deletion");
     std::fs::remove_file(&path).expect("simulate 24h TTL cleanup");
 
-    let out = ctx_expand::handle(&json!({ "id": handle }));
+    let out = sobre_expand::handle(&json!({ "id": handle }));
     assert!(
-        out.contains("not found"),
+        out.contains("no saved output"),
         "graceful message expected: {out}"
     );
     assert!(
@@ -79,7 +79,7 @@ fn ctx_expand_is_graceful_when_tee_file_deleted_past_ttl() {
 /// Gap 4 — the surgical selectors over a tee handle return exactly the requested
 /// slice (the whole point of CCR: pull back a slice, not the entire original).
 #[test]
-fn ctx_expand_surgical_slices_over_tee_handle() {
+fn sobre_expand_surgical_slices_over_tee_handle() {
     let _lock = test_env_lock();
     let body = (1..=60)
         .map(|i| format!("output row {i:03}"))
@@ -88,31 +88,31 @@ fn ctx_expand_surgical_slices_over_tee_handle() {
     assert!(body.len() >= MIN_TEE_BYTES);
     let handle = persist(&body).unwrap();
 
-    let head = ctx_expand::handle(&json!({ "id": handle, "head": 2 }));
+    let head = sobre_expand::handle(&json!({ "id": handle, "end_line": 2 }));
     assert!(head.contains("output row 001") && head.contains("output row 002"));
     assert!(
         !head.contains("output row 010"),
         "head leaked beyond 2: {head}"
     );
 
-    let tail = ctx_expand::handle(&json!({ "id": handle, "tail": 2 }));
+    let tail = sobre_expand::handle(&json!({ "id": handle, "start_line": 59 }));
     assert!(tail.contains("output row 059") && tail.contains("output row 060"));
     assert!(
         !tail.contains("output row 001"),
         "tail leaked the head: {tail}"
     );
 
-    let search = ctx_expand::handle(&json!({ "id": handle, "search": "row 042" }));
+    let search = sobre_expand::handle(&json!({ "id": handle, "search": "row 042" }));
     assert!(search.contains("output row 042") && !search.contains("output row 001"));
 
-    let range = ctx_expand::handle(&json!({ "id": handle, "start_line": 5, "end_line": 6 }));
+    let range = sobre_expand::handle(&json!({ "id": handle, "start_line": 5, "end_line": 6 }));
     assert!(range.contains("output row 005") && range.contains("output row 006"));
     assert!(!range.contains("output row 004") && !range.contains("output row 007"));
 }
 
-/// Gap 5 — the tee resolver rejects path traversal, malformed hex (across every
-/// prefix incl. the new `tbl_`) and a reference-store id, so a crafted handle can
-/// never escape the store or alias another store (store separation + #936 ladder).
+/// Gap 5 — the tee resolver rejects path traversal, malformed hex, foreign
+/// prefixes and a reference-store id, so a crafted handle can never escape the
+/// store or alias another store (store separation + ladder).
 #[test]
 fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
     let _lock = test_env_lock();
@@ -130,8 +130,8 @@ fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
 }
 
 /// Gap 9 — the read-stub index persists only delivery *bookkeeping*, never the
-/// file content, and that bookkeeping survives a simulated daemon restart so a
-/// re-read collapses to the cheap `[unchanged]` stub (#955).
+/// file content, and that bookkeeping survives a simulated MCP restart so a
+/// re-read collapses to the cheap `[unchanged]` stub.
 #[test]
 #[serial_test::serial(stub_index)]
 fn read_stub_bookkeeping_survives_restart_without_storing_content() {
@@ -164,7 +164,7 @@ fn read_stub_bookkeeping_survives_restart_without_storing_content() {
         std::fs::read_to_string(dir.path().join("read_cache").join("stub_index.json")).unwrap();
     assert!(
         !on_disk.contains(secret),
-        "the index must hold bookkeeping only, never file content (#955)"
+        "the index must hold bookkeeping only, never file content"
     );
     rsi::clear_for_test();
 }

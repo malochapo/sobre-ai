@@ -1,46 +1,36 @@
-//! `rmcp::ServerHandler` trait implementation for [`LeanCtxServer`].
+//! `rmcp::ServerHandler` trait implementation for [`SobreServer`].
 //!
 //! Split out of `server/mod.rs`; `use super::*` re-imports the parent module’s
-//! aliases and sibling submodules. Methods attach to `LeanCtxServer` regardless
+//! aliases and sibling submodules. Methods attach to `SobreServer` regardless
 //! of which module the impl block lives in.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-/// Builds the advertised MCP server capabilities. The tool set never changes
-/// during a session (invariant 3), so `listChanged` is not declared. The
-/// `resources`/`prompts` surfaces stay client-gated so we never advertise a
-/// surface the connected client cannot use.
-fn server_capabilities(resources: bool, prompts: bool) -> ServerCapabilities {
-    match (resources, prompts) {
-        (true, true) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_resources()
-            .enable_resources_subscribe()
-            .enable_prompts()
-            .build(),
-        (true, false) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_resources()
-            .enable_resources_subscribe()
-            .build(),
-        (false, true) => ServerCapabilities::builder()
-            .enable_tools()
-            .enable_prompts()
-            .build(),
-        (false, false) => ServerCapabilities::builder().enable_tools().build(),
-    }
+/// The advertised MCP server capabilities: tools only. The tool set never
+/// changes during a session (invariant 3), so `listChanged` is not declared.
+fn server_capabilities() -> ServerCapabilities {
+    ServerCapabilities::builder().enable_tools().build()
 }
 
-impl ServerHandler for LeanCtxServer {
-    fn get_info(&self) -> ServerInfo {
-        let capabilities = server_capabilities(true, true);
+impl ServerHandler for SobreServer {
+    fn get_info(&self) -> ServerConfig {
+        let capabilities = server_capabilities();
 
-        let instructions = crate::instructions::build_instructions(CrpMode::effective());
+        let instructions = crate::instructions::build_instructions();
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions)
+    }
+
+    /// The session is set up in `initialize` (client name, project root, the
+    /// peer asked for `roots/list`), so only the protocol revisions that open
+    /// with that handshake are served.
+    fn supported_protocol_versions(&self) -> std::borrow::Cow<'static, [ProtocolVersion]> {
+        std::borrow::Cow::Borrowed(ProtocolVersion::known_up_to(
+            &ProtocolVersion::LATEST_WITH_INITIALIZE,
+        ))
     }
 
     async fn initialize(
@@ -52,14 +42,6 @@ impl ServerHandler for LeanCtxServer {
         tracing::info!("MCP client connected: {:?}", name);
         *self.client_name.write().await = name.clone();
         *self.peer.write().await = Some(context.peer.clone());
-
-        if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-            let radar = data_dir.join("context_radar.jsonl");
-            if radar.exists() {
-                let prev = data_dir.join("context_radar.prev.jsonl");
-                let _ = std::fs::rename(&radar, &prev);
-            }
-        }
 
         let has_roots = request.capabilities.roots.is_some();
         self.has_client_roots
@@ -85,41 +67,31 @@ impl ServerHandler for LeanCtxServer {
                 session.project_root = Some(root.clone());
                 tracing::info!("Project root set to: {root}");
                 // Cursor multi-root: register sibling workspace folders as extra
-                // trusted roots so explicit cross-folder paths are not rejected
-                // by the path jail (#699).
+                // roots.
                 for other in roots::workspace_roots_from_env() {
                     if &other != root && !session.extra_roots.contains(&other) {
                         session.extra_roots.push(other);
                     }
                 }
-            } else if let Some(ref root) = session.project_root {
-                // A previously persisted session may carry a contaminated root
-                // (e.g. HOME from an older build or a client that reported HOME
-                // as its workspace). Drop it unless it is a real, safe project
-                // dir — otherwise PROJECT MEMORY leaks across projects.
-                let root_path = std::path::Path::new(root);
-                let root_has_marker = has_project_marker(root_path);
-                let root_str = root_path.to_string_lossy();
-                let root_suspicious = crate::core::pathutil::is_broad_or_unsafe_root(root_path)
-                    || root_str.contains("/var/folders/")
-                    || root_str.contains("/tmp/")
-                    || root_str.contains("/.lmstudio")
-                    || root_str.contains("\\AppData\\Local\\Temp")
-                    || root_str.contains("\\Temp\\")
-                    || root_str.contains("\\.lmstudio");
-                if root_suspicious && !root_has_marker {
-                    tracing::info!("Dropping suspicious persisted project root: {root}");
-                    session.project_root = None;
-                }
+            } else {
+                // No host signal: never adopt the previous session's root,
+                // which may belong to another project. MCP roots/list or the
+                // cwd decide on the first tool call.
+                session.project_root = None;
             }
-            // Allowed paths double as the extra roots of a multi-root
-            // workspace, except an open jail ("/") or another broad root.
+            // Search roots are the extra roots of a multi-root
+            // workspace, except a broad root ("/", $HOME). `~` and `$HOME`
+            // expand as in a workspace search.
             let cfg_extra: Vec<String> = crate::core::config::Config::load()
-                .allow_paths
-                .into_iter()
-                .filter(|p| {
-                    !crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(p.trim()))
+                .search_roots
+                .iter()
+                .map(|p| {
+                    crate::core::pathutil::canonicalize_or_self(
+                        &crate::core::pathutil::expand_user_path(p.trim()),
+                    )
                 })
+                .filter(|p| p.is_dir() && !crate::core::pathutil::is_broad_or_unsafe_root(p))
+                .map(|p| p.to_string_lossy().into_owned())
                 .collect();
             if !cfg_extra.is_empty() {
                 let existing: std::collections::HashSet<_> =
@@ -131,65 +103,38 @@ impl ServerHandler for LeanCtxServer {
                 }
             }
             if let Err(e) = session.save() {
-                tracing::warn!("lean-ctx: failed to persist session state: {e}");
+                tracing::warn!("sobre: failed to persist session state: {e}");
             }
         }
 
         // Indices are warmed lazily on first use of a tool that needs them
-        // (issue #152), not eagerly here — a session that only uses
-        // ctx_read/ctx_shell/ctx_tree must not pay a full graph + BM25 scan.
+        //, not eagerly here — a session that only uses
+        // sobre_read/sobre_shell/sobre_tree must not pay a full graph + BM25 scan.
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
-        let agent_root = effective_root.clone().unwrap_or_default();
-        let agent_id_handle = self.agent_id.clone();
         tokio::task::spawn_blocking(move || {
             // Avoid startup stampedes when multiple agent sessions initialize at once.
             // These are best-effort maintenance tasks; it's fine to skip if another
-            // lean-ctx instance is already doing them.
+            // sobre instance is already doing them.
             let maintenance = crate::core::startup_guard::try_acquire_lock(
                 "startup-maintenance",
                 std::time::Duration::from_secs(2),
                 std::time::Duration::from_mins(2),
             );
             if maintenance.is_some() {
-                if let Some(home) = dirs::home_dir() {
-                    let _ = crate::rules_inject::inject_all_rules(&home);
-                    // The on-demand SKILL.md belongs to the same steering surface
-                    // as the rules block: the session-start heal writes rules for
-                }
-                crate::hooks::refresh_installed_hooks();
-                // Enforce the on-disk budget: prune accumulated quarantined BM25
-                // indexes and cap the archive FTS DB (#2364). Silent (tracing
-                // only) so it never corrupts the MCP stdio protocol.
-                let _ = crate::core::storage_maintenance::run_quiet();
+                // Prune quarantined BM25 indexes and week-old sessions. Silent
+                // (tracing only) so it never corrupts the MCP stdio protocol.
+                crate::core::storage_maintenance::run_quiet();
             }
             drop(maintenance);
-
-            if !agent_root.is_empty() {
-                let id = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
-                    registry.cleanup_stale(24);
-                    registry.register("mcp", None, &agent_root)
-                })
-                .map(|(_, id)| id)
-                .ok();
-                if let (Some(id), Ok(mut guard)) = (id, agent_id_handle.try_write()) {
-                    *guard = Some(id);
-                }
-            }
         });
 
-        let client_caps = crate::core::client_capabilities::ClientMcpCapabilities::detect(&name);
-        tracing::info!("Client capabilities: {}", client_caps.format_summary());
+        let instructions = crate::instructions::build_instructions();
 
-        crate::core::client_capabilities::set_detected(&client_caps);
-
-        let instructions =
-            crate::instructions::build_instructions_with_client(CrpMode::effective(), &name);
-
-        let capabilities = server_capabilities(client_caps.resources, client_caps.prompts);
+        let capabilities = server_capabilities();
 
         Ok(InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions))
     }
 
@@ -202,51 +147,9 @@ impl ServerHandler for LeanCtxServer {
         // request task.
         use std::panic::AssertUnwindSafe;
         let computed = AssertUnwindSafe(async {
-            // Invariant 3: exactly one answer. The registry IS the surface —
-            // no candidate set, no client quirks, no profile, no role, no
-            // workflow state, no lazy core.
-            //
-            // What used to be here filtered the registry through nine axes. One
-            // of them silently broke the product: `CORE_TOOL_NAMES` still named
-            // `shell` and `ctx_call` after both left the registry, so the
-            // default path (no config, no env, no pinned profile) advertised
-            // their intersection — ten tools out of nineteen, with no error.
-            let tools = if let Some(ref reg) = self.registry {
-                reg.tool_defs()
-            } else {
-                // Every production constructor sets a registry; locked by
-                // `production_server_always_has_registry`.
-                tracing::error!("list_tools served without a tool registry");
-                Vec::new()
-            };
-
-            // Description compression is not a surface variation: the set of
-            // tools is identical, only the prose is squeezed. That squeeze is
-            // what the product is for.
-            let tools = {
-                let cfg = crate::core::config::Config::load();
-                let level = crate::core::config::CompressionLevel::effective(&cfg);
-                let mode =
-                    crate::core::terse::mcp_compress::DescriptionMode::from_compression_level(
-                        &level,
-                    );
-                if mode == crate::core::terse::mcp_compress::DescriptionMode::Full {
-                    tools
-                } else {
-                    tools
-                        .into_iter()
-                        .map(|mut t| {
-                            let compressed = crate::core::terse::mcp_compress::compress_description(
-                                t.name.as_ref(),
-                                t.description.as_deref().unwrap_or(""),
-                                mode,
-                            );
-                            t.description = Some(compressed.into());
-                            t
-                        })
-                        .collect()
-                }
-            };
+            // Invariant 3: exactly one answer. The registry is the surface; only
+            // the descriptions are compressed.
+            let tools = crate::server::tool_visibility::advertised(self.registry.tool_defs());
 
             Ok(ListToolsResult {
                 tools,
@@ -258,111 +161,34 @@ impl ServerHandler for LeanCtxServer {
         computed.unwrap_or_else(|_| {
             // A panic here must NOT leave the agent tool-less — that is
             // indistinguishable from "MCP totally failed" and gives the user no
-            // recovery path. Fall back to the static lazy-core defs (a pure,
-            // panic-free function) so ctx_read/ctx_shell/ctx_call stay available
-            // even if the dynamic/registry path blew up.
-            tracing::error!(
-                "list_tools panicked; serving the static lazy-core tool set as a fallback"
-            );
+            // recovery path. Fall back to the registry's uncompressed defs.
+            tracing::error!("list_tools panicked; serving uncompressed tool descriptions");
             Ok(ListToolsResult {
-                tools: self
-                    .registry
-                    .as_ref()
-                    .map(|r| r.tool_defs())
-                    .unwrap_or_default(),
+                tools: self.registry.tool_defs(),
                 ..Default::default()
             })
         })
-    }
-
-    fn list_prompts(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<rmcp::model::ListPromptsResult, ErrorData>> {
-        std::future::ready(Ok(rmcp::model::ListPromptsResult::with_all_items(
-            prompts::list_prompts(),
-        )))
-    }
-
-    async fn get_prompt(
-        &self,
-        request: rmcp::model::GetPromptRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::GetPromptResult, ErrorData> {
-        let ledger = self.ledger.read().await;
-        match prompts::get_prompt(&request, &ledger) {
-            Some(result) => Ok(result),
-            None => Err(ErrorData::invalid_params(
-                format!("Unknown prompt: {}", request.name),
-                None,
-            )),
-        }
-    }
-
-    fn list_resources(
-        &self,
-        _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<rmcp::model::ListResourcesResult, rmcp::ErrorData>> {
-        std::future::ready(Ok(rmcp::model::ListResourcesResult::with_all_items(
-            resources::list_resources(),
-        )))
-    }
-
-    async fn read_resource(
-        &self,
-        request: rmcp::model::ReadResourceRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<rmcp::model::ReadResourceResult, rmcp::ErrorData> {
-        let ledger = self.ledger.read().await;
-        match resources::read_resource(&request.uri, &ledger) {
-            Some(contents) => Ok(rmcp::model::ReadResourceResult::new(contents)),
-            None => Err(rmcp::ErrorData::resource_not_found(
-                format!("Unknown resource: {}", request.uri),
-                None,
-            )),
-        }
     }
 
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         use std::panic::AssertUnwindSafe;
 
-        let progress_token = request
+        // Progress belongs to this request: its token, its peer. rmcp hands
+        // the request's `_meta` over in the context, not in the params.
+        let progress = context
             .meta
-            .as_ref()
-            .and_then(rmcp::model::Meta::get_progress_token);
-        if let Some(ref token) = progress_token {
-            let sender =
-                crate::server::progress::ProgressSender::new(context.peer.clone(), token.clone());
-            *self
-                .progress_sender
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sender);
-        }
+            .get_progress_token()
+            .map(|token| crate::server::progress::ProgressSender::new(context.peer.clone(), token));
 
-        let tool_name_for_panic = request.name.as_ref().to_string();
-        let args_fp_for_panic = request
-            .arguments
-            .as_ref()
-            .map(|a| {
-                crate::core::loop_detection::LoopDetector::fingerprint(&serde_json::Value::Object(
-                    a.clone(),
-                ))
-            })
-            .unwrap_or_default();
-
-        let loop_detector = self.loop_detector.clone();
-
-        match AssertUnwindSafe(self.call_tool_guarded(request))
+        match AssertUnwindSafe(self.call_tool_guarded(request, progress))
             .catch_unwind()
             .await
         {
-            Ok(result) => result,
+            Ok(result) => result.map(CallToolResponse::Complete),
             Err(panic_payload) => {
                 let detail = if let Some(s) = panic_payload.downcast_ref::<&str>() {
                     (*s).to_string()
@@ -373,18 +199,12 @@ impl ServerHandler for LeanCtxServer {
                 };
                 tracing::error!("call_tool panicked: {detail}");
 
-                if let Ok(mut detector) =
-                    tokio::time::timeout(std::time::Duration::from_secs(1), loop_detector.write())
-                        .await
-                {
-                    detector.record_error_outcome(&tool_name_for_panic, &args_fp_for_panic);
-                }
-
                 Ok(CallToolResult::error(vec![ContentBlock::text(
-                    "ERROR: lean-ctx internal error. The MCP server is still running. \
+                    "ERROR: sobre internal error. The MCP server is still running. \
                      Please retry or use a different approach."
                         .to_string(),
-                )]))
+                )])
+                .into())
             }
         }
     }
@@ -408,16 +228,15 @@ mod tests {
 
     #[test]
     fn server_capabilities_never_declare_tool_list_changed() {
-        for (resources, prompts) in [(true, true), (true, false), (false, true), (false, false)] {
-            let caps = server_capabilities(resources, prompts);
-            let tools = caps.tools.expect("tools capability must be advertised");
-            assert_ne!(tools.list_changed, Some(true));
-        }
+        let caps = server_capabilities();
+        let tools = caps.tools.expect("tools capability must be advertised");
+        assert_ne!(tools.list_changed, Some(true));
+        assert!(caps.resources.is_none() && caps.prompts.is_none());
     }
 
     /// The `list_tools` panic guard serves the registry, so an internal panic
     /// never leaves the agent tool-less — indistinguishable from "MCP totally
-    /// failed". Regression guard for #688.
+    /// failed". Regression guard.
     ///
     /// It used to serve a hand-maintained static list, which is how the
     /// advertised surface drifted from the registry in the first place.
@@ -426,7 +245,7 @@ mod tests {
         let _guard = crate::core::data_dir::isolated_data_dir();
         let defs = crate::server::registry::build_registry().tool_defs();
         assert!(!defs.is_empty(), "the fallback must not be empty");
-        for essential in ["ctx_read", "ctx_shell"] {
+        for essential in ["sobre_read", "sobre_shell"] {
             assert!(
                 defs.iter().any(|t| t.name.as_ref() == essential),
                 "{essential} must survive the fallback"

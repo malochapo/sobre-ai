@@ -1,399 +1,301 @@
-//! `lean-ctx gain` — the savings dashboard and Wrapped share cards,
-//! plus the `--opportunity` and `--raw` sub-views it absorbs.
+//! `sobre gain` — what the usage ledger says sobre saved.
+//!
+//! Every figure is computed from `usage.jsonl` when the command runs (see
+//! [`crate::core::usage`]). Measured cost needs the proxy: without it the
+//! command shows tokens saved and an estimated value, labeled as such.
 
-use crate::{core, tools};
+use crate::cli::common::format_tokens_cli as fmt_tokens;
+use crate::core::pricing::{ModelPricing, ModelQuote};
+use crate::core::theme;
+use crate::core::usage::{self, Period, Summary};
 
 pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
+    crate::cli::spec::check_or_exit("gain", rest);
     if rest.iter().any(|a| a == "--reset") {
-        core::stats::reset_all();
-        println!("Stats reset. All token savings data cleared.");
+        if usage::reset() {
+            println!("Usage ledger cleared.");
+        } else {
+            println!("No usage ledger to clear.");
+        }
         return;
     }
-    if rest.iter().any(|a| a == "--live") {
-        core::stats::gain_live();
-        return;
-    }
-    let model = rest.iter().enumerate().find_map(|(i, a)| {
-        if let Some(v) = a.strip_prefix("--model=") {
-            return Some(v.to_string());
-        }
-        if a == "--model" {
-            return rest.get(i + 1).cloned();
-        }
-        None
-    });
-    let period = rest
-        .iter()
-        .enumerate()
-        .find_map(|(i, a)| {
-            if let Some(v) = a.strip_prefix("--period=") {
-                return Some(v.to_string());
-            }
-            if a == "--period" {
-                return rest.get(i + 1).cloned();
-            }
-            None
-        })
-        .unwrap_or_else(|| "all".to_string());
-    let limit = rest
-        .iter()
-        .enumerate()
-        .find_map(|(i, a)| {
-            if let Some(v) = a.strip_prefix("--limit=") {
-                return v.parse::<usize>().ok();
-            }
-            if a == "--limit" {
-                return rest.get(i + 1).and_then(|v| v.parse::<usize>().ok());
-            }
-            None
-        })
+
+    let period_arg = flag_value(rest, "--period").unwrap_or_else(|| "all".to_string());
+    let Some(period) = Period::parse(&period_arg) else {
+        eprintln!("Unknown period '{period_arg}'. Use: all, today, or <n>d (7d, 30d).");
+        std::process::exit(2);
+    };
+    let limit = flag_value(rest, "--limit")
+        .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(10);
 
-    let _open = rest.iter().any(|a| a == "--open");
-
-    if rest.iter().any(|a| a == "--no-cache-adjust") {
-        core::context_overhead::set_no_cache_adjust(true);
-    }
-
-    if rest.iter().any(|a| a == "--by-tool") {
-        cmd_by_tool(rest, limit);
-    } else if rest.iter().any(|a| a == "--graph") {
-        println!("{}", core::stats::format_gain_graph());
-    } else if rest.iter().any(|a| a == "--daily") {
-        println!("{}", core::stats::format_gain_daily());
-    // Before `--json`: `--measured` selects a different data source, and it
-    // renders in either shape. Tested after `--json` it would be unreachable
-    // whenever both flags are passed.
-    } else if rest.iter().any(|a| a == "--measured") {
-        print_measured_spend(rest.iter().any(|a| a == "--json"));
-    } else if rest.iter().any(|a| a == "--json") {
-        println!(
-            "{}",
-            tools::impl_gain::handle("json", Some(&period), model.as_deref(), Some(limit))
-        );
-    } else if rest.iter().any(|a| a == "--score") {
-        println!(
-            "{}",
-            tools::impl_gain::handle("score", None, model.as_deref(), Some(limit))
-        );
-    } else if rest.iter().any(|a| a == "--cost") {
-        println!(
-            "{}",
-            tools::impl_gain::handle("cost", None, model.as_deref(), Some(limit))
-        );
-        print_measured_spend_hint();
-    } else if rest.iter().any(|a| a == "--tasks") {
-        println!(
-            "{}",
-            tools::impl_gain::handle("tasks", None, None, Some(limit))
-        );
-    } else if rest.iter().any(|a| a == "--agents") {
-        println!(
-            "{}",
-            tools::impl_gain::handle("agents", None, None, Some(limit))
-        );
-    } else if rest.iter().any(|a| a == "--heatmap") {
-        println!(
-            "{}",
-            tools::impl_gain::handle("heatmap", None, None, Some(limit))
-        );
-    } else if rest.iter().any(|a| a == "--wrapped") {
-        println!(
-            "{}",
-            tools::impl_gain::handle("wrapped", Some(&period), model.as_deref(), Some(limit))
-        );
-    } else if rest.iter().any(|a| a == "--deep") {
-        // Body first, then the extra themed sections, then the footer — so the
-        // tips / Context OS panel land at the very end instead of mid-dashboard.
-        println!("{}", core::stats::format_gain_body());
-        print!(
-            "{}",
-            tools::impl_gain::format_deep_themed(model.as_deref(), limit)
-        );
-        println!("{}", core::stats::format_gain_footer());
-    } else if rest.iter().any(|a| a == "--opportunity") {
-        cmd_opportunity();
-    } else if rest.iter().any(|a| a == "--raw") {
-        cmd_stats_raw(rest);
-    } else {
-        println!("{}", core::stats::format_gain_hero());
-        print_bridge_warning();
-    }
-}
-
-/// `gain --measured` — the real per-model bill the proxy recorded, as opposed
-/// to `--cost`, which prices our own token counts from a rate table. The
-/// dashboard has always shown this; without a CLI view the data was collected
-/// and unreadable.
-fn print_measured_spend(json: bool) {
-    let spend = crate::proxy::usage_meter::persisted_snapshot();
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&spend).unwrap_or_else(|_| "[]".into())
-        );
-        return;
-    }
-    if spend.is_empty() {
-        println!("No measured provider spend recorded yet.");
-        println!(
-            "Route traffic through `sobre proxy` to collect it, or use `gain --cost` for the estimate."
-        );
-        return;
-    }
-    println!("Measured provider spend (from the proxy's recorded usage)\n");
-    println!(
-        "{:<34} {:>6} {:>12} {:>12} {:>10}",
-        "MODEL", "REQS", "INPUT", "OUTPUT", "COST USD"
-    );
-    let mut total = 0.0;
-    for m in &spend {
-        total += m.cost_usd;
-        // Flag the rows we could not price from a provider-reported figure, so
-        // an estimate is never silently read as a bill.
-        let mark = if m.measured_requests < m.requests {
-            " ~"
-        } else {
-            ""
-        };
-        println!(
-            "{:<34} {:>6} {:>12} {:>12} {:>10.4}{}",
-            m.model, m.requests, m.input_tokens, m.output_tokens, m.cost_usd, mark
-        );
-    }
-    println!("\n{:<34} {:>43.4}", "TOTAL", total);
-    if spend.iter().any(|m| m.measured_requests < m.requests) {
-        println!("\n  ~ partly estimated: the provider did not report a cost for every request.");
-    }
-}
-
-/// `gain --cost` values savings with a *resolved* model (estimated). When the
-/// proxy has recorded real provider usage, point at the measured view so the
-/// estimate is never mistaken for the bill.
-fn print_measured_spend_hint() {
-    if !crate::proxy::usage_meter::persisted_snapshot().is_empty() {
+    let pricing = ModelPricing::load();
+    let summary = usage::summarize(&usage::load(), period, &pricing);
+    let asked = flag_value(rest, "--model");
+    let model = asked
+        .clone()
+        .or_else(|| summary.dominant_model().map(str::to_string))
+        .or_else(detected_model);
+    let quote = pricing.quote(model.as_deref());
+    // A model the user named but that has no price is a mistake to report,
+    // not a reason to price at the blended fallback.
+    if let Some(name) = asked
+        && quote.match_kind == crate::core::pricing::PricingMatchKind::Fallback
+    {
         eprintln!(
-            "\n  \x1b[2m💡 Measured provider spend available — `sobre gain --measured` for the real per-model bill.\x1b[0m"
+            "Unknown model '{name}'. Priced models: {}",
+            pricing.known_models().join(", ")
         );
+        std::process::exit(2);
     }
-}
-
-/// When the bridge is not engaged, the proxy is no longer feeding live request
-/// stats. Surface that caveat so `gain` never implies savings it cannot measure
-/// (GitHub #361/#271) — **but only when there are genuinely no savings to show**.
-///
-/// `gain` also measures MCP-tool savings directly (reads/search/shell via the
-/// savings ledger + stats), which need no proxy at all. Emitting a "proxy down —
-/// savings cannot be measured" line above a real, MCP-measured headline wrongly
-/// told MCP-only users their numbers were untrustworthy (#500). Gate on the
-/// displayed total so the warning fires only for a true zero.
-fn print_bridge_warning() {
-    use crate::core::gain::bridge_status::{BridgeEngagement, BridgeStatus};
-    let store = core::stats::load();
-    let saved = store
-        .total_input_tokens
-        .saturating_sub(store.total_output_tokens);
-    if saved > 0 {
-        return;
-    }
-    let bridge = BridgeStatus::detect();
-    if bridge.engagement != BridgeEngagement::Engaged {
-        eprintln!("\n  \x1b[33m⚠ {}\x1b[0m", bridge.summary_line());
-    }
-}
-
-/// `gain --opportunity` — merged discover + ghost (opportunity report).
-fn cmd_opportunity() {
-    use crate::core::theme;
-
-    let t = { crate::core::theme::Theme::default() };
-    let rst = theme::rst();
-    let bold = theme::bold();
-    let dim = theme::dim();
-    let w = 57;
-
-    let history = crate::cli::common::load_shell_history();
-    let result = crate::tools::impl_discover::analyze_history(&history, 10);
-
-    let store = core::stats::load();
-    let optimized_cmds = store.total_commands;
-
-    if result.missed_commands.is_empty() {
-        println!(
-            "\n  {sc}{bold}All compressible commands are already using lean-ctx!{rst}\n  {dim}{optimized_cmds} commands optimized.{rst}\n",
-            sc = t.success.fg(),
-        );
-        return;
-    }
-
-    let total_missed: u64 = result
-        .missed_commands
-        .iter()
-        .map(|c| c.estimated_tokens as u64)
-        .sum();
-    let total_count: u64 = result.missed_commands.iter().map(|c| c.count as u64).sum();
-
-    println!();
-    println!("  {}", t.box_top(w));
-    let side = t.box_side();
-    let padded = |s: &str| -> String {
-        let p = theme::pad_right(s, w);
-        format!("  {side}{p}{side}")
-    };
-    println!(
-        "{}",
-        padded(&format!("  {bold}{}Opportunity Report{rst}", t.accent.fg()))
-    );
-    println!("{}", padded(""));
-    println!(
-        "{}",
-        padded(&format!(
-            "  {bold}~{}{rst} {dim}tokens/month going uncompressed{rst}",
-            crate::core::wrapped::format_tokens(total_missed),
-        ))
-    );
-    println!("{}", padded(""));
-
-    for entry in result.missed_commands.iter().take(8) {
-        let line = format!(
-            "  {dim}{:<12}{rst} {:>4}x   {bold}~{}{rst} {dim}tokens recoverable{rst}",
-            entry.prefix,
-            entry.count,
-            crate::core::wrapped::format_tokens(entry.estimated_tokens as u64),
-        );
-        println!("{}", padded(&line));
-    }
-
-    println!("{}", padded(""));
-    let opt_line = format!(
-        "  {dim}Already optimized: {optimized_cmds} commands ({pct}%){rst}",
-        pct = total_count
-            .checked_add(optimized_cmds)
-            .and_then(|total| optimized_cmds.checked_mul(100)?.checked_div(total))
-            .unwrap_or(100)
-    );
-    println!("{}", padded(&opt_line));
-    println!("  {}", t.box_bottom(w));
-    println!();
-    let sec = t.secondary.fg();
-    println!("  {sec}lean-ctx init --global{rst}   {dim}Compress everything{rst}");
-    println!();
-}
-
-/// `gain --by-tool` — per-tool savings breakdown from the verified savings
-/// ledger (calls, tokens saved, USD, compression %). The aggregate `gain`
-/// headline hides which tool earned the savings; this surfaces it. Honors
-/// `--limit` and `--json`.
-fn cmd_by_tool(rest: &[String], limit: usize) {
-    use std::collections::HashMap;
-
-    #[derive(Default)]
-    struct Agg {
-        calls: u64,
-        saved_tokens: u64,
-        saved_usd: f64,
-        baseline_tokens: u64,
-    }
-
-    let mut by_tool: HashMap<String, Agg> = HashMap::new();
-    for e in core::savings_ledger::all_events() {
-        let a = by_tool.entry(e.tool).or_default();
-        a.calls += 1;
-        a.saved_tokens += e.saved_tokens;
-        a.saved_usd += e.saved_usd;
-        a.baseline_tokens += e.baseline_tokens;
-    }
-
-    let mut rows: Vec<(String, Agg)> = by_tool.into_iter().collect();
-    // Heaviest saver first; tie-break by name so the view is deterministic.
-    rows.sort_by(|a, b| {
-        b.1.saved_tokens
-            .cmp(&a.1.saved_tokens)
-            .then_with(|| a.0.cmp(&b.0))
-    });
-    rows.truncate(limit);
-
-    let pct = |a: &Agg| -> f64 {
-        if a.baseline_tokens > 0 {
-            a.saved_tokens as f64 / a.baseline_tokens as f64 * 100.0
-        } else {
-            0.0
-        }
-    };
 
     if rest.iter().any(|a| a == "--json") {
-        let arr: Vec<_> = rows
-            .iter()
-            .map(|(tool, a)| {
-                serde_json::json!({
-                    "tool": tool,
-                    "calls": a.calls,
-                    "saved_tokens": a.saved_tokens,
-                    "saved_usd": a.saved_usd,
-                    "baseline_tokens": a.baseline_tokens,
-                    "saved_pct": pct(a),
-                })
-            })
-            .collect();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&arr).unwrap_or_else(|_| "[]".to_string())
-        );
-        return;
-    }
-
-    if rows.is_empty() {
-        println!(
-            "No per-tool savings recorded yet. Use lean-ctx-backed tools (ctx_read, \
-             ctx_search, ctx_shell) to populate the ledger."
-        );
-        return;
-    }
-
-    println!("Savings by tool (most saved first):\n");
-    println!(
-        "  {:<16} {:>8} {:>12} {:>10} {:>7}",
-        "TOOL", "CALLS", "SAVED", "USD", "SAVED%"
-    );
-    for (tool, a) in &rows {
-        println!(
-            "  {:<16} {:>8} {:>12} {:>10} {:>6.1}%",
-            tool,
-            a.calls,
-            core::wrapped::format_tokens(a.saved_tokens),
-            format!("${:.2}", a.saved_usd),
-            pct(a),
-        );
+        println!("{}", to_json(&summary, &quote, &period_arg));
+    } else if rest.iter().any(|a| a == "--by-tool") {
+        print_by_tool(&summary, limit);
+    } else if rest.iter().any(|a| a == "--daily") {
+        print_daily(&summary);
+    } else {
+        print_summary(&summary, &quote, &period_arg);
     }
 }
 
-/// `gain --raw` — plain stats (absorbs former `lean-ctx stats` command).
-fn cmd_stats_raw(rest: &[String]) {
-    if rest.iter().any(|a| a == "--json" || a == "json") {
-        let store = core::stats::load();
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&store).unwrap_or_else(|_| "{}".to_string())
-        );
+fn flag_value(rest: &[String], name: &str) -> Option<String> {
+    rest.iter().enumerate().find_map(|(i, a)| {
+        a.strip_prefix(&format!("{name}="))
+            .map(str::to_string)
+            .or_else(|| (a == name).then(|| rest.get(i + 1).cloned()).flatten())
+    })
+}
+
+/// The model a host hook last reported, when the proxy saw no calls.
+fn detected_model() -> Option<String> {
+    let path = crate::core::data_dir::sobre_data_dir()
+        .ok()?
+        .join("detected_model.json");
+    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    v.get("model")?.as_str().map(str::to_string)
+}
+
+/// A signed token count: savings go negative when output outgrew its input.
+fn fmt_signed(tokens: i64) -> String {
+    let abs = fmt_tokens(tokens.unsigned_abs());
+    if tokens < 0 { format!("-{abs}") } else { abs }
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn pct(part: i64, whole: u64) -> f64 {
+    if whole == 0 {
+        0.0
     } else {
-        let store = core::stats::load();
-        let input_saved = store
-            .total_input_tokens
-            .saturating_sub(store.total_output_tokens);
-        let pct = if store.total_input_tokens > 0 {
-            input_saved as f64 / store.total_input_tokens as f64 * 100.0
-        } else {
-            0.0
-        };
-        println!("Commands:    {}", store.total_commands);
-        println!("Input:       {} tokens", store.total_input_tokens);
-        println!("Output:      {} tokens", store.total_output_tokens);
-        println!("Saved:       {input_saved} tokens ({pct:.1}%)");
-        println!();
-        println!("CEP sessions:  {}", store.cep.sessions);
+        part as f64 / whole as f64 * 100.0
+    }
+}
+
+fn price_label(quote: &ModelQuote) -> String {
+    let estimated = if quote.match_kind.is_estimated() {
+        ", estimated price"
+    } else {
+        ""
+    };
+    format!(
+        "{} at ${:.2}/M input{estimated}",
+        quote.model_key, quote.cost.input_per_m
+    )
+}
+
+fn print_summary(s: &Summary, quote: &ModelQuote, period: &str) {
+    let (bold, dim, rst) = (theme::bold(), theme::dim(), theme::rst());
+    println!("\n{bold}sobre gain{rst} {dim}({period}){rst}\n");
+
+    if s.compression.events == 0 && s.llm_calls == 0 {
+        println!("  Nothing recorded yet. Savings appear here once an agent uses sobre.\n");
+        return;
+    }
+
+    let c = &s.compression;
+    println!("{bold}Compression{rst}");
+    println!(
+        "  Saved         {} of {} tokens ({:.0}%) in {} compressions",
+        fmt_signed(c.saved()),
+        fmt_tokens(c.original),
+        pct(c.saved(), c.original),
+        c.events
+    );
+    if s.bounce_tokens > 0 {
         println!(
-            "CEP tokens:    {} → {}",
-            store.cep.total_tokens_original, store.cep.total_tokens_compressed
+            "  Re-sent       {} tokens {dim}(full re-reads after a compressed read){rst}",
+            fmt_tokens(s.bounce_tokens)
         );
+    }
+    println!(
+        "  Net saved     {} tokens",
+        fmt_signed(s.net_saved_tokens())
+    );
+    let by_path: Vec<String> = s
+        .by_surface
+        .iter()
+        .map(|(surface, t)| format!("{surface} {}", fmt_signed(t.saved())))
+        .collect();
+    println!("  By path       {}", by_path.join(" · "));
+
+    let saved_usd = s.saved_usd(quote);
+    println!();
+    if s.llm_calls > 0 {
+        let counterfactual = s.real_cost_usd + saved_usd;
+        println!("{bold}Cost{rst} {dim}(tokens measured by the proxy, priced from the table){rst}");
+        println!("  LLM calls     {}", s.llm_calls);
+        let table_priced = s.llm_calls - s.local_calls;
+        let mut sources = vec![format!("{table_priced} from the price table")];
+        if s.local_calls > 0 {
+            sources.push(format!("{} local, free", s.local_calls));
+        }
+        println!(
+            "  Real cost     ${:.2} {dim}({}){rst}",
+            s.real_cost_usd,
+            sources.join(", ")
+        );
+        if s.local_calls == s.llm_calls {
+            // Tokens a local model never read cost nothing: the saving is
+            // context and time, not money.
+            println!("  Gain          {dim}none in money: every call went to a local model{rst}");
+        } else {
+            println!(
+                "  Without sobre ${counterfactual:.2} {dim}(real cost + saved tokens, {}){rst}",
+                price_label(quote)
+            );
+            println!(
+                "  Gain          ${saved_usd:.2} ({:.1}%) {dim}— an estimate: saved tokens are priced as uncached input; prompt caching would have made many of them cheaper, and the proxy counts history it re-compresses on each request{rst}",
+                if counterfactual > 0.0 {
+                    saved_usd / counterfactual * 100.0
+                } else {
+                    0.0
+                }
+            );
+            if s.local_calls > 0 {
+                println!(
+                    "                {dim}saved tokens of the local calls are priced as hosted ones{rst}"
+                );
+            }
+        }
+    } else {
+        println!("{bold}Value{rst} {dim}(estimated){rst}");
+        println!(
+            "  About ${saved_usd:.2} {dim}({}; saved tokens priced as uncached input){rst}",
+            price_label(quote)
+        );
+        println!(
+            "  {dim}No proxy in the path, so no measured cost. `sobre proxy start` measures it.{rst}"
+        );
+    }
+
+    let overhead = crate::core::context_overhead::ContextOverhead::measure();
+    println!();
+    println!("{bold}Overhead{rst}");
+    println!(
+        "  sobre adds {} tokens to every request {dim}({} tool definitions and the instructions){rst}",
+        fmt_tokens(overhead.total_tokens() as u64),
+        overhead.tool_count
+    );
+    println!();
+}
+
+fn print_by_tool(s: &Summary, limit: usize) {
+    let (bold, rst) = (theme::bold(), theme::rst());
+    let mut rows: Vec<_> = s.by_tool.iter().collect();
+    rows.sort_by_key(|(_, t)| std::cmp::Reverse(t.saved()));
+    println!(
+        "\n{bold}{:<24} {:>8} {:>10} {:>10} {:>10} {:>6}{rst}",
+        "tool", "calls", "original", "sent", "saved", "%"
+    );
+    for (tool, t) in rows.into_iter().take(limit) {
+        println!(
+            "{tool:<24} {:>8} {:>10} {:>10} {:>10} {:>5.0}%",
+            t.events,
+            fmt_tokens(t.original),
+            fmt_tokens(t.sent),
+            fmt_signed(t.saved()),
+            pct(t.saved(), t.original)
+        );
+    }
+    println!();
+}
+
+fn print_daily(s: &Summary) {
+    let (bold, rst) = (theme::bold(), theme::rst());
+    println!(
+        "\n{bold}{:<12} {:>12} {:>12}{rst}",
+        "day", "saved", "real cost"
+    );
+    for (day, (saved, cost)) in &s.by_day {
+        let cost = if s.llm_calls > 0 {
+            format!("${cost:.2}")
+        } else {
+            "-".to_string()
+        };
+        println!("{day:<12} {:>12} {cost:>12}", fmt_signed(*saved));
+    }
+    println!();
+}
+
+fn to_json(s: &Summary, quote: &ModelQuote, period: &str) -> String {
+    let saved_usd = s.saved_usd(quote);
+    let measured = s.llm_calls > 0;
+    serde_json::to_string_pretty(&serde_json::json!({
+        "period": period,
+        "compression": {
+            "events": s.compression.events,
+            "original_tokens": s.compression.original,
+            "sent_tokens": s.compression.sent,
+            "removed_tokens": s.compression.saved(),
+            "bounce_tokens": s.bounce_tokens,
+            "net_saved_tokens": s.net_saved_tokens(),
+            "by_surface": s.by_surface.iter().map(|(k, t)| (k.clone(), serde_json::json!({
+                "events": t.events, "original_tokens": t.original, "sent_tokens": t.sent,
+            }))).collect::<serde_json::Map<_, _>>(),
+        },
+        "llm": {
+            "calls": s.llm_calls,
+            "input_tokens": s.input_tokens,
+            "output_tokens": s.output_tokens,
+            "cache_read_tokens": s.cache_read_tokens,
+            "cache_write_tokens": s.cache_write_tokens,
+            "real_cost_usd": measured.then_some(s.real_cost_usd),
+            "local_calls": s.local_calls,
+        },
+        "pricing": {
+            "model": quote.model_key,
+            "input_per_m": quote.cost.input_per_m,
+            "estimated_price": quote.match_kind.is_estimated(),
+        },
+        "saved_usd": saved_usd,
+        "saved_usd_kind": if measured { "lower_bound" } else { "estimated" },
+        "counterfactual_cost_usd": measured.then_some(s.real_cost_usd + saved_usd),
+    }))
+    .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flag_value_reads_both_forms() {
+        let args: Vec<String> = ["--period=7d", "--limit", "5"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(flag_value(&args, "--period").as_deref(), Some("7d"));
+        assert_eq!(flag_value(&args, "--limit").as_deref(), Some("5"));
+        assert_eq!(flag_value(&args, "--model"), None);
+    }
+
+    #[test]
+    fn json_reports_no_measured_cost_without_calls() {
+        let s = Summary::default();
+        let quote = ModelPricing::load().quote(None);
+        let v: serde_json::Value = serde_json::from_str(&to_json(&s, &quote, "all")).unwrap();
+        assert!(v["llm"]["real_cost_usd"].is_null());
+        assert_eq!(v["saved_usd_kind"], "estimated");
     }
 }

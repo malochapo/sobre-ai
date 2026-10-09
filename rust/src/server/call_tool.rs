@@ -1,14 +1,18 @@
-//! `LeanCtxServer::call_tool_guarded` — the guarded tool-dispatch path — and
+//! `SobreServer::call_tool_guarded` — the guarded tool-dispatch path — and
 //! root resolution. Split out of `server/mod.rs` to keep that module focused on
 //! wiring. `use super::*` re-imports the parent aliases and sibling submodules.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
-impl LeanCtxServer {
+/// How long the first tool call waits for the client's `roots/list` answer.
+const ROOTS_LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+impl SobreServer {
     pub(crate) async fn call_tool_guarded(
         &self,
         request: CallToolRequestParams,
+        progress: Option<crate::server::progress::ProgressSender>,
     ) -> Result<CallToolResult, ErrorData> {
         self.check_idle_expiry().await;
         self.resolve_roots_once().await;
@@ -18,134 +22,23 @@ impl LeanCtxServer {
         let name = tool_name.as_str();
         let args = tool_args.as_ref();
 
-        // #990: determine machine-readability *before* the once-per-session
-        // decorations below. A machine-readable invocation (e.g. ctx_outline
-        // format=json) must reach the client byte-exact and parseable, so every
-        // prose decoration and terse compression is suppressed and the pure
-        // pre-decoration body is restored at the end (see the `machine_readable`
-        // guard near the end of this function). Computing it here — not after
-        // dispatch — means such a call also never *consumes* a latched
-        // once-per-session flag (auto-context briefing, rules tip) whose prose
-        // we would then discard, so those surface on the next human-facing call.
+        // A machine-readable invocation (e.g. sobre_outline format=json)
+        // must reach the client byte-exact and parseable, so every prose
+        // decoration and terse compression is suppressed and the pure
+        // pre-decoration body is restored at the end (see the
+        // `machine_readable` guard near the end of this function).
         let machine_readable = self
             .registry
-            .as_ref()
-            .and_then(|r| r.get_arc(name))
+            .get_arc(name)
             .is_some_and(|tool| tool.produces_machine_readable(args));
-
-        // Skip the session wake-up briefing for machine-readable calls: the
-        // pre-hook latches `session_initialized` via compare-exchange, so calling
-        // it here would burn the once-per-session slot for a briefing we then
-        // throw away. Deferring keeps the briefing intact for the next call.
-        // The session-start overview call already returns that briefing's
-        // content, so it counts as the briefing: the slot is closed and the
-        // project summary is not sent a second time on the next call.
-        let auto_context = if machine_readable {
-            None
-        } else if crate::tools::autonomy::is_session_overview_call(name, args) {
-            crate::tools::autonomy::mark_session_briefed(&self.autonomy);
-            None
-        } else {
-            let task = {
-                let session = self.session.read().await;
-                session.task.as_ref().map(|t| t.description.clone())
-            };
-            let project_root = {
-                let session = self.session.read().await;
-                session.project_root.clone()
-            };
-            let cache_timeout =
-                tokio::time::timeout(std::time::Duration::from_secs(5), self.cache.write()).await;
-            if let Ok(mut cache) = cache_timeout {
-                crate::tools::autonomy::session_lifecycle_pre_hook(
-                    &self.autonomy,
-                    &mut cache,
-                    task.as_deref(),
-                    project_root.as_deref(),
-                    CrpMode::effective(),
-                )
-            } else {
-                tracing::warn!("pre-dispatch: cache write-lock timeout (5s), skipping autonomy");
-                None
-            }
-        };
-
-        let args_fp = args
-            .map(|a| {
-                crate::core::loop_detection::LoopDetector::fingerprint(&serde_json::Value::Object(
-                    a.clone(),
-                ))
-            })
-            .unwrap_or_default();
-        let throttle_result = {
-            let fp = &args_fp;
-            let detector_timeout = tokio::time::timeout(
-                std::time::Duration::from_secs(3),
-                self.loop_detector.write(),
-            )
-            .await;
-            if let Ok(mut detector) = detector_timeout {
-                let is_search = crate::core::loop_detection::LoopDetector::is_search_tool(name);
-                let is_search_shell = name == "ctx_shell" && {
-                    let cmd = args
-                        .as_ref()
-                        .and_then(|a| a.get("command"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    crate::core::loop_detection::LoopDetector::is_search_shell_command(cmd)
-                };
-
-                if is_search || is_search_shell {
-                    let search_pattern = args.and_then(|a| {
-                        a.get("pattern")
-                            .or_else(|| a.get("query"))
-                            .and_then(|v| v.as_str())
-                    });
-                    let shell_pattern = if is_search_shell {
-                        args.and_then(|a| a.get("command"))
-                            .and_then(|v| v.as_str())
-                            .and_then(helpers::extract_search_pattern_from_command)
-                    } else {
-                        None
-                    };
-                    let pat = search_pattern.or(shell_pattern.as_deref());
-                    detector.record_search(name, fp, pat)
-                } else {
-                    detector.record_call(name, fp)
-                }
-            } else {
-                tracing::warn!("pre-dispatch: loop_detector write-lock timeout (3s), skipping");
-                crate::core::loop_detection::ThrottleResult::default()
-            }
-        };
-
-        if throttle_result.level == crate::core::loop_detection::ThrottleLevel::Blocked {
-            let msg = throttle_result.message.unwrap_or_default();
-            return Ok(CallToolResult::success(vec![ContentBlock::text(msg)]));
-        }
-
-        let throttle_warning =
-            if throttle_result.level == crate::core::loop_detection::ThrottleLevel::Reduced {
-                throttle_result.message.clone()
-            } else {
-                None
-            };
 
         let config = crate::core::config::Config::load_arc();
 
         let tool_start = std::time::Instant::now();
         let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
-            match self.dispatch_tool(name, args).await {
+            match self.dispatch_tool(name, args, progress).await {
                 Ok(tuple) => tuple,
                 Err(e) => {
-                    if let Ok(mut detector) = tokio::time::timeout(
-                        std::time::Duration::from_secs(1),
-                        self.loop_detector.write(),
-                    )
-                    .await
-                    {
-                        detector.record_error_outcome(name, &args_fp);
-                    }
                     crate::core::debug_log::log_mcp_error(name, args, &format!("{e:?}"));
                     return Err(e);
                 }
@@ -162,157 +55,76 @@ impl LeanCtxServer {
             return Ok(result);
         }
 
-        let inline_shell = name == "ctx_shell"
-            && crate::core::firewall::should_inline_shell(
-                helpers::get_bool(args, "inline").unwrap_or(false),
-                result_text.len(),
-            );
-        let is_raw_shell = name == "ctx_shell" && {
-            let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
-            let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
-            arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled() || inline_shell
-        };
-
         let pre_terse_len = result_text.len();
         let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
-        // Context IR: record lineage for every tool call.
-        if let Some(ref ir) = self.context_ir {
-            let tool_duration = tool_start.elapsed();
-            let source_kind = post_process::context_ir_source_kind(name);
-            let ir_path = helpers::get_str(args, "path");
-            let ir_command = helpers::get_str(args, "command");
-            let ir_mode = helpers::get_str(args, "mode");
-            let excerpt = if result_text.len() > 200 {
-                let mut end = 200;
-                while !result_text.is_char_boundary(end) && end > 0 {
-                    end -= 1;
-                }
-                &result_text[..end]
-            } else {
-                &result_text
-            };
-            let input = crate::core::context_ir::RecordIrInput {
-                kind: source_kind,
-                tool: name,
-                client_name: None,
-                agent_id: None,
-                path: ir_path.as_deref(),
-                command: ir_command.as_deref(),
-                pattern: ir_mode.as_deref(),
-                input_tokens: pre_terse_len / 4,
-                output_tokens: output_tokens as usize,
-                duration: tool_duration,
-                content_excerpt: excerpt,
-            };
-            ir.write().await.record(input);
-        }
-
-        // Correction-loop detection: track re-reads and re-runs as quality signals.
-        {
-            let mut detector = self.loop_detector.write().await;
-            if name == "ctx_read" {
+        // Re-fetch feedback: re-reads, re-runs and `sobre_expand` mean the
+        // compressed form lost something. The session degrade can only lower
+        // compression below the configured level, and a change is announced.
+        let degrade_note = {
+            let mut signals = self.refetch_signals.write().await;
+            if name == "sobre_read" {
                 let path = helpers::get_str(args, "path").unwrap_or_default();
                 let mode = helpers::get_str(args, "mode").unwrap_or_else(|| "auto".into());
                 let fresh = helpers::get_bool(args, "fresh").unwrap_or(false);
-                detector.record_read_for_correction(&path, &mode, fresh);
-            } else if name == "ctx_shell" {
+                signals.record_read(&path, &mode, fresh);
+            } else if name == "sobre_shell" {
                 let cmd = helpers::get_str(args, "command").unwrap_or_default();
-                detector.record_shell_for_correction(&cmd);
-            } else if name == "ctx_expand" {
-                // CCR-learning (#941): a verbatim/original re-fetch means the inline
-                // compressed form was too lossy for this session.
-                detector.record_retrieve();
+                signals.record_shell(&cmd);
+            } else if name == "sobre_expand" {
+                signals.record_retrieve();
             }
-            let correction_count = detector.correction_count();
-            let retrieve_count = detector.retrieve_count();
-            // Auto-degrade: reduce compression when the agent keeps re-fetching what
-            // we squeezed out. Correction loops (re-reads/re-runs) and CCR retrieves
-            // (ctx_expand) are two views of the same "too aggressive"
-            // signal; degrade on the stronger of the two and clear only when neither
-            // fires. The level is server state, never part of any output body (#498).
             use crate::core::config::CompressionLevel;
-            CompressionLevel::apply_degrade_action(CompressionLevel::degrade_action(
-                correction_count,
-                retrieve_count,
-            ));
-            detector.prune_corrections();
-        }
+            let changed = CompressionLevel::apply_degrade_action(
+                CompressionLevel::degrade_action(
+                    signals.correction_count(),
+                    signals.retrieve_count(),
+                ),
+                &config,
+            );
+            signals.prune();
+            changed.map(|level| {
+                format!(
+                    "[sobre: compression is now {} for this session — {}]",
+                    level.label(),
+                    if level == CompressionLevel::effective_configured(&config) {
+                        "back to the configured level"
+                    } else {
+                        "lowered after repeated re-reads, re-runs or expands"
+                    }
+                )
+            })
+        };
 
         let pre_compression = result_text.clone();
-        result_text = post_process::compress_terse(result_text, name, args, &config, is_raw_shell);
+        result_text = post_process::compress_terse(result_text, name, &config);
 
-        // Snapshot BEFORE any decoration (auto-context prefix, throttle/budget
-        // warnings, hints): auto-findings must parse the clean tool output, or
-        // the injected "--- AUTO CONTEXT ---" header itself becomes a junk
-        // finding ("Read ---") that pollutes the session, the knowledge store,
-        // and every subsequent wakeup briefing (#658).
-        let findings_source = result_text.clone();
-
-        let verify_cfg = crate::core::output_verification::VerificationConfig::default();
-
-        if !is_raw_shell {
-            let vr = crate::core::output_verification::verify_output(
-                &pre_compression,
-                &result_text,
-                &verify_cfg,
-            );
-            if !vr.warnings.is_empty() {
-                let msg = format!("[VERIFY] {}", vr.format_compact());
-                result_text = format!("{result_text}\n\n{msg}");
-            }
-        }
-
-        if !is_raw_shell && let Some(ctx) = auto_context {
-            result_text = format!("{ctx}\n\n{result_text}");
-        }
-
-        if let Some(warning) = throttle_warning {
-            result_text = format!("{result_text}\n\n{warning}");
-        }
-
-        // Gated on `!machine_readable` (short-circuits before the swap) so a
-        // json-first call does not consume this once-per-session slot for a tip
-        // we would immediately discard; it then surfaces on the next call.
-        if !machine_readable
-            && !self
-                .rules_stale_checked
-                .swap(true, std::sync::atomic::Ordering::Relaxed)
+        // A condensed text that lost a path, an identifier or structure is
+        // not sent: the agent gets the tool's own output instead.
+        if result_text != pre_compression
+            && !crate::core::output_verification::verify_output(&pre_compression, &result_text)
+                .warnings
+                .is_empty()
         {
-            let client = self.client_name.read().await.clone();
-            if !client.is_empty() && crate::rules_inject::check_rules_freshness(&client).is_some() {
-                // Self-heal: auto-refresh the rules on disk instead of asking
-                // the user to run setup manually (#2365). The rewrite is
-                // idempotent and cheap; run it off the async runtime.
-                let _ = tokio::task::spawn_blocking(|| {
-                    if let Some(home) = dirs::home_dir() {
-                        let _ = crate::rules_inject::inject_all_rules(&home);
-                    }
-                })
-                .await;
-                result_text = format!(
-                    "{result_text}\n\n[RULES AUTO-UPDATED] Your lean-ctx rules were written by \
-                     an older version and have been refreshed on disk. Start a new session to \
-                     load them for full compatibility."
-                );
-            } else if !self
-                .rules_tip_shown
-                .swap(true, std::sync::atomic::Ordering::Relaxed)
-                && !crate::rules_inject::rules_installed()
-            {
-                result_text = format!(
-                    "{result_text}\n\n\
-                         --- tip: run 'lean-ctx init' to configure agent rules for optimal AI integration ---"
-                );
-            }
+            result_text.clone_from(&pre_compression);
         }
 
-        if name == "ctx_read" {
+        // `raw` is the bytes on disk: nothing is appended to it.
+        let raw_read = name == "sobre_read"
+            && (helpers::get_bool(args, "raw") == Some(true)
+                || helpers::get_str(args, "mode").as_deref() == Some("raw"));
+        if let Some(note) = degrade_note
+            && !raw_read
+        {
+            result_text = format!("{result_text}\n\n{note}");
+        }
+
+        if name == "sobre_read" {
             let cache_clone = self.cache.clone();
             let autonomy_clone = self.autonomy.clone();
             tokio::spawn(async move {
                 let result = std::panic::AssertUnwindSafe(async {
-                    // #807: bounded lock — the old unbounded `.write().await`
+                    // Bounded lock — the old unbounded `.write.await`
                     // could queue behind a long computation and then hold the
                     // lock during dedup, cascading the stall.
                     let cache_timeout = tokio::time::timeout(
@@ -339,35 +151,10 @@ impl LeanCtxServer {
             });
         }
 
-        // Bypass hints are decoupled from minimal_overhead: they ride MCP
-        // tool responses (which vary anyway) and don't break provider prompt
-        // caching (#498). The `bypass_hints` config key gates them independently.
-        if !is_raw_shell && bypass_hint::is_enabled() {
-            if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-                let session = self.session.read().await;
-                bypass_hint::set_session_id(&session.id);
-                drop(session);
-                if let Some(hint) = bypass_hint::check(&data_dir) {
-                    result_text = format!("{result_text}\n{hint}");
-                }
-            }
-            bypass_hint::record_lctx_call();
-        }
-
-        let finding_path_hint = helpers::get_str(args, "path");
-        if let Some(finding) = crate::core::auto_findings::extract(
-            name,
-            &findings_source,
-            finding_path_hint.as_deref(),
-        ) {
-            let mut session = self.session.write().await;
-            session.add_finding(finding.file.as_deref(), None, &finding.summary);
-        }
-
         {
             let tool_name = name.to_string();
             let summary = result_text.lines().next().unwrap_or("").to_string();
-            // #520 opt-in debug log: a full per-call record (tool, args, result
+            // Opt-in debug log: a full per-call record (tool, args, result
             // preview, savings, wall time). Captured here and written off the hot
             // path in the existing journal thread; no-op unless `debug_log` is on.
             let dbg_args = args.cloned();
@@ -386,64 +173,35 @@ impl LeanCtxServer {
             });
         }
 
-        // OPT-4: dispatch/mod.rs records savings before terse/hints run; this
-        // finalizes the real sent-token count and corrects persistent stats.
-        let output_token_count = post_process::finalize_token_count_and_adjust(
+        let output_token_count =
+            post_process::final_token_count(&result_text, pre_terse_len, output_tokens);
+        // The tool's own savings plus whatever terse removed afterwards: the
+        // original is the pre-terse count plus what the tool already saved.
+        crate::core::usage::record_compression(
+            crate::core::usage::Surface::Mcp,
             name,
-            &result_text,
-            pre_terse_len,
-            output_tokens,
-            tool_saved_tokens,
+            usize::try_from(output_tokens).unwrap_or(usize::MAX) + tool_saved_tokens,
+            output_token_count,
         );
 
-        let action = helpers::get_str(args, "action");
+        self.save_session_when_due().await;
 
-        self.record_receipt_and_cost(
-            name,
-            args,
-            action.as_deref(),
-            &result_text,
-            output_token_count,
-        )
-        .await;
+        let skip_checkpoint = matches!(name, "sobre_session" | "sobre_knowledge");
 
-        let skip_checkpoint = matches!(name, "ctx_session" | "ctx_knowledge" | "ctx_impact");
-
-        // #1020: tool-calls.log is now written on the dispatch path
-        // (record_call_with_path / record_call_with_timing) with the real
-        // original/saved/mode and the measured handler duration. The previous
-        // zero-filled append here overwrote every row with `orig=0 saved=0 mode=-`.
-
-        // The only place that advances `call_count`, which the
-        // every-100-calls maintenance below reads.
+        // The only place that advances `call_count`.
         if !skip_checkpoint {
             self.increment_call_count();
         }
 
-        let current_count = self.call_count.load(std::sync::atomic::Ordering::Relaxed);
-        if current_count > 0 && current_count.is_multiple_of(100) {
-            // Bound the on-disk archive between restarts: prune TTL-expired and
-            // over-budget entries off the hot path so it can't grow unbounded and
-            // starve the host of RAM via the page cache (#417).
-            std::thread::spawn(|| {
-                let _ = crate::core::archive::cleanup();
-            });
-            // Self-managing memory: opportunistically consolidate knowledge in the
-            // background (time-gated + single-flight inside `maybe_run`).
-            if let Some(root) = self.session.read().await.project_root.clone() {
-                crate::core::cognition_scheduler::maybe_run(&root);
-            }
-        }
-
-        // #990: a machine-readable invocation (e.g. ctx_outline format=json) must
+        // A machine-readable invocation (e.g. sobre_outline format=json) must
         // return a byte-exact, parseable payload. The state-consuming briefings
         // are already skipped above (so their once-per-session flags survive),
         // but other steps still append recomputed prose (verify footer, throttle
-        // / budget warning, deprecation notice) or compress the body — all of
+        // / budget warning) or compress the body — all of
         // which break a JSON contract. This guard is the robust catch-all:
         // restore the pure body captured *before* compression and decoration.
         // Redaction + sensitivity were applied earlier so the security envelope
-        // is preserved. `ctx_outline` is not an archivable/firewallable tool, so
+        // is preserved. `sobre_outline` output is never teed, so
         // `pre_compression` is the unmodified body here; no-op otherwise.
         if machine_readable {
             result_text = pre_compression;
@@ -464,6 +222,9 @@ impl LeanCtxServer {
         if !self.has_client_roots.load(Ordering::Relaxed) {
             return;
         }
+        // Concurrent first calls wait here for one `roots/list` answer instead
+        // of running with no root.
+        let _gate = self.roots_gate.lock().await;
         if self.roots_resolved.swap(true, Ordering::Relaxed) {
             return;
         }
@@ -471,9 +232,18 @@ impl LeanCtxServer {
         let Some(peer) = peer_guard.as_ref() else {
             return;
         };
-        let list_result = match peer.list_roots().await {
-            Ok(r) => r,
-            Err(e) => {
+        // A client that declares roots but never answers must not hold the
+        // first tool call: past the deadline, the session keeps its root.
+        let list_result = match tokio::time::timeout(ROOTS_LIST_TIMEOUT, peer.list_roots()).await {
+            Err(_) => {
+                tracing::warn!(
+                    "roots/list: no answer within {}s — giving up",
+                    ROOTS_LIST_TIMEOUT.as_secs()
+                );
+                return;
+            }
+            Ok(Ok(r)) => r,
+            Ok(Err(e)) => {
                 let permanent = roots_list_failure_is_permanent(&e);
                 const MAX_ATTEMPTS: u32 = 3;
                 let attempts = self.roots_list_attempts.fetch_add(1, Ordering::Relaxed) + 1;
@@ -525,35 +295,23 @@ impl LeanCtxServer {
         }
 
         if old_root.as_deref() == Some(&new_root) {
-            let _ = session.save();
             return;
         }
         tracing::info!(
             "MCP roots: switching project root from {:?} to {new_root}",
             old_root
         );
-        if let Some(existing) =
-            crate::core::session::SessionState::load_latest_for_project_root(&new_root)
-        {
-            *session = existing;
-            session.extra_roots = validated_paths
-                .iter()
-                .filter(|p| p.as_str() != new_root)
-                .cloned()
-                .collect();
-        }
         session.project_root = Some(new_root);
-        let _ = session.save();
         drop(session);
-        // Indices warm lazily on first use of a tool that needs them (#152) —
+        // Indices warm lazily on first use of a tool that needs them —
         // the dispatch path for this very call handles it via
         // `index_orchestrator::ensure_warm_for_tool`, so no eager scan here.
     }
 }
 
-/// Classifies a failed `roots/list` call (GH #694). `-32601 Method not found`
+/// Classifies a failed `roots/list` call. `-32601 Method not found`
 /// means the client declared the roots capability but does not implement the
-/// request (Cursor's documented behavior, #699) — retrying can never succeed.
+/// request (Cursor's documented behavior) — retrying can never succeed.
 /// Everything else (timeout, transport hiccup while an IDE window is still
 /// starting up) is transient and worth a bounded retry on a later tool call.
 fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
@@ -564,53 +322,24 @@ fn roots_list_failure_is_permanent(e: &rmcp::ServiceError) -> bool {
     )
 }
 
-/// Build the final `CallToolResult`, surfacing shell failures in MCP metadata
-/// (GitHub #389): a failing or blocked command sets `isError: true` and a
-/// `structuredContent` payload (`{"exitCode": N}` / `{"blocked": true}`), so
-/// clients no longer have to regex-parse the `[exit:N]` text footer. The text
-/// content is identical in both cases — only the metadata changes. A non-zero
-/// exit that is *not* a failure (#1090/#1086) carries neither, because some
-/// clients render `structuredContent` in place of the text (#1127).
+/// Build the final `CallToolResult`, surfacing failures in MCP metadata: any
+/// non-zero exit, and any failure of the tool itself, sets `isError: true`
+/// (decision 5, as the hosts' own shell tools do); a command's exit code also
+/// goes in `structuredContent` (`{"exitCode": N}`), so clients need not parse
+/// the `[exit:N]` footer. The text, the command's output included, is the
+/// same either way.
 fn finalize_call_result(
     result_text: &str,
     shell_outcome: Option<crate::server::tool_trait::ShellOutcome>,
 ) -> CallToolResult {
     let mut result = CallToolResult::success(vec![ContentBlock::text(result_text.to_owned())]);
     if let Some(outcome) = shell_outcome
-        && is_shell_error(outcome, result_text)
+        && outcome.is_error()
     {
-        // #1127: clients that understand `structuredContent` render it *instead
-        // of* the text block on a non-error result, so attaching it to a benign
-        // non-zero exit (exit 1 with output per #1090, exit 124 with partial
-        // output per #1086) hid the command output completely — `ls /nope` came
-        // back as a bare `{"exitCode":1}`. Only errors, whose text the client
-        // surfaces separately, carry the structured payload.
         result.is_error = Some(true);
         result.structured_content = outcome.structured();
     }
     result
-}
-
-/// #1090: exit 1 with non-empty stdout is not an error for grep/diff/test.
-/// #1086/#1089: exit 124 (timeout) with captured partial output is returned
-/// as a success with a timeout marker, not as an error. The partial output is
-/// often enough to answer the question; treating it as a failure causes the
-/// client to retry the entire pipeline.
-fn is_shell_error(outcome: crate::server::tool_trait::ShellOutcome, output: &str) -> bool {
-    match outcome {
-        crate::server::tool_trait::ShellOutcome::Exit(0) => false,
-        crate::server::tool_trait::ShellOutcome::Exit(1) => {
-            output.trim().is_empty() || output.trim().starts_with("[exit:")
-        }
-        crate::server::tool_trait::ShellOutcome::Exit(124) => {
-            // Timeout with partial output: return as success so the client
-            // sees the captured data. The ERROR marker in the text body still
-            // signals the timeout to the agent.
-            crate::server::execute::output_before_timeout_marker(output).is_none_or(str::is_empty)
-        }
-        crate::server::tool_trait::ShellOutcome::Exit(_)
-        | crate::server::tool_trait::ShellOutcome::Blocked => true,
-    }
 }
 
 #[cfg(test)]
@@ -628,6 +357,14 @@ mod shell_outcome_tests {
     }
 
     #[test]
+    fn a_failed_tool_sets_is_error_without_structured_content() {
+        let r = finalize_call_result("ERROR: path is required", Some(ShellOutcome::Failed));
+        assert_eq!(r.is_error, Some(true));
+        assert!(r.structured_content.is_none());
+        assert_eq!(text_of(&r), "ERROR: path is required");
+    }
+
+    #[test]
     fn success_exit_is_not_an_error() {
         let r = finalize_call_result("ok", Some(ShellOutcome::Exit(0)));
         assert_ne!(r.is_error, Some(true), "exit 0 must not set isError");
@@ -638,66 +375,33 @@ mod shell_outcome_tests {
         assert_eq!(text_of(&r), "ok");
     }
 
+    /// J8 (decision 5): any non-zero exit is an error, and the command's
+    /// output stays in the result.
     #[test]
-    fn nonzero_exit_with_output_is_not_error() {
-        // #1090: exit 1 with command output (before [exit:] footer) is NOT
-        // a tool error — grep/diff/test exit 1 with results is normal.
-        let r = finalize_call_result("boom\n[exit:1]", Some(ShellOutcome::Exit(1)));
-        assert_ne!(
-            r.is_error,
-            Some(true),
-            "exit 1 with output must NOT set isError (#1090)"
-        );
-        // #1127: and it must carry no structuredContent either — clients that
-        // prefer it would render `{"exitCode":1}` and drop the output.
-        assert!(
-            r.structured_content.is_none(),
-            "benign exit 1 must not shadow its output with structuredContent (#1127)"
-        );
-        assert_eq!(text_of(&r), "boom\n[exit:1]", "output text is preserved");
-    }
-
-    #[test]
-    fn stderr_only_failure_keeps_its_text() {
-        // #1127: `ls /nonexistent` writes only to stderr and exits 1. The text
-        // block is the sole carrier of the diagnostic, so it must survive.
-        let text = "ls: /nonexistent-path-xyz: No such file or directory\n[exit:1]";
-        let r = finalize_call_result(text, Some(ShellOutcome::Exit(1)));
-        assert_ne!(r.is_error, Some(true));
-        assert!(r.structured_content.is_none());
-        assert_eq!(text_of(&r), text);
-    }
-
-    #[test]
-    fn timeout_with_partial_output_keeps_its_text() {
-        // #1086/#1127: same shape for exit 124 — partial output is a success
-        // result, so structuredContent must not displace it.
-        let text = "line one\nERROR: command timed out after 5000ms";
-        let r = finalize_call_result(text, Some(ShellOutcome::Exit(124)));
-        assert_ne!(r.is_error, Some(true));
-        assert!(r.structured_content.is_none());
-        assert_eq!(text_of(&r), text);
-    }
-
-    #[test]
-    fn exit_1_without_output_is_error() {
-        // Exit 1 with only the [exit:] footer (no command output) IS an error.
-        let r = finalize_call_result("[exit:1]", Some(ShellOutcome::Exit(1)));
-        assert_eq!(
-            r.is_error,
-            Some(true),
-            "exit 1 with no command output must set isError"
-        );
+    fn every_nonzero_exit_is_an_error_and_keeps_its_text() {
+        for (text, code) in [
+            ("boom\n[exit:1]", 1),
+            (
+                "ls: /nonexistent-path-xyz: No such file or directory\n[exit:1]",
+                1,
+            ),
+            ("[exit:1]", 1),
+            ("line one\nERROR: command timed out after 5000ms", 124),
+        ] {
+            let r = finalize_call_result(text, Some(ShellOutcome::Exit(code)));
+            assert_eq!(r.is_error, Some(true), "{text}");
+            assert_eq!(
+                r.structured_content,
+                Some(serde_json::json!({ "exitCode": code }))
+            );
+            assert_eq!(text_of(&r), text, "the output is kept");
+        }
     }
 
     #[test]
     fn exit_2_is_always_error() {
         let r = finalize_call_result("error output", Some(ShellOutcome::Exit(2)));
-        assert_eq!(
-            r.is_error,
-            Some(true),
-            "exit >= 2 must always set isError (#389)"
-        );
+        assert_eq!(r.is_error, Some(true), "exit >= 2 must always set isError");
         assert_eq!(
             r.structured_content,
             Some(serde_json::json!({ "exitCode": 2 })),
@@ -718,20 +422,6 @@ mod shell_outcome_tests {
     }
 
     #[test]
-    fn blocked_command_sets_is_error_and_blocked_marker() {
-        let r = finalize_call_result("[BLOCKED] nope", Some(ShellOutcome::Blocked));
-        assert_eq!(
-            r.is_error,
-            Some(true),
-            "blocked commands never ran — that is a failure"
-        );
-        assert_eq!(
-            r.structured_content,
-            Some(serde_json::json!({ "blocked": true }))
-        );
-    }
-
-    #[test]
     fn non_shell_tools_are_unaffected() {
         let r = finalize_call_result("file contents", None);
         assert_ne!(r.is_error, Some(true));
@@ -743,7 +433,7 @@ mod shell_outcome_tests {
 mod roots_retry_tests {
     use super::roots_list_failure_is_permanent;
 
-    /// Cursor's pattern (#699): roots capability declared, `roots/list`
+    /// Cursor's pattern: roots capability declared, `roots/list`
     /// answered with `-32601` — retrying is pointless and must stop.
     #[test]
     fn method_not_found_is_permanent() {
@@ -755,7 +445,7 @@ mod roots_retry_tests {
         assert!(roots_list_failure_is_permanent(&err));
     }
 
-    /// The VS Code multi-window pattern (GH #694): the second window's client
+    /// The VS Code multi-window pattern: the second window's client
     /// is still starting up, `roots/list` times out or the transport hiccups —
     /// these must stay retryable so root detection recovers.
     #[test]

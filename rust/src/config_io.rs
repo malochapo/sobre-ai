@@ -1,16 +1,214 @@
 use std::path::{Path, PathBuf};
 
-fn backup_path_for(path: &Path) -> Option<PathBuf> {
-    let filename = path.file_name()?.to_string_lossy();
-    Some(path.with_file_name(format!("{filename}.bak")))
+/// The copy of an agent config as it was before sobre first edited it,
+/// empty when the file did not exist: `uninstall` then deletes a file that
+/// holds nothing but sobre's entries. `uninstall` deletes the copy once
+/// sobre's entries are gone from the original.
+pub fn backup_path_for(path: &Path) -> PathBuf {
+    let filename = path.file_name().unwrap_or_default().to_string_lossy();
+    path.with_file_name(format!("{filename}.sobre.bak"))
 }
 
-pub fn snapshot_mtime(path: &Path) -> Option<std::time::SystemTime> {
-    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
-}
-
+/// Writes an agent config file that `init` (or `proxy enable`) edits.
+///
+/// - Content identical to what is on disk writes nothing.
+/// - The first edit of an existing file keeps a copy of it as
+///   [`backup_path_for`]; later edits leave that copy alone, so it stays the
+///   file the user had before sobre. Creating the file leaves an empty copy:
+///   the next `init` then knows sobre made it, and does not keep sobre's own
+///   entries as the user's.
+/// - The write is recorded in the [`journal`]; while the journal previews
+///   (`init --check`), nothing is written.
 pub fn write_atomic_with_backup(path: &Path, content: &str) -> Result<(), String> {
-    write_atomic_with_backup_checked(path, content, None)
+    let existed = path.exists();
+    if existed && std::fs::read_to_string(path).is_ok_and(|current| current == content) {
+        return Ok(());
+    }
+    journal::record(
+        path,
+        if existed {
+            journal::Change::Updated
+        } else {
+            journal::Change::Created
+        },
+    );
+    if journal::dry_run() {
+        return Ok(());
+    }
+    let bak = backup_path_for(path);
+    if existed {
+        if !bak.exists() {
+            let _ = std::fs::copy(path, &bak);
+        }
+        return write_atomic(path, content);
+    }
+    // After the write, which creates the parent directories.
+    write_atomic(path, content)?;
+    let _ = std::fs::write(&bak, "");
+    Ok(())
+}
+
+/// Writes a file sobre owns entirely (the skill, the OpenCode plugin): journaled
+/// like [`write_atomic_with_backup`], with no backup since nothing of the
+/// user's is in it.
+pub fn write_owned(path: &Path, content: &str) -> Result<(), String> {
+    let existed = path.exists();
+    if existed && std::fs::read_to_string(path).is_ok_and(|current| current == content) {
+        return Ok(());
+    }
+    journal::record(
+        path,
+        if existed {
+            journal::Change::Updated
+        } else {
+            journal::Change::Created
+        },
+    );
+    if journal::dry_run() {
+        return Ok(());
+    }
+    write_atomic(path, content)
+}
+
+/// Writes `value` as an edit of `original`, the text it was parsed from: the
+/// user's comments, key order and formatting are kept (see
+/// [`crate::core::jsonc::rewrite_preserving`]).
+pub fn write_json_edit(
+    path: &Path,
+    original: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    let rendered = if original.trim().is_empty() {
+        crate::core::jsonc::pretty(value)
+    } else {
+        crate::core::jsonc::rewrite_preserving(original, value)
+    };
+    write_atomic_with_backup(path, &rendered)
+}
+
+/// Like [`write_json_edit`], for a write that takes sobre's settings out of a
+/// file (`proxy disable`, `uninstall`): no backup is made, so the copy `init`
+/// kept from before sobre stays the one `uninstall` compares against.
+pub fn write_json_cleanup(
+    path: &Path,
+    original: &str,
+    value: &serde_json::Value,
+) -> Result<(), String> {
+    write_atomic(
+        path,
+        &crate::core::jsonc::rewrite_preserving(original, value),
+    )
+}
+
+/// Edits the JSON(C) agent config at `path` in place. `edit` gets the root
+/// object (empty when the file is missing or blank); the result is written
+/// back with the user's comments, key order and formatting kept, through
+/// [`write_atomic_with_backup`]. Nothing is written when `edit` changed
+/// nothing, and a missing file is not created for an empty object. A file
+/// that does not parse, or whose root is not an object, is left alone.
+pub fn edit_json(
+    path: &Path,
+    edit: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
+) -> Result<(), String> {
+    let original = std::fs::read_to_string(path).unwrap_or_default();
+    let before = if original.trim().is_empty() {
+        serde_json::Value::Object(serde_json::Map::new())
+    } else {
+        crate::core::jsonc::parse_jsonc(&original)
+            .map_err(|e| format!("{} is not valid JSON ({e}); left unchanged", path.display()))?
+    };
+    let mut after = before.clone();
+    let obj = after.as_object_mut().ok_or_else(|| {
+        format!(
+            "{} does not hold a JSON object; left unchanged",
+            path.display()
+        )
+    })?;
+    edit(obj);
+    if after == before {
+        return Ok(());
+    }
+    let rendered = if original.trim().is_empty() {
+        crate::core::jsonc::pretty(&after)
+    } else {
+        crate::core::jsonc::rewrite_preserving(&original, &after)
+    };
+    write_atomic_with_backup(path, &rendered)
+}
+
+/// What `init` writes, recorded as it goes: the per-agent summary is built from
+/// it, and `init --check` runs the same code with writes turned off.
+pub mod journal {
+    use std::cell::RefCell;
+    use std::path::{Path, PathBuf};
+
+    /// What a write did to one file.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Change {
+        Created,
+        Updated,
+    }
+
+    struct Journal {
+        dry_run: bool,
+        entries: Vec<(PathBuf, Change)>,
+    }
+
+    thread_local! {
+        static JOURNAL: RefCell<Option<Journal>> = const { RefCell::new(None) };
+    }
+
+    /// Starts recording on this thread. With `dry_run`, writes that go through
+    /// [`super::write_atomic_with_backup`] and [`super::ensure_dir`] are
+    /// recorded and not performed.
+    pub fn begin(dry_run: bool) {
+        JOURNAL.with(|j| {
+            *j.borrow_mut() = Some(Journal {
+                dry_run,
+                entries: Vec::new(),
+            });
+        });
+    }
+
+    /// Stops recording.
+    pub fn end() {
+        JOURNAL.with(|j| *j.borrow_mut() = None);
+    }
+
+    /// The files written since the last call, each once and in first-write
+    /// order. A file written several times counts as created if any write
+    /// created it.
+    pub fn take() -> Vec<(PathBuf, Change)> {
+        let entries = JOURNAL.with(|j| {
+            j.borrow_mut()
+                .as_mut()
+                .map(|j| std::mem::take(&mut j.entries))
+                .unwrap_or_default()
+        });
+        let mut merged: Vec<(PathBuf, Change)> = Vec::new();
+        for (path, change) in entries {
+            match merged.iter_mut().find(|(p, _)| *p == path) {
+                Some(existing) if change == Change::Created => existing.1 = Change::Created,
+                Some(_) => {}
+                None => merged.push((path, change)),
+            }
+        }
+        merged
+    }
+
+    /// True while `init --check` previews: nothing may be written.
+    pub fn dry_run() -> bool {
+        JOURNAL.with(|j| j.borrow().as_ref().is_some_and(|j| j.dry_run))
+    }
+
+    /// Records a change about to be made.
+    pub(super) fn record(path: &Path, change: Change) {
+        JOURNAL.with(|j| {
+            if let Some(j) = j.borrow_mut().as_mut() {
+                j.entries.push((path.to_path_buf(), change));
+            }
+        });
+    }
 }
 
 /// Like `write_toml_preserving`, but keeps the config minimal: keys whose value
@@ -28,7 +226,7 @@ pub fn write_toml_preserving_minimal(
             // Refuse to overwrite a non-empty file we cannot parse. `new_content`
             // and `default_content` come from our own serializer (always valid),
             // so a merge failure means the on-disk config is corrupt — clobbering
-            // it with defaults would silently wipe customizations (#443). We
+            // it with defaults would silently wipe customizations. We
             // propagate the error and leave the file untouched instead.
             merge_toml_inner(&existing, new_content, Some(default_content)).map_err(|e| {
                 format!(
@@ -41,7 +239,7 @@ pub fn write_toml_preserving_minimal(
         _ => merge_toml_inner("", new_content, Some(default_content))
             .unwrap_or_else(|_| new_content.to_string()),
     };
-    write_atomic_with_backup(path, &merged)
+    write_atomic(path, &merged)
 }
 
 /// Merges `incoming` TOML values onto the `existing` document, retaining the
@@ -146,50 +344,30 @@ fn item_equals_default(item: &toml_edit::Item, default: Option<&toml_edit::Item>
     }
 }
 
-pub fn write_atomic_with_backup_checked(
-    path: &Path,
-    content: &str,
-    expected_mtime: Option<std::time::SystemTime>,
-) -> Result<(), String> {
-    if path.exists() {
-        if let Some(expected) = expected_mtime {
-            let current = snapshot_mtime(path);
-            if current != Some(expected) {
-                return Err(format!(
-                    "file was modified externally since last read: {}",
-                    path.display()
-                ));
-            }
-        }
-        if let Some(bak) = backup_path_for(path) {
-            let _ = std::fs::copy(path, &bak);
-        }
-    }
-
-    write_atomic(path, content)
-}
-
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
-    // #596: a user may symlink agent config (`~/.claude.json`,
+    // A user may symlink agent config (`~/.claude.json`,
     // `~/.codex/config.toml`, …) into a managed dotfiles repo. Resolve the
     // symlink to its real target and write THROUGH it (preserving the symlink)
     // instead of hard-blocking. The target must stay within `$HOME`, so a
     // planted symlink can never redirect a config write outside the user's own
-    // home (preserves the GL#442 symlink-hijack protection).
+    // home (preserves the symlink-hijack protection).
     let target = resolve_write_target(path)?;
 
     if let Some(parent) = target.parent() {
         ensure_dir(parent)?;
     }
 
-    // Force owner-only perms on the real config file (a symlink itself has no
-    // meaningful mode); Windows ACLs are left untouched. The temp+rename
-    // mechanics and the read-only-directory in-place fallback (#459) are shared
-    // with the edit tools via `core::atomic_fs`.
+    // An existing file keeps its mode; a new one is owner-only. Windows ACLs
+    // are left untouched. The temp+rename mechanics and the read-only-directory
+    // in-place fallback are shared with the edit tools via
+    // `core::atomic_fs`.
     #[cfg(unix)]
     let perms = {
         use std::os::unix::fs::PermissionsExt;
-        Some(std::fs::Permissions::from_mode(0o600))
+        Some(std::fs::metadata(&target).map_or_else(
+            |_| std::fs::Permissions::from_mode(0o600),
+            |m| m.permissions(),
+        ))
     };
     #[cfg(not(unix))]
     let perms: Option<std::fs::Permissions> = None;
@@ -197,13 +375,11 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
     crate::core::atomic_fs::write_bytes_with_fallback(&target, content.as_bytes(), perms.as_ref())
 }
 
-/// Resolve the real file to write, honoring a user-managed symlink (#596).
+/// Resolve the real file to write, honoring a user-managed symlink.
 ///
 /// * not a symlink (or missing) → `path` unchanged.
-/// * symlink whose resolved target stays within `$HOME` → the target (write
-///   THROUGH, preserving the symlink) — the legitimate dotfiles pattern.
-/// * symlink whose target escapes `$HOME` → refuse (preserves the GL#442
-///   symlink-hijack protection).
+/// * symlink → its resolved target (write THROUGH, preserving the symlink) —
+///   the dotfiles pattern. The link is the user's; sobre follows it.
 fn resolve_write_target(path: &Path) -> Result<PathBuf, String> {
     let Ok(meta) = path.symlink_metadata() else {
         return Ok(path.to_path_buf());
@@ -212,9 +388,7 @@ fn resolve_write_target(path: &Path) -> Result<PathBuf, String> {
         return Ok(path.to_path_buf());
     }
 
-    let real_target = resolve_symlink_target(path)?;
-    ensure_target_allowed(path, &real_target)?;
-    Ok(real_target)
+    resolve_symlink_target(path)
 }
 
 /// Read a symlink and resolve its target to an absolute path, resolving symlinks
@@ -265,57 +439,16 @@ fn canonicalize_existing_prefix(path: &Path) -> Result<PathBuf, String> {
     }
 }
 
-/// SECURITY (#596 / GL#442): a resolved symlink target must stay within `$HOME`
-/// or under one of the explicitly opted-in [`allowed_symlink_roots`]. Otherwise
-/// a planted symlink could redirect a config write to an attacker-chosen path.
-fn ensure_target_allowed(link_path: &Path, real_target: &Path) -> Result<(), String> {
-    let home = crate::core::home::resolve_home_dir()
-        .ok_or_else(|| "cannot determine $HOME to validate symlink target".to_string())?;
-    let real_home = crate::core::pathutil::canonicalize_secure_or_self(&home);
-    if real_target.starts_with(&real_home) {
-        return Ok(());
-    }
-    if allowed_symlink_roots()
-        .iter()
-        .any(|root| real_target.starts_with(root))
-    {
-        return Ok(());
-    }
-    Err(format!(
-        "refusing to write through a symlink whose target escapes $HOME:\n  \
-         {} -> {}\n  \
-         The target is outside your home directory, so lean-ctx will not follow it \
-         (symlink-hijack protection). To allow this location, either:\n    \
-         - point the agent at the real path (set CLAUDE_CONFIG_DIR / CODEX_HOME), or\n    \
-         - move the target under $HOME, or\n    \
-         - add its parent to `allow_paths` in your lean-ctx config \
-.",
-        link_path.display(),
-        real_target.display()
-    ))
-}
-
-/// Trusted roots OUTSIDE `$HOME` the user explicitly opted into for symlinked
-/// agent configs (#596), from the `allow_paths` config key. Each entry
-/// is made absolute + canonicalized so the boundary check compares real paths;
-/// relative/empty entries are dropped.
-fn allowed_symlink_roots() -> Vec<PathBuf> {
-    crate::core::config::Config::load()
-        .allow_paths
-        .into_iter()
-        .map(PathBuf::from)
-        .filter(|p| !p.as_os_str().is_empty() && p.is_absolute())
-        .map(|p| crate::core::pathutil::canonicalize_secure_or_self(&p))
-        .collect()
-}
-
-/// `create_dir_all` that tolerates a user-managed symlinked directory (#596):
+/// `create_dir_all` that tolerates a user-managed symlinked directory:
 ///
 /// * regular dir / missing path → `create_dir_all`.
 /// * symlink to an existing directory → ok (no-op).
-/// * dangling symlink whose target is within `$HOME` → create the real target.
-/// * symlink to a non-directory, or a target escaping `$HOME` → clear error.
+/// * dangling symlink → create the real target.
+/// * symlink to a non-directory → clear error.
 pub fn ensure_dir(dir: &Path) -> Result<(), String> {
+    if journal::dry_run() {
+        return Ok(());
+    }
     match dir.symlink_metadata() {
         Ok(meta) if crate::core::pathutil::is_symlink_or_reparse(&meta) => {
             match std::fs::metadata(dir) {
@@ -325,10 +458,8 @@ pub fn ensure_dir(dir: &Path) -> Result<(), String> {
                     dir.display()
                 )),
                 Err(_) => {
-                    // Dangling symlink: create the intended target if it is in
-                    // $HOME (or an explicitly allow-listed root, #596).
+                    // Dangling symlink: create the intended target.
                     let real_target = resolve_symlink_target(dir)?;
-                    ensure_target_allowed(dir, &real_target)?;
                     std::fs::create_dir_all(&real_target).map_err(|e| {
                         format!(
                             "cannot create symlink target dir {}: {e}",
@@ -442,7 +573,7 @@ enabled = true
 
     #[test]
     fn minimal_mode_refuses_to_clobber_unparseable_existing() {
-        // #443: a corrupt config must never be silently replaced with defaults.
+        // A corrupt config must never be silently replaced with defaults.
         let tmp = unique_tmp("cfg_corrupt");
         let _ = std::fs::create_dir_all(&tmp);
         let path = tmp.join("config.toml");
@@ -469,9 +600,8 @@ enabled = true
     }
 }
 
-/// #596: write THROUGH a user-managed symlink to its real (in-`$HOME`) target,
-/// reject targets that escape `$HOME`, and make `ensure_dir` tolerant of
-/// symlinked directories. Unix-only (POSIX symlinks + `$HOME` override).
+/// Write THROUGH a user-managed symlink to its real target, and make
+/// `ensure_dir` tolerant of symlinked directories. Unix-only (POSIX symlinks + `$HOME` override).
 #[cfg(all(test, unix))]
 mod symlink_596_tests {
     use super::*;
@@ -506,6 +636,8 @@ mod symlink_596_tests {
         std::fs::create_dir_all(&dotfiles).unwrap();
         let target = dotfiles.join("agent.json");
         std::fs::write(&target, "{}\n").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o644)).unwrap();
         let link = home.path().join(".agent.json");
         symlink(&target, &link).unwrap();
 
@@ -520,44 +652,25 @@ mod symlink_596_tests {
         );
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"k\":1}\n");
 
-        use std::os::unix::fs::PermissionsExt;
         assert_eq!(
             std::fs::metadata(&target).unwrap().permissions().mode() & 0o777,
-            0o600,
-            "owner-only perms must land on the real config file"
+            0o644,
+            "the real config file keeps its mode"
         );
-    }
 
-    #[test]
-    fn refuses_symlink_whose_target_escapes_home() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let home = tempfile::tempdir().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        let _home = HomeGuard::set(home.path());
-
-        let target = outside.path().join("escape.json");
-        std::fs::write(&target, "{}").unwrap();
-        let link = home.path().join(".agent.json");
-        symlink(&target, &link).unwrap();
-
-        let err = write_atomic(&link, "x").unwrap_err();
-        assert!(err.contains("escapes $HOME"), "got: {err}");
-        assert!(
-            err.contains("allow_paths"),
-            "error must point at the opt-in escape hatch, got: {err}"
-        );
+        let fresh = home.path().join(".new.json");
+        write_atomic(&fresh, "{}\n").unwrap();
         assert_eq!(
-            std::fs::read_to_string(&target).unwrap(),
-            "{}",
-            "an escaping target must be left untouched"
+            std::fs::metadata(&fresh).unwrap().permissions().mode() & 0o777,
+            0o600,
+            "a file sobre creates is owner-only"
         );
     }
 
     #[test]
-    fn allows_symlink_escape_when_target_root_is_allowlisted() {
-        // #596 premium: an out-of-$HOME target IS written through once its root
-        // is explicitly opted into via `allow_paths` in config.toml.
-        let iso = crate::core::data_dir::isolated_data_dir();
+    fn writes_through_symlink_whose_target_is_outside_home() {
+        // The link is the user's: sobre follows it wherever it points.
+        let _lock = crate::core::data_dir::test_env_lock();
         let home = tempfile::tempdir().unwrap();
         let outside = tempfile::tempdir().unwrap();
         let _home = HomeGuard::set(home.path());
@@ -569,11 +682,6 @@ mod symlink_596_tests {
         let link = home.path().join(".agent.json");
         symlink(&target, &link).unwrap();
 
-        std::fs::write(
-            iso.path().join("config.toml"),
-            format!("allow_paths = [{:?}]\n", real_outside.to_string_lossy()),
-        )
-        .unwrap();
         write_atomic(&link, "{\"k\":1}\n").unwrap();
 
         assert_eq!(std::fs::read_to_string(&target).unwrap(), "{\"k\":1}\n");

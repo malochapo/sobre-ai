@@ -14,19 +14,18 @@ pub fn tool_def(name: &'static str, description: &'static str, schema_value: Val
 
 /// Tools that never mutate their environment (files, indexes, session state).
 /// MCP clients (Cursor, Claude Desktop) may use `readOnlyHint` to allow these
-/// tools in restricted/readonly subagent contexts.
+/// tools in restricted/readonly subagent contexts. `sobre_search` is not one:
+/// `action=reindex` rewrites the search index.
 pub const READONLY_TOOL_NAMES: &[&str] = &[
-    "ctx_read",
-    "ctx_compose",
-    "ctx_search",
-    "ctx_tree",
-    "ctx_glob",
-    "ctx_callgraph",
-    "ctx_expand",
+    "sobre_read",
+    "sobre_compose",
+    "sobre_tree",
+    "sobre_glob",
+    "sobre_expand",
 ];
 
 /// Tools that may destructively modify their environment.
-pub const DESTRUCTIVE_TOOL_NAMES: &[&str] = &["ctx_shell", "ctx_patch"];
+pub const DESTRUCTIVE_TOOL_NAMES: &[&str] = &["sobre_shell", "sobre_patch"];
 
 /// Apply MCP `ToolAnnotations` (readOnlyHint, destructiveHint) to a set of
 /// tool definitions. Called by the registry before serving `tools/list`.
@@ -56,7 +55,7 @@ pub fn apply_tool_annotations(tools: Vec<Tool>) -> Vec<Tool> {
 /// OpenAI/Azure (Pydantic-based), Claude thinking models and OpenAI-compatible
 /// backends like SGLang reject tool schemas that are valid JSON Schema but
 /// omit fields the spec treats as optional. Community-reported failures
-/// (OpenCode: "Invalid schema for function 'lean-ctx_ctx_expand': None is not
+/// (OpenCode: "Invalid schema for function 'sobre_expand': None is not
 /// of type 'array'"):
 ///
 /// - `type: "object"` with `properties` but no `required` → clients forward

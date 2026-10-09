@@ -4,11 +4,11 @@
 //! WASM.** tree-sitter can load grammars at runtime as `.wasm` modules. We
 //! deliberately reject that path and compile every grammar in at build time:
 //!
-//! - **Determinism (#498):** output must be a pure function of file content +
+//! - **Determinism:** output must be a pure function of file content +
 //!   mode. A pinned crate version yields one grammar revision for every user;
 //!   a downloaded/`.wasm` grammar would make signatures depend on whatever
 //!   blob happens to be on disk, breaking byte-stable prompt caching.
-//! - **Offline & hermetic:** lean-ctx runs in sandboxes with no network. A
+//! - **Offline & hermetic:** sobre runs in sandboxes with no network. A
 //!   runtime grammar fetch would fail there and silently degrade extraction.
 //! - **Security / supply chain:** a static crate is vendored, version-pinned
 //!   and `cargo audit`-able. Loading arbitrary native/WASM grammars at runtime

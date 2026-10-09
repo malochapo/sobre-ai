@@ -4,13 +4,13 @@ use anyhow::Result;
 ///
 /// Returns `Some(output)` if the child exits within `timeout`, or `None` if it
 /// had to be killed (timed out) or could not be spawned. This is the safe way
-/// to invoke external control tools (`launchctl`, `systemctl`, a freshly
-/// installed binary's `--version`, …) that must never be able to hang a
-/// `lean-ctx` command — a wedged `launchctl` previously forced users to reboot.
+/// to invoke `launchctl`, which must never be able to hang a `sobre`
+/// command.
 ///
 /// Note: intended for commands with small output. The child's stdout/stderr are
 /// piped; a process that writes more than the pipe buffer (~64 KiB) without
 /// exiting could block. All current callers emit at most a few lines.
+#[cfg(any(target_os = "macos", test))]
 pub fn run_with_timeout(
     mut cmd: std::process::Command,
     timeout: std::time::Duration,
@@ -43,7 +43,7 @@ pub fn run_with_timeout(
     }
 }
 
-/// Spawn a long-lived background process (proxy, daemon) detached from the
+/// Spawn a long-lived background process (the proxy) detached from the
 /// current process so it survives the parent's exit.
 ///
 /// On Unix a child simply outlives its parent, so this is a plain spawn. On
@@ -52,7 +52,7 @@ pub fn run_with_timeout(
 /// kill-on-close Jobs; without detachment the auto-started proxy dies the
 /// moment the client recycles its MCP process, which users observe as
 /// "Cannot connect to API: The socket connection was closed unexpectedly"
-/// plus repeated proxy cold-starts (GL #545).
+/// plus repeated proxy cold-starts.
 ///
 /// Strategy on Windows:
 ///  1. `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_BREAKAWAY_FROM_JOB`
@@ -114,7 +114,7 @@ pub fn is_alive(pid: u32) -> bool {
                 return true;
             }
             let mut exit_code: u32 = 0;
-            GetExitCodeProcess(handle, &mut exit_code);
+            GetExitCodeProcess(handle, &raw mut exit_code);
             CloseHandle(handle);
             exit_code == STILL_ACTIVE as u32
         }
@@ -191,18 +191,17 @@ pub fn force_kill(pid: u32) -> Result<()> {
 /// PIDs this process must never signal: itself, its ancestor chain, and every
 /// member of its own process group.
 ///
-/// The ancestor chain matters whenever `lean-ctx stop`/`dev-install` runs
-/// *under* lean-ctx itself — the shell hook routes commands through a
-/// `lean-ctx -c` wrapper, so the process tree is
-/// `lean-ctx -c … → sh → lean-ctx dev-install`. Excluding only `getpid()`
-/// SIGTERMed the wrapper parent, which took the whole pipeline down mid-run
-/// (exit 143) before autostart was re-enabled (#714).
+/// The ancestor chain matters whenever `sobre uninstall` runs *under*
+/// sobre itself — a `sobre -c` wrapper (Cursor/Gemini hooks) can be the
+/// parent, so the process tree is `sobre -c … → sh → sobre uninstall`.
+/// Excluding only `getpid()` SIGTERMs the wrapper parent, which takes the
+/// whole pipeline down mid-run (exit 143).
 ///
 /// The process *group* matters because agent harnesses (Cursor's shell) can
 /// reparent intermediaries to PID 1 mid-run — the `ps ppid` walk then stops
 /// before reaching the outer wrapper, but the wrapper still shares the
-/// foreground pgid; signalling it kills the pipeline all the same (#714
-/// follow-up, reproduced twice on the first fix).
+/// foreground pgid; signalling it kills the pipeline all the same
+/// (reproduced twice on the first fix).
 fn protected_self_pids() -> std::collections::HashSet<u32> {
     let mut protected = std::collections::HashSet::new();
     protected.insert(std::process::id());
@@ -252,28 +251,21 @@ fn process_group_pids(pgid: libc::pid_t) -> Vec<u32> {
         .unwrap_or_default()
 }
 
-/// Find all PIDs of processes whose executable name matches `name`.
-/// Excludes the current process and its ancestor chain (#714).
+/// PIDs of the current user's processes named `name`, excluding this process
+/// and its ancestor chain.
 pub fn find_pids_by_name(name: &str) -> Vec<u32> {
     let protected = protected_self_pids();
     let mut pids = Vec::new();
 
     #[cfg(unix)]
     {
-        // Exact name match first
+        // The current user's processes named exactly `name`. Matching on the
+        // full command line would also catch a script whose path merely ends
+        // in `/sobre`, and other users' processes are never ours.
+        // SAFETY: geteuid() takes no arguments and cannot fail.
+        let uid = unsafe { libc::geteuid() };
         if let Ok(output) = std::process::Command::new("pgrep")
-            .arg("-x")
-            .arg(name)
-            .output()
-        {
-            collect_pids(&output.stdout, &protected, &mut pids);
-        }
-
-        // Also find processes where the full command line contains the binary path
-        // (catches processes launched via absolute path, e.g. /Users/x/.local/bin/lean-ctx)
-        if let Ok(output) = std::process::Command::new("pgrep")
-            .arg("-f")
-            .arg(format!("/{name}(\\s|$)"))
+            .args(["-x", "-u", &uid.to_string(), name])
             .output()
         {
             collect_pids(&output.stdout, &protected, &mut pids);
@@ -285,25 +277,21 @@ pub fn find_pids_by_name(name: &str) -> Vec<u32> {
 
     #[cfg(windows)]
     {
-        if let Ok(output) = std::process::Command::new("tasklist")
-            .args([
-                "/FI",
-                &format!("IMAGENAME eq {name}.exe"),
-                "/FO",
-                "CSV",
-                "/NH",
-            ])
-            .output()
-        {
+        let mut cmd = std::process::Command::new("tasklist");
+        cmd.args(["/FI", &format!("IMAGENAME eq {name}.exe")]);
+        if let Ok(user) = std::env::var("USERNAME") {
+            cmd.args(["/FI", &format!("USERNAME eq {user}")]);
+        }
+        if let Ok(output) = cmd.args(["/FO", "CSV", "/NH"]).output() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             for line in stdout.lines() {
                 let parts: Vec<&str> = line.split(',').collect();
                 if parts.len() >= 2 {
                     let pid_str = parts[1].trim().trim_matches('"');
-                    if let Ok(pid) = pid_str.parse::<u32>() {
-                        if !protected.contains(&pid) {
-                            pids.push(pid);
-                        }
+                    if let Ok(pid) = pid_str.parse::<u32>()
+                        && !protected.contains(&pid)
+                    {
+                        pids.push(pid);
                     }
                 }
             }
@@ -323,106 +311,6 @@ fn collect_pids(stdout: &[u8], protected: &std::collections::HashSet<u32>, out: 
             out.push(pid);
         }
     }
-}
-
-/// Returns PIDs that are NOT MCP stdio servers (safe to kill during `lean-ctx stop`).
-/// MCP servers are child processes of the IDE and must not be killed — the IDE
-/// will immediately respawn them, causing a kill loop that requires a reboot.
-pub fn find_killable_pids(name: &str) -> Vec<u32> {
-    killable_excluding_mcp(find_pids_by_name(name), &find_mcp_server_pids(name))
-}
-
-/// Pure set-difference: every PID in `all` that is not an MCP server PID. Split
-/// out from [`find_killable_pids`] so the IDE-protection invariant — the
-/// MCP-stdio server is never returned as killable (#1036) — is unit-testable
-/// without spawning real processes.
-fn killable_excluding_mcp(all: Vec<u32>, mcp: &[u32]) -> Vec<u32> {
-    all.into_iter().filter(|p| !mcp.contains(p)).collect()
-}
-
-#[cfg(unix)]
-fn find_mcp_server_pids(name: &str) -> Vec<u32> {
-    find_pids_by_name(name)
-        .into_iter()
-        .filter(|&pid| is_mcp_stdio_process(pid))
-        .collect()
-}
-
-#[cfg(not(unix))]
-fn find_mcp_server_pids(_name: &str) -> Vec<u32> {
-    Vec::new()
-}
-
-#[cfg(unix)]
-fn is_mcp_stdio_process(pid: u32) -> bool {
-    if let Ok(output) = std::process::Command::new("ps")
-        .args(["-o", "ppid=,command=", "-p", &pid.to_string()])
-        .output()
-    {
-        let text = String::from_utf8_lossy(&output.stdout);
-        let t = text.trim();
-        if t.contains("Cursor") || t.contains("cursor") || t.contains("code") {
-            return true;
-        }
-        let parts: Vec<&str> = t.split_whitespace().collect();
-        if let Some(ppid_str) = parts.first()
-            && let Ok(ppid) = ppid_str.parse::<u32>()
-            && let Ok(pp_out) = std::process::Command::new("ps")
-                .args(["-o", "command=", "-p", &ppid.to_string()])
-                .output()
-        {
-            let pp_cmd = String::from_utf8_lossy(&pp_out.stdout);
-            if pp_cmd.contains("Cursor") || pp_cmd.contains("cursor") || pp_cmd.contains("code") {
-                return true;
-            }
-        }
-        let cmd_part = parts.get(1..).map(|p| p.join(" ")).unwrap_or_default();
-        // MCP stdio servers: bare `lean-ctx` with no subcommand (or just `mcp`)
-        if (cmd_part.ends_with("/lean-ctx") || cmd_part == "lean-ctx")
-            && !cmd_part.contains("proxy")
-            && !cmd_part.contains("dashboard")
-            && !cmd_part.contains("daemon")
-            && !cmd_part.contains("stop")
-            && !cmd_part.contains("hook")
-        {
-            return true;
-        }
-        // Hook observer/rewriter processes spawned by IDE
-        if cmd_part.contains("hook observe")
-            || cmd_part.contains("hook rewrite")
-            || cmd_part.contains("hook redirect")
-        {
-            return true;
-        }
-    }
-    false
-}
-
-/// Kill non-MCP processes matching `name` (SIGTERM then SIGKILL).
-/// Returns count of killed processes.
-pub fn kill_all_by_name(name: &str) -> usize {
-    let pids = find_killable_pids(name);
-    if pids.is_empty() {
-        return 0;
-    }
-
-    for &pid in &pids {
-        let _ = terminate_gracefully(pid);
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    let mut killed = 0;
-    for &pid in &pids {
-        if is_alive(pid) {
-            let _ = force_kill(pid);
-        }
-        killed += 1;
-    }
-
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    killed
 }
 
 #[cfg(test)]
@@ -464,24 +352,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn killable_excludes_mcp_pids() {
-        // #1036: the IDE-owned MCP stdio server PID must never be returned as
-        // killable, so `cmd_dev_install`'s force-kill cannot drop the editor's
-        // MCP connection.
-        let killable = killable_excluding_mcp(vec![1, 2, 3, 4], &[2, 4]);
-        assert_eq!(killable, vec![1, 3]);
-        assert!(!killable.contains(&2));
-        assert!(!killable.contains(&4));
-    }
-
-    #[test]
-    fn killable_with_no_mcp_returns_all() {
-        let all = vec![10, 20, 30];
-        assert_eq!(killable_excluding_mcp(all.clone(), &[]), all);
-    }
-
-    /// #714 follow-up: agent harnesses reparent intermediaries to PID 1, so
+    /// Follow-up: agent harnesses reparent intermediaries to PID 1, so
     /// the ppid walk alone misses the outer wrapper — the shared foreground
     /// process group must be protected too.
     #[cfg(unix)]
@@ -510,10 +381,9 @@ mod tests {
         }
     }
 
-    /// #714: `stop`/`dev-install` running *under* a lean-ctx shell wrapper
-    /// (`lean-ctx -c … → sh → lean-ctx dev-install`) must not SIGTERM its own
-    /// ancestor chain — that killed the pipeline mid-run (exit 143) before
-    /// autostart was re-enabled.
+    /// `uninstall` running *under* a sobre shell wrapper
+    /// (`sobre -c … → sh → sobre uninstall`) must not SIGTERM its own
+    /// ancestor chain — that kills the pipeline mid-run (exit 143).
     #[test]
     fn protected_pids_cover_self_and_ancestors() {
         let protected = protected_self_pids();
@@ -540,9 +410,9 @@ mod tests {
     #[test]
     fn find_pids_never_reports_own_process_tree() {
         // Regardless of what matches by name, the returned set must be
-        // disjoint from the protected self/ancestor set (#714).
+        // disjoint from the protected self/ancestor set.
         let protected = protected_self_pids();
-        for pid in find_pids_by_name("lean-ctx") {
+        for pid in find_pids_by_name("sobre") {
             assert!(!protected.contains(&pid), "own tree pid {pid} reported");
         }
     }

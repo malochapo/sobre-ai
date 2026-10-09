@@ -15,8 +15,8 @@ pub(crate) fn apply_utf8_locale(cmd: &mut std::process::Command) {
 }
 
 /// Neutralizes inherited startup-file hooks so a non-login/non-interactive
-/// `sh -c` / `bash -c` cannot be hijacked into sourcing a profile or rc file
-/// (#451). lean-ctx runs the system POSIX shell profile-free and deterministic;
+/// `sh -c` / `bash -c` cannot be hijacked into sourcing a profile or rc file.
+/// sobre runs the system POSIX shell profile-free and deterministic;
 /// a stray inherited `BASH_ENV` (read by bash even for `bash -c`) or `ENV`
 /// pointing at e.g. an `exec nu` snippet would otherwise silently replace the
 /// shell. Cleared to empty so the expansion names no file. No-op in effect for
@@ -26,7 +26,7 @@ pub(crate) fn apply_profile_free_env(cmd: &mut std::process::Command) {
 }
 
 /// Block SIGPIPE in the calling thread only. CLI runs restore the default
-/// SIGPIPE disposition (so `lean-ctx … | head` exits quietly), which would
+/// SIGPIPE disposition (so `sobre … | head` exits quietly), which would
 /// otherwise kill the whole process when this thread writes to a child that
 /// already exited. Blocked here, that write fails with EPIPE instead, and the
 /// thread-directed signal is discarded when the thread ends. Call it only on
@@ -62,7 +62,7 @@ pub fn decode_output(bytes: &[u8]) -> String {
 ///
 /// CLI tools like `git`, `cargo`, and `npm` use `\r` to draw in-place progress
 /// updates. When stdout is captured (not a TTY), these bytes survive as literal
-/// `\r` characters and produce glued-together lines (#1140). This function
+/// `\r` characters and produce glued-together lines. This function
 /// emulates terminal behaviour: for each line, only the content after the last
 /// `\r` is kept.
 pub fn resolve_carriage_returns(s: &str) -> String {
@@ -160,31 +160,6 @@ pub(super) fn set_console_utf8() {
     }
 }
 
-/// Detects if the current process runs inside a Docker/container environment.
-pub fn is_container() -> bool {
-    #[cfg(unix)]
-    {
-        if std::path::Path::new("/.dockerenv").exists() {
-            return true;
-        }
-        if let Ok(cgroup) = std::fs::read_to_string("/proc/1/cgroup")
-            && (cgroup.contains("/docker/") || cgroup.contains("/lxc/"))
-        {
-            return true;
-        }
-        if let Ok(mounts) = std::fs::read_to_string("/proc/self/mountinfo")
-            && mounts.contains("/docker/containers/")
-        {
-            return true;
-        }
-        false
-    }
-    #[cfg(not(unix))]
-    {
-        false
-    }
-}
-
 /// Returns true if stdin is NOT a terminal (pipe, /dev/null, etc.)
 pub fn is_non_interactive() -> bool {
     !io::stdin().is_terminal()
@@ -198,82 +173,6 @@ pub(crate) fn is_powershell(shell_path: &str) -> bool {
         .unwrap_or("")
         .to_ascii_lowercase();
     name.contains("powershell") || name.contains("pwsh")
-}
-
-/// Documented default location of the current-user PowerShell profile
-/// (`$PROFILE.CurrentUserCurrentHost`).
-///
-/// Windows PowerShell 7+ stores it under `Documents\PowerShell\…`, but **PowerShell
-/// (pwsh) on macOS/Linux reads `~/.config/powershell/…` instead** — and stat-ing
-/// anything inside `~/Documents` on macOS pops a TCC privacy prompt ("lean-ctx
-/// would like to access files in your Documents folder", #356). Resolving the
-/// profile per-OS keeps pwsh support everywhere while never touching `~/Documents`
-/// on non-Windows hosts.
-///
-/// This is the *default* path only. On Windows the real `Documents` folder is
-/// frequently redirected (OneDrive folder backup), so callers should prefer
-/// [`resolve_powershell_profile_path`], which asks PowerShell for the live location
-/// and uses this as the fallback.
-pub(crate) fn powershell_profile_path(home: &std::path::Path) -> std::path::PathBuf {
-    const PROFILE_FILE: &str = "Microsoft.PowerShell_profile.ps1";
-    if cfg!(windows) {
-        home.join("Documents").join("PowerShell").join(PROFILE_FILE)
-    } else {
-        home.join(".config").join("powershell").join(PROFILE_FILE)
-    }
-}
-
-/// Resolve the **active** current-user PowerShell profile path.
-///
-/// On Windows the profile lives under the *Documents* known folder, which OneDrive
-/// folder backup (enabled by default on most installs) routinely redirects to e.g.
-/// `…\OneDrive\Documents\PowerShell\…`. A hardcoded `~\Documents` therefore misses
-/// the real `$PROFILE`, so `proxy enable` / shell-hook install silently write to a
-/// file PowerShell never reads and the proxy receives no traffic (#558). We ask
-/// PowerShell itself for `$PROFILE.CurrentUserCurrentHost` — authoritative under any
-/// folder redirection — preferring `pwsh` (7+) then Windows PowerShell, and fall back
-/// to [`powershell_profile_path`] only when no PowerShell host can be launched (in
-/// which case the profile is moot anyway).
-///
-/// Non-Windows hosts keep the static `~/.config/powershell` path (never `~/Documents`,
-/// #356) and never spawn a process.
-pub(crate) fn resolve_powershell_profile_path(home: &std::path::Path) -> std::path::PathBuf {
-    #[cfg(windows)]
-    {
-        if let Some(active) = query_active_powershell_profile() {
-            return active;
-        }
-    }
-    powershell_profile_path(home)
-}
-
-/// Ask PowerShell for `$PROFILE.CurrentUserCurrentHost`, the authoritative profile
-/// path under any `Documents` redirection. Returns `None` when no PowerShell host can
-/// be launched or the output is not a usable absolute path.
-#[cfg(windows)]
-fn query_active_powershell_profile() -> Option<std::path::PathBuf> {
-    // `pwsh` (7+) and `powershell.exe` (5.1) use different profile roots; prefer the
-    // modern host (matching the `Documents\PowerShell` default above), then fall back.
-    // Force UTF-8 output so redirected paths with non-ASCII characters survive the pipe.
-    for exe in ["pwsh", "powershell"] {
-        let output = match std::process::Command::new(exe)
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $PROFILE.CurrentUserCurrentHost",
-            ])
-            .output()
-        {
-            Ok(out) if out.status.success() => out,
-            _ => continue,
-        };
-        let path = std::path::PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
-        if path.is_absolute() && path.file_name().is_some() {
-            return Some(path);
-        }
-    }
-    None
 }
 
 /// Windows only: argument that passes one command string to the shell binary.
@@ -318,25 +217,20 @@ pub fn shell_name() -> String {
 }
 
 pub(super) fn detect_shell() -> String {
-    if let Ok(shell) = std::env::var("LEAN_CTX_SHELL") {
-        return shell;
-    }
-
     if let Ok(shell) = std::env::var("SHELL") {
         let bin = std::path::Path::new(&shell)
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("sh");
 
-        if bin == "lean-ctx" {
+        if bin == "sobre" {
             return find_real_shell();
         }
-        // #451: `$SHELL` is the user's *interactive* shell preference, not the
+        // `$SHELL` is the user's *interactive* shell preference, not the
         // agent's execution shell. Agents emit bash/POSIX command syntax, so an
         // interactive-only shell like Nushell or Fish silently mis-runs it.
         // Honor `$SHELL` only when it is POSIX-compatible; otherwise fall back
-        // to a real POSIX shell (deterministic, agent-trained). Set
-        // `LEAN_CTX_SHELL` to force a specific shell regardless of this gate.
+        // to a real POSIX shell (deterministic, agent-trained).
         if shell_acceptable_for_exec(&shell) {
             return shell;
         }
@@ -349,7 +243,7 @@ pub(super) fn detect_shell() -> String {
 /// Whether a `$SHELL` value may be auto-selected as the command-execution shell.
 ///
 /// On Unix this rejects non-POSIX interactive shells (Nushell, Fish, Elvish,
-/// xonsh, PowerShell) so lean-ctx never feeds them bash/POSIX syntax (#451). On
+/// xonsh, PowerShell) so sobre never feeds them bash/POSIX syntax. On
 /// Windows the intended shells *are* PowerShell/cmd, so any `$SHELL` is honored
 /// (the POSIX gate would wrongly reject them).
 #[cfg(unix)]
@@ -365,7 +259,7 @@ fn shell_acceptable_for_exec(_shell: &str) -> bool {
 /// `true` if `shell`'s basename is a POSIX-compatible shell that can run
 /// agent-authored bash/POSIX commands. Excludes interactive-only shells
 /// (`nu`, `fish`, `elvish`, `xonsh`) and non-POSIX shells (`pwsh`,
-/// `powershell`, `cmd`) where that syntax fails (#451).
+/// `powershell`, `cmd`) where that syntax fails.
 #[cfg(unix)]
 fn is_posix_compatible_shell(shell: &str) -> bool {
     let name = std::path::Path::new(shell)
@@ -392,21 +286,10 @@ fn find_real_shell() -> String {
 
 #[cfg(windows)]
 fn find_real_shell() -> String {
-    if is_running_in_msys_or_gitbash() {
-        for candidate in &["bash.exe", "sh.exe"] {
-            if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
-                if output.status.success() {
-                    if let Ok(path) = String::from_utf8(output.stdout) {
-                        if let Some(first_line) = path.lines().next() {
-                            let trimmed = first_line.trim();
-                            if !trimmed.is_empty() {
-                                return trimmed.to_string();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if is_running_in_msys_or_gitbash()
+        && let Some(shell) = ["bash.exe", "sh.exe"].into_iter().find_map(where_first)
+    {
+        return shell;
     }
     if let Ok(pwsh) = which_powershell() {
         return pwsh;
@@ -424,21 +307,28 @@ fn is_running_in_msys_or_gitbash() -> bool {
 
 #[cfg(windows)]
 fn which_powershell() -> Result<String, ()> {
-    for candidate in &["pwsh.exe", "powershell.exe"] {
-        if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
-            if output.status.success() {
-                if let Ok(path) = String::from_utf8(output.stdout) {
-                    if let Some(first_line) = path.lines().next() {
-                        let trimmed = first_line.trim();
-                        if !trimmed.is_empty() {
-                            return Ok(trimmed.to_string());
-                        }
-                    }
-                }
-            }
-        }
+    ["pwsh.exe", "powershell.exe"]
+        .into_iter()
+        .find_map(where_first)
+        .ok_or(())
+}
+
+/// The first path `where` prints for `program`.
+#[cfg(windows)]
+fn where_first(program: &str) -> Option<String> {
+    let output = std::process::Command::new("where")
+        .arg(program)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
-    Err(())
+    String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
 }
 
 /// Join multiple CLI arguments into a single command string, using quoting
@@ -661,58 +551,6 @@ mod is_powershell_tests {
 }
 
 #[cfg(test)]
-mod powershell_profile_tests {
-    use super::{powershell_profile_path, resolve_powershell_profile_path};
-    use std::path::Path;
-
-    #[cfg(not(windows))]
-    #[test]
-    fn non_windows_uses_config_powershell_never_documents() {
-        // #356: stat-ing anything under ~/Documents pops a macOS TCC prompt, so the
-        // non-Windows profile path must live under ~/.config/powershell instead.
-        let p = powershell_profile_path(Path::new("/Users/jane"));
-        assert_eq!(
-            p,
-            Path::new("/Users/jane/.config/powershell/Microsoft.PowerShell_profile.ps1")
-        );
-        assert!(
-            !p.to_string_lossy().contains("Documents"),
-            "macOS/Linux PowerShell profile must never touch ~/Documents (#356)"
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn windows_uses_documents_powershell() {
-        let p = powershell_profile_path(Path::new("C:\\Users\\jane"));
-        assert!(p.ends_with("Documents\\PowerShell\\Microsoft.PowerShell_profile.ps1"));
-    }
-
-    #[cfg(not(windows))]
-    #[test]
-    fn resolver_matches_static_default_on_non_windows() {
-        // Non-Windows never spawns a process: the resolver returns the static config
-        // path verbatim (and must never touch ~/Documents, #356).
-        let home = Path::new("/Users/jane");
-        assert_eq!(
-            resolve_powershell_profile_path(home),
-            powershell_profile_path(home)
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn resolver_returns_absolute_profile_on_windows() {
-        // On Windows the resolver asks PowerShell for the live $PROFILE (OneDrive-safe,
-        // #558); whether it queries successfully or falls back, the result is an
-        // absolute path to the profile file.
-        let p = resolve_powershell_profile_path(Path::new("C:\\Users\\jane"));
-        assert!(p.is_absolute(), "resolved profile must be absolute: {p:?}");
-        assert!(p.ends_with("Microsoft.PowerShell_profile.ps1"));
-    }
-}
-
-#[cfg(test)]
 mod windows_shell_flag_tests {
     use super::windows_shell_flag_for_exe_basename;
 
@@ -815,7 +653,7 @@ mod platform_tests {
         );
     }
 
-    // #451: a non-interactive `bash -c` sources $BASH_ENV. lean-ctx must run
+    // A non-interactive `bash -c` sources $BASH_ENV. sobre must run
     // profile-free, so `apply_profile_free_env` has to neutralize an inherited
     // BASH_ENV before it can pull in a contaminating startup file.
     #[cfg(unix)]
@@ -829,7 +667,7 @@ mod platform_tests {
         };
 
         let startup = std::env::temp_dir().join(format!(
-            "lean_ctx_bashenv_{}_{}.sh",
+            "sobre_bashenv_{}_{}.sh",
             std::process::id(),
             "guard"
         ));
@@ -874,7 +712,7 @@ mod posix_shell_gate_tests {
 
     #[test]
     fn rejects_interactive_and_nonposix_shells() {
-        // #451: agent bash/POSIX syntax fails in these — never auto-select them.
+        // Agent bash/POSIX syntax fails in these — never auto-select them.
         for s in [
             "/usr/bin/nu",
             "/opt/homebrew/bin/nu",
@@ -898,9 +736,6 @@ mod posix_shell_gate_tests {
         // Serialize env mutation (set_var/remove_var are process-global).
         let _lock = crate::core::data_dir::test_env_lock();
         let saved_shell = std::env::var_os("SHELL");
-        let saved_override = std::env::var_os("LEAN_CTX_SHELL");
-
-        crate::test_env::remove_var("LEAN_CTX_SHELL");
         crate::test_env::set_var("SHELL", "/usr/bin/nu");
         let resolved = detect_shell();
         assert!(
@@ -916,17 +751,9 @@ mod posix_shell_gate_tests {
         crate::test_env::set_var("SHELL", "/bin/sh");
         assert_eq!(detect_shell(), "/bin/sh");
 
-        // LEAN_CTX_SHELL always wins, even when pointing at a non-POSIX shell.
-        crate::test_env::set_var("LEAN_CTX_SHELL", "/usr/bin/nu");
-        assert_eq!(detect_shell(), "/usr/bin/nu");
-
         match saved_shell {
             Some(v) => crate::test_env::set_var("SHELL", v),
             None => crate::test_env::remove_var("SHELL"),
-        }
-        match saved_override {
-            Some(v) => crate::test_env::set_var("LEAN_CTX_SHELL", v),
-            None => crate::test_env::remove_var("LEAN_CTX_SHELL"),
         }
     }
 }

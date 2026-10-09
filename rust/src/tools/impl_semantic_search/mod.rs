@@ -1,13 +1,54 @@
 use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use crate::core::embedding_index::EmbeddingIndex;
-#[cfg(feature = "embeddings")]
-use crate::core::embeddings::EmbeddingEngine;
-#[cfg(feature = "embeddings")]
-use crate::core::hybrid_search::HybridResult;
 use crate::tools::CrpMode;
+
+/// The ranking a semantic search uses. Dense and hybrid exist only in builds
+/// with the `dense` feature; asking for them elsewhere is an error, never
+/// a quiet BM25 answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SearchMode {
+    Bm25,
+    #[cfg(feature = "dense")]
+    Dense,
+    #[cfg(feature = "dense")]
+    Hybrid,
+}
+
+impl SearchMode {
+    /// `None` is BM25.
+    pub(crate) fn parse(mode: Option<&str>) -> Result<Self, String> {
+        let Some(mode) = mode.map(|m| m.trim().to_ascii_lowercase()) else {
+            return Ok(Self::Bm25);
+        };
+        match mode.as_str() {
+            "bm25" => Ok(Self::Bm25),
+            #[cfg(feature = "dense")]
+            "dense" => Ok(Self::Dense),
+            #[cfg(feature = "dense")]
+            "hybrid" => Ok(Self::Hybrid),
+            #[cfg(not(feature = "dense"))]
+            "dense" | "hybrid" => Err(format!(
+                "mode={mode} needs local embeddings, which this build does not include \
+                 (they come with the sobre-dense release build, or a build with \
+                 --features dense). Use mode=bm25."
+            )),
+            _ => Err(format!("unknown mode '{mode}'. Use bm25, dense or hybrid.")),
+        }
+    }
+
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Bm25 => "bm25",
+            #[cfg(feature = "dense")]
+            Self::Dense => "dense",
+            #[cfg(feature = "dense")]
+            Self::Hybrid => "hybrid",
+        }
+    }
+}
 
 /// Performs semantic code search using BM25, dense embeddings, or hybrid ranking.
 #[allow(clippy::too_many_arguments)]
@@ -16,11 +57,8 @@ pub(crate) fn handle(
     path: &str,
     top_k: usize,
     crp_mode: CrpMode,
-    languages: Option<&[String]>,
-    path_glob: Option<&str>,
     mode: Option<&str>,
     workspace: Option<bool>,
-    artifacts: Option<bool>,
 ) -> String {
     let (root_buf, subdir) = match resolve_search_root(path) {
         Ok(v) => v,
@@ -28,38 +66,23 @@ pub(crate) fn handle(
     };
     let root = root_buf.as_path();
 
-    // Query-conditioned IB (#542): remember the latest search query as a
-    // fallback relevance signal for subsequent compressed reads.
-    if !query.trim().is_empty()
-        && let Some(mut session) = crate::core::session::SessionState::load_latest()
-        && session.last_semantic_query.as_deref() != Some(query)
-    {
-        session.last_semantic_query = Some(query.to_string());
-        let _ = session.save();
-    }
-
-    let filter = match SearchFilter::new(languages, path_glob) {
-        Ok(f) => f.with_subdir(subdir),
-        Err(e) => return format!("ERR: invalid filter: {e}"),
-    };
+    let filter = SearchFilter::default().with_subdir(subdir);
 
     let compact = crp_mode.is_tdd();
-    let mode = mode.unwrap_or("bm25").to_lowercase();
-    let workspace = workspace.unwrap_or(false);
-    let artifacts = artifacts.unwrap_or(false);
+    let mode = match SearchMode::parse(mode) {
+        Ok(m) => m,
+        Err(e) => return format!("ERR: {e}"),
+    };
 
-    if artifacts {
-        return artifacts_search(query, root, top_k, compact, &filter, workspace);
-    }
-    if workspace {
-        return workspace_search(query, root, top_k, compact, &filter, &mode);
+    if workspace.unwrap_or(false) {
+        return workspace_search(query, root, top_k, compact, &filter, mode);
     }
 
     let index = match load_or_refresh_bm25(root) {
         Bm25LoadResult::Ready(idx) => idx,
         Bm25LoadResult::Building => {
             return "BM25 index is being built in the background. \
-                    Run ctx_search(action=\"semantic\") again in ~30s, or use action=reindex to wait for completion."
+                    Run sobre_search(action=\"semantic\") again in ~30s, or use action=reindex to wait for completion."
                 .to_string();
         }
     };
@@ -67,8 +90,8 @@ pub(crate) fn handle(
         return "No code files found to index.".to_string();
     }
 
-    match mode.as_str() {
-        "bm25" => {
+    match mode {
+        SearchMode::Bm25 => {
             let mut results = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
             if filter.is_active() {
                 results.retain(|x| filter.matches(&x.file_path));
@@ -91,13 +114,18 @@ pub(crate) fn handle(
             };
             format!("{header}{}", format_search_results(&results, compact))
         }
-        "dense" => {
-            let out = dense_search_mode(query, root, &index, top_k, compact, &filter);
-            shrink_resident_after_embedding(root, index);
-            out
-        }
-        _ => {
-            let out = hybrid_search_mode(query, root, &index, top_k, compact, &filter);
+        #[cfg(feature = "dense")]
+        SearchMode::Dense | SearchMode::Hybrid => {
+            let ranked = if mode == SearchMode::Dense {
+                dense_ranked(query, root, &index, top_k, &filter)
+            } else {
+                let cfg = crate::core::hybrid_search::HybridConfig::default();
+                hybrid_ranked(query, root, &index, top_k, &filter, &cfg)
+            };
+            let out = match ranked {
+                Ok(r) => render_ranked(mode, query, &index, top_k, compact, &r),
+                Err(e) => format!("ERR: {e}"),
+            };
             shrink_resident_after_embedding(root, index);
             out
         }
@@ -113,8 +141,8 @@ pub(crate) fn handle(
 /// rendered (`bm25_index::search`, `dense_backend`, `hybrid_search`). Only fires
 /// when embeddings are actually built (feature-gated); a BM25-only fallback build
 /// must keep full bodies for a later real embedding pass.
+#[cfg(feature = "dense")]
 fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>) {
-    #[cfg(feature = "embeddings")]
     {
         // Release our clone so the cache is the sole Arc owner; otherwise the
         // in-place trim is skipped and retried on the next search.
@@ -129,35 +157,13 @@ fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>
             }
         }
     }
-    #[cfg(not(feature = "embeddings"))]
-    {
-        let _ = (root, index);
-    }
-}
-
-#[cfg(feature = "embeddings")]
-fn bm25_hits(
-    index: &BM25Index,
-    query: &str,
-    top_k: usize,
-    filter: &SearchFilter,
-) -> Vec<HybridResult> {
-    let mut results = index.search(query, filtered_candidate_k(top_k, filter.is_active()));
-    if filter.is_active() {
-        results.retain(|x| filter.matches(&x.file_path));
-    }
-    results.truncate(top_k);
-    results
-        .into_iter()
-        .map(HybridResult::from_bm25_public)
-        .collect()
 }
 
 /// Rebuilds the BM25 search index for the given directory from scratch.
 #[must_use]
 pub(crate) fn handle_reindex(path: &str) -> String {
     // Promote to the project root so the rebuilt index lands in the same
-    // namespace the search path resolves to (#948) — reindexing a subdirectory
+    // namespace the search path resolves to — reindexing a subdirectory
     // would otherwise build an index the search can never find.
     let (root_buf, _subdir) = match resolve_search_root(path) {
         Ok(v) => v,
@@ -169,47 +175,13 @@ pub(crate) fn handle_reindex(path: &str) -> String {
     let files = idx.files.len();
     let chunks = idx.doc_count;
     let _ = idx.save(root);
+    // The next search must use this index, not the one resident before it.
+    bm25_store::store_in_thread_cache(root, &std::sync::Arc::new(idx));
 
     format!(
         "Reindexed {}: {files} files, {chunks} chunks",
         root.display()
     )
-}
-
-#[must_use]
-pub(crate) fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
-    let (root_buf, _subdir) = match resolve_search_root(path) {
-        Ok(v) => v,
-        Err(e) => return format!("ERR: {e}"),
-    };
-    let root = root_buf.as_path();
-
-    let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
-    let mut warnings: Vec<String> = Vec::new();
-
-    if workspace {
-        let linked = crate::core::workspace_config::load_linked_projects(root);
-        warnings.extend(linked.warnings);
-        roots.extend(linked.roots);
-    }
-
-    let mut total_files = 0usize;
-    let mut total_chunks = 0usize;
-    for r in roots {
-        let (idx, w) = crate::core::artifact_index::rebuild_from_scratch(&r);
-        warnings.extend(w);
-        total_files += idx.files.len();
-        total_chunks += idx.doc_count;
-    }
-
-    if warnings.is_empty() {
-        format!("Reindexed artifacts: {total_files} files, {total_chunks} chunks")
-    } else {
-        format!(
-            "Reindexed artifacts: {total_files} files, {total_chunks} chunks ({} warning(s))",
-            warnings.len()
-        )
-    }
 }
 
 /// Find chunks semantically related to a given file location.
@@ -234,10 +206,13 @@ pub(crate) fn handle_find_related(
         return "ERR: empty index. Try action=reindex first.".to_string();
     }
 
+    // The index keys files by their path relative to the root; an absolute
+    // or `./`-prefixed path names the same file.
+    let key = crate::core::index_paths::graph_relative_key(file_path, &root.to_string_lossy());
     let source_chunk = index
         .chunks
         .iter()
-        .find(|c| c.file_path == file_path && c.start_line <= line && c.end_line >= line);
+        .find(|c| c.file_path == key && c.start_line <= line && c.end_line >= line);
 
     let Some(source_chunk) = source_chunk else {
         return format!(
@@ -250,40 +225,63 @@ pub(crate) fn handle_find_related(
     let source_start = source_chunk.start_line;
 
     let compact = crp_mode != CrpMode::Off;
-
-    let results = find_related_internal(&query_text, root, &index, top_k + 5, compact);
-
-    let mut lines: Vec<String> = results
-        .into_iter()
-        .filter(|l| !l.contains(&format!("{source_file}:{source_start}-")))
-        .take(top_k)
-        .collect();
+    let (engine, count, body) = related_chunks(
+        &query_text,
+        root,
+        &index,
+        (&source_file, source_start),
+        top_k,
+        compact,
+    );
 
     let header = if compact {
-        format!(
-            "find_related({file_path}:{line}) → {} results\n",
-            lines.len()
-        )
+        format!("find_related({file_path}:{line},{engine}) → {count} results\n")
     } else {
-        format!("Find related to {file_path}:{line} (semantic similarity)\n")
+        format!("Find related to {file_path}:{line} ({engine} search on the chunk's text)\n")
     };
-
-    lines.insert(0, header);
-    lines.join("")
+    format!("{header}{body}")
 }
 
-fn find_related_internal(
-    query: &str,
+/// The `top_k` chunks most like `text`, the `source` chunk itself
+/// (`(file, start line)`) left out, formatted. Hybrid when this build has
+/// embeddings, BM25 otherwise; returns which one ran and how many results.
+fn related_chunks(
+    text: &str,
     root: &Path,
     index: &BM25Index,
+    source: (&str, usize),
     top_k: usize,
     compact: bool,
-) -> Vec<String> {
-    let Ok(filter) = SearchFilter::new(None, None) else {
-        return vec!["ERR: filter init failed\n".to_string()];
-    };
-    let output = hybrid_search_mode(query, root, index, top_k, compact, &filter);
-    output.lines().map(|l| format!("{l}\n")).collect()
+) -> (&'static str, usize, String) {
+    let is_source = |file: &str, start: usize| file == source.0 && start == source.1;
+    let filter = SearchFilter::default();
+    #[cfg(feature = "dense")]
+    {
+        let cfg = crate::core::hybrid_search::HybridConfig::default();
+        match hybrid_ranked(text, root, index, top_k + 1, &filter, &cfg) {
+            Ok(mut r) => {
+                let engine = if r.degraded.is_some() {
+                    "bm25+graph, dense index not built"
+                } else {
+                    "hybrid"
+                };
+                r.results.retain(|h| !is_source(&h.file_path, h.start_line));
+                r.results.truncate(top_k);
+                let body = crate::core::hybrid_search::format_hybrid_results(&r.results, compact);
+                (engine, r.results.len(), body)
+            }
+            Err(e) => ("hybrid", 0, format!("ERR: {e}\n")),
+        }
+    }
+    #[cfg(not(feature = "dense"))]
+    {
+        let _ = root;
+        let mut results = index.search(text, filtered_candidate_k(top_k + 1, filter.is_active()));
+        results.retain(|r| !is_source(&r.file_path, r.start_line));
+        results.truncate(top_k);
+        let body = format_search_results(&results, compact);
+        ("bm25", results.len(), body)
+    }
 }
 
 fn truncate_query(q: &str, max: usize) -> &str {
@@ -296,42 +294,15 @@ fn truncate_query(q: &str, max: usize) -> &str {
     }
 }
 
-/// Public wrapper for eval harness: load embedding engine + index.
-#[cfg(feature = "embeddings")]
-pub(crate) fn load_engine_and_index_pub(
-    root: &Path,
-) -> Result<(&'static EmbeddingEngine, EmbeddingIndex), String> {
-    load_engine_and_index(root)
-}
-
-/// Public wrapper for eval harness: prepare embeddings for a project.
-#[cfg(feature = "embeddings")]
-pub(crate) fn ensure_embeddings_for_eval(
-    root: &Path,
-    index: &BM25Index,
-    engine: &EmbeddingEngine,
-    embed_idx: &mut EmbeddingIndex,
-) -> Result<AlignedEmbeddings, String> {
-    ensure_embeddings(root, index, engine, embed_idx)
-}
-
-/// Public wrapper for eval harness: apply SPLADE boosting.
-#[cfg(feature = "embeddings")]
-pub(crate) fn boost_with_splade_pub(
-    results: &mut [HybridResult],
-    splade: &[crate::core::splade_retrieval::SpladeResult],
-    weight: f64,
-) {
-    boost_with_splade(results, splade, weight);
-}
-
 mod bm25_store;
+#[cfg(feature = "dense")]
 mod dense;
 pub(crate) mod multi_root;
 mod scope;
 
 pub(crate) use bm25_store::*;
 pub(crate) use bm25_store::{get_thread_cache, set_thread_cache};
+#[cfg(feature = "dense")]
 pub(crate) use dense::*;
 pub(crate) use multi_root::*;
 pub(crate) use scope::*;

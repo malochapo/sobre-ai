@@ -63,16 +63,16 @@ mod compression_level_tests {
     }
 
     #[test]
-    fn deserialization_defaults_to_adaptive_lite() {
+    fn deserialization_defaults_to_lite() {
         let cfg: Config = toml::from_str("").unwrap();
-        assert_eq!(cfg.compression_level, None);
+        assert_eq!(cfg.compression_level, 0.3);
         assert_eq!(CompressionLevel::effective(&cfg), CompressionLevel::Lite);
     }
 
     #[test]
     fn deserialization_from_toml() {
         let cfg: Config = toml::from_str("compression_level = 0.5").unwrap();
-        assert_eq!(cfg.compression_level, Some(0.5));
+        assert_eq!(cfg.compression_level, 0.5);
     }
 }
 
@@ -87,7 +87,7 @@ mod root_key_tests {
     #[test]
     fn option_root_scalar_serializes_above_the_first_table() {
         let original = Config {
-            hook_binary: Some("$HOME/.local/bin/lean-ctx".to_string()),
+            hook_binary: Some("$HOME/.local/bin/sobre".to_string()),
             ..Config::default()
         };
         let toml_str = toml::to_string_pretty(&original).unwrap();
@@ -108,7 +108,7 @@ mod root_key_tests {
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(
             parsed.hook_binary.as_deref(),
-            Some("$HOME/.local/bin/lean-ctx")
+            Some("$HOME/.local/bin/sobre")
         );
     }
 }

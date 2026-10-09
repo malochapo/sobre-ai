@@ -44,7 +44,7 @@ pub fn gpu_active() -> bool {
     if !runtime_wants_gpu() {
         return false;
     }
-    // The shipped Linux/Windows GPU build compiles only the CUDA EP. If its
+    // A build with `ort-cuda` registers the CUDA EP. If its
     // runtime deps (libcudart/libcublas/libcudnn/…) can't be dlopen'd, ORT
     // silently registers CPU instead; don't size batches for a phantom GPU.
     #[cfg(feature = "ort-cuda")]
@@ -150,17 +150,23 @@ fn cuda_missing_message(probe_err: &str) -> String {
          wget -O /tmp/cuda-keyring_1.1-1_all.deb https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb\n  \
          sudo dpkg -i /tmp/cuda-keyring_1.1-1_all.deb && rm -f /tmp/cuda-keyring_1.1-1_all.deb && sudo apt-get update\n  \
          sudo apt-get install -y cuda-cudart-12-8 libcublas-12-8 libcurand-12-8 libcufft-12-8\n  \
-         python3 -m venv $HOME/.local/share/lean-ctx/cuda-libs\n  \
-         $HOME/.local/share/lean-ctx/cuda-libs/bin/python -m pip install nvidia-cudnn-cu12==9.8.0.87\n  \
+         python3 -m venv $HOME/.local/share/sobre/cuda-libs\n  \
+         $HOME/.local/share/sobre/cuda-libs/bin/python -m pip install nvidia-cudnn-cu12==9.8.0.87\n  \
          # then ensure the loader can find them (if not already on the path):\n  \
-         export LD_LIBRARY_PATH=$($HOME/.local/share/lean-ctx/cuda-libs/bin/python -c 'import pathlib, nvidia.cudnn; print(pathlib.Path(nvidia.cudnn.__file__).parent / '\''lib'\'')'):/usr/local/cuda-12.8/targets/x86_64-linux/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH\n\
+         export LD_LIBRARY_PATH=$($HOME/.local/share/sobre/cuda-libs/bin/python -c 'import pathlib, nvidia.cudnn; print(pathlib.Path(nvidia.cudnn.__file__).parent / '\''lib'\'')'):/usr/local/cuda-12.8/targets/x86_64-linux/lib:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH\n\
          To stay on CPU, point ORT_DYLIB_PATH at a CPU runtime.",
         ort_minor = ort::MINOR_VERSION,
     )
 }
 
 pub fn execution_provider_help() -> &'static str {
-    "lean-ctx uses the GPU when ORT_DYLIB_PATH points at a GPU runtime, and the CPU otherwise."
+    if compiled_gpu_provider_names().is_empty() {
+        "This build runs embeddings on the CPU. A GPU needs a source build with a GPU \
+         feature (--features ort-cuda, ort-rocm, ort-webgpu, ort-directml or ort-coreml) \
+         and ORT_DYLIB_PATH pointing at a GPU runtime."
+    } else {
+        "sobre uses the GPU when ORT_DYLIB_PATH points at a GPU runtime, and the CPU otherwise."
+    }
 }
 
 fn cpu_execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
@@ -204,7 +210,7 @@ pub fn gpu_execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {
 
     if compiled_gpu_count == 0 {
         tracing::warn!(
-            "GPU execution provider requested, but this lean-ctx binary was built without ort-cuda/ort-rocm/etc.; using CPU only"
+            "GPU execution provider requested, but this sobre binary was built without ort-cuda/ort-rocm/etc.; using CPU only"
         );
     } else if eps.is_empty() {
         tracing::debug!("No GPU execution providers configured — using CPU only");

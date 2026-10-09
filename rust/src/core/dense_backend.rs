@@ -1,60 +1,19 @@
-// Every consumer of these is behind `embeddings`, so gate the imports the same
-// way: a default build must stay warning-free, and a `--features dense` build
-// must still compile.
-#[cfg(feature = "embeddings")]
-use std::path::Path;
+//! Dense retrieval over the in-process embedding index: dense-only ranking and
+//! the hybrid (BM25 + dense) ranking the search tool returns.
 
-#[cfg(feature = "embeddings")]
 use crate::core::bm25_index::BM25Index;
-#[cfg(feature = "embeddings")]
 use crate::core::hnsw::FlatEmbeddings;
-#[cfg(feature = "embeddings")]
 use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
-/// Which dense backend served a query.
-///
-/// sobre has exactly one: an in-process HNSW index over locally computed
-/// embeddings. The Qdrant and pgvector variants went with invariant 4 — a
-/// remote vector database is a service someone has to run. The enum survives so
-/// the search path can still report which backend answered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum DenseBackendKind {
-    #[default]
-    Local,
-}
-
-impl DenseBackendKind {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Local => "local",
-        }
-    }
-}
-
-#[cfg(feature = "embeddings")]
-#[allow(clippy::too_many_arguments)]
 pub fn dense_results_as_hybrid(
-    backend: DenseBackendKind,
-    root: &Path,
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
     aligned_embeddings: &FlatEmbeddings,
-    changed_files: &[String],
     query: &str,
     top_k: usize,
     filter: Option<&dyn Fn(&str) -> bool>,
 ) -> Result<Vec<HybridResult>, String> {
-    let dense = dense_results(
-        backend,
-        root,
-        index,
-        engine,
-        aligned_embeddings,
-        changed_files,
-        query,
-        top_k,
-        filter,
-    )?;
+    let dense = dense_results(index, engine, aligned_embeddings, query, top_k, filter)?;
 
     Ok(dense
         .into_iter()
@@ -66,7 +25,6 @@ pub fn dense_results_as_hybrid(
             end_line: d.end_line,
             snippet: d.snippet,
             rrf_score: d.similarity as f64,
-            bm25_score: None,
             dense_score: Some(d.similarity),
             bm25_rank: None,
             dense_rank: None,
@@ -74,65 +32,32 @@ pub fn dense_results_as_hybrid(
         .collect())
 }
 
-#[cfg(feature = "embeddings")]
 #[allow(clippy::too_many_arguments)]
 pub fn hybrid_results(
-    backend: DenseBackendKind,
-    root: &Path,
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
     aligned_embeddings: &FlatEmbeddings,
-    changed_files: &[String],
     query: &str,
     top_k: usize,
     config: &HybridConfig,
     filter: Option<&dyn Fn(&str) -> bool>,
-    graph_file_ranks: Option<&std::collections::HashMap<String, usize>>,
-) -> Result<Vec<HybridResult>, String> {
-    match backend {
-        DenseBackendKind::Local => {
-            let _ = (root, changed_files);
-            let mut results = crate::core::hybrid_search::hybrid_search(
-                query,
-                index,
-                Some(engine),
-                Some(aligned_embeddings),
-                top_k,
-                config,
-                graph_file_ranks,
-            );
-            if let Some(pred) = filter {
-                results.retain(|r| pred(&r.file_path));
-            }
-            results.truncate(top_k);
-            Ok(results)
-        }
+) -> Vec<HybridResult> {
+    let mut results = crate::core::hybrid_search::hybrid_search(
+        query,
+        index,
+        Some(engine),
+        Some(aligned_embeddings),
+        top_k,
+        config,
+    );
+    if let Some(pred) = filter {
+        results.retain(|r| pred(&r.file_path));
     }
+    results.truncate(top_k);
+    results
 }
 
-#[cfg(feature = "embeddings")]
-#[allow(clippy::too_many_arguments)]
 fn dense_results(
-    backend: DenseBackendKind,
-    root: &Path,
-    index: &BM25Index,
-    engine: &crate::core::embeddings::EmbeddingEngine,
-    aligned_embeddings: &FlatEmbeddings,
-    changed_files: &[String],
-    query: &str,
-    top_k: usize,
-    filter: Option<&dyn Fn(&str) -> bool>,
-) -> Result<Vec<DenseSearchResult>, String> {
-    match backend {
-        DenseBackendKind::Local => {
-            let _ = (root, changed_files);
-            dense_results_local(index, engine, aligned_embeddings, query, top_k, filter)
-        }
-    }
-}
-
-#[cfg(feature = "embeddings")]
-fn dense_results_local(
     index: &BM25Index,
     engine: &crate::core::embeddings::EmbeddingEngine,
     aligned_embeddings: &FlatEmbeddings,
@@ -155,7 +80,6 @@ fn dense_results_local(
             let chunk = index.chunks.get(idx)?;
             let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
             Some(DenseSearchResult {
-                chunk_idx: idx,
                 similarity: sim,
                 file_path: chunk.file_path.clone(),
                 symbol_name: chunk.symbol_name.clone(),
@@ -175,7 +99,6 @@ fn dense_results_local(
 ///
 /// Uses sequential memory access (one dereference) via `FlatEmbeddings::get`,
 /// unlike the old `Arc<[Vec<f32>]>` layout which had two-level indirection.
-#[cfg(feature = "embeddings")]
 fn top_k_by_similarity(
     query: &[f32],
     embeddings: &FlatEmbeddings,

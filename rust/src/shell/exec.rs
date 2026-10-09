@@ -1,145 +1,113 @@
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, Read};
 use std::process::{Child, Command, Output, Stdio};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, mpsc};
 
 use crate::core::config;
 
-/// Wait for a child process with output-size and time limits.
-/// Kills the process if either limit is exceeded, returning what was
-/// captured so far. Prevents unbounded memory growth on commands that
-/// produce massive output (e.g. `rg -i "pattern"` over a large tree).
-///
-/// `kill_group` (Unix): the child was spawned into its own process group
-/// (`process_group(0)`), so a timeout kill signals the whole group. Killing
-/// only the direct child (a shell) leaves orphaned grandchildren holding the
-/// stdout/stderr pipe write ends — the reader threads then never see EOF and
-/// the join below blocks forever, wedging the caller *despite* the timeout
-/// having fired (GH #720: an orphaned `rg` kept a Cursor shell session dead
-/// for hours).
-pub(super) fn wait_with_limits(
-    mut child: Child,
-    max_bytes: usize,
-    timeout: std::time::Duration,
-    kill_group: bool,
-) -> Output {
-    const STDERR_LIMIT: usize = 512 * 1024;
+/// The most stderr `sobre -c` keeps.
+const STDERR_LIMIT: usize = 512 * 1024;
 
-    let stdout_pipe = child.stdout.take();
-    let stderr_pipe = child.stderr.take();
-    let start = std::time::Instant::now();
-    let truncated = Arc::new(AtomicBool::new(false));
+/// How long the readers get to reach EOF once the command has exited.
+const READER_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
-    let stdout_truncated_flag = Arc::clone(&truncated);
-    let stdout_handle = std::thread::spawn(move || {
-        let Some(mut pipe) = stdout_pipe else {
-            return (Vec::new(), false);
-        };
-        let mut buf = Vec::with_capacity(max_bytes.min(64 * 1024));
-        let mut chunk = [0u8; 8192];
-        loop {
-            match pipe.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if buf.len() + n > max_bytes {
-                        let remaining = max_bytes.saturating_sub(buf.len());
-                        buf.extend_from_slice(&chunk[..remaining]);
-                        stdout_truncated_flag.store(true, Ordering::Relaxed);
-                        return (buf, true);
+/// What a reader kept of one pipe, and how many bytes it read past its cap.
+#[derive(Default)]
+struct Kept {
+    bytes: Vec<u8>,
+    dropped: u64,
+}
+
+/// Reads `pipe` to its end on a thread: the first `cap` bytes are kept, the
+/// rest is read and counted, never left in the pipe (a full pipe would stop
+/// the command). The receiver fires at EOF.
+fn drain<R: Read + Send + 'static>(
+    pipe: Option<R>,
+    cap: usize,
+) -> (Arc<Mutex<Kept>>, mpsc::Receiver<()>) {
+    let shared = Arc::new(Mutex::new(Kept::default()));
+    let (done_tx, done_rx) = mpsc::channel();
+    let writer = Arc::clone(&shared);
+    std::thread::spawn(move || {
+        if let Some(mut pipe) = pipe {
+            let mut chunk = [0u8; 8192];
+            loop {
+                match pipe.read(&mut chunk) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        let mut kept = writer
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        let take = cap.saturating_sub(kept.bytes.len()).min(n);
+                        kept.bytes.extend_from_slice(&chunk[..take]);
+                        kept.dropped += (n - take) as u64;
                     }
-                    buf.extend_from_slice(&chunk[..n]);
+                    Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(_) => break,
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break,
             }
         }
-        (buf, false)
+        let _ = done_tx.send(());
     });
+    (shared, done_rx)
+}
 
-    let stderr_truncated_flag = Arc::clone(&truncated);
-    let stderr_handle = std::thread::spawn(move || {
-        let Some(mut pipe) = stderr_pipe else {
-            return (Vec::new(), false);
-        };
-        let mut buf = Vec::new();
-        let mut chunk = [0u8; 4096];
-        loop {
-            match pipe.read(&mut chunk) {
-                Ok(0) => break,
-                Ok(n) => {
-                    if buf.len() + n > STDERR_LIMIT {
-                        let remaining = STDERR_LIMIT.saturating_sub(buf.len());
-                        buf.extend_from_slice(&chunk[..remaining]);
-                        stderr_truncated_flag.store(true, Ordering::Relaxed);
-                        return (buf, true);
-                    }
-                    buf.extend_from_slice(&chunk[..n]);
-                }
-                Err(ref e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                Err(_) => break,
-            }
-        }
-        (buf, false)
-    });
-
-    let mut timed_out = false;
-    loop {
-        let hit_timeout = start.elapsed() > timeout;
-        if hit_timeout || truncated.load(Ordering::Relaxed) {
-            kill_child(&mut child, kill_group);
-            let _ = child.wait();
-            timed_out = hit_timeout;
-            break;
-        }
-        match child.try_wait() {
-            Ok(Some(_)) | Err(_) => break,
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
-        }
-    }
-
-    let (mut stdout_buf, stdout_truncated) = stdout_handle.join().unwrap_or_default();
-    let (mut stderr_buf, stderr_truncated) = stderr_handle.join().unwrap_or_default();
-
-    if timed_out || stdout_truncated {
-        let notice = format!(
-            "\n[lean-ctx: output truncated at {} MB / {}s limit]\n",
-            max_bytes / (1024 * 1024),
-            timeout.as_secs()
-        );
-        stdout_buf.extend_from_slice(notice.as_bytes());
-    }
-    if stderr_truncated {
-        let notice = format!(
-            "\n[lean-ctx: stderr truncated at {} KB limit]\n",
-            STDERR_LIMIT / 1024
-        );
-        stderr_buf.extend_from_slice(notice.as_bytes());
-    }
-
+/// Waits for a `sobre -c` command to exit and collects its output. The
+/// command runs as it would without sobre: no timeout of sobre's own (the
+/// host has one), and output past `max_bytes` (stdout) or [`STDERR_LIMIT`]
+/// is read and dropped rather than stopping it; the result says how much.
+/// A background process the command left holding the pipe does not hold
+/// this up past [`READER_GRACE`]; the result says so.
+pub(super) fn wait_collecting(mut child: Child, max_bytes: usize) -> Output {
+    let (out, out_done) = drain(child.stdout.take(), max_bytes);
+    let (err, err_done) = drain(child.stderr.take(), STDERR_LIMIT);
     let status = child.wait().unwrap_or_else(|_| synthetic_failure_status());
+
+    let deadline = std::time::Instant::now() + READER_GRACE;
+    let wait = |done: &mpsc::Receiver<()>| {
+        done.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+            .is_ok()
+    };
+    let complete = wait(&out_done) & wait(&err_done);
+    let take = |kept: &Arc<Mutex<Kept>>| {
+        let mut kept = kept
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        (std::mem::take(&mut kept.bytes), kept.dropped)
+    };
+    let (mut stdout, out_dropped) = take(&out);
+    let (mut stderr, err_dropped) = take(&err);
+
+    if out_dropped > 0 {
+        stdout.extend_from_slice(
+            format!(
+                "\n[sobre: {out_dropped} more bytes of output not kept (past {} MB); \
+                 the command ran to the end]\n",
+                max_bytes / (1024 * 1024)
+            )
+            .as_bytes(),
+        );
+    }
+    if err_dropped > 0 {
+        stderr.extend_from_slice(
+            format!(
+                "\n[sobre: {err_dropped} more bytes of stderr not kept (past {} KB)]\n",
+                STDERR_LIMIT / 1024
+            )
+            .as_bytes(),
+        );
+    }
+    if !complete {
+        stdout.extend_from_slice(
+            b"\n[sobre: a background process the command started still holds its output; \
+              what it writes from now on is not shown]\n",
+        );
+    }
 
     Output {
         status,
-        stdout: stdout_buf,
-        stderr: stderr_buf,
+        stdout,
+        stderr,
     }
-}
-
-/// Kill a timed-out child — and, when it owns a process group, every
-/// descendant in that group (GH #720). SIGKILL to the negative pgid reaps
-/// shells' grandchildren so the captured pipes actually close.
-fn kill_child(child: &mut Child, kill_group: bool) {
-    #[cfg(unix)]
-    if kill_group {
-        let pgid = child.id() as libc::pid_t;
-        if pgid > 0 {
-            // SAFETY: plain syscall; a stale pgid at worst returns ESRCH.
-            unsafe { libc::killpg(pgid, libc::SIGKILL) };
-        }
-    }
-    #[cfg(not(unix))]
-    let _ = kill_group;
-    let _ = child.kill();
 }
 
 /// A synthetic failed `ExitStatus`, used only when `Child::wait()` itself
@@ -165,11 +133,11 @@ fn synthetic_failure_status() -> std::process::ExitStatus {
 }
 
 #[cfg(test)]
-mod nested_lean_ctx_exec_tests {
+mod nested_sobre_exec_tests {
     #[test]
     fn collapses_single_nested_c() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c 'git status'").as_deref(),
+            super::collapse_nested_sobre_exec("sobre -c 'git status'").as_deref(),
             Some("git status")
         );
     }
@@ -177,8 +145,7 @@ mod nested_lean_ctx_exec_tests {
     #[test]
     fn collapses_repeated_nested_c() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c 'lean-ctx -c \"git status\"'")
-                .as_deref(),
+            super::collapse_nested_sobre_exec("sobre -c 'sobre -c \"git status\"'").as_deref(),
             Some("git status")
         );
     }
@@ -186,29 +153,27 @@ mod nested_lean_ctx_exec_tests {
     #[test]
     fn preserves_inner_shell_quoting() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c \"git commit -m 'hello world'\"")
+            super::collapse_nested_sobre_exec("sobre -c \"git commit -m 'hello world'\"")
                 .as_deref(),
             Some("git commit -m 'hello world'")
         );
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("lean-ctx -c git commit -m 'hello world'")
-                .as_deref(),
+            super::collapse_nested_sobre_exec("sobre -c git commit -m 'hello world'").as_deref(),
             Some("git commit -m 'hello world'")
         );
     }
 
     #[test]
-    fn collapses_exec_alias_and_path() {
+    fn collapses_wrapper_given_by_path() {
         assert_eq!(
-            super::collapse_nested_lean_ctx_exec("/usr/local/bin/lean-ctx exec 'git status'")
-                .as_deref(),
+            super::collapse_nested_sobre_exec("/usr/local/bin/sobre -c 'git status'").as_deref(),
             Some("git status")
         );
     }
 
     #[test]
     fn leaves_non_wrappers_alone() {
-        assert!(super::collapse_nested_lean_ctx_exec("git status").is_none());
+        assert!(super::collapse_nested_sobre_exec("git status").is_none());
     }
 
     #[test]
@@ -231,25 +196,18 @@ const DEFAULT_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(2);
 const HEAVY_MAX_BYTES: usize = 32 * 1024 * 1024; // 32 MB
 const HEAVY_TIMEOUT: std::time::Duration = std::time::Duration::from_mins(10);
 
-pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
-    let max_bytes = if is_heavy_command(command) {
+/// The most stdout `sobre -c` keeps of `command`.
+pub(super) fn exec_byte_cap(command: &str) -> usize {
+    if is_heavy_command(command) {
         HEAVY_MAX_BYTES
     } else {
         DEFAULT_MAX_BYTES
-    };
-    (max_bytes, shell_timeout(command))
+    }
 }
 
-/// Resolve the timeout `ctx_shell` / the shell hook grants a command.
-///
-/// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
-/// get the long ceiling instead of being killed at the 2-minute default, keeping
-/// the MCP path and the interactive hook consistent:
-///
-/// - normal command → config `shell_timeout_secs`, else [`DEFAULT_TIMEOUT`];
-/// - heavy command → the larger of `shell_timeout_secs` and [`HEAVY_TIMEOUT`].
-#[must_use]
-pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
+/// [`shell_timeout_with_override`] with no per-call override.
+#[cfg(test)]
+fn shell_timeout(command: &str) -> std::time::Duration {
     shell_timeout_with_override(command, None)
 }
 
@@ -258,10 +216,15 @@ pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
 /// the executor for days.
 const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
 
-/// [`shell_timeout`] with an optional per-call override (ctx_shell's
-/// `timeout_ms` arg). Precedence: per-call override (clamped to
-/// [`MAX_CALL_TIMEOUT_MS`], zero ignored) > per-tier config > built-in
-/// heavy/normal ceilings.
+/// The timeout `sobre_shell` grants a command (`sobre -c` sets none: the
+/// host times the command it wrapped). Heavy builds/tests (cargo
+/// install/nextest/build, npm ci, git commit/push, …) get the long ceiling
+/// instead of the 2-minute default:
+///
+/// - per-call `timeout_ms` (clamped to [`MAX_CALL_TIMEOUT_MS`], zero ignored);
+/// - else a normal command → config `shell_timeout_secs`, or [`DEFAULT_TIMEOUT`];
+/// - else a heavy command → the larger of `shell_timeout_secs` and
+///   [`HEAVY_TIMEOUT`].
 #[must_use]
 pub(crate) fn shell_timeout_with_override(
     command: &str,
@@ -280,7 +243,7 @@ pub(crate) fn shell_timeout_with_override(
     }
 }
 
-/// #1113: detect shell loop constructs that are intentionally long-running.
+/// Detect shell loop constructs that are intentionally long-running.
 /// Matches `while true`, `while :`, `while sleep`, `for … in`, and similar
 /// patterns used for poll loops and background monitors.
 fn is_loop_command(lower: &str) -> bool {
@@ -293,7 +256,7 @@ fn is_loop_command(lower: &str) -> bool {
 fn is_heavy_command(command: &str) -> bool {
     let cmd = command.trim();
     let lower = cmd.to_lowercase();
-    // #1113: shell loops (`while true; do ... done`, `for i in ...`) are
+    // Shell loops (`while true; do ... done`, `for i in ...`) are
     // intentionally long-running poll/monitor scripts. Killing them at 120s
     // breaks CI watchers and background monitors.
     if is_loop_command(&lower) {
@@ -380,98 +343,6 @@ fn is_heavy_command(command: &str) -> bool {
     !final_cmd.is_empty() && matches_heavy(final_cmd)
 }
 
-/// Execute a command from pre-split argv without going through `sh -c`.
-/// Used by `-t` mode when the shell hook passes `"$@"` — arguments are
-/// already correctly split by the user's shell, so re-serializing them
-/// into a string and re-parsing via `sh -c` would risk mangling complex
-/// quoted arguments (em-dashes, `#`, nested quotes, etc.).
-pub fn exec_argv(args: &[String]) -> i32 {
-    if args.is_empty() {
-        return 127;
-    }
-
-    // Quote-safe join used only for the gate/policy *checks*; execution
-    // below still consumes the pre-split argv verbatim (the whole reason `-t`
-    // avoids `sh -c`). Joining first means a single argv element such as
-    // `git status; rm -rf /` is checked as ONE quoted token, never re-parsed.
-    let joined = super::platform::join_command(args);
-
-    // #595: unwrap a host command wrapper (eval + cwd snapshot) before any
-    // checks so the real command — not the wrapper — is gated and run. The `-t`
-    // path cannot exec a compound argv, so route the rebuild through `exec`.
-    if let Some(u) = super::agent_wrapper::unwrap_agent_wrapper(&joined) {
-        return exec(&u.rebuild());
-    }
-
-    // The `-t` track path is the agent's default shell hook
-    // (`_lc() { lean-ctx -t "$@" }`), so it MUST enforce the same gate
-    // boundary as `-c` (see `exec`). Previously it skipped the check entirely,
-    // letting every aliased multi-arg invocation (`_lc git …`) bypass the
-    // restriction that `lean-ctx -c` enforces (GH security audit, finding 1).
-    if let Some(code) = gate_cli_command(&joined) {
-        return code;
-    }
-
-    if super::reentry::should_pass_through() {
-        return exec_direct(args);
-    }
-
-    let cfg = config::Config::load();
-    let policy = super::output_policy::classify(&joined, &cfg.passthrough_commands);
-
-    if policy.is_protected() {
-        let code = exec_direct(args);
-        crate::core::tool_lifecycle::record_shell_command(0, 0);
-        return code;
-    }
-
-    let code = exec_direct(args);
-    crate::core::tool_lifecycle::record_shell_command(0, 0);
-    code
-}
-
-fn exec_direct(args: &[String]) -> i32 {
-    let mut cmd = Command::new(&args[0]);
-    cmd.args(&args[1..])
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-    super::reentry::mark_child(&mut cmd);
-    super::platform::apply_utf8_locale(&mut cmd);
-    let status = cmd.status();
-
-    match status {
-        Ok(s) => s.code().unwrap_or(1),
-        Err(e) => {
-            tracing::error!("lean-ctx: failed to execute: {e}");
-            127
-        }
-    }
-}
-
-/// Decides whether a gate violation on the CLI path blocks (exit 126) or
-/// only warns.
-///
-/// Enforced when:
-/// - hook-child mode (`LEAN_CTX_HOOK_CHILD`): lean-ctx is the agent's
-///   command-interception channel and must not be weaker than the MCP path, or
-/// - stderr is not a TTY: a non-interactive caller is an agent or script, and
-///   agent-driven `lean-ctx -c` must enforce the same boundary as ctx_shell.
-///
-/// Warn-only when a human runs `lean-ctx -c` at an interactive terminal (they
-/// can run the command without lean-ctx anyway, so blocking adds friction, not
-/// a boundary).
-fn gate_must_enforce() -> bool {
-    let hook_child = crate::core::runtime_flags::hook_child_enabled();
-    gate_must_enforce_inner(hook_child, io::stderr().is_terminal())
-}
-
-/// Pure decision core of [`gate_must_enforce`] (unit-testable without
-/// process-global env/TTY state).
-fn gate_must_enforce_inner(hook_child: bool, stderr_is_tty: bool) -> bool {
-    hook_child || !stderr_is_tty
-}
-
 /// True when this process's stdout is a **regular file** — i.e. the caller
 /// redirected output to a file (`cmd > out`, `cmd >> out`).
 ///
@@ -509,47 +380,20 @@ fn stdout_is_regular_file() -> bool {
     }
 }
 
-/// Shared shell gate for the CLI entrypoints — `-c` (via [`exec`]) and
-/// `-t` (via [`exec_argv`]). Both must apply the SAME boundary so the track path
-/// (the default shell hook) cannot be weaker than the compress path.
-///
-/// Returns `Some(126)` when the command is blocked and the caller must return
-/// that exit code; `None` when execution may proceed (allowed, or warn-only for
-/// an interactive human — see [`gate_must_enforce`]).
-fn gate_cli_command(command: &str) -> Option<i32> {
-    if let Err(msg) = crate::core::shell_gate::check_shell_command(command) {
-        if gate_must_enforce() {
-            eprintln!("{msg}");
-            eprintln!(
-                "lean-ctx: blocked by the shell gate. Every command is allowed \
-                 except the constructs that hide the real one from inspection."
-            );
-            return Some(126);
-        }
-        // Diagnostic, not user feedback: an interactive human at a TTY can run
-        // the command without lean-ctx anyway, and surfacing a WARN in their
-        // plain terminal is exactly the confusion GH #699 reported. Keep the
-        // warning for non-TTY callers (agents that opted into warn-only).
-        if io::stderr().is_terminal() {
-            tracing::debug!("[CLI] Command would be blocked in MCP mode: {msg}");
-        } else {
-            tracing::warn!("[CLI] Command would be blocked in MCP mode: {msg}");
-        }
-    }
-    None
+/// How [`exec`] treats the command's output.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ExecMode {
+    /// `sobre -c`: compressed, unless the command is passthrough or writes
+    /// to a file.
+    Compress,
+    /// `sobre raw`: the exact output.
+    Raw,
 }
 
-pub fn exec(command: &str) -> i32 {
-    // #595: when the agent wraps its command in host scaffolding
-    // (`… && eval '<cmd>' … && pwd -P >| …-cwd`), look through it so the gate
-    // and compression act on the REAL command, not the wrapper — whose `eval` the
-    // gate would otherwise hard-block on every single call. The cwd snapshot
-    // is preserved so the host keeps tracking the working directory.
-    let unwrapped = super::agent_wrapper::unwrap_agent_wrapper(command).map(|u| u.rebuild());
+pub fn exec(command: &str, mode: ExecMode) -> i32 {
     let mut collapsed_nested = false;
     let collapsed;
-    let command = unwrapped.as_deref().unwrap_or(command);
-    let command = if let Some(c) = collapse_nested_lean_ctx_exec(command) {
+    let command = if let Some(c) = collapse_nested_sobre_exec(command) {
         collapsed_nested = true;
         collapsed = c;
         collapsed.as_str()
@@ -557,57 +401,32 @@ pub fn exec(command: &str) -> i32 {
         command
     };
 
-    if let Some(code) = gate_cli_command(command) {
-        return code;
-    }
-
     let (shell, shell_flag) = super::platform::shell_and_flag();
-    let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
-    let command = command.as_str();
 
     if should_delegate_wrapped_to_shell_default(collapsed_nested) {
         return exec_shell_default(command, &shell, &shell_flag);
     }
 
-    let cfg = config::Config::load();
-    let force_compress = crate::core::runtime_flags::compress_enabled();
-    let raw_mode = crate::core::runtime_flags::raw_enabled();
-
-    if raw_mode {
+    if mode == ExecMode::Raw {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
+    let cfg = config::Config::load();
     let policy = super::output_policy::classify(command, &cfg.passthrough_commands);
 
-    // Passthrough: ALWAYS bypass compression, even with force_compress.
+    // Passthrough: never compressed. A verbatim command still takes the
+    // buffered path, where `compress_if_beneficial` only size-caps it.
     if policy == super::output_policy::OutputPolicy::Passthrough {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
-    // Verbatim: bypass compression unless force_compress is set,
-    // in which case use buffered path (compress_if_beneficial will
-    // respect the verbatim classification and only size-cap).
-    if policy == super::output_policy::OutputPolicy::Verbatim && !force_compress {
-        return exec_inherit_tracked(command, &shell, &shell_flag);
-    }
-
-    if !force_compress {
-        if io::stdout().is_terminal() {
-            return exec_inherit_tracked(command, &shell, &shell_flag);
-        }
-        let code = exec_inherit(command, &shell, &shell_flag);
-        crate::core::tool_lifecycle::record_shell_command(0, 0);
-        return code;
-    }
-
-    // Compression is forced (`-c`, e.g. the agent shell hook).
-    // It must STILL never alter bytes destined for a file: a redirect
+    // Compression must never alter bytes destined for a file: a redirect
     // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
     // a human or agent. Writing the compressed digest there would silently
     // drop/abbreviate lines and corrupt the file (e.g. contradictory `git diff`
     // dumps). Pass redirected-to-file output through verbatim; pipes (agent
     // capture) and TTYs keep compressing. This is the single choke point, so it
-    // holds for every caller (hook, direct CLI, Pi/MCP bridges).
+    // holds for every caller (hook, direct CLI).
     if stdout_is_regular_file() {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
@@ -615,11 +434,11 @@ pub fn exec(command: &str) -> i32 {
     super::pipeline::exec_buffered(command, &shell, &shell_flag)
 }
 
-fn collapse_nested_lean_ctx_exec(command: &str) -> Option<String> {
+fn collapse_nested_sobre_exec(command: &str) -> Option<String> {
     let mut current = command.trim().to_string();
     let mut changed = false;
 
-    while let Some(next) = strip_one_lean_ctx_exec(&current) {
+    while let Some(next) = strip_one_sobre_exec(&current) {
         if next == current {
             break;
         }
@@ -631,18 +450,18 @@ fn collapse_nested_lean_ctx_exec(command: &str) -> Option<String> {
 }
 
 fn should_delegate_wrapped_to_shell_default(collapsed_nested: bool) -> bool {
-    // After collapsing `lean-ctx -c "lean-ctx -c ..."` the current process is the
+    // After collapsing `sobre -c "sobre -c ..."` the current process is the
     // one compression pass that would otherwise be owned by the shell default.
     // Delegating again would drop back to raw execution or re-enter the hook.
     super::reentry::is_wrapped() && !collapsed_nested
 }
 
-fn strip_one_lean_ctx_exec(command: &str) -> Option<String> {
+fn strip_one_sobre_exec(command: &str) -> Option<String> {
     let words = split_simple_shell_words(command)?;
-    if words.len() < 3 || !is_lean_ctx_bin(&words[0].value) {
+    if words.len() < 3 || !is_sobre_bin(&words[0].value) {
         return None;
     }
-    if words[1].value != "-c" && words[1].value != "exec" {
+    if words[1].value != "-c" {
         return None;
     }
     if words[2..].iter().any(|w| {
@@ -660,11 +479,11 @@ fn strip_one_lean_ctx_exec(command: &str) -> Option<String> {
     }
 }
 
-fn is_lean_ctx_bin(word: &str) -> bool {
+fn is_sobre_bin(word: &str) -> bool {
     std::path::Path::new(word)
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name == "lean-ctx" || name == "lean-ctx.exe")
+        .is_some_and(|name| name == "sobre" || name == "sobre.exe")
 }
 
 struct SimpleShellWord {
@@ -729,13 +548,12 @@ fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
         .stderr(Stdio::inherit());
     super::reentry::mark_child(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
-    super::platform::apply_profile_free_env(&mut cmd);
     let status = cmd.status();
 
     match status {
         Ok(s) => s.code().unwrap_or(1),
         Err(e) => {
-            tracing::error!("lean-ctx: failed to execute: {e}");
+            tracing::error!("sobre: failed to execute: {e}");
             127
         }
     }
@@ -750,13 +568,12 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
         .stderr(Stdio::inherit());
     super::reentry::clear_shell_default_markers(&mut cmd);
     super::platform::apply_utf8_locale(&mut cmd);
-    super::platform::apply_profile_free_env(&mut cmd);
     let status = cmd.status();
 
     match status {
         Ok(s) => s.code().unwrap_or(1),
         Err(e) => {
-            eprintln!("lean-ctx: failed to execute '{command}': {e}");
+            eprintln!("sobre: failed to execute '{command}': {e}");
             127
         }
     }
@@ -764,18 +581,18 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
 
 fn exec_inherit_tracked(command: &str, shell: &str, shell_flag: &str) -> i32 {
     let code = exec_inherit(command, shell, shell_flag);
-    crate::core::tool_lifecycle::record_shell_command(0, 0);
+    crate::core::tool_lifecycle::record_shell_command(command, 0, 0);
     code
 }
 
 /// Label inserted between stdout and stderr of a FAILED command so the agent can
 /// attribute the error to the right stream instead of guessing — and never has to
-/// re-run the command raw just to locate the failure. See #809 / #812.
+/// re-run the command raw just to locate the failure.
 pub(crate) const STDERR_LABEL: &str = "--- stderr ---";
 
 /// Join captured stdout and stderr for display/recovery. On failure (non-zero
 /// exit) with both streams present, a labeled delimiter separates them; success
-/// output keeps the plain `stdout\nstderr` shape (determinism, #498).
+/// output keeps the plain `stdout\nstderr` shape (determinism).
 pub(crate) fn combine_streams(stdout: &str, stderr: &str, exit_code: i32) -> String {
     match (stdout.is_empty(), stderr.is_empty()) {
         (_, true) => stdout.to_string(),
@@ -814,98 +631,49 @@ mod exec_tests {
         assert_eq!(super::combine_streams("", "only stderr", 1), "only stderr");
     }
 
-    #[test]
-    fn exec_direct_runs_true() {
-        let code = super::exec_direct(&["true".to_string()]);
-        assert_eq!(code, 0);
-    }
-
-    #[test]
-    fn exec_direct_runs_false() {
-        let code = super::exec_direct(&["false".to_string()]);
-        assert_ne!(code, 0);
-    }
-
-    #[test]
-    fn exec_direct_preserves_args_with_special_chars() {
-        let code = super::exec_direct(&[
-            "echo".to_string(),
-            "hello world".to_string(),
-            "it's here".to_string(),
-            "a \"quoted\" thing".to_string(),
-        ]);
-        assert_eq!(code, 0);
-    }
-
-    #[test]
-    fn exec_direct_nonexistent_returns_127() {
-        let code = super::exec_direct(&["__nonexistent_binary_12345__".to_string()]);
-        assert_eq!(code, 127);
-    }
-
-    #[test]
-    fn exec_argv_empty_returns_127() {
-        let code = super::exec_argv(&[]);
-        assert_eq!(code, 127);
-    }
-
-    #[test]
-    fn exec_argv_runs_simple_command() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
-        let code = super::exec_argv(&["true".to_string()]);
-        assert_eq!(code, 0);
-    }
-
-    #[test]
-    fn exec_argv_allows_ordinary_command() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
-
-        let code = super::exec_argv(&["true".to_string()]);
-
-        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
-
-        assert_eq!(code, 0, "an ordinary command must run on the -t track path");
-    }
-
-    #[test]
-    fn wait_with_limits_captures_output() {
-        let child = std::process::Command::new("echo")
-            .arg("hello")
+    #[cfg(unix)]
+    fn piped(args: &[&str]) -> std::process::Child {
+        std::process::Command::new("sh")
+            .args(["-c"])
+            .args(args)
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
-            .unwrap();
+            .unwrap()
+    }
 
-        let output = super::wait_with_limits(child, 1024, std::time::Duration::from_secs(5), false);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(
-            stdout.contains("hello"),
-            "expected 'hello' in output: {stdout}"
-        );
+    #[cfg(unix)]
+    #[test]
+    fn wait_collecting_captures_output() {
+        let output = super::wait_collecting(piped(&["echo hello"]), 1024);
+        assert!(String::from_utf8_lossy(&output.stdout).contains("hello"));
         assert!(output.status.success());
     }
 
+    /// J11: output past the cap is read and dropped, labelled; the command
+    /// is never stopped for it.
+    #[cfg(unix)]
     #[test]
-    fn wait_with_limits_truncates_large_output() {
-        // Generate ~100 KB of output, limit to 1 KB
-        let child = std::process::Command::new("sh")
-            .args(["-c", "yes 'aaaa' | head -25000"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let output =
-            super::wait_with_limits(child, 1024, std::time::Duration::from_secs(10), false);
+    fn output_past_the_cap_is_dropped_and_the_command_runs_to_the_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join("finished");
+        let script = format!(
+            "yes aaaa | head -25000; yes bbbbbbbbbb | head -200000 >&2; touch {}",
+            marker.display()
+        );
+        let output = super::wait_collecting(piped(&[&script]), 1024);
+        assert!(output.status.success());
+        assert!(marker.exists(), "the command must run to its end");
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
-            stdout.contains("[lean-ctx: output truncated"),
-            "expected truncation notice, got len={}: ...{}",
-            stdout.len(),
-            &stdout[stdout.len().saturating_sub(80)..]
+            stdout.contains("more bytes of output not kept"),
+            "{stdout:.200}"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("more bytes of stderr not kept"),
+            "{stderr:.200}"
         );
     }
 
@@ -921,160 +689,26 @@ mod exec_tests {
         }
     }
 
+    /// A background process left holding the pipe does not hold the result
+    /// back past the grace period.
+    #[cfg(unix)]
     #[test]
-    fn wait_with_limits_truncates_large_stderr() {
-        let child = std::process::Command::new("sh")
-            .args(["-c", "yes 'aaaaaaaaaa' | head -200000 >&2"])
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let output = super::wait_with_limits(
-            child,
-            1024 * 1024,
-            std::time::Duration::from_secs(10),
-            false,
-        );
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        assert!(
-            stderr.contains("[lean-ctx: stderr truncated"),
-            "expected stderr truncation notice, got len={}: ...{}",
-            stderr.len(),
-            &stderr[stderr.len().saturating_sub(80)..]
-        );
-    }
-
-    #[test]
-    fn wait_with_limits_kills_promptly_on_truncation() {
-        let child = std::process::Command::new("yes")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
+    fn a_background_process_holding_the_pipe_does_not_wedge_the_wait() {
         let start = std::time::Instant::now();
-        let output =
-            super::wait_with_limits(child, 4096, std::time::Duration::from_secs(20), false);
-        let elapsed = start.elapsed();
-
+        let output = super::wait_collecting(piped(&["sleep 30 & echo hi"]), 1024);
         assert!(
-            elapsed < std::time::Duration::from_secs(3),
-            "truncation should kill promptly, took {elapsed:?} (timeout was 20s)"
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "took {:?}",
+            start.elapsed()
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("[lean-ctx: output truncated"));
-    }
-
-    #[test]
-    fn wait_with_limits_timeout_kills_process() {
-        let child = std::process::Command::new("sleep")
-            .arg("60")
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-
-        let start = std::time::Instant::now();
-        let output =
-            super::wait_with_limits(child, 1024, std::time::Duration::from_millis(200), false);
-        let elapsed = start.elapsed();
-
-        assert!(
-            elapsed < std::time::Duration::from_secs(3),
-            "timeout should kill quickly, took {elapsed:?}"
-        );
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        assert!(stdout.contains("[lean-ctx: output truncated"));
-    }
-
-    /// GH #720: killing only the direct child (a shell) on timeout leaves its
-    /// grandchildren alive holding the stdout pipe — the reader threads never
-    /// see EOF and `wait_with_limits` blocks forever even though the timeout
-    /// fired. With the child in its own process group and a group kill, the
-    /// whole tree dies and the call returns promptly.
-    #[cfg(unix)]
-    #[test]
-    fn wait_with_limits_group_kill_reaps_grandchildren() {
-        use std::os::unix::process::CommandExt as _;
-        // The shell spawns a grandchild that inherits stdout and sleeps far
-        // beyond the timeout; the shell itself also sleeps so the timeout path
-        // (not natural exit) is exercised.
-        let mut cmd = std::process::Command::new("sh");
-        cmd.args(["-c", "sleep 30 & sleep 30"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        cmd.process_group(0);
-        let child = cmd.spawn().unwrap();
-        let pgid = child.id() as libc::pid_t;
-
-        let start = std::time::Instant::now();
-        let _ = super::wait_with_limits(child, 1024, std::time::Duration::from_millis(200), true);
-        let elapsed = start.elapsed();
-
-        assert!(
-            elapsed < std::time::Duration::from_secs(5),
-            "group kill must unblock the reader threads, took {elapsed:?}"
-        );
-        // The whole group must be dead, not just the direct child.
-        // A brief grace period lets the kernel finish the kill.
-        let mut group_gone = false;
-        for _ in 0..50 {
-            if process_group_dead(pgid) {
-                group_gone = true;
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        assert!(group_gone, "process group {pgid} must be fully killed");
-    }
-
-    /// True once no live process remains in group `pgid`. The killed
-    /// grandchild is orphaned and reparented to PID 1; it stays a zombie until
-    /// PID 1 reaps it, which some container inits never do, and
-    /// `killpg(pgid, 0)` still counts a zombie. On Linux, /proc tells a dead
-    /// zombie from a survivor.
-    #[cfg(unix)]
-    fn process_group_dead(pgid: libc::pid_t) -> bool {
-        // SAFETY: signal 0 only probes for existence.
-        if unsafe { libc::killpg(pgid, 0) } == -1 {
-            return true;
-        }
-        cfg!(target_os = "linux") && live_group_members(pgid).is_empty()
-    }
-
-    /// PIDs in group `pgid` whose state is neither zombie nor dead, read from
-    /// /proc/<pid>/stat: `pid (comm) state ppid pgrp ...`.
-    #[cfg(unix)]
-    fn live_group_members(pgid: libc::pid_t) -> Vec<libc::pid_t> {
-        let mut live = Vec::new();
-        for entry in std::fs::read_dir("/proc").expect("/proc must be readable") {
-            let Ok(entry) = entry else { continue };
-            let Ok(pid) = entry.file_name().to_string_lossy().parse::<libc::pid_t>() else {
-                continue;
-            };
-            // A process that exits between read_dir and here has no stat.
-            let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
-                continue;
-            };
-            // `comm` may contain spaces and parentheses: fields resume after the last ')'.
-            let Some((_, rest)) = stat.rsplit_once(')') else {
-                continue;
-            };
-            let mut fields = rest.split_whitespace();
-            let state = fields.next();
-            let pgrp = fields.nth(1).and_then(|f| f.parse::<libc::pid_t>().ok());
-            if pgrp == Some(pgid) && !matches!(state, Some("Z" | "X")) {
-                live.push(pid);
-            }
-        }
-        live
+        assert!(stdout.contains("hi"), "{stdout}");
+        assert!(stdout.contains("still holds its output"), "{stdout}");
     }
 
     #[test]
     fn heavy_commands_get_higher_byte_limits() {
-        // exec_limits owns the byte ceiling; timeout resolution is covered by
+        // exec_byte_cap owns the byte ceiling; timeout resolution is covered by
         // `shell_timeout_resolves_heavy_normal_and_config_overrides` (which is
         // config-isolated, so these stay deterministic regardless of the
         // operator's config.toml).
@@ -1085,7 +719,7 @@ mod exec_tests {
             "npm run build",
             "docker build -t myapp .",
             // Git verbs that fire build/test hooks (pre-commit clippy, pre-push
-            // preflight) must not be killed at the default ceiling (#854).
+            // preflight) must not be killed at the default ceiling.
             "git commit --amend --no-edit",
             "git push -u origin HEAD",
             // Agents prefix with `cd /path && ...` — heavy detection must
@@ -1094,7 +728,7 @@ mod exec_tests {
             "cd /foo/bar && cargo build --release",
             "cd /workspace; npm ci",
         ] {
-            let (bytes, _) = super::exec_limits(cmd);
+            let bytes = super::exec_byte_cap(cmd);
             assert_eq!(bytes, super::HEAVY_MAX_BYTES, "heavy byte limit for {cmd}");
         }
     }
@@ -1104,7 +738,7 @@ mod exec_tests {
         // Read-only git verbs stay on the default ceiling — only `commit`/`push`
         // (which fire the cargo-heavy hooks) are promoted.
         for cmd in ["echo hello", "git status", "git log --oneline -5"] {
-            let (bytes, _) = super::exec_limits(cmd);
+            let bytes = super::exec_byte_cap(cmd);
             assert_eq!(
                 bytes,
                 super::DEFAULT_MAX_BYTES,
@@ -1119,7 +753,7 @@ mod exec_tests {
         let iso = crate::core::data_dir::isolated_data_dir();
 
         // Heavy builds/tests and hook-firing git verbs get the heavy ceiling;
-        // read-only verbs stay on the default. Preserves the #854 promotion.
+        // read-only verbs stay on the default. Preserves the promotion.
         assert_eq!(
             super::shell_timeout("cargo install --path ."),
             super::HEAVY_TIMEOUT
@@ -1219,7 +853,7 @@ mod exec_tests {
         );
     }
 
-    // Per-call `timeout_ms` (ctx_shell tool arg): explicit caller intent beats
+    // Per-call `timeout_ms` (sobre_shell tool arg): explicit caller intent beats
     // the built-in tiers in both directions, absurd values clamp to the 1h
     // ceiling, and zero is ignored.
     #[test]
@@ -1246,25 +880,5 @@ mod exec_tests {
             super::shell_timeout_with_override("git status", None),
             super::DEFAULT_TIMEOUT
         );
-    }
-
-    // P0-1 (#413): the CLI gate must enforce for agents, warn for humans.
-    #[test]
-    fn gate_enforces_in_hook_child_mode() {
-        // Hook-child wins over everything, even an interactive TTY.
-        assert!(super::gate_must_enforce_inner(true, true));
-        assert!(super::gate_must_enforce_inner(true, false));
-    }
-
-    #[test]
-    fn gate_enforces_for_non_interactive_callers() {
-        // Agent/script invocation: stderr is a pipe → enforce.
-        assert!(super::gate_must_enforce_inner(false, false));
-    }
-
-    #[test]
-    fn gate_warns_for_interactive_humans() {
-        // Human at a TTY → warn-only (they can bypass lean-ctx anyway).
-        assert!(!super::gate_must_enforce_inner(false, true));
     }
 }

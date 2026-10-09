@@ -9,6 +9,9 @@ pub struct SetupReport {
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub success: bool,
+    /// `init --check`: what a run would change; nothing was written.
+    #[serde(default)]
+    pub dry_run: bool,
     pub platform: PlatformInfo,
     pub steps: Vec<SetupStepReport>,
     #[serde(default)]
@@ -45,17 +48,6 @@ pub struct SetupItem {
     pub note: Option<String>,
 }
 
-impl SetupReport {
-    pub fn default_path() -> Result<PathBuf, String> {
-        let data_dir = crate::core::data_dir::lean_ctx_data_dir()?;
-        Ok(data_dir.join("setup/latest.json"))
-    }
-}
-
 pub fn doctor_report_path() -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?.join("doctor/latest.json"))
-}
-
-pub fn status_report_path() -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?.join("status/latest.json"))
+    Ok(crate::core::data_dir::sobre_data_dir()?.join("doctor/latest.json"))
 }

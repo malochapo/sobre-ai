@@ -2,11 +2,11 @@
 //! Each module tests a fix with multiple realistic agent interaction scenarios.
 #![allow(clippy::needless_raw_string_hashes)]
 
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::protocol::CrpMode;
+use sobre::core::cache::SessionCache;
+use sobre::core::protocol::CrpMode;
 use std::io::Write;
 
-/// Reads the full `LeanCtxServer` dispatch source across its split submodules
+/// Reads the full `SobreServer` dispatch source across its split submodules
 /// (`mod.rs`, `call_tool.rs`, `server_handler.rs`) so that the invariant checks
 /// below stay robust to internal module structure.
 fn server_dispatch_src() -> String {
@@ -37,15 +37,15 @@ fn skip_terse_body(src: &str) -> String {
 // =============================================================================
 
 mod correction_loop {
-    use lean_ctx::core::loop_detection::LoopDetector;
+    use sobre::core::refetch_signals::RefetchSignals;
 
     #[test]
     fn scenario_agent_rereads_same_file_fresh() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         // Cold start: 3 initial reads
-        detector.record_read_for_correction("src/main.rs", "full", false);
-        detector.record_read_for_correction("src/lib.rs", "full", false);
-        detector.record_read_for_correction("src/utils.rs", "full", false);
+        detector.record_read("src/main.rs", "full", false);
+        detector.record_read("src/lib.rs", "full", false);
+        detector.record_read("src/utils.rs", "full", false);
         assert_eq!(
             detector.correction_count(),
             0,
@@ -53,62 +53,62 @@ mod correction_loop {
         );
 
         // Agent reads a file normally
-        detector.record_read_for_correction("src/cache.rs", "full", false);
+        detector.record_read("src/cache.rs", "full", false);
         assert_eq!(detector.correction_count(), 0);
 
         // Agent re-reads same file with fresh=true (lost trust in compression)
-        detector.record_read_for_correction("src/cache.rs", "full", true);
+        detector.record_read("src/cache.rs", "full", true);
         assert_eq!(detector.correction_count(), 1);
     }
 
     #[test]
     fn scenario_agent_bounces_map_to_full() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         // Cold start
         for i in 0..3 {
-            detector.record_read_for_correction(&format!("cold{i}.rs"), "full", false);
+            detector.record_read(&format!("cold{i}.rs"), "full", false);
         }
 
         // Agent reads with map mode first (exploring)
-        detector.record_read_for_correction("src/server/mod.rs", "map", false);
+        detector.record_read("src/server/mod.rs", "map", false);
         assert_eq!(detector.correction_count(), 0);
 
         // Then immediately bounces to full (map wasn't enough)
-        detector.record_read_for_correction("src/server/mod.rs", "full", false);
+        detector.record_read("src/server/mod.rs", "full", false);
         assert_eq!(detector.correction_count(), 1);
     }
 
     #[test]
     fn scenario_agent_reruns_same_shell_command() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         // Cold start
         for i in 0..3 {
-            detector.record_shell_for_correction(&format!("echo init{i}"));
+            detector.record_shell(&format!("echo init{i}"));
         }
 
         // Agent runs cargo test
-        detector.record_shell_for_correction("cargo test --lib");
+        detector.record_shell("cargo test --lib");
         assert_eq!(detector.correction_count(), 0);
 
         // Agent runs same command again (didn't trust output)
-        detector.record_shell_for_correction("cargo test --lib");
+        detector.record_shell("cargo test --lib");
         assert_eq!(detector.correction_count(), 1);
 
         // Third time
-        detector.record_shell_for_correction("cargo test --lib");
+        detector.record_shell("cargo test --lib");
         assert_eq!(detector.correction_count(), 2);
     }
 
     #[test]
     fn scenario_different_commands_no_correction() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         for i in 0..3 {
-            detector.record_shell_for_correction(&format!("echo init{i}"));
+            detector.record_shell(&format!("echo init{i}"));
         }
 
-        detector.record_shell_for_correction("cargo build");
-        detector.record_shell_for_correction("cargo test");
-        detector.record_shell_for_correction("cargo clippy");
+        detector.record_shell("cargo build");
+        detector.record_shell("cargo test");
+        detector.record_shell("cargo clippy");
         assert_eq!(
             detector.correction_count(),
             0,
@@ -118,14 +118,14 @@ mod correction_loop {
 
     #[test]
     fn scenario_legitimate_exploration_no_false_positive() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         for i in 0..3 {
-            detector.record_read_for_correction(&format!("cold{i}.rs"), "full", false);
+            detector.record_read(&format!("cold{i}.rs"), "full", false);
         }
 
         // Agent explores multiple different files (legitimate workflow)
         for i in 0..10 {
-            detector.record_read_for_correction(&format!("src/file{i}.rs"), "map", false);
+            detector.record_read(&format!("src/file{i}.rs"), "map", false);
         }
         assert_eq!(
             detector.correction_count(),
@@ -136,17 +136,17 @@ mod correction_loop {
 
     #[test]
     fn scenario_prune_clears_old_signals() {
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
         for i in 0..3 {
-            detector.record_shell_for_correction(&format!("echo init{i}"));
+            detector.record_shell(&format!("echo init{i}"));
         }
 
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
+        detector.record_shell("cargo check");
+        detector.record_shell("cargo check");
         assert_eq!(detector.correction_count(), 1);
 
         // Prune should work
-        detector.prune_corrections();
+        detector.prune();
         // Signal is still within window (just happened), so still 1
         assert_eq!(detector.correction_count(), 1);
     }
@@ -160,7 +160,7 @@ mod double_compression_guard {
     #[test]
     fn scenario_dispatch_returns_saved_tokens() {
         // Verify the dispatch_tool return type includes saved_tokens (the
-        // third element carries the shell outcome for MCP isError, GH #389)
+        // third element carries the shell outcome for MCP isError)
         // and content_blocks (fourth element for image/binary MCP output).
         let src = include_str!("../../src/server/dispatch/mod.rs");
         assert!(
@@ -173,37 +173,38 @@ mod double_compression_guard {
     fn scenario_skip_terse_when_already_compressed() {
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
-        // Reads already produce mode-aware, structure-preserving output, so the
-        // generic terse layer must never re-compress them. The guard skips the
-        // whole read family unconditionally (a verbatim `full`/`lines:` read has
-        // 0 savings yet must still be protected from dictionary-mangling). The
-        // read-family + verbatim-mode decision lives in `is_verbatim_read`.
+        // Terse is an allow-list of prose and shell tools: code from reads,
+        // searches and symbol bodies is never re-compressed.
         let body = crate::suite::hn_hardening_scenarios::skip_terse_body(&src);
         assert!(
-            body.contains("is_verbatim_read"),
-            "skip_terse must skip verbatim reads (read family) to avoid re-compressing them"
+            body.contains("TERSE_TOOLS"),
+            "skip_terse must condense only the tools in TERSE_TOOLS"
         );
 
-        // The double-counting guard for already-saving tools moved to the
-        // post-terse stats correction: savings are only recomputed when terse
-        // actually changed the text and output tokens were recorded.
+        // Usage is recorded once, after terse, from the final sent count: the
+        // tool's own savings and terse's are never counted twice.
         assert!(
-            src.contains("result_text.len() != pre_terse_len && output_tokens > 0"),
-            "post-terse stats correction must guard on terse length delta and output_tokens"
+            src.contains(
+                "post_process::final_token_count(&result_text, pre_terse_len, output_tokens)"
+            ),
+            "the sent count must be taken after terse"
         );
     }
 
     #[test]
     fn scenario_raw_shell_still_bypasses() {
+        // Shell output never reaches the dispatch terse stage: skip_terse
+        // admits only the tools in TERSE_TOOLS, and sobre_shell is not one.
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
         let body = crate::suite::hn_hardening_scenarios::skip_terse_body(&src);
-        let raw_idx = body
-            .find("is_raw_shell")
-            .expect("skip_terse must reference is_raw_shell");
-        let saved_idx = body.find("tool_saved_tokens").unwrap_or(usize::MAX);
         assert!(
-            raw_idx < saved_idx,
-            "is_raw_shell must short-circuit first in the skip_terse body"
+            body.contains("!TERSE_TOOLS.contains(&name)"),
+            "skip_terse must admit only TERSE_TOOLS: {body}"
+        );
+        assert!(
+            !src.contains("const TERSE_TOOLS: [&str; 3]")
+                && !src.contains("\"sobre_shell\", \"sobre_knowledge\""),
+            "sobre_shell must not be in TERSE_TOOLS"
         );
     }
 }
@@ -223,7 +224,7 @@ mod cache_hit_messages {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Modify file
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -237,7 +238,7 @@ mod cache_hit_messages {
                 .unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             result.contains("version 2") || result.contains("new_function"),
             "modified file must return new content"
@@ -250,7 +251,7 @@ mod cache_hit_messages {
 // =============================================================================
 
 mod test_identifiers {
-    use lean_ctx::core::patterns::compress_output as compress;
+    use sobre::core::patterns::compress_output as compress;
 
     #[test]
     fn scenario_cargo_test_preserves_names() {
@@ -360,48 +361,12 @@ tests/test_auth.py::test_refresh PASSED
 }
 
 // =============================================================================
-// Fix F: Confidence-Signal (TeeMode::HighCompression)
-// =============================================================================
-
-mod confidence_signal {
-    use lean_ctx::core::config::TeeMode;
-
-    #[test]
-    fn scenario_tee_mode_serialization() {
-        let json = serde_json::to_string(&TeeMode::HighCompression).unwrap();
-        assert!(
-            json.contains("highcompression") || json.contains("HighCompression"),
-            "HighCompression should serialize: {json}"
-        );
-    }
-
-    #[test]
-    fn scenario_high_compression_hint_format() {
-        // Verify the hint format exists in source. The local var was renamed
-        // savings_pct -> pct in the shell-fidelity refactor (42a186a65c).
-        let src = include_str!("../../src/tools/registered/ctx_shell.rs");
-        assert!(
-            src.contains("compressed {pct:.0}%: full output at"),
-            "high compression hint must use correct format"
-        );
-    }
-
-    #[test]
-    fn scenario_threshold_is_70_percent() {
-        // The 70% tee threshold now lives in the shared tee_policy (single source
-        // of truth), not inline in ctx_shell.rs (refactor 42a186a65c).
-        let src = include_str!("../../src/shell/tee_policy.rs");
-        assert!(src.contains("> 70.0"), "threshold must be 70%");
-    }
-}
-
-// =============================================================================
 // Fix B: Auto-Degrade (CompressionLevel session override)
 // =============================================================================
 
 mod auto_degrade {
-    use lean_ctx::core::config::CompressionLevel;
     use serial_test::serial;
+    use sobre::core::config::CompressionLevel;
 
     #[test]
     #[serial]
@@ -433,7 +398,7 @@ mod auto_degrade {
     #[test]
     #[serial]
     fn scenario_effective_uses_degrade_when_set() {
-        let cfg = lean_ctx::core::config::Config::load();
+        let cfg = sobre::core::config::Config::load();
         CompressionLevel::set_session_degrade(&CompressionLevel::Lite);
         let effective = CompressionLevel::effective(&cfg);
         assert_eq!(effective, CompressionLevel::Lite);
@@ -442,12 +407,12 @@ mod auto_degrade {
 
     #[test]
     fn scenario_server_degrade_thresholds() {
-        use lean_ctx::core::config::CompressionLevel;
-        use lean_ctx::core::config::SessionDegrade::{Clear, Leave, Set};
+        use sobre::core::config::CompressionLevel;
+        use sobre::core::config::SessionDegrade::{Clear, Leave, Set};
         // Behavioral invariant for the dispatch's auto-degrade. Asserted via the
         // pure `degrade_action` decision rather than grepping the dispatch source
-        // for a literal, so an internal rename (e.g. #941's `correction_count` →
-        // retrieve-coupled `pressure`) can't silently rot this guard again (#957).
+        // for a literal, so an internal rename (e.g. `correction_count` →
+        // retrieve-coupled `pressure`) can't silently rot this guard again.
         assert_eq!(
             CompressionLevel::degrade_action(5, 0),
             Set(CompressionLevel::Off),
@@ -473,57 +438,7 @@ mod auto_degrade {
 }
 
 // =============================================================================
-// Fix H: First-Contact Auto-Context (meta_visible guard removed)
-// =============================================================================
-
-mod first_contact {
-    #[test]
-    fn scenario_meta_visible_guard_removed() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        // Find the auto_context section
-        let auto_ctx_pos = src
-            .find("let Some(ctx) = auto_context")
-            .expect("auto_context block must exist");
-        let block = &src[auto_ctx_pos..auto_ctx_pos + 200];
-
-        // Must NOT contain meta_visible check
-        assert!(
-            !block.contains("meta_visible()"),
-            "meta_visible guard must be removed from auto_context block"
-        );
-    }
-
-    #[test]
-    fn scenario_token_budget_enforced() {
-        // The briefing is cut to its budget where it is built, not dropped at
-        // the call site.
-        let src = include_str!("../../src/tools/autonomy.rs");
-        assert!(
-            src.contains("pub const BRIEFING_MAX_TOKENS: usize = 400;"),
-            "auto_context must enforce a 400 token budget"
-        );
-        assert!(
-            src.contains("Some(format_briefing(&result))"),
-            "the session briefing must go through the budget cut"
-        );
-    }
-
-    #[test]
-    fn scenario_raw_shell_still_skips_auto_context() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        // Collapse whitespace so the gating check survives the edition-2024
-        // let-chain collapse (`if !is_raw_shell { if let Some(ctx) = … }` →
-        // `if !is_raw_shell && let Some(ctx) = …`) and any rustfmt line wrapping.
-        let collapsed = src.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(
-            collapsed.contains("if !is_raw_shell && let Some(ctx) = auto_context"),
-            "auto_context must still be gated behind !is_raw_shell"
-        );
-    }
-}
-
-// =============================================================================
-// Fix G: ctx_overview Module Descriptions
+// Fix G: project overview module descriptions
 // =============================================================================
 
 mod overview_descriptions {
@@ -540,9 +455,9 @@ mod overview_descriptions {
         .unwrap();
         let path = file.to_string_lossy().to_string();
 
-        // Use ctx_read to verify file is readable, then check overview behavior
+        // Use sobre_read to verify file is readable, then check overview behavior
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Session-level"));
     }
 
@@ -558,7 +473,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Utility functions"));
     }
 
@@ -574,7 +489,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("REST API"));
     }
 
@@ -583,11 +498,11 @@ mod overview_descriptions {
         let src = include_str!("../../src/tools/impl_overview.rs");
         assert!(
             src.contains("extract_module_doc"),
-            "ctx_overview must call extract_module_doc"
+            "the overview must call extract_module_doc"
         );
         assert!(
             src.contains("knowledge_doc_for_file"),
-            "ctx_overview must have knowledge fallback"
+            "the overview must have a knowledge fallback"
         );
     }
 }
@@ -598,31 +513,31 @@ mod overview_descriptions {
 
 mod integration {
     use super::*;
-    use lean_ctx::core::config::CompressionLevel;
-    use lean_ctx::core::loop_detection::LoopDetector;
+    use sobre::core::config::CompressionLevel;
+    use sobre::core::refetch_signals::RefetchSignals;
 
     #[test]
     fn scenario_full_correction_loop_triggers_degrade() {
         // Simulate: agent reads file, re-reads fresh, triggers degrade
-        let mut detector = LoopDetector::new();
+        let mut detector = RefetchSignals::default();
 
         // Cold start
         for i in 0..3 {
-            detector.record_read_for_correction(&format!("cold{i}.rs"), "full", false);
+            detector.record_read(&format!("cold{i}.rs"), "full", false);
         }
 
         // Normal work
-        detector.record_read_for_correction("src/lib.rs", "full", false);
-        detector.record_read_for_correction("src/main.rs", "full", false);
+        detector.record_read("src/lib.rs", "full", false);
+        detector.record_read("src/main.rs", "full", false);
 
         // Correction spiral: agent doesn't trust output
-        detector.record_read_for_correction("src/lib.rs", "full", true);
-        detector.record_read_for_correction("src/main.rs", "full", true);
-        detector.record_shell_for_correction("cargo check");
-        detector.record_shell_for_correction("cargo check");
+        detector.record_read("src/lib.rs", "full", true);
+        detector.record_read("src/main.rs", "full", true);
+        detector.record_shell("cargo check");
+        detector.record_shell("cargo check");
         // mode bounce
-        detector.record_read_for_correction("src/config.rs", "map", false);
-        detector.record_read_for_correction("src/config.rs", "full", false);
+        detector.record_read("src/config.rs", "map", false);
+        detector.record_read("src/config.rs", "full", false);
 
         let count = detector.correction_count();
         assert!(count >= 3, "should have >= 3 corrections, got {count}");
@@ -654,14 +569,14 @@ mod integration {
         let mut cache = SessionCache::new();
 
         // Read 1: full content
-        let r1 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r1 = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(r1.contains("stable_function"));
 
         // Read 2: still returns content (marks as delivered)
-        lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Read 3: now cache hit with proof
-        let r3 = lean_ctx::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r3 = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             r3.contains("unchanged") || r3.contains("cached"),
             "third read should be a cache hit: {r3}"
@@ -673,7 +588,7 @@ mod integration {
         // Structural test: verify the pipeline
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
-        // 1. dispatch threads saved_tokens (+ shell outcome, GH #389,
+        // 1. dispatch threads saved_tokens (+ shell outcome,
         // content_blocks) out of the tool call
         assert!(
             src.contains("let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks)")
@@ -685,11 +600,11 @@ mod integration {
             "terse compression must be gated by an early skip_terse() return"
         );
 
-        // 3. The post-terse stats correction runs only when terse changed the
-        // text and output tokens were recorded, avoiding double-counting.
+        // 3. Usage is recorded once, after terse, with the tool's savings
+        // added back onto the pre-terse count.
         assert!(
-            src.contains("result_text.len() != pre_terse_len && output_tokens > 0"),
-            "post-terse stats correction must guard on terse length delta and output_tokens"
+            src.contains("crate::core::usage::record_compression("),
+            "call_tool must record the call in the usage ledger"
         );
     }
 }

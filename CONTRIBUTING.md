@@ -21,10 +21,22 @@ called.
 only the compiler decides whether it worked.
 
 ```bash
+cd rust
 cargo check --all-targets                  # the default, local-only build
-cargo check --all-targets --features dense # local embeddings + GPU providers
-cargo check --all-targets --all-features   # what CI checks
+cargo check --all-targets --features dense # with local embeddings
 ```
+
+CI checks both builds. The one local gate that mirrors it is
+`scripts/preflight.sh` (fmt, clippy on both builds, rustdoc, generated docs,
+file size); `scripts/preflight.sh full` adds the whole test suite. The git
+hooks are opt-in: `make setup-hooks` points git at `.githooks/`, whose
+pre-commit checks formatting and whose pre-push runs `scripts/preflight.sh`
+(`SKIP_PREFLIGHT=1 git push` skips it).
+
+On a pull request, CI runs Lint and the test suite on Linux. macOS and Windows
+run on push to `main` and on demand (Actions → CI → Run workflow): their
+minutes bill at 10x and 2x on a private repository. Run them by hand before
+merging anything platform-specific (paths, shells, file locking).
 
 `--all-targets` matters: plain `cargo check` skips `#[cfg(test)]` blocks in the
 library, so a broken test module compiles clean without it.
@@ -35,18 +47,21 @@ false positives when features are off.
 ## Tests
 
 ```bash
-cargo test --manifest-path rust/Cargo.toml
+cd rust && cargo test
 ```
+
+Run cargo from `rust/`: rustup reads the pinned toolchain
+(`rust/rust-toolchain.toml`) from the current directory, so
+`--manifest-path rust/Cargo.toml` from the root builds with whatever toolchain
+is the default.
 
 Run the whole thing, not `--lib`. The library tests are the bulk of the count,
 but a good deal of behaviour is pinned by the integration suites under
 `rust/tests/`, and `--lib` never touches them.
 
-The suite is not fully green: a number of failures pre-date the fork or need
-tools that may not be on your machine (a `python` on `PATH`, for instance).
-Before claiming a change is clean, compare against a baseline run of the same
-suite on the commit you started from — the absolute count is not the signal, the
-delta is.
+The suite is green on Linux, macOS and Windows, and every pull request into
+`develop` or `main` must keep it so. A failure is a real failure: fix it, never
+skip it.
 
 ## Removing code
 

@@ -45,7 +45,7 @@ fn compress_check(output: &str) -> String {
         if let Some(caps) = ruff_fixed_re().captures(trimmed) {
             return format!("{} errors ({} fixable)", &caps[1], &caps[2]);
         }
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     let total: u32 = by_rule.values().sum();
@@ -100,17 +100,5 @@ fn compress_format(output: &str) -> String {
         return format!("ok ({} files already formatted)", unchanged.len());
     }
 
-    compact_output(trimmed, 5)
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
+    super::compact_lines(trimmed, 5)
 }

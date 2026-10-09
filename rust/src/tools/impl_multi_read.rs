@@ -1,8 +1,7 @@
 use crate::core::cache::SessionCache;
-use crate::core::heatmap;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
-use crate::tools::ctx_read;
+use crate::tools::sobre_read;
 
 const DEFAULT_MAX_MULTI_READ_BYTES: usize = 512 * 1024;
 
@@ -31,60 +30,54 @@ pub fn handle_with_task_fresh(
     let mut files_read = 0usize;
     let mut truncated = false;
 
+    let mut capped: Vec<&str> = Vec::new();
     for path in paths {
-        let effective_mode = if ctx_read::is_instruction_file(path) {
+        // Instruction files are read whole when no mode was picked; a mode the
+        // agent picked is honoured.
+        let effective_mode = if mode == "auto" && sobre_read::is_instruction_file(path) {
             "full"
         } else {
             mode
         };
-        let chunk = if fresh {
-            ctx_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
-        } else {
-            ctx_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
-        };
-        let original = cache.get(path).map_or(0, |e| e.original_tokens);
-        let sent = count_tokens(&chunk);
-        heatmap::record_file_access(path, original, original.saturating_sub(sent));
-        // Verified ledger (#685): model-correct counts. The default O200kBase model
-        // reuses the o200k counts above (same BPE + cache key → zero extra work); a
-        // resolved Claude/Gemini/Llama model re-tokenizes the raw source (from the
-        // cache) and the sent chunk so savings match the provider's billing units.
-        {
-            use crate::core::savings_ledger as ledger;
-            let (lbase, lsaved) =
-                if ledger::ledger_family() == crate::core::tokens::TokenizerFamily::O200kBase {
-                    (original, original.saturating_sub(sent))
-                } else if let Some(raw) = cache
-                    .get(path)
-                    .and_then(crate::core::cache::CacheEntry::content)
-                {
-                    let lo = ledger::count_for_ledger(&raw);
-                    (lo, lo.saturating_sub(ledger::count_for_ledger(&chunk)))
-                } else {
-                    (original, original.saturating_sub(sent))
-                };
-            ledger::record_read_event(lbase, lsaved);
+        if truncated {
+            capped.push(path);
+            continue;
         }
-        total_original = total_original.saturating_add(original);
-        total_saved = total_saved.saturating_add(original.saturating_sub(sent));
-
+        let chunk = if fresh {
+            sobre_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
+        } else {
+            sobre_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
+        };
         let chunk_bytes = chunk.len();
         if accumulated_bytes > 0 && accumulated_bytes + chunk_bytes > max_bytes {
+            // This file was read but is not sent: forget the read, so a later
+            // sobre_read returns its content instead of an [unchanged] stub.
+            cache.invalidate(path);
             truncated = true;
-            break;
+            capped.push(path);
+            continue;
         }
+        let original = cache.get(path).map_or(0, |e| e.original_tokens);
+        let sent = count_tokens(&chunk);
+        total_original = total_original.saturating_add(original);
+        total_saved = total_saved.saturating_add(original.saturating_sub(sent));
         accumulated_bytes += chunk_bytes;
-        sections.push(chunk);
+        // Every section names its file: a full read of a small file is the
+        // bare content, with nothing else to say whose it is.
+        sections.push(format!(
+            "=== {} ===\n{chunk}",
+            crate::core::protocol::shorten_path(path)
+        ));
         files_read += 1;
     }
 
     let body = sections.join("\n---\n");
     let summary = if truncated {
-        let skipped = n - files_read;
         format!(
             "Read {files_read}/{n} files | {total_saved} tokens saved\n\
-             ⚠ Output capped at {max_bytes} bytes. \
-             {skipped} file(s) skipped. Use individual ctx_read calls for remaining files."
+             ⚠ Output capped at {max_bytes} bytes. Not read: {}. \
+             Read them with sobre_read(path=…) or a smaller paths list.",
+            capped.join(", ")
         )
     } else if total_saved > 0 {
         format!("Read {n} files | {total_saved} tokens saved")
@@ -92,4 +85,32 @@ pub fn handle_with_task_fresh(
         format!("Read {n} files")
     };
     format!("{body}\n---\n{summary}")
+}
+
+#[cfg(test)]
+mod tests {
+    /// K17: every section of a batch read names its file.
+    #[test]
+    fn each_section_names_its_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("first.rs");
+        let b = dir.path().join("second.rs");
+        std::fs::write(&a, "fn a() {}\n").unwrap();
+        std::fs::write(&b, "fn b() {}\n").unwrap();
+        let paths = [
+            a.to_string_lossy().to_string(),
+            b.to_string_lossy().to_string(),
+        ];
+        let mut cache = crate::core::cache::SessionCache::new();
+        let out = super::handle_with_task_fresh(
+            &mut cache,
+            &paths,
+            "full",
+            false,
+            crate::tools::CrpMode::Off,
+            None,
+        );
+        assert!(out.contains("first.rs ===\nfn a() {}"), "{out}");
+        assert!(out.contains("second.rs ===\nfn b() {}"), "{out}");
+    }
 }

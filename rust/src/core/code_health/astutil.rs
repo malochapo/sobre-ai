@@ -2,8 +2,7 @@
 //!
 //! Function enumeration and identifier extraction live here so every health
 //! metric (cognitive complexity, naming) scores the *same* set of
-//! function-like nodes, mirroring the structural-chunk walk used by
-//! [`crate::core::cyclomatic`]. Tree-sitter only; the public engine functions
+//! function-like nodes. Tree-sitter only; the public engine functions
 //! degrade to `None` when the feature is disabled.
 
 #[cfg(feature = "tree-sitter")]

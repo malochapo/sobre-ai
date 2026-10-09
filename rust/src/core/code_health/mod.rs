@@ -6,8 +6,7 @@
 //! and every agent surface (see the Code Health Engine plan).
 //!
 //! Naming note: this is distinct from [`crate::core::quality`] (compression
-//! fidelity) and from [`crate::core::gain`]'s usage-quality component; this
-//! module scores the *source code's* navigability.
+//! fidelity); this module scores the *source code's* navigability.
 
 pub mod annotate;
 #[cfg(feature = "tree-sitter")]
@@ -18,48 +17,21 @@ pub mod fabric;
 pub mod gate;
 pub mod naming;
 pub mod persist;
-pub mod report;
 pub mod scan;
 pub mod score;
 
-pub use annotate::{ReadAnnotation, annotations_for_file};
 pub use cognitive::{FunctionCognitive, cognitive_per_function};
-pub use delta::{CognitiveDelta, cognitive_delta, format_gate_notice, worst_regression};
-pub use naming::{NamingFinding, cryptic_reason, naming_findings};
-pub use scan::{FileReport, ProjectHealth, scan_project};
-pub use score::{Hotspot, NavigabilityInputs, NavigabilityScore, grade, navigability};
+pub use delta::{cognitive_delta, format_gate_notice, worst_regression};
+pub use naming::{NamingFinding, naming_findings};
+pub use score::{Hotspot, NavigabilityInputs, NavigabilityScore, navigability};
 
 use serde::Serialize;
 
 /// Cognitive-complexity threshold above which a function is a hotspot.
 pub const COGNITIVE_THRESHOLD: u32 = 15;
 
-/// Edit-gate behavior when an edit increases cognitive complexity.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum GateMode {
-    /// Never emit a code-health gate notice.
-    Off,
-    /// Append an advisory `[CODE HEALTH]` notice (default).
-    #[default]
-    Warn,
-    /// Refuse edits that push a clean function over the threshold.
-    Block,
-}
-
-impl GateMode {
-    /// Parse a config string; unknown values fall back to [`GateMode::Warn`].
-    pub fn parse(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "off" | "false" | "none" | "disabled" => GateMode::Off,
-            "block" | "hard" | "error" => GateMode::Block,
-            _ => GateMode::Warn,
-        }
-    }
-}
-
 /// Combined per-file health: cognitive scores plus naming findings. This is the
-/// single entry point used by the edit-gate, read annotations, and the
-/// `ctx_quality` tool.
+/// single entry point used by the edit-gate and read annotations.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct FileHealth {
     pub functions: Vec<FunctionCognitive>,
@@ -67,13 +39,6 @@ pub struct FileHealth {
 }
 
 impl FileHealth {
-    /// Functions whose cognitive complexity exceeds `threshold`.
-    pub fn over_threshold(&self, threshold: u32) -> impl Iterator<Item = &FunctionCognitive> {
-        self.functions
-            .iter()
-            .filter(move |f| f.cognitive > threshold)
-    }
-
     /// The single worst cognitive complexity in the file (0 if none).
     pub fn worst_cognitive(&self) -> u32 {
         self.functions
@@ -111,14 +76,5 @@ mod tests {
     #[test]
     fn analyze_file_unsupported_ext_is_none() {
         assert!(analyze_file("plain text", "txt").is_none());
-    }
-
-    #[test]
-    fn over_threshold_filters() {
-        let src = "fn deep(a: bool) { if a { if a { if a { if a {} } } } }\n";
-        let health = analyze_file(src, "rs").unwrap();
-        // 1+2+3+4 = 10 cognitive; above 5, below 15.
-        assert_eq!(health.over_threshold(5).count(), 1);
-        assert_eq!(health.over_threshold(15).count(), 0);
     }
 }

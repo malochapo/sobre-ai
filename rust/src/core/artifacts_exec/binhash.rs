@@ -1,18 +1,18 @@
-//! Binary-hash pinning for stdio addons (P3 — supply-chain hardening).
+//! SHA-256 of a file, used to check the ONNX Runtime download against its pin
+//! (`ort_provision`).
 //!
-//! A stdio addon spawns a local executable. Pinning that binary's SHA-256 in
-//! the manifest (`[mcp] sha256 = "…"`) closes the gap between *what was audited*
-//! and *what actually runs*: if the file on `PATH` is swapped after install, the
-//! hash no longer matches and the gateway refuses to spawn it.
-//!
-//! SHA-256 (not the engine's internal BLAKE3) is deliberate — an author pins the
-//! value an ordinary `sha256sum my-mcp` / `shasum -a 256 my-mcp` prints, so the
-//! pin is reproducible without lean-ctx.
+//! SHA-256 (not the engine's internal BLAKE3) is deliberate: the pin is the
+//! value an ordinary `sha256sum` prints, so it is reproducible without sobre.
 
 use std::io::Read;
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
+
+/// Lowercase hex SHA-256 of a byte buffer.
+pub fn sha256_bytes(bytes: &[u8]) -> String {
+    crate::core::hasher::hex_encode(&Sha256::digest(bytes))
+}
 
 /// Stream-hash a file and return its lowercase hex SHA-256. Streaming (8 KiB
 /// chunks) keeps memory flat regardless of binary size.
@@ -30,7 +30,7 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(crate::core::agent_identity::hex_encode(&hasher.finalize()))
+    Ok(crate::core::hasher::hex_encode(&hasher.finalize()))
 }
 
 #[cfg(test)]
@@ -41,7 +41,7 @@ mod tests {
     /// A unique scratch dir per test (PID + label) so parallel tests never share
     /// — and clean up — the same directory.
     fn tmp(label: &str) -> PathBuf {
-        std::env::temp_dir().join(format!("leanctx-binhash-{}-{label}", std::process::id()))
+        std::env::temp_dir().join(format!("sobre-binhash-{}-{label}", std::process::id()))
     }
 
     #[test]

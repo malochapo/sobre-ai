@@ -9,24 +9,27 @@ pub(crate) fn handle(
     kind: Option<&str>,
     project_root: &str,
 ) -> (String, usize) {
-    let Some(open) = graph_provider::open_best_effort(project_root) else {
+    let Some(open) = graph_provider::open_or_build(project_root) else {
         return (
             format!(
                 "Symbol '{name}' not found (graph index is building in the background — \
-                 retry in a few seconds). Try ctx_search(pattern=\"{name}\") for an immediate broader search.",
+                 retry in a few seconds). Try sobre_search(pattern=\"{name}\") for an immediate broader search.",
             ),
             0,
         );
     };
-    let gp = &open.provider;
+    let gp = &open;
 
-    let matches = gp.find_symbols(name, file, kind);
+    // The graph stores project-relative paths: an absolute `file` must be
+    // turned into that key or it matches nothing.
+    let file_key = file.map(|f| crate::core::index_paths::graph_relative_key(f, project_root));
+    let matches = gp.find_symbols(name, file_key.as_deref(), kind);
 
     if matches.is_empty() {
         return (
             format!(
                 "Symbol '{name}' not found in index ({} symbols indexed, root={project_root}). \
-                 Try ctx_search(pattern=\"{name}\") for a broader search.",
+                 Try sobre_search(pattern=\"{name}\") for a broader search.",
                 gp.symbol_count()
             ),
             0,
@@ -63,8 +66,8 @@ pub(crate) fn best_symbol_snippet_for_task(
     task: &str,
     project_root: &str,
 ) -> Option<(String, usize)> {
-    let open = graph_provider::open_best_effort(project_root)?;
-    let gp = &open.provider;
+    let open = graph_provider::open_or_build(project_root)?;
+    let gp = &open;
     let candidates = gp.find_symbols(name, None, None);
     let scores: Vec<usize> = candidates
         .iter()
@@ -128,19 +131,19 @@ pub(crate) fn render_by_handle(handle: &str, project_root: &str) -> (String, usi
             0,
         );
     };
-    let Some(open) = graph_provider::open_best_effort(project_root) else {
+    let Some(open) = graph_provider::open_or_build(project_root) else {
         return (
             format!("Handle '{handle}' not resolvable (no graph available)."),
             0,
         );
     };
-    let gp = &open.provider;
+    let gp = &open;
     match gp.find_symbol_by_handle(&parsed) {
         Some(sym) => render_single(&sym, gp, project_root),
         None => (
             format!(
                 "No symbol for handle '{handle}'. \
-                 Try ctx_search(action=\"symbol\", name=\"{}\").",
+                 Try sobre_search(action=\"symbol\", name=\"{}\").",
                 parsed.name
             ),
             0,
@@ -150,16 +153,6 @@ pub(crate) fn render_by_handle(handle: &str, project_root: &str) -> (String, usi
 
 fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (String, usize) {
     let abs_path = resolve_file_path(&sym.file, project_root);
-
-    if let Err(e) = crate::core::pathjail::jail_path(
-        std::path::Path::new(&abs_path),
-        std::path::Path::new(project_root),
-    ) {
-        return (
-            format!("Symbol '{}': path blocked by jail: {e}", sym.name),
-            0,
-        );
-    }
 
     let Ok(content) = std::fs::read_to_string(&abs_path) else {
         return (
@@ -200,7 +193,7 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
     let vis = if sym.is_exported { "+" } else { "-" };
     let cc_note = symbol_cc_note(&content, &sym.file, &sym.name, sym.start_line);
     // Lead with the stable handle (`path#name@Lline`) so the agent can re-target
-    // this exact symbol next turn via ctx_search(action="symbol", handle=…).
+    // this exact symbol next turn via sobre_search(action="symbol", handle=…).
     let handle = crate::core::handle::emit(&sym.file, &sym.name, sym.start_line);
     let header = format!(
         "{handle}  ({vis} {}, L{}-{}){cc_note}",
@@ -241,10 +234,9 @@ fn render_multiple(
 }
 
 /// Optional ` · cc=NN` suffix for a symbol header — the code-health complexity
-/// of the function being shown (#1084). Computed fresh from the already-read
+/// of the function being shown. Computed fresh from the already-read
 /// file content, so it's exact for *any* symbol. Over-threshold functions are
-/// flagged `(over)`. Honors the `code_health.annotate_reads` opt-out and is
-/// empty for non-functions / when tree-sitter is off.
+/// flagged `(over)`. Empty for non-functions / when tree-sitter is off.
 fn symbol_cc_note(content: &str, file: &str, name: &str, start_line: usize) -> String {
     let ext = Path::new(file)
         .extension()
@@ -311,7 +303,7 @@ mod tests {
                 is_exported: true,
             },
         );
-        GraphProvider::GraphIndex(index)
+        GraphProvider::from_index(&index)
     }
 
     #[test]
@@ -365,7 +357,7 @@ mod tests {
                 is_exported: true,
             },
         );
-        let gp = GraphProvider::GraphIndex(idx);
+        let gp = GraphProvider::from_index(&idx);
         let sym = gp
             .find_symbols("Config", None, None)
             .into_iter()
@@ -413,5 +405,30 @@ mod tests {
         assert_eq!(first_highest_score(&[0, 0, 0]), Some(0));
         assert_eq!(first_highest_score(&[2, 7, 7]), Some(1));
         assert_eq!(first_highest_score(&[]), None);
+    }
+
+    /// An absolute `file` and an `_` in the name match literally (B15).
+    #[test]
+    fn absolute_file_and_underscore_match_literally() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"p\"\n").unwrap();
+        std::fs::write(
+            root.join("src/lib.rs"),
+            "pub fn a_b() {}\n\npub fn axb() {}\n",
+        )
+        .unwrap();
+        let root_str = root.to_string_lossy().to_string();
+        crate::core::graph_index::scan(&root_str);
+
+        let abs = root.join("src/lib.rs").to_string_lossy().to_string();
+        let (out, _) = handle("a_b", Some(&abs), None, &root_str);
+        assert!(out.contains("pub fn a_b()"), "{out}");
+        assert!(
+            !out.contains("axb"),
+            "`_` must not act as a wildcard: {out}"
+        );
     }
 }

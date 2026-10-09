@@ -6,7 +6,7 @@ fn dispatch_inner_pre_resolves_paths() {
         "dispatch_inner must resolve paths for registry-dispatched tools"
     );
 
-    for key in ["path", "project_root", "root"] {
+    for key in ["path", "to", "project_root"] {
         assert!(
             dispatch_mod.contains(&format!("\"{key}\"")),
             "dispatch_inner must pre-resolve the '{key}' parameter"
@@ -18,20 +18,16 @@ fn dispatch_inner_pre_resolves_paths() {
 fn registry_tools_use_resolved_path() {
     let registry_tools = [
         (
-            "ctx_tree",
-            include_str!("../../src/tools/registered/ctx_tree.rs"),
+            "sobre_tree",
+            include_str!("../../src/tools/registered/sobre_tree.rs"),
         ),
         (
-            "ctx_outline",
-            include_str!("../../src/tools/registered/ctx_outline.rs"),
+            "sobre_outline",
+            include_str!("../../src/tools/registered/sobre_outline.rs"),
         ),
         (
-            "ctx_review",
-            include_str!("../../src/tools/registered/ctx_review.rs"),
-        ),
-        (
-            "ctx_impact",
-            include_str!("../../src/tools/registered/ctx_impact.rs"),
+            "sobre_review",
+            include_str!("../../src/tools/registered/sobre_review.rs"),
         ),
     ];
     for (name, src) in registry_tools {

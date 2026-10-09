@@ -1,6 +1,6 @@
-//! Multi-store, lossless memory archive (#995 Phase 1).
+//! Multi-store, lossless memory archive (Phase 1).
 //!
-//! Every memory store — facts, history, procedures, patterns — archives the
+//! Every memory store — facts, history, patterns — archives the
 //! items it evicts here *before* dropping them, so capacity management is never
 //! lossy and anything reclaimed can be restored. This is the single archive
 //! subsystem behind [`crate::core::memory_capacity`] and the recall-miss
@@ -20,19 +20,17 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::path::{Path, PathBuf};
 
-/// Retention bound on archive files, kept well above the rehydrate reach so a
-/// recall miss can still find recently-evicted items. Overridable via
+/// Retention bound on archive files. The rehydrate reach equals it, so a recall
+/// miss can find every retained archive.
 const DEFAULT_MAX_ARCHIVE_FILES: usize = 16;
 
 /// Which memory store an archive belongs to. Drives the on-disk path only — the
 /// archive is generic over the item type, so this stays decoupled from the
-/// concrete fact/insight/procedure/pattern structs.
+/// concrete fact and insight structs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MemoryStore {
     Facts,
     History,
-    Procedures,
-    Patterns,
 }
 
 impl MemoryStore {
@@ -40,44 +38,27 @@ impl MemoryStore {
         match self {
             MemoryStore::Facts => "facts",
             MemoryStore::History => "history",
-            MemoryStore::Procedures => "procedures",
-            MemoryStore::Patterns => "patterns",
         }
     }
 
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_lowercase().as_str() {
-            "facts" | "fact" => Some(MemoryStore::Facts),
-            "history" | "insights" => Some(MemoryStore::History),
-            "procedures" | "procedure" | "procs" => Some(MemoryStore::Procedures),
-            "patterns" | "pattern" => Some(MemoryStore::Patterns),
-            _ => None,
-        }
-    }
-
-    /// All stores, for cross-store iteration (restore, reporting).
-    pub fn all() -> [MemoryStore; 4] {
-        [
-            MemoryStore::Facts,
-            MemoryStore::History,
-            MemoryStore::Procedures,
-            MemoryStore::Patterns,
-        ]
+    /// All stores, for cross-store iteration.
+    #[cfg(test)]
+    fn all() -> [MemoryStore; 2] {
+        [MemoryStore::Facts, MemoryStore::History]
     }
 
     /// Subdirectory under `memory/archive`. Facts return `None` (the root).
     fn subdir(self) -> Option<&'static str> {
         match self {
             MemoryStore::Facts => None,
-            other => Some(other.as_str()),
+            MemoryStore::History => Some(MemoryStore::History.as_str()),
         }
     }
 }
 
-/// Tunable archive bounds. `rehydrate_reach` is how many of the newest archives
-/// the recall-miss path scans; it defaults to `max_files` so every retained
-/// archive is actually reachable (closing the pre-#995 16-retained / 4-reachable
-/// gap). Both are overridable via env for ops tuning.
+/// Archive bounds. `rehydrate_reach` is how many of the newest archives the
+/// recall-miss path scans; it equals `max_files` so every retained archive is
+/// reachable.
 #[derive(Debug, Clone, Copy)]
 pub struct ArchiveConfig {
     pub max_files: usize,
@@ -93,22 +74,16 @@ impl Default for ArchiveConfig {
     }
 }
 
-impl ArchiveConfig {}
-
 /// Unified archive envelope for reading every store. The collection is keyed
 /// `items`.
 #[derive(Debug, Deserialize)]
 pub struct ArchiveEnvelope<T> {
-    pub archived_at: DateTime<Utc>,
-    #[serde(default)]
-    pub store: String,
-    #[serde(default)]
-    pub scope: Option<String>,
     pub items: Vec<T>,
 }
 
 /// Borrowed write-side envelope, so archiving never has to clone the evicted
-/// slice. Mirrors [`ArchiveEnvelope`]'s on-disk shape exactly.
+/// slice. It also records `archived_at`, `store` and `scope`; the reader
+/// ([`ArchiveEnvelope`]) takes only `items`.
 #[derive(Serialize)]
 struct ArchiveEnvelopeRef<'a, T: Serialize> {
     archived_at: DateTime<Utc>,
@@ -119,7 +94,7 @@ struct ArchiveEnvelopeRef<'a, T: Serialize> {
 }
 
 fn archive_dir(store: MemoryStore, scope: Option<&str>) -> Result<PathBuf, String> {
-    let base = crate::core::data_dir::lean_ctx_data_dir()?
+    let base = crate::core::data_dir::sobre_data_dir()?
         .join("memory")
         .join("archive");
     let dir = match (store.subdir(), scope) {
@@ -234,14 +209,14 @@ mod tests {
     fn with_temp_data_dir<T>(f: impl FnOnce() -> T) -> T {
         let _lock = crate::core::data_dir::test_env_lock();
         let dir = std::env::temp_dir().join(format!(
-            "lctx-archive-{}-{}",
+            "sobre-archive-{}-{}",
             std::process::id(),
             Utc::now().timestamp_nanos_opt().unwrap_or(0)
         ));
         let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
         let out = f();
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
         out
     }
@@ -294,7 +269,7 @@ mod tests {
     #[test]
     fn facts_use_root_other_stores_are_scoped() {
         with_temp_data_dir(|| {
-            let base = crate::core::data_dir::lean_ctx_data_dir()
+            let base = crate::core::data_dir::sobre_data_dir()
                 .unwrap()
                 .join("memory")
                 .join("archive");
@@ -316,10 +291,10 @@ mod tests {
             for _ in 0..6 {
                 // Distinct filenames require distinct sub-second suffixes; a tiny
                 // sleep guarantees monotonic timestamps on fast machines.
-                archive_items(MemoryStore::Patterns, Some("p"), &items(1), &cfg).unwrap();
+                archive_items(MemoryStore::History, Some("p"), &items(1), &cfg).unwrap();
                 std::thread::sleep(std::time::Duration::from_millis(2));
             }
-            let archives = list_archives(MemoryStore::Patterns, Some("p"));
+            let archives = list_archives(MemoryStore::History, Some("p"));
             assert!(
                 archives.len() <= 3,
                 "prune should bound to max_files, got {}",
@@ -332,13 +307,5 @@ mod tests {
     fn reachable_is_bounded_and_aligns_with_retention_by_default() {
         let cfg = ArchiveConfig::default();
         assert_eq!(cfg.rehydrate_reach, cfg.max_files);
-    }
-
-    #[test]
-    fn store_parse_round_trips() {
-        for store in MemoryStore::all() {
-            assert_eq!(MemoryStore::parse(store.as_str()), Some(store));
-        }
-        assert_eq!(MemoryStore::parse("nope"), None);
     }
 }

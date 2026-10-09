@@ -1,7 +1,7 @@
 //! int8 scalar quantization + SIMD-friendly scoring for embedding vectors.
 //!
 //! Adapted from the TurboQuant approach (RyanCodrai/turbovec, ICLR 2026): a
-//! data-oblivious, training-free, single-pass quantizer. At lean-ctx's scale
+//! data-oblivious, training-free, single-pass quantizer. At sobre's scale
 //! (hundreds of facts × 384-dim MiniLM vectors) the win is twofold:
 //!   1. **4× smaller** on-disk knowledge index (`i8` codes vs `f32`).
 //!   2. **Faster scoring** — the query is rotated once into the codebook domain
@@ -32,11 +32,6 @@ pub struct QuantizedVector {
 }
 
 impl QuantizedVector {
-    #[must_use]
-    pub fn dim(&self) -> usize {
-        self.code.len()
-    }
-
     /// Reconstruct the approximate `f32` vector. Only needed for diagnostics /
     /// migration; the hot path scores against the codes directly via [`dot_quant`].
     #[must_use]
@@ -88,17 +83,17 @@ pub fn dot_quant(query: &[f32], doc: &QuantizedVector) -> f32 {
     }
 
     let mut lanes = [0.0f32; LANES];
-    let mut q_chunks = query.chunks_exact(LANES);
-    let mut c_chunks = doc.code.chunks_exact(LANES);
+    let (q_chunks, q_tail) = query.as_chunks::<LANES>();
+    let (c_chunks, c_tail) = doc.code.as_chunks::<LANES>();
 
-    for (q, c) in q_chunks.by_ref().zip(c_chunks.by_ref()) {
+    for (q, c) in q_chunks.iter().zip(c_chunks) {
         for i in 0..LANES {
             lanes[i] += q[i] * f32::from(c[i]);
         }
     }
 
     let mut tail = 0.0f32;
-    for (q, c) in q_chunks.remainder().iter().zip(c_chunks.remainder()) {
+    for (q, c) in q_tail.iter().zip(c_tail) {
         tail += q * f32::from(*c);
     }
 
@@ -115,17 +110,17 @@ pub fn dot_f32(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len(), "dim mismatch");
 
     let mut lanes = [0.0f32; LANES];
-    let mut a_chunks = a.chunks_exact(LANES);
-    let mut b_chunks = b.chunks_exact(LANES);
+    let (a_chunks, a_tail) = a.as_chunks::<LANES>();
+    let (b_chunks, b_tail) = b.as_chunks::<LANES>();
 
-    for (x, y) in a_chunks.by_ref().zip(b_chunks.by_ref()) {
+    for (x, y) in a_chunks.iter().zip(b_chunks) {
         for i in 0..LANES {
             lanes[i] += x[i] * y[i];
         }
     }
 
     let mut tail = 0.0f32;
-    for (x, y) in a_chunks.remainder().iter().zip(b_chunks.remainder()) {
+    for (x, y) in a_tail.iter().zip(b_tail) {
         tail += x * y;
     }
 

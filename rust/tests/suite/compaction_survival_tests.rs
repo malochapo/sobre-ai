@@ -1,20 +1,18 @@
-use lean_ctx::core::session::SessionState;
+use sobre::core::session::SessionState;
 
 fn make_session_with_data() -> SessionState {
     let mut session = SessionState::default();
     session.id = "test-session-compaction".to_string();
     session.project_root = Some("/home/user/myproject".to_string());
-    session.task = Some(lean_ctx::core::session::TaskInfo {
+    session.task = Some(sobre::core::session::TaskInfo {
         description: "Implement auth module".to_string(),
         intent: None,
-        progress_pct: Some(60),
     });
-    session.decisions.push(lean_ctx::core::session::Decision {
+    session.decisions.push(sobre::core::session::Decision {
         summary: "Use JWT for auth".to_string(),
         rationale: None,
         timestamp: chrono::Utc::now(),
     });
-    session.next_steps = vec!["Write tests".to_string(), "Deploy".to_string()];
     session.stats.total_tool_calls = 42;
     session.stats.total_tokens_saved = 15000;
     session
@@ -28,10 +26,6 @@ fn resume_block_contains_task() {
         block.contains("Implement auth module"),
         "resume block should contain task description"
     );
-    assert!(
-        block.contains("60%"),
-        "resume block should contain progress"
-    );
 }
 
 #[test]
@@ -41,16 +35,6 @@ fn resume_block_contains_decisions() {
     assert!(
         block.contains("Use JWT for auth"),
         "resume block should contain decisions"
-    );
-}
-
-#[test]
-fn resume_block_contains_next_steps() {
-    let session = make_session_with_data();
-    let block = session.build_resume_block();
-    assert!(
-        block.contains("Write tests"),
-        "resume block should contain next steps"
     );
 }
 
@@ -107,7 +91,7 @@ fn resume_block_with_files() {
     let mut session = make_session_with_data();
     session
         .files_touched
-        .push(lean_ctx::core::session::FileTouched {
+        .push(sobre::core::session::FileTouched {
             path: "src/auth.rs".to_string(),
             file_ref: None,
             read_count: 1,
@@ -115,12 +99,11 @@ fn resume_block_with_files() {
             last_mode: "full".to_string(),
             tokens: 100,
             stale: false,
-            context_item_id: None,
             summary: None,
         });
     session
         .files_touched
-        .push(lean_ctx::core::session::FileTouched {
+        .push(sobre::core::session::FileTouched {
             path: "src/main.rs".to_string(),
             file_ref: None,
             read_count: 1,
@@ -128,7 +111,6 @@ fn resume_block_with_files() {
             last_mode: "full".to_string(),
             tokens: 50,
             stale: false,
-            context_item_id: None,
             summary: None,
         });
     let block = session.build_resume_block();
@@ -145,23 +127,10 @@ fn resume_block_with_files() {
 #[test]
 fn session_resume_action() {
     let mut session = make_session_with_data();
-    let result = lean_ctx::tools::ctx_session::handle(
-        &mut session,
-        &[],
-        "resume",
-        None,
-        None,
-        lean_ctx::tools::ctx_session::SessionToolOptions {
-            format: None,
-            path: None,
-            write: false,
-            privacy: None,
-            terse: None,
-        },
-    );
+    let result = sobre::tools::sobre_session::handle(&mut session, "resume", None, None);
     assert!(
         result.contains("SESSION RESUME"),
-        "ctx_session resume should return resume block"
+        "sobre_session resume should return resume block"
     );
     assert!(result.contains("Implement auth module"));
 }

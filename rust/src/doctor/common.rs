@@ -14,7 +14,7 @@ pub(super) fn human_bytes(bytes: u64) -> String {
     }
 }
 
-/// Abbreviate the user's `$HOME` to `~` wherever it appears in `text` (#437).
+/// Abbreviate the user's `$HOME` to `~` wherever it appears in `text`.
 /// Doctor output otherwise mixes `/home/<user>/…` and `~/…`, which is noisy and
 /// forces users to redact their username before pasting a report. Matches both
 /// the native and the forward-slash spelling of the home prefix; non-home
@@ -38,7 +38,7 @@ pub(super) fn tildify_home(text: &str) -> String {
 
 /// Render a single path for doctor output: `~` for `$HOME`, forward slashes, and
 /// the home prefix matched only on a component boundary (so `/home/foo` never
-/// turns `/home/foobar` into `~bar`). (#437)
+/// turns `/home/foobar` into `~bar`).
 pub(super) fn display_user_path(path: &std::path::Path) -> String {
     let normalized = crate::core::protocol::display_path(&path.to_string_lossy());
     let Some(home) = dirs::home_dir() else {
@@ -64,18 +64,16 @@ pub(super) fn print_check(outcome: &Outcome) {
     } else {
         format!("{RED}✗{RST}")
     };
-    println!("  {mark}  {}", tildify_home(&outcome.line));
+    crate::outln!("  {mark}  {}", tildify_home(&outcome.line));
 }
 
 pub(super) fn path_in_path_env() -> bool {
     if let Ok(path) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path) {
-            if dir.join("lean-ctx").is_file() {
+            if dir.join("sobre").is_file() {
                 return true;
             }
-            if cfg!(windows)
-                && (dir.join("lean-ctx.exe").is_file() || dir.join("lean-ctx.cmd").is_file())
-            {
+            if cfg!(windows) && dir.join("sobre.exe").is_file() {
                 return true;
             }
         }
@@ -83,20 +81,16 @@ pub(super) fn path_in_path_env() -> bool {
     false
 }
 
-pub(super) fn resolve_lean_ctx_binary() -> Option<PathBuf> {
+pub(super) fn resolve_sobre_binary() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("PATH") {
         for dir in std::env::split_paths(&path) {
             if cfg!(windows) {
-                let exe = dir.join("lean-ctx.exe");
+                let exe = dir.join("sobre.exe");
                 if exe.is_file() {
                     return Some(exe);
                 }
-                let cmd = dir.join("lean-ctx.cmd");
-                if cmd.is_file() {
-                    return Some(cmd);
-                }
             } else {
-                let bin = dir.join("lean-ctx");
+                let bin = dir.join("sobre");
                 if bin.is_file() {
                     return Some(bin);
                 }
@@ -106,11 +100,11 @@ pub(super) fn resolve_lean_ctx_binary() -> Option<PathBuf> {
     None
 }
 
-pub(super) fn lean_ctx_version_from_path() -> Outcome {
-    let resolved = resolve_lean_ctx_binary();
+pub(super) fn sobre_version_from_path() -> Outcome {
+    let resolved = resolve_sobre_binary();
     let bin = resolved
         .clone()
-        .unwrap_or_else(|| std::env::current_exe().unwrap_or_else(|_| "lean-ctx".into()));
+        .unwrap_or_else(|| std::env::current_exe().unwrap_or_else(|_| "sobre".into()));
 
     let v = env!("CARGO_PKG_VERSION");
     let note = match std::env::current_exe() {
@@ -119,112 +113,8 @@ pub(super) fn lean_ctx_version_from_path() -> Outcome {
     };
     Outcome {
         ok: true,
-        line: format!("{BOLD}lean-ctx version{RST}  {WHITE}lean-ctx {v}{RST}  {note}"),
+        line: format!("{BOLD}sobre version{RST}  {WHITE}sobre {v}{RST}  {note}"),
     }
-}
-
-pub(super) fn rc_contains_lean_ctx(path: &std::path::Path) -> bool {
-    match std::fs::read_to_string(path) {
-        Ok(s) => s.contains("lean-ctx"),
-        Err(_) => false,
-    }
-}
-
-pub(super) fn has_pipe_guard_in_content(content: &str) -> bool {
-    content.contains("! -t 1")
-        || content.contains("isatty stdout")
-        || content.contains("IsOutputRedirected")
-}
-
-pub(super) fn rc_references_shell_hook(content: &str) -> bool {
-    // Match any sourced hook file, not just the default `lean-ctx/` parent:
-    // with LEAN_CTX_CONFIG_DIR the rc block references e.g. `custom/shell-hook.bash`.
-    content.contains("shell-hook.")
-}
-
-pub(super) fn rc_has_pipe_guard(path: &std::path::Path) -> bool {
-    match std::fs::read_to_string(path) {
-        Ok(s) => {
-            if has_pipe_guard_in_content(&s) {
-                return true;
-            }
-            if rc_references_shell_hook(&s) {
-                let dirs_to_check = hook_dirs();
-                for dir in &dirs_to_check {
-                    for ext in &["zsh", "bash", "fish", "ps1"] {
-                        let hook = dir.join(format!("shell-hook.{ext}"));
-                        if let Ok(h) = std::fs::read_to_string(&hook)
-                            && has_pipe_guard_in_content(&h)
-                        {
-                            return true;
-                        }
-                    }
-                }
-            }
-            false
-        }
-        Err(_) => false,
-    }
-}
-
-pub(super) fn hook_dirs() -> Vec<std::path::PathBuf> {
-    let mut dirs = Vec::new();
-    // Shell hooks are written to the *config* dir (`lean-ctx init`), which is
-    // relocatable via LEAN_CTX_CONFIG_DIR — without it the pipe-guard check
-    // reads a hook location the installer never used and reports a false
-    // "pipe guard missing" on every custom-config-dir install.
-    if let Ok(d) = crate::core::paths::config_dir() {
-        dirs.push(d);
-    }
-    if let Ok(d) = crate::core::data_dir::lean_ctx_data_dir()
-        && !dirs.contains(&d)
-    {
-        dirs.push(d);
-    }
-    dirs
-}
-
-pub(super) fn is_active_shell_impl(
-    rc_name: &str,
-    shell: &str,
-    is_windows: bool,
-    is_powershell: bool,
-) -> bool {
-    match rc_name {
-        "~/.zshrc" => shell.contains("zsh"),
-        "~/.bashrc" => {
-            // On Windows, .bashrc is only relevant when explicitly running
-            // inside Git Bash (not PowerShell, cmd, or other Windows shells).
-            // Git Bash sets $SHELL to bash.exe system-wide, which makes $SHELL
-            // unreliable on Windows. We also check that the user is NOT in
-            // PowerShell (PSModulePath) and NOT in plain cmd (PROMPT).
-            if is_windows {
-                if is_powershell {
-                    return false;
-                }
-                // Even without PSModulePath, $SHELL containing "bash" on Windows
-                // is unreliable (Git Bash sets it globally). Only flag if running
-                // from an actual bash interactive session (BASH_VERSION is set).
-                return std::env::var("BASH_VERSION").is_ok();
-            }
-            shell.contains("bash") || shell.is_empty()
-        }
-        "~/.config/fish/config.fish" => shell.contains("fish"),
-        _ => true,
-    }
-}
-
-/// Detect whether we are running inside a PowerShell session on Windows.
-/// Git Bash may set `$SHELL` to bash.exe system-wide, so `$SHELL` alone
-/// is not sufficient — we also need to rule out PowerShell as the actual
-/// running host process.
-pub(super) fn is_powershell_session() -> bool {
-    std::env::var("PSModulePath").is_ok()
-}
-
-pub(super) fn is_active_shell(rc_name: &str) -> bool {
-    let shell = std::env::var("SHELL").unwrap_or_default();
-    is_active_shell_impl(rc_name, &shell, cfg!(windows), is_powershell_session())
 }
 
 pub(super) struct McpLocation {
@@ -274,37 +164,21 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
         },
     ];
 
-    #[cfg(unix)]
     {
-        let zed_cfg = home.join(".config").join("zed").join("settings.json");
+        let path = crate::core::editor_registry::zed_settings_path(home);
         locations.push(McpLocation {
             name: "Zed",
-            display: "~/.config/zed/settings.json".into(),
-            path: zed_cfg,
+            display: path.display().to_string(),
+            path,
         });
     }
 
     {
-        #[cfg(unix)]
-        let opencode_cfg = home.join(".config").join("opencode").join("opencode.json");
-        #[cfg(unix)]
-        let opencode_display = "~/.config/opencode/opencode.json";
-
-        #[cfg(windows)]
-        let opencode_cfg = if let Ok(appdata) = std::env::var("APPDATA") {
-            std::path::PathBuf::from(appdata)
-                .join("opencode")
-                .join("opencode.json")
-        } else {
-            home.join(".config").join("opencode").join("opencode.json")
-        };
-        #[cfg(windows)]
-        let opencode_display = "%APPDATA%/opencode/opencode.json";
-
+        let path = crate::core::editor_registry::opencode_config_path(home);
         locations.push(McpLocation {
             name: "OpenCode",
-            display: opencode_display.into(),
-            path: opencode_cfg,
+            display: path.display().to_string(),
+            path,
         });
     }
 
@@ -359,10 +233,10 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
     locations
 }
 
-pub(super) fn has_lean_ctx_mcp_entry(content: &str) -> bool {
+pub(super) fn has_sobre_mcp_entry(content: &str) -> bool {
     // Parse as JSONC: editor config files (VS Code settings.json / mcp.json,
     // Cursor, Windsurf, …) commonly contain comments and trailing commas which
-    // strict JSON rejects. See issue #311.
+    // strict JSON rejects.
     if let Ok(json) = crate::core::jsonc::parse_jsonc(content) {
         // Known container keys across editors that hold a map of MCP servers:
         //   mcpServers       — most agents (Cursor, Claude, Windsurf, …)
@@ -370,41 +244,32 @@ pub(super) fn has_lean_ctx_mcp_entry(content: &str) -> bool {
         //   context_servers  — Zed settings.json
         for key in ["mcpServers", "servers", "context_servers"] {
             if let Some(servers) = json.get(key).and_then(|v| v.as_object())
-                && servers.contains_key("lean-ctx")
+                && servers.contains_key("sobre")
             {
                 return true;
             }
         }
-        // mcp.servers.lean-ctx (some multi-level configs)
-        if let Some(servers) = json
-            .get("mcp")
-            .and_then(|v| v.get("servers"))
-            .and_then(|v| v.as_object())
-            && servers.contains_key("lean-ctx")
-        {
-            return true;
-        }
-        // mcp.lean-ctx — OpenCode's schema (https://opencode.ai/config.json)
-        // nests servers DIRECTLY under "mcp", no "servers" level (GH #686).
+        // mcp.sobre — OpenCode's schema (https://opencode.ai/config.json)
+        // nests servers DIRECTLY under "mcp", no "servers" level.
         if let Some(servers) = json.get("mcp").and_then(|v| v.as_object())
-            && servers.contains_key("lean-ctx")
+            && servers.contains_key("sobre")
         {
             return true;
         }
-        // Parsed cleanly but no lean-ctx entry under any known key.
+        // Parsed cleanly but no sobre entry under any known key.
         return false;
     }
     // Unparseable even as JSONC: fall back to a substring heuristic.
-    content.contains("lean-ctx")
+    content.contains("sobre")
 }
 
-pub(super) fn lean_ctx_mcp_location_names(
+pub(super) fn sobre_mcp_location_names(
     home: &std::path::Path,
 ) -> std::collections::BTreeSet<&'static str> {
     let mut names = std::collections::BTreeSet::new();
     for loc in mcp_config_locations(home) {
         if let Ok(content) = std::fs::read_to_string(&loc.path)
-            && has_lean_ctx_mcp_entry(&content)
+            && has_sobre_mcp_entry(&content)
         {
             names.insert(loc.name);
         }
@@ -417,7 +282,7 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
 
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+    let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
 
     let Ok(mut stream) = TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout())
     else {
@@ -441,10 +306,10 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
 }
 
 /// Fetches the proxy's live upstreams from the authenticated `/status` endpoint.
-/// Returns `(anthropic, openai, gemini)`, or `None` if unreachable or
-/// the response lacks the `upstreams` block. Drives the #449 drift check.
-pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)> {
-    let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
+/// Returns `(anthropic, openai)`, or `None` if unreachable or
+/// the response lacks the `upstreams` block. Drives the drift check.
+pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String)> {
+    let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
     let url = format!("http://127.0.0.1:{port}/status");
     let resp = ureq::get(&url)
         .header("Authorization", &format!("Bearer {token}"))
@@ -456,36 +321,7 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String, String)
     Some((
         up.get("anthropic")?.as_str()?.to_string(),
         up.get("openai")?.as_str()?.to_string(),
-        up.get("gemini")?.as_str()?.to_string(),
     ))
-}
-
-/// How Claude Code currently receives the full lean-ctx instructions.
-///
-/// Single source of truth for the main doctor check *and* `doctor integrations`
-/// (GH #396: both previously demanded the retired `~/.claude/rules/lean-ctx.md`,
-/// which `setup` deletes since the v3 layout — GL #555).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ClaudeInstructionsState {
-    /// CLAUDE.md block present.
-    Block,
-    /// Nothing installed — Claude only sees the 2048-char-capped MCP instructions.
-    Missing,
-}
-
-impl ClaudeInstructionsState {
-    pub(super) fn ok(self) -> bool {
-        !matches!(self, Self::Missing)
-    }
-}
-
-pub(super) fn claude_instructions_state(home: &std::path::Path) -> ClaudeInstructionsState {
-    use ClaudeInstructionsState as S;
-
-    let claude_md = crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md");
-    let has_block = std::fs::read_to_string(&claude_md)
-        .is_ok_and(|c| c.contains(crate::hooks::agents::CLAUDE_MD_BLOCK_START));
-    if has_block { S::Block } else { S::Missing }
 }
 
 pub(super) fn claude_binary_exists() -> bool {
@@ -507,37 +343,33 @@ pub(super) fn claude_binary_exists() -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{display_user_path, has_lean_ctx_mcp_entry, tildify_home};
+    use super::{display_user_path, has_sobre_mcp_entry, tildify_home};
     use std::path::Path;
 
-    // GH #686: OpenCode's schema (https://opencode.ai/config.json) nests
-    // servers DIRECTLY under "mcp" — `mcp.lean-ctx`, no "servers" level. The
-    // doctor used to only walk `mcp.servers.lean-ctx` and reported a working
-    // install as missing.
+    // OpenCode's schema (https://opencode.ai/config.json) nests
+    // servers DIRECTLY under "mcp" — `mcp.sobre`, no "servers" level.
     #[test]
     fn opencode_direct_mcp_child_is_recognized() {
         let opencode = r#"{
             "$schema": "https://opencode.ai/config.json",
             "mcp": {
-                "lean-ctx": { "command": ["/usr/bin/lean-ctx"], "enabled": true, "type": "local" }
+                "sobre": { "command": ["/usr/bin/sobre"], "enabled": true, "type": "local" }
             }
         }"#;
-        assert!(has_lean_ctx_mcp_entry(opencode));
+        assert!(has_sobre_mcp_entry(opencode));
     }
 
     #[test]
-    fn mcp_servers_nested_form_still_recognized() {
-        let nested = r#"{ "mcp": { "servers": { "lean-ctx": { "command": "lean-ctx" } } } }"#;
-        assert!(has_lean_ctx_mcp_entry(nested));
-        let flat = r#"{ "mcpServers": { "lean-ctx": { "command": "lean-ctx" } } }"#;
-        assert!(has_lean_ctx_mcp_entry(flat));
+    fn mcp_servers_form_recognized() {
+        let flat = r#"{ "mcpServers": { "sobre": { "command": "sobre" } } }"#;
+        assert!(has_sobre_mcp_entry(flat));
     }
 
     #[test]
     fn unrelated_mcp_children_are_not_a_match() {
         // A different server directly under "mcp" must not count as ours.
         let other = r#"{ "mcp": { "some-other-server": { "command": "x" } } }"#;
-        assert!(!has_lean_ctx_mcp_entry(other));
+        assert!(!has_sobre_mcp_entry(other));
     }
 
     #[test]
@@ -552,8 +384,8 @@ mod tests {
     #[test]
     fn display_user_path_leaves_non_home_paths() {
         assert_eq!(
-            display_user_path(Path::new("/opt/leanctx/bin")),
-            "/opt/leanctx/bin"
+            display_user_path(Path::new("/opt/sobre/bin")),
+            "/opt/sobre/bin"
         );
     }
 
@@ -589,34 +421,5 @@ mod tests {
                 "home leaked: {shown}"
             );
         }
-    }
-
-    #[test]
-    fn claude_instructions_state_detects_pointer_block() {
-        // GH #549: the check must recognise the pointer block the installer
-        // actually writes (delimited by `<!-- lean-ctx -->`), not the retired
-        // full-rules marker — otherwise it falsely reports the block missing.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path();
-        let dir = crate::core::editor_registry::claude_state_dir(home);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("CLAUDE.md"),
-            format!(
-                "# notes\n\n{}\n## lean-ctx\n{}\n",
-                crate::hooks::agents::CLAUDE_MD_BLOCK_START,
-                crate::core::rules_canonical::AGENTS_BLOCK_END
-            ),
-        )
-        .unwrap();
-
-        let state = super::claude_instructions_state(home);
-        assert_ne!(
-            state,
-            super::ClaudeInstructionsState::Missing,
-            "doctor must detect the CLAUDE.md pointer block (#549)"
-        );
-        assert!(state.ok(), "a detected block must be a healthy state");
     }
 }

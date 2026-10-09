@@ -2,7 +2,15 @@ name: Release
 
 # push to main      → build every target, publish a pre-release vX.Y.Z-rc.N
 # tag vX.Y.Z on main → build every target, publish the release vX.Y.Z
-# X.Y.Z is the version in rust/Cargo.toml.
+# X.Y.Z is the version in rust/Cargo.toml. Nothing is published unless CI
+# (lint, and the tests on Linux, macOS and Windows) passes on that commit.
+# The notes added to every release are docs/release-notes.md.
+#
+# Two builds: `sobre-<target>` (default features) and `sobre-dense-<target>`
+# (`--features dense`: local embeddings). The dense build loads ONNX Runtime
+# at run time, which a static musl binary cannot do, so on Linux it targets
+# glibc 2.28 (the floor of Microsoft's own ONNX Runtime builds). Intel macOS
+# has no dense build: Microsoft ships no ONNX Runtime for it.
 on:
   push:
     branches: [main]
@@ -19,8 +27,13 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
   version:
     name: Resolve version
+    needs: ci
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.v.outputs.tag }}
@@ -47,68 +60,86 @@ jobs:
               echo "::error::v$version is already released; bump the version in rust/Cargo.toml"
               exit 1
             fi
-            echo "tag=v$version-rc.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            # rc.N counts this version's pre-releases: rc.1, rc.2, …
+            n="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
+              --jq "[.[] | select(.tagName | startswith(\"v$version-rc.\"))] | length")"
+            echo "tag=v$version-rc.$((n + 1))" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
   build:
-    name: Build ${{ matrix.target }}
+    name: Build ${{ matrix.name }}
     needs: version
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
-          - { target: x86_64-unknown-linux-musl, os: ubuntu-latest }
-          - { target: aarch64-unknown-linux-musl, os: ubuntu-latest }
-          - { target: x86_64-apple-darwin, os: macos-latest }
-          - { target: aarch64-apple-darwin, os: macos-latest }
-          - { target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { name: sobre-x86_64-unknown-linux-musl, target: x86_64-unknown-linux-musl, os: ubuntu-latest }
+          - { name: sobre-aarch64-unknown-linux-musl, target: aarch64-unknown-linux-musl, os: ubuntu-latest }
+          - { name: sobre-x86_64-apple-darwin, target: x86_64-apple-darwin, os: macos-latest }
+          - { name: sobre-aarch64-apple-darwin, target: aarch64-apple-darwin, os: macos-latest }
+          - { name: sobre-x86_64-pc-windows-msvc, target: x86_64-pc-windows-msvc, os: windows-latest }
+          - { name: sobre-dense-x86_64-unknown-linux-gnu, target: x86_64-unknown-linux-gnu, zig_target: x86_64-unknown-linux-gnu.2.28, os: ubuntu-latest, features: dense }
+          - { name: sobre-dense-aarch64-unknown-linux-gnu, target: aarch64-unknown-linux-gnu, zig_target: aarch64-unknown-linux-gnu.2.28, os: ubuntu-latest, features: dense }
+          - { name: sobre-dense-aarch64-apple-darwin, target: aarch64-apple-darwin, os: macos-latest, features: dense }
+          - { name: sobre-dense-x86_64-pc-windows-msvc, target: x86_64-pc-windows-msvc, os: windows-latest, features: dense }
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Install zig (Linux musl cross builds)
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        working-directory: rust
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+      # cargo-zigbuild >= 0.23 drops the `--fix-cortex-a53-843419` linker flag
+      # rustc passes for aarch64, which zig's linker rejects.
+      - name: Install zig and cargo-zigbuild (Linux cross builds)
         if: runner.os == 'Linux'
         run: |
-          pip3 install -q ziglang==0.13.0
+          pip3 install -q ziglang==0.16.0
           echo "$(python3 -c 'import ziglang, os; print(os.path.dirname(ziglang.__file__))')" >> "$GITHUB_PATH"
-      - uses: taiki-e/install-action@74e87cbfa15a59692b158178d8905a61bf6fca95 # v2
-        if: runner.os == 'Linux'
-        with:
-          tool: cargo-zigbuild
+          cargo install --locked cargo-zigbuild@0.23.4
       - name: Build
         working-directory: rust
         shell: bash
+        env:
+          FEATURES: ${{ matrix.features }}
+          ZIG_TARGET: ${{ matrix.zig_target || matrix.target }}
         run: |
+          flags=(--release --locked)
+          [[ -n "$FEATURES" ]] && flags+=(--features "$FEATURES")
           if [[ "$RUNNER_OS" == "Linux" ]]; then
-            cargo zigbuild --release --locked --target ${{ matrix.target }}
+            cargo zigbuild "${flags[@]}" --target "$ZIG_TARGET"
           else
-            cargo build --release --locked --target ${{ matrix.target }}
+            cargo build "${flags[@]}" --target ${{ matrix.target }}
           fi
       - name: Package
         shell: bash
         run: |
-          name="lean-ctx-${{ matrix.target }}"
+          name="${{ matrix.name }}"
           dir="rust/target/${{ matrix.target }}/release"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            7z a "$name.zip" "./$dir/lean-ctx.exe"
+            7z a "$name.zip" "./$dir/sobre.exe"
           else
-            tar czf "$name.tar.gz" -C "$dir" lean-ctx
+            tar czf "$name.tar.gz" -C "$dir" sobre
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: lean-ctx-${{ matrix.target }}
-          path: lean-ctx-${{ matrix.target }}.*
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}.*
 
   publish:
     name: Publish ${{ needs.version.outputs.tag }}
     needs: [version, build]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: docs/release-notes.md
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           merge-multiple: true
@@ -119,7 +150,7 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
-          sha256sum lean-ctx-* > SHA256SUMS
-          flags=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes)
+          sha256sum sobre-* > SHA256SUMS
+          flags=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes --notes-file docs/release-notes.md)
           [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
-          gh release create "$TAG" "${flags[@]}" lean-ctx-* SHA256SUMS
+          gh release create "$TAG" "${flags[@]}" sobre-* SHA256SUMS

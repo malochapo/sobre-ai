@@ -1,13 +1,11 @@
-//! Environment diagnostics for lean-ctx installation and integration.
+//! Environment diagnostics for sobre installation and integration.
 
 mod checks;
 mod common;
-mod deprecations;
 mod fix;
 mod integrations;
 mod lint_context;
 mod overhead;
-mod report;
 mod workspace_scope;
 
 #[allow(clippy::wildcard_imports)]
@@ -35,7 +33,7 @@ pub(super) struct Outcome {
 }
 
 /// Accumulates doctor checks so the rendered ✓/✗ list and the summary tally can
-/// never diverge (#433): every scored check is counted exactly once via
+/// never diverge: every scored check is counted exactly once via
 /// [`Scoreboard::check`]; only explicitly-optional advisories (LSP, "not
 /// configured" notes) use [`Scoreboard::info`], which renders without counting.
 /// The old hand-maintained `passed`/`effective_total` pair drifted whenever a
@@ -45,6 +43,9 @@ pub(super) struct Outcome {
 struct Scoreboard {
     passed: u32,
     total: u32,
+    /// `--json`: lines are collected for one JSON document instead of printed.
+    json: bool,
+    entries: Vec<serde_json::Value>,
 }
 
 impl Scoreboard {
@@ -54,61 +55,86 @@ impl Scoreboard {
         if outcome.ok {
             self.passed += 1;
         }
-        print_check(outcome);
+        self.render(outcome, true);
+    }
+
+    fn render(&mut self, outcome: &Outcome, scored: bool) {
+        if self.json {
+            self.entries.push(serde_json::json!({
+                "ok": outcome.ok,
+                "scored": scored,
+                "check": crate::core::theme::strip_ansi(&tildify_home(&outcome.line)),
+            }));
+        } else {
+            print_check(outcome);
+        }
+    }
+
+    /// A line that is neither a check nor advice: printed in text mode only.
+    fn note(&self, line: &str) {
+        if !self.json {
+            crate::outln!("{line}");
+        }
     }
 
     /// An optional/advisory line: render it but never count it toward the score
-    /// (LSP servers, "no providers configured", MCP bridges, plan-mode presence).
+    /// (LSP servers, "no providers configured", MCP bridges).
     ///
     /// Deliberately a method (not a free function) so every rendered line flows
     /// through the board and each call site has to choose `check` vs `info` — the
     /// `&self` is unused by design, which is the whole point.
-    #[allow(clippy::unused_self)]
-    fn info(&self, outcome: &Outcome) {
-        print_check(outcome);
+    fn info(&mut self, outcome: &Outcome) {
+        self.render(outcome, false);
     }
 }
 
 /// Run diagnostic checks and print colored results to stdout.
 /// Renders the full diagnostics board and returns how many checks need
-/// attention, so `lean-ctx doctor` can exit non-zero when something is wrong
+/// attention, so `sobre doctor` can exit non-zero when something is wrong
 /// (a health gate must fail loudly, not silently exit 0).
-pub fn run() -> u32 {
-    let mut board = Scoreboard::default();
+pub fn run(json: bool) -> u32 {
+    let mut board = Scoreboard {
+        json,
+        ..Scoreboard::default()
+    };
 
-    println!("{BOLD}{WHITE}lean-ctx doctor{RST}  {DIM}diagnostics{RST}\n");
+    board.note(&format!(
+        "{BOLD}{WHITE}sobre doctor{RST}  {DIM}diagnostics{RST}"
+    ));
+    board.note(&format!("  {}", summary_line()));
+    board.note(&format!("  {}\n", debug_log_line()));
 
-    // 1) Binary on PATH
-    let path_bin = resolve_lean_ctx_binary();
+    // Binary on PATH
+    let path_bin = resolve_sobre_binary();
     let also_in_path_dirs = path_in_path_env();
     let bin_ok = path_bin.is_some() || also_in_path_dirs;
     let bin_line = if let Some(p) = path_bin {
-        format!("{BOLD}lean-ctx in PATH{RST}  {WHITE}{}{RST}", p.display())
+        format!("{BOLD}sobre in PATH{RST}  {WHITE}{}{RST}", p.display())
     } else if also_in_path_dirs {
         format!(
-            "{BOLD}lean-ctx in PATH{RST}  {YELLOW}found via PATH walk (not resolved by `command -v`){RST}"
+            "{BOLD}sobre in PATH{RST}  {YELLOW}found via PATH walk (not resolved by `command -v`){RST}"
         )
     } else {
-        format!("{BOLD}lean-ctx in PATH{RST}  {RED}not found{RST}")
+        format!("{BOLD}sobre in PATH{RST}  {RED}not found{RST}")
     };
     board.check(&Outcome {
         ok: bin_ok,
         line: bin_line,
     });
 
-    // 2) Version from PATH binary
+    // Version from PATH binary
     let ver = if bin_ok {
-        lean_ctx_version_from_path()
+        sobre_version_from_path()
     } else {
         Outcome {
             ok: false,
-            line: format!("{BOLD}lean-ctx version{RST}  {RED}skipped (binary not in PATH){RST}"),
+            line: format!("{BOLD}sobre version{RST}  {RED}skipped (binary not in PATH){RST}"),
         }
     };
     board.check(&ver);
 
-    // 3) data directory (respects LEAN_CTX_DATA_DIR)
-    let lean_dir = crate::core::data_dir::lean_ctx_data_dir().ok();
+    // Data directory (respects SOBRE_DATA_DIR)
+    let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
     let dir_outcome = match &lean_dir {
         Some(p) if p.is_dir() => Outcome {
             ok: true,
@@ -131,52 +157,41 @@ pub fn run() -> u32 {
     };
     board.check(&dir_outcome);
 
-    // 4) stats.json + size
-    let stats_path = lean_dir.as_ref().map(|d| d.join("stats.json"));
-    let stats_outcome = match stats_path.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
-        Some(m) if m.is_file() => {
-            let size = m.len();
-            let path_display = if let Some(p) = stats_path.as_ref() {
-                p.display().to_string()
-            } else {
-                String::new()
-            };
-            Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}stats.json{RST}  {GREEN}exists{RST}  {WHITE}{size} bytes{RST}  {DIM}{path_display}{RST}",
-                ),
-            }
-        }
-        Some(_m) => {
-            let path_display = if let Some(p) = stats_path.as_ref() {
-                p.display().to_string()
-            } else {
-                String::new()
-            };
-            Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}stats.json{RST}  {RED}not a file{RST}  {DIM}{path_display}{RST}",
-                ),
-            }
-        }
+    // Usage ledger + size (missing is OK: it appears with the first
+    // compression)
+    let usage_path = lean_dir.as_ref().map(|d| d.join("usage.jsonl"));
+    let shown = usage_path
+        .as_ref()
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+    let usage_outcome = match usage_path.as_ref().and_then(|p| std::fs::metadata(p).ok()) {
+        Some(m) if m.is_file() => Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}usage.jsonl{RST}  {GREEN}exists{RST}  {WHITE}{} bytes{RST}  {DIM}{shown}{RST}",
+                m.len()
+            ),
+        },
+        Some(_) => Outcome {
+            ok: false,
+            line: format!("{BOLD}usage.jsonl{RST}  {RED}not a file{RST}  {DIM}{shown}{RST}"),
+        },
         None => Outcome {
             ok: true,
-            line: match &stats_path {
-                Some(p) => format!(
-                    "{BOLD}stats.json{RST}  {YELLOW}not yet created{RST}  {DIM}(will appear after first use) {}{RST}",
-                    p.display()
-                ),
-                None => format!("{BOLD}stats.json{RST}  {RED}could not resolve path{RST}"),
+            line: if usage_path.is_some() {
+                format!(
+                    "{BOLD}usage.jsonl{RST}  {YELLOW}not yet created{RST}  {DIM}(appears with the first compression) {shown}{RST}"
+                )
+            } else {
+                format!("{BOLD}usage.jsonl{RST}  {RED}could not resolve path{RST}")
             },
         },
     };
-    board.check(&stats_outcome);
+    board.check(&usage_outcome);
 
-    // 5) config.toml (missing is OK). It lives in the CONFIG dir
-    // ($XDG_CONFIG_HOME/lean-ctx), resolved through Config::path() to match
-    // the loader's logic (#435).
+    // config.toml (missing is OK). It lives in the CONFIG dir
+    // ($XDG_CONFIG_HOME/sobre), resolved through Config::path() to match
+    // the loader's logic.
     let config_path = crate::core::config::Config::path();
     let config_outcome = match &config_path {
         Some(p) => match std::fs::metadata(p) {
@@ -209,62 +224,37 @@ pub fn run() -> u32 {
     };
     board.check(&config_outcome);
 
-    // 5b) Shell gate (effective runtime view + silent-parse-error trap, #341)
-    let gate_outcome = shell_gate_outcome();
-    board.check(&gate_outcome);
+    // Silent config parse error trap
+    let parse_outcome = config_parse_outcome();
+    board.check(&parse_outcome);
 
-    // 5b2) Path jail (effective state + dead allow_paths entries, GH #392)
-    let path_jail = path_jail_outcome();
-    board.check(&path_jail);
+    // Search roots that never resolve
+    let search_roots = search_roots_outcome();
+    board.check(&search_roots);
 
-    // 5b3b) Secret/.env redaction — the exfiltration-defense plane, independent
-    // of the jail + shell gating above (#507).
-    let secret_detection = secret_detection_outcome();
-    board.check(&secret_detection);
-
-    // 5b3c) Managed addon binaries (GH #725): receipt path + sha256 pin +
-    // revocation, so binhash-gate refusals surface here instead of at first
-    // tool call. Silent when nothing is managed.
-
-    // 5b3d) Managed ONNX Runtime (GH #732): present + readable on
+    // Managed ONNX Runtime: present + readable on
     // embedding-enabled builds. Silent when not provisioned (opt-in).
     if let Some(managed_ort) = managed_ort_outcome() {
         board.check(&managed_ort);
     }
 
-    // 5b4) Cognition v2 activation (science subsystems wired + active)
-    let cognition = cognition_activity_outcome();
-    board.check(&cognition);
-
-    // 5c) Compact-format passthrough (preserve already-compact TOON output, #342)
-    let passthrough_outcome = compact_format_passthrough_outcome();
-    board.check(&passthrough_outcome);
-
-    // 6) Proxy upstreams
+    // Proxy upstreams
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
 
-    // 7) Shell aliases
-    let aliases = shell_aliases_outcome();
-    board.check(&aliases);
-
-    // 7b) Agent aliases opt-out
-    let agent_aliases = agent_aliases_outcome();
-    board.check(&agent_aliases);
-
-    // 8) MCP
+    // MCP
     let mcp = mcp_config_outcome();
     board.check(&mcp);
     let user_scope_mcp_locations = dirs::home_dir()
-        .map(|home| lean_ctx_mcp_location_names(&home))
+        .map(|home| sobre_mcp_location_names(&home))
         .unwrap_or_default();
 
-    // 7b) WSL2 + VS Code: surface the upstream first-call invoke race (GH #669)
+    // WSL2 + VS Code: surface the upstream first-call invoke race
     if let Some(wsl_hint) = wsl_vscode_mcp_outcome() {
         board.check(&wsl_hint);
     }
 
-    // 8) Workspace-scope MCP (optional; only when a project-local config exists)
+    // Workspace-scope MCP (optional; only when a project-local config exists)
     let workspace_scope = workspace_scope::workspace_scope_outcome(&user_scope_mcp_locations);
     if let Some(ref ws) = workspace_scope {
         board.check(ws);
@@ -277,98 +267,53 @@ pub fn run() -> u32 {
     {
         let lines: Vec<&str> = contents.lines().collect();
         if lines.len() >= 5 {
-            println!(
-                "  {YELLOW}⚠{RST}  Crash-loop log: {} recent restarts  {DIM}({}){RST}",
-                lines.len(),
-                display_user_path(&log_path)
-            );
+            board.info(&Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Crash-loop log{RST}  {YELLOW}{} recent restarts{RST}  {DIM}({}){RST}",
+                    lines.len(),
+                    display_user_path(&log_path)
+                ),
+            });
         }
     }
 
-    // Plan mode (advisory)
-    let plan_outcomes = plan_mode_outcomes();
-    for plan_check in &plan_outcomes {
-        board.info(plan_check);
-    }
-
-    // 9) Session state (project_root + shell_cwd)
+    // Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
     board.check(&session_outcome);
 
-    // 10) Docker env vars (optional, only in containers)
-    let docker_outcomes = docker_env_outcomes();
-    for docker_check in &docker_outcomes {
-        board.check(docker_check);
-    }
-
-    // 12) Build integrity (canary / origin check)
-    let integrity = crate::core::integrity::check();
-    let integrity_ok = integrity.seed_ok && integrity.origin_ok;
-    let integrity_line = if integrity_ok {
-        format!(
-            "{BOLD}Build origin{RST}  {GREEN}official{RST}  {DIM}{}{RST}",
-            integrity.repo
-        )
-    } else {
-        format!(
-            "{BOLD}Build origin{RST}  {RED}MODIFIED REDISTRIBUTION{RST}  {YELLOW}pkg={}, repo={}{RST}",
-            integrity.pkg_name, integrity.repo
-        )
-    };
-    board.check(&Outcome {
-        ok: integrity_ok,
-        line: integrity_line,
-    });
-
-    // 14) Claude Code instruction truncation guard
+    // Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
         board.check(ct);
     }
 
-    // 15) BM25 cache health
+    // BM25 cache health
     let bm25_health = bm25_cache_health_outcome();
     board.check(&bm25_health);
 
-    // 15-pre) Quarantined corrupt stats.json (#706): the loader preserved a
-    // display cache it could not parse — surface it instead of losing history.
-    let stats_quarantine = stats_quarantine_outcome();
-    board.check(&stats_quarantine);
-
-    // 15a) Semantic index runtime status (state/timing/persistence) for the
-    // active project — surfaces a stuck "warming" index (issue #249).
+    // Semantic index runtime status (state/timing/persistence) for the
+    // active project — surfaces a stuck "warming" index.
     let semantic_index = semantic_index_outcome();
     if let Some(ref check) = semantic_index {
         board.check(check);
     }
 
-    // 15b) Archive FTS footprint
-    let archive_footprint = archive_footprint_outcome();
-    board.check(&archive_footprint);
-
-    // 16) Memory
-    let mem = memory_outcome();
-    board.check(&mem);
-
-    // 18) RAM Guardian
-    let ram_outcome = ram_guardian_outcome();
-    board.check(&ram_outcome);
-
-    // 19) Capacity warnings (memory stores near limits)
+    // Capacity warnings (memory stores near limits)
     let cap_warnings = capacity_warnings();
     for cw in &cap_warnings {
         board.check(cw);
     }
 
-    // 19b) Orphaned knowledge stores (deleted projects — reclaimable bloat, #615)
+    // Orphaned knowledge stores (deleted projects — reclaimable bloat)
     let orphan_outcome = orphaned_knowledge_outcome();
     board.check(&orphan_outcome);
 
-    // 20) Proxy health
+    // Proxy health
     let proxy_health = proxy_health_outcome();
     board.check(&proxy_health);
 
-    // 20a) Proxy upstream drift (#449): running proxy serves a different upstream
+    // Proxy upstream drift: running proxy serves a different upstream
     // than config.toml resolves to (env override masking config). Only surfaces
     // when the proxy is up and actually drifting.
     let upstream_drift = proxy_upstream_drift_outcome();
@@ -376,93 +321,111 @@ pub fn run() -> u32 {
         board.check(check);
     }
 
-    // 20) Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
+    // Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
     let stale_env = stale_proxy_env_outcome();
     if let Some(ref check) = stale_env {
         board.check(check);
     }
 
-    // 21) Claude Pro/Max subscription routed through the proxy without an API key
+    // Claude Pro/Max subscription routed through the proxy without an API key
     let subscription_conflict = proxy_subscription_conflict_outcome();
     if let Some(ref check) = subscription_conflict {
         board.check(check);
     }
 
-    // 22) Deprecation register (GL #394): warn about
-    // every surface this build deprecates, with replacement and removal floor.
-    let deprecation_check = deprecations::deprecations_outcome();
-    board.check(&deprecation_check);
-
-    // MCP server CWD warning (informational, only fires when running as MCP)
-    let mcp_cwd = mcp_server_cwd_outcome();
-    board.check(&mcp_cwd);
-
     // LSP servers (optional, informational)
-    println!("\n  {BOLD}{WHITE}LSP (optional — for ctx_refactor):{RST}");
+    board.note(&format!(
+        "\n  {BOLD}{WHITE}LSP (optional — for sobre_refactor):{RST}"
+    ));
     let lsp_outcomes = lsp_server_outcomes();
     for lsp_check in &lsp_outcomes {
         board.info(lsp_check);
     }
 
-    // Shadow mode status
-    let shadow_line = if true {
-        format!(
-            "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(native tools denied → ctx_* mandatory){RST}"
-        )
-    } else {
-        format!(
-            "{BOLD}Shadow mode{RST}  {DIM}disabled{RST}  {DIM}(default: on — explicitly disabled via config){RST}"
-        )
-    };
-    println!("  {shadow_line}");
-
     // Tool-schema footprint (informational, not scored). There is one surface —
     // the registry — so report its size rather than a tier name. This used to
-    // branch on a pinned tier and print it; #415 was already a bug where it
+    // branch on a pinned tier and print it; that was already a bug once, where it
     // claimed "power" right after the wizard chose lean.
     let advertised = crate::server::registry::build_registry().tool_defs().len();
-    println!(
+    board.note(&format!(
         "  {BOLD}Tools{RST}  {WHITE}{advertised} advertised{RST}  \
          {DIM}one surface, every client{RST}"
-    );
-
-    // Session cache health (#361): answer "is the cache actually engaging?"
-    // without external instrumentation. CEP sessions + the cross-call hit ratio
-    // come from the persistent stats store; `verify-cache` proves it live.
-    let cep = &crate::core::stats::load().cep;
-    let hit_ratio = if cep.total_cache_reads > 0 {
-        (cep.total_cache_hits as f64 / cep.total_cache_reads as f64) * 100.0
-    } else {
-        0.0
-    };
-    println!(
-        "  {BOLD}Session cache{RST}  {WHITE}{} sessions{RST}  {DIM}{}/{} reads cached ({hit_ratio:.0}% hit) · prove: lean-ctx verify-cache{RST}",
-        cep.sessions, cep.total_cache_hits, cep.total_cache_reads
-    );
+    ));
 
     // The board counted exactly what it rendered — the displayed ✓/✗ list and
-    // this tally can no longer drift apart (#433).
+    // this tally can no longer drift apart.
     let passed = board.passed;
     let total = board.total;
     let needs_attention = total.saturating_sub(passed);
-    println!();
-    println!("  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed");
+    if json {
+        let report = serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "passed": passed,
+            "total": total,
+            "tools_advertised": advertised,
+            "checks": board.entries,
+        });
+        crate::outln!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
+        );
+        return needs_attention;
+    }
+    crate::outln!();
+    crate::outln!(
+        "  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed"
+    );
     if needs_attention > 0 {
-        println!(
-            "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}lean-ctx doctor --fix{RST}"
+        crate::outln!(
+            "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}sobre doctor --fix{RST}"
         );
     } else {
-        println!("  {GREEN}Everything looks good.{RST}");
+        crate::outln!("  {GREEN}Everything looks good.{RST}");
     }
-    println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
-    println!("  {DIM}{}{RST}", crate::core::integrity::origin_line());
-
-    // Refresh the cached latest-version in the background and, if the running
-    // binary is behind, nudge toward the fast self-updater right where a
-    // confused user looks when something seems off (the "stuck updating"
-    // report). Notify-only — never auto-installs.
+    crate::outln!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
+    crate::outln!("  {DIM}sobre {}{RST}", env!("CARGO_PKG_VERSION"));
 
     needs_attention
+}
+
+/// One line on the install: the running version and which detected agents
+/// have a sobre MCP entry.
+fn summary_line() -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    let detected: Vec<_> = dirs::home_dir()
+        .map(|home| crate::core::editor_registry::build_targets(&home))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|t| t.detect_path.exists())
+        .collect();
+    let connected: Vec<&str> = detected
+        .iter()
+        .filter(|t| std::fs::read_to_string(&t.config_path).is_ok_and(|s| s.contains("sobre")))
+        .map(|t| t.name)
+        .collect();
+    let names = if connected.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", connected.join(", "))
+    };
+    format!(
+        "{WHITE}sobre {version}{RST}  agents connected: {}/{} detected{names}",
+        connected.len(),
+        detected.len()
+    )
+}
+
+/// Where the opt-in debug log (config key `debug_log`) is written.
+fn debug_log_line() -> String {
+    let state = if crate::core::debug_log::is_enabled() {
+        "on"
+    } else {
+        "off, set debug_log = true to record"
+    };
+    match crate::core::debug_log::log_path() {
+        Some(p) => format!("{DIM}debug log: {} ({state}){RST}", p.display()),
+        None => format!("{DIM}debug log: state dir unresolvable ({state}){RST}"),
+    }
 }
 
 pub fn run_cli(args: &[String]) -> i32 {
@@ -473,24 +436,17 @@ pub fn run_cli(args: &[String]) -> i32 {
         _ => ("", args),
     };
 
+    crate::cli::spec::check_or_exit(
+        &if sub.is_empty() {
+            "doctor".to_string()
+        } else {
+            format!("doctor {sub}")
+        },
+        rest,
+    );
     let fix = rest.iter().any(|a| a == "--fix");
     let json = rest.iter().any(|a| a == "--json");
     let gate = rest.iter().any(|a| a == "--gate");
-    let help = rest.iter().any(|a| a == "--help" || a == "-h");
-
-    if help {
-        println!("Usage:");
-        println!("  lean-ctx doctor");
-        println!(
-            "  lean-ctx doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over the 8000-token budget)"
-        );
-        println!(
-            "  lean-ctx doctor lint-context [--json]   Lint injected context for low-signal/dup lines"
-        );
-        println!("  lean-ctx doctor integrations [--json]");
-        println!("  lean-ctx doctor --fix [--json]");
-        return 0;
-    }
 
     if sub == "overhead" {
         return overhead::run_overhead(json, gate);
@@ -508,40 +464,38 @@ pub fn run_cli(args: &[String]) -> i32 {
     }
 
     if !fix {
-        // Non-zero exit when checks need attention so `lean-ctx doctor` works
+        // Non-zero exit when checks need attention so `sobre doctor` works
         // as a CI/health gate, not just a pretty printer.
-        return i32::from(run() > 0);
+        return i32::from(run(json) > 0);
     }
 
     match fix::run_fix(&fix::DoctorFixOptions { json }) {
         Ok(code) => code,
         Err(e) => {
             tracing::error!("doctor --fix failed: {e}");
-            2
+            1
         }
     }
 }
 
 pub fn compact_score() -> (u32, u32) {
     let mut passed = 0u32;
-    let total = 5u32;
+    let total = 4u32;
 
-    if resolve_lean_ctx_binary().is_some() || path_in_path_env() {
+    if resolve_sobre_binary().is_some() || path_in_path_env() {
         passed += 1;
     }
-    let lean_dir = crate::core::data_dir::lean_ctx_data_dir().ok();
+    let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
     if lean_dir.as_ref().is_some_and(|p| p.is_dir()) {
         passed += 1;
     }
+    // Same rule as `sobre doctor`: a missing usage ledger is fine (it appears
+    // with the first compression); only something that is not a file fails.
     if lean_dir
         .as_ref()
-        .map(|d| d.join("stats.json"))
-        .and_then(|p| std::fs::metadata(p).ok())
-        .is_some_and(|m| m.is_file())
+        .map(|d| d.join("usage.jsonl"))
+        .is_some_and(|p| std::fs::metadata(p).map_or(true, |m| m.is_file()))
     {
-        passed += 1;
-    }
-    if shell_aliases_outcome().ok {
         passed += 1;
     }
     if mcp_config_outcome().ok {
@@ -553,16 +507,15 @@ pub fn compact_score() -> (u32, u32) {
 
 pub(super) fn print_compact_status(passed: u32, total: u32) {
     let status = if passed == total {
-        format!("{GREEN}✓ All {total} checks passed{RST}")
+        format!("{GREEN}✓ {total} quick checks passed{RST} {DIM}(sobre doctor runs them all){RST}")
     } else {
-        format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}lean-ctx doctor{RST} for details")
+        format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}sobre doctor{RST} for details")
     };
-    println!("  {status}");
+    crate::outln!("  {status}");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_active_shell_impl;
 
     // `checks::capacity_level`, the classification `capacity_warnings` applies
     // to each store: at or below its cap is at most a WARN (healthy, eviction
@@ -627,40 +580,5 @@ mod tests {
     #[test]
     fn capacity_zero_limit_skipped() {
         assert!(super::checks::capacity_level("facts", 50, 0).is_none());
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_powershell_even_with_bash_in_shell() {
-        assert!(!is_active_shell_impl(
-            "~/.bashrc",
-            "C:\\\\Program Files\\\\Git\\\\bin\\\\bash.exe",
-            true,
-            true,
-        ));
-    }
-
-    #[test]
-    fn zshrc_unaffected_by_powershell_flag() {
-        assert!(is_active_shell_impl("~/.zshrc", "/bin/zsh", false, false));
-        assert!(is_active_shell_impl("~/.zshrc", "/bin/zsh", true, true));
-    }
-
-    #[test]
-    fn bashrc_not_active_on_windows_without_powershell_detection() {
-        // Windows + $SHELL=bash but NOT in actual bash session (no BASH_VERSION).
-        // This is the exact scenario from issue #214: Git Bash sets $SHELL globally.
-        crate::test_env::remove_var("BASH_VERSION");
-        assert!(!is_active_shell_impl(
-            "~/.bashrc",
-            "/usr/bin/bash",
-            true,
-            false,
-        ));
-    }
-
-    #[test]
-    fn bashrc_active_on_linux() {
-        assert!(is_active_shell_impl("~/.bashrc", "/bin/bash", false, false));
-        assert!(is_active_shell_impl("~/.bashrc", "", false, false));
     }
 }

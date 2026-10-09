@@ -7,13 +7,13 @@ pub struct TokenizedInput {
     pub token_type_ids: Vec<i32>,
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub struct Tokenizer {
     inner: tokenizers::Tokenizer,
     add_special_tokens: bool,
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 impl Tokenizer {
     /// Load `tokenizer.json`, truncating at `max_len` and never padding
     /// (batches are padded to their own longest input). Static-embedding
@@ -69,7 +69,7 @@ impl Tokenizer {
     }
 }
 
-#[cfg(all(test, feature = "embeddings"))]
+#[cfg(all(test, feature = "dense"))]
 mod tests {
     use super::*;
 

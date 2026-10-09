@@ -2,12 +2,16 @@
 
 use std::path::Path;
 
-use super::util::{is_local_lean_ctx_url, is_proxy_reachable};
+use super::util::is_proxy_reachable;
+use super::wiring;
+
+/// The wiring slot of Claude Code's `ANTHROPIC_BASE_URL`.
+const SLOT: &str = "claude";
 
 /// Returns true when an Anthropic **API key** is available for the proxy to forward
 /// upstream.
 ///
-/// The proxy never injects credentials (see `proxy/forward.rs` — only
+/// The proxy never injects credentials (see `proxy/forward/headers.rs` — only
 /// `ALLOWED_REQUEST_HEADERS` are forwarded), so it can only help Claude Code when the
 /// user runs in API-key (pay-as-you-go) mode. A Claude **Pro/Max subscription**
 /// authenticates via OAuth directly against `api.anthropic.com`; that token is rejected
@@ -57,54 +61,70 @@ fn warn_claude_subscription_skip() {
     eprintln!("    The proxy forwards your credential upstream but never injects one, and a");
     eprintln!("    subscription token only authenticates against api.anthropic.com directly.");
     eprintln!("    Leaving ANTHROPIC_BASE_URL untouched so Claude Code keeps working.");
-    eprintln!("    Savings on a subscription: use the lean-ctx MCP tools (ctx_read /");
-    eprintln!("    ctx_search / ctx_shell). Pay-as-you-go? Set ANTHROPIC_API_KEY, then run:");
-    eprintln!("      lean-ctx proxy enable");
+    eprintln!("    Savings on a subscription: use the sobre MCP tools (sobre_read /");
+    eprintln!("    sobre_search / sobre_shell). Pay-as-you-go? Set ANTHROPIC_API_KEY, then run:");
+    eprintln!("      sobre proxy enable");
 }
 
-pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) {
-    use crate::core::config::Config;
+/// Whether Claude Code's `ANTHROPIC_BASE_URL` is the one sobre wrote.
+pub(crate) fn claude_points_at_proxy(home: &Path) -> bool {
+    let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
+    std::fs::read_to_string(settings_path)
+        .ok()
+        .and_then(|content| crate::core::jsonc::parse_jsonc(&content).ok())
+        .is_some_and(|doc| {
+            doc.get("env")
+                .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
+                .and_then(|v| v.as_str())
+                .is_some_and(|url| wiring::is_ours(SLOT, url))
+        })
+}
 
+/// Undoes sobre's `ANTHROPIC_BASE_URL` in `doc`: the value the proxy
+/// replaced comes back, or the key goes (and an `env` it leaves empty).
+/// `None`, and nothing changed, when the URL there is not sobre's: an
+/// endpoint the user set stays as it is.
+fn undo_base_url(doc: &mut serde_json::Value) -> Option<String> {
+    let env_obj = doc.get_mut("env")?.as_object_mut()?;
+    let current = env_obj.get("ANTHROPIC_BASE_URL")?.as_str()?;
+    if !wiring::is_ours(SLOT, current) {
+        return None;
+    }
+    if let Some(previous) = wiring::forget(SLOT).and_then(|r| r.displaced) {
+        let message = format!("✓ Restored ANTHROPIC_BASE_URL → {previous} in Claude Code settings");
+        env_obj.insert(
+            "ANTHROPIC_BASE_URL".to_string(),
+            serde_json::Value::String(previous),
+        );
+        return Some(message);
+    }
+    env_obj.remove("ANTHROPIC_BASE_URL");
+    if env_obj.is_empty() {
+        doc.as_object_mut().map(|o| o.remove("env"));
+    }
+    Some("✓ Removed ANTHROPIC_BASE_URL from Claude Code settings".to_string())
+}
+
+/// Takes Claude Code off the proxy when sobre put it there. Returns whether
+/// it changed anything.
+pub(crate) fn uninstall_claude_env(home: &Path, quiet: bool) -> bool {
     let settings_dir = crate::core::editor_registry::claude_state_dir(home);
     let settings_path = settings_dir.join("settings.json");
     let existing = match std::fs::read_to_string(&settings_path) {
         Ok(s) if !s.trim().is_empty() => s,
-        _ => return,
+        _ => return false,
     };
-    let mut doc: serde_json::Value = match crate::core::jsonc::parse_jsonc(&existing) {
-        Ok(v) => v,
-        Err(_) => return,
+    let Ok(mut doc) = crate::core::jsonc::parse_jsonc(&existing) else {
+        return false;
     };
-
-    let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut()) else {
-        return;
+    let Some(message) = undo_base_url(&mut doc) else {
+        return false;
     };
-
-    if !env_obj.contains_key("ANTHROPIC_BASE_URL") {
-        return;
+    let _ = crate::config_io::write_json_cleanup(&settings_path, &existing, &doc);
+    if !quiet {
+        println!("  {message}");
     }
-
-    let cfg = Config::load();
-    if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
-        env_obj.insert(
-            "ANTHROPIC_BASE_URL".to_string(),
-            serde_json::Value::String(upstream.clone()),
-        );
-        if !quiet {
-            println!("  ✓ Restored ANTHROPIC_BASE_URL → {upstream} in Claude Code settings");
-        }
-    } else {
-        env_obj.remove("ANTHROPIC_BASE_URL");
-        if env_obj.is_empty() {
-            doc.as_object_mut().map(|o| o.remove("env"));
-        }
-        if !quiet {
-            println!("  ✓ Removed ANTHROPIC_BASE_URL from Claude Code settings");
-        }
-    }
-
-    let content = serde_json::to_string_pretty(&doc).unwrap_or_default();
-    let _ = std::fs::write(&settings_path, content + "\n");
+    true
 }
 
 pub(crate) fn install_claude_env(home: &Path, port: u16, quiet: bool) {
@@ -112,7 +132,7 @@ pub(crate) fn install_claude_env(home: &Path, port: u16, quiet: bool) {
 }
 
 pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, force: bool) {
-    use crate::core::config::{Config, is_local_proxy_url, normalize_url_opt};
+    use crate::core::config::normalize_url_opt;
 
     let base = format!("http://127.0.0.1:{port}");
 
@@ -141,24 +161,9 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
     // must not point Claude Code at the proxy. `--force` overrides for power users whose
     // key lives somewhere we cannot probe (e.g. a keychain or apiKeyHelper we missed).
     if !force && !anthropic_api_key_available(home) {
-        // Repair an existing stale local redirect so Claude Code reaches Anthropic again.
-        if is_local_lean_ctx_url(&current_url) {
-            let cfg = Config::load();
-            if let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut()) {
-                if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
-                    env_obj.insert(
-                        "ANTHROPIC_BASE_URL".to_string(),
-                        serde_json::Value::String(upstream.clone()),
-                    );
-                } else {
-                    env_obj.remove("ANTHROPIC_BASE_URL");
-                    if env_obj.is_empty() {
-                        doc.as_object_mut().map(|o| o.remove("env"));
-                    }
-                }
-                let out = serde_json::to_string_pretty(&doc).unwrap_or_default();
-                let _ = std::fs::write(&settings_path, out + "\n");
-            }
+        // Undo a redirect sobre made earlier, so Claude Code reaches Anthropic again.
+        if undo_base_url(&mut doc).is_some() {
+            let _ = crate::config_io::write_json_cleanup(&settings_path, &existing, &doc);
         }
         if !quiet {
             warn_claude_subscription_skip();
@@ -167,41 +172,29 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
     }
 
     if current_url == base {
+        wiring::record(SLOT, &base, None);
         if !quiet {
             println!("  Claude Code proxy env already configured");
         }
         return;
     }
 
-    // HARD GUARD: never overwrite non-local endpoints unless --force
+    // An endpoint the user set — remote or local (LiteLLM, Ollama) — is never
+    // replaced unless --force; with --force the proxy forwards to it, and
+    // undoing the wiring puts it back.
+    let mut custom_upstream = None;
     if let Some(upstream) = normalize_url_opt(&current_url)
-        && !is_local_proxy_url(&upstream)
+        && !wiring::is_ours(SLOT, &current_url)
     {
-        if !Config::load_global()
-            .proxy
-            .upstreams
-            .contains_key("anthropic")
-            && let Err(e) = Config::update_global(|c| {
-                c.proxy
-                    .upstreams
-                    .insert("anthropic".to_string(), upstream.clone());
-            })
-        {
-            tracing::warn!("could not persist proxy upstream: {e}");
-        }
-
         if !force {
             if !quiet {
-                eprintln!("  \u{26a0} Custom endpoint detected: {upstream}");
-                eprintln!(
-                    "    Skipping proxy URL write. Use `lean-ctx proxy enable --force` to override."
-                );
+                eprintln!("  \u{26a0} Claude Code already points at a custom endpoint: {upstream}");
+                eprintln!("    Left as it is. `sobre proxy enable --force` routes Claude Code");
+                eprintln!("    through the proxy, which then forwards to that endpoint.");
             }
             return;
         }
-        if !quiet {
-            println!("  Overriding custom endpoint (--force): {upstream}");
-        }
+        custom_upstream = Some(upstream);
     }
 
     if !is_proxy_reachable(port) {
@@ -210,6 +203,15 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
         }
         return;
     }
+
+    if let Some(ref upstream) = custom_upstream {
+        keep_custom_endpoint_as_upstream(upstream, quiet);
+    }
+    wiring::record(
+        SLOT,
+        &base,
+        custom_upstream.is_some().then_some(current_url.as_str()),
+    );
 
     if let Some(env_obj) = doc.as_object_mut().and_then(|o| {
         o.entry("env")
@@ -222,10 +224,41 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
         );
     }
 
-    let _ = std::fs::create_dir_all(&settings_dir);
-    let content = serde_json::to_string_pretty(&doc).unwrap_or_default();
-    let _ = std::fs::write(&settings_path, content + "\n");
+    let _ = crate::config_io::write_json_edit(&settings_path, &existing, &doc);
     if !quiet {
         println!("  Configured ANTHROPIC_BASE_URL in Claude Code settings");
+    }
+}
+
+/// With `--force`, the proxy replaces the custom endpoint in Claude Code's
+/// settings, so the proxy must forward there: the endpoint becomes
+/// `proxy.upstreams.anthropic` in config.toml, unless the user already set one.
+fn keep_custom_endpoint_as_upstream(upstream: &str, quiet: bool) {
+    use crate::core::config::Config;
+
+    let path =
+        Config::path().map_or_else(|| "config.toml".to_string(), |p| p.display().to_string());
+    if let Some(existing) = Config::load_global().proxy.upstreams.get("anthropic") {
+        if !quiet && existing != upstream {
+            println!(
+                "  Claude Code pointed at {upstream}, but proxy.upstreams.anthropic in {path} \
+                 is {existing}: the proxy forwards there."
+            );
+        }
+        return;
+    }
+    match Config::update_global(|c| {
+        c.proxy
+            .upstreams
+            .insert("anthropic".to_string(), upstream.to_string());
+    }) {
+        Ok(_) => {
+            if !quiet {
+                println!("  Saved Claude Code's endpoint {upstream} as proxy.upstreams.anthropic");
+                println!("    in {path}: the proxy forwards Claude Code's requests there,");
+                println!("    and `sobre proxy disable` or `sobre uninstall` puts it back.");
+            }
+        }
+        Err(e) => eprintln!("  \u{26a0} Could not save {upstream} as the proxy's upstream: {e}"),
     }
 }

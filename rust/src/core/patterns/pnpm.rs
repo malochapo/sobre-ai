@@ -28,7 +28,7 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
         return Some(compress_test(output));
     }
     if command.contains("why") {
-        return Some(compact_output(output, 10));
+        return Some(super::compact_lines(output, 10));
     }
     if command.contains("store") {
         return Some(compress_store(output));
@@ -105,7 +105,7 @@ fn compress_list(output: &str) -> String {
     if !top.is_empty() {
         return format!("{} packages:\n{}", top.len(), top.join("\n"));
     }
-    compact_output(output, 15)
+    super::compact_lines(output, 15)
 }
 
 fn compress_outdated(output: &str) -> String {
@@ -153,17 +153,5 @@ fn compress_store(output: &str) -> String {
     if trimmed.is_empty() {
         return "ok".to_string();
     }
-    compact_output(trimmed, 5)
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
+    super::compact_lines(trimmed, 5)
 }

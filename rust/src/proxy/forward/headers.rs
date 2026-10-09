@@ -6,11 +6,11 @@
 /// `openai-project` (and `openai-organization`) must be forwarded: OpenCode and
 /// the OpenAI SDK send the project scope via this header for project-scoped API
 /// keys when calling the Responses API (`/responses`). Dropping it makes OpenAI
-/// reject the request with `Missing scopes: api.responses.write` (#366).
+/// reject the request with `Missing scopes: api.responses.write`.
 pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "authorization",
     "x-api-key",
-    // Azure OpenAI / AI Foundry credential header (universal providers, #7).
+    // Azure OpenAI credential header, for an `openai` upstream on Azure.
     "api-key",
     "content-type",
     "accept",
@@ -39,17 +39,12 @@ pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
     "x-codex-window-id",
     "x-openai-memgen-request",
     "x-responsesapi-include-timing-metrics",
-    "mcp-session-id",
-    "last-event-id",
     "cache-control",
-    "x-goog-api-key",
-    "x-goog-api-client",
     "x-session-id",
 ];
 
 pub(crate) fn is_allowed_request_header(name: &str) -> bool {
     ALLOWED_REQUEST_HEADERS.contains(&name)
-        || crate::proxy::bedrock::is_bedrock_request_header(name)
 }
 
 pub(crate) fn should_forward_request_header(name: &str, preserve_content_encoding: bool) -> bool {
@@ -60,7 +55,6 @@ pub(crate) fn should_forward_request_header(name: &str, preserve_content_encodin
 pub(crate) const FORWARDED_HEADERS: &[&str] = &[
     "content-type",
     "content-encoding",
-    "mcp-session-id",
     "x-request-id",
     "x-oai-request-id",
     "cf-ray",
@@ -88,5 +82,4 @@ pub(crate) fn is_forwarded_response_header(name: &str) -> bool {
     FORWARDED_HEADERS.contains(&name)
         || name.starts_with("x-codex-")
         || name.starts_with("x-ratelimit-")
-        || crate::proxy::bedrock::is_bedrock_response_header(name)
 }

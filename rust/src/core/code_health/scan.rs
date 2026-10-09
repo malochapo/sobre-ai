@@ -1,5 +1,5 @@
-//! Project-wide code-health scan — the shared report behind `lean-ctx health`,
-//! the `ctx_quality` tool, and the dashboard.
+//! Project-wide code-health scan behind the persisted health snapshot
+//! (`persist.rs`), computed once per index build.
 //!
 //! Walks the repo once, analyzes each source file with the engine, and
 //! aggregates into a [`NavigabilityScore`] plus focused per-file detail. The
@@ -7,7 +7,7 @@
 //! bodies that exceed the threshold — the tokens an agent must read in full
 //! because the code cannot be navigated by signature.
 
-use super::{Hotspot, NamingFinding, NavigabilityInputs, NavigabilityScore, analyze_file, grade};
+use super::{Hotspot, NamingFinding, NavigabilityInputs, NavigabilityScore, analyze_file};
 use std::path::Path;
 
 /// Source extensions the engine can analyze (mirrors `core::chunks_ts`).
@@ -35,13 +35,6 @@ pub struct ProjectHealth {
     /// Files with at least one hotspot or naming finding, worst first.
     pub files: Vec<FileReport>,
     pub naming_count: usize,
-}
-
-impl ProjectHealth {
-    /// Letter grade for the project score.
-    pub fn grade(&self) -> char {
-        grade(self.score.score)
-    }
 }
 
 /// Scan `root` for code-health, pricing the quality tax with `model` (or the
@@ -79,7 +72,7 @@ pub fn scan_project(
             .then_with(|| a.line.cmp(&b.line))
     });
 
-    let input_price_per_m = crate::core::gain::model_pricing::ModelPricing::load()
+    let input_price_per_m = crate::core::pricing::ModelPricing::load()
         .quote(model)
         .cost
         .input_per_m;
@@ -223,7 +216,6 @@ mod tests {
         write(tmp.path(), "ok.rs", "fn add_one(x: i32) -> i32 { x + 1 }\n");
         let health = scan_project(tmp.path(), 15, None, 10);
         assert_eq!(health.score.score, 100);
-        assert_eq!(health.grade(), 'A');
         assert!(health.files.is_empty());
     }
 }

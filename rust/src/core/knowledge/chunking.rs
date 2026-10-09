@@ -1,4 +1,4 @@
-//! Theta-gamma chunking for wakeup facts (#543, EFF-6).
+//! Theta-gamma chunking for wakeup facts.
 //!
 //! Working memory holds ~4±1 items as *chunks* nested in theta cycles, not as
 //! a flat list (Lisman/Idiart). The LLM equivalent: semantically related
@@ -16,7 +16,7 @@ use crate::core::text_similarity::token_jaccard;
 /// Theta capacity: clusters never grow beyond this many facts (7 = 4±1 max).
 const MAX_CLUSTER_SIZE: usize = 6;
 /// Minimum blended similarity to join an existing cluster. Calibrated so
-/// same-category alone qualifies (categories are lean-ctx "rooms" = topics),
+/// same-category alone qualifies (categories are sobre "rooms" = topics),
 /// while cross-category joins need a strong lexical/path signal.
 const JOIN_THRESHOLD: f64 = 0.3;
 
@@ -171,17 +171,29 @@ mod tests {
     use chrono::Utc;
 
     fn fact(cat: &str, key: &str, val: &str) -> KnowledgeFact {
-        // Build via serde so all `#[serde(default)]` fields fill themselves.
-        serde_json::from_value(serde_json::json!({
-            "category": cat,
-            "key": key,
-            "value": val,
-            "source_session": "test",
-            "confidence": 0.9,
-            "created_at": Utc::now(),
-            "last_confirmed": Utc::now(),
-        }))
-        .expect("valid fact json")
+        let now = Utc::now();
+        KnowledgeFact {
+            category: cat.to_string(),
+            key: key.to_string(),
+            value: val.to_string(),
+            source_session: "test".to_string(),
+            confidence: 0.9,
+            created_at: now,
+            last_confirmed: now,
+            retrieval_count: 0,
+            last_retrieved: None,
+            valid_from: None,
+            valid_until: None,
+            supersedes: None,
+            confirmation_count: 0,
+            feedback_up: 0,
+            feedback_down: 0,
+            last_feedback: None,
+            sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
+            imported_from: None,
+            archetype: crate::core::knowledge::KnowledgeArchetype::default(),
+            revision_count: 0,
+        }
     }
 
     fn three_topic_facts() -> Vec<KnowledgeFact> {
@@ -245,7 +257,7 @@ mod tests {
                 "launchagent",
                 "keepalive respawns the proxy",
             ),
-            fact("infrastructure", "postgres", "cloud user is leanctx_cloud"),
+            fact("infrastructure", "postgres", "cloud user is sobre_cloud"),
             fact(
                 "infrastructure",
                 "traefik",

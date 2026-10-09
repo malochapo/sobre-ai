@@ -22,36 +22,36 @@ use tokenizer::TokenizedInput;
 
 // `embed_batch` parallelises tokenization in every build (rayon is a core, non
 // optional dependency), so this import must not be feature-gated — otherwise the
-// no-embeddings build (e.g. FreeBSD, #586) loses `par_iter`.
+// no-embeddings build (e.g. FreeBSD) loses `par_iter`.
 use rayon::prelude::*;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use std::sync::Mutex;
 
 pub struct EmbeddingEngine {
     dimensions: usize,
     name: String,
     meta: ModelMeta,
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     tokenizer: tokenizer::Tokenizer,
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     session: Mutex<ort::session::Session>,
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     graph_inputs: GraphInputs,
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     output_name: String,
     /// The output is already one vector per input (`[batch, dim]`), as in
     /// exports with a `sentence_embedding` output or model2vec graphs.
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     output_pooled: bool,
 }
 
-/// The two ONNX graph topologies we can drive (GL #452).
+/// The two ONNX graph topologies we can drive.
 ///
 /// Transformers take `[1, seq]` id/mask tensors and emit per-token hidden
 /// states `[1, seq, dim]` that we mean-pool. model2vec exports are
 /// EmbeddingBag graphs: flat `input_ids: [n_tokens]` plus `offsets: [batch]`,
 /// already pooled to `[batch, dim]` — ~500x faster, no attention pass.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 enum GraphInputs {
     Transformer {
         input_ids: String,
@@ -67,7 +67,7 @@ enum GraphInputs {
 /// Classify the graph topology from its input names (pure, unit-testable).
 /// The model2vec signature is exactly two inputs whose second is `offsets`;
 /// everything else is treated as a transformer.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn is_embedding_bag_signature(input_names: &[String]) -> bool {
     input_names.len() == 2 && input_names[1] == "offsets"
 }
@@ -75,14 +75,14 @@ fn is_embedding_bag_signature(input_names: &[String]) -> bool {
 impl EmbeddingEngine {
     /// Load embedding model and vocabulary from a directory.
     /// Downloads model automatically from HuggingFace if not present.
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     pub fn load(model_dir: &Path) -> anyhow::Result<Self> {
         let selected = model_registry::resolve_model();
         Self::load_model(model_dir, &selected)
     }
 
     /// Load a specific embedding model from a directory.
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     pub fn load_model(
         base_dir: &Path,
         model: &model_registry::EmbeddingModel,
@@ -91,12 +91,11 @@ impl EmbeddingEngine {
         let model_dir = base_dir.join(model.storage_dir_name());
 
         // Never download here: loading happens on tool paths the user did not
-        // ask to touch the network. The model arrives through an explicit
-        // request (`lean-ctx embeddings provision`, `init`, `index
-        // build-semantic`), which call `ensure_downloaded` first.
+        // ask to touch the network. The model arrives through the explicit
+        // `sobre embeddings provision`, which calls `ensure_downloaded`.
         anyhow::ensure!(
             model_files_present(&model_dir),
-            "embedding model not installed — run `lean-ctx embeddings provision`"
+            "embedding model not installed — run `sobre embeddings provision`"
         );
 
         let meta = ModelMeta::load(&model_dir);
@@ -141,7 +140,7 @@ impl EmbeddingEngine {
             );
         }
 
-        // Topology detection (GL #452): model2vec EmbeddingBag graphs expose
+        // Topology detection: model2vec EmbeddingBag graphs expose
         // exactly (input_ids, offsets) — structurally incompatible with the
         // transformer path, so they get their own input adapter.
         let graph_inputs = if is_embedding_bag_signature(&input_names) {
@@ -216,14 +215,17 @@ impl EmbeddingEngine {
         })
     }
 
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     pub fn load(_model_dir: &Path) -> anyhow::Result<Self> {
-        anyhow::bail!("Embeddings feature not enabled. Compile with --features embeddings")
+        anyhow::bail!(
+            "this build has no local embeddings: use the sobre-dense release build, \
+             or build with --features dense"
+        )
     }
 
-    /// Load from default model directory (~/.lean-ctx/models/).
+    /// Load from the default model directory ([`model_directory`](Self::model_directory)).
     pub fn load_default() -> anyhow::Result<Self> {
-        Self::load(&Self::model_directory())
+        Self::load(&Self::model_directory()?)
     }
 
     /// Generate an embedding vector for a single text (document/code).
@@ -253,13 +255,13 @@ impl EmbeddingEngine {
         // deliberately happen inside the loop: retaining those buffers for the
         // entire corpus used to defeat the mini-batch cap under large indexes.
         let configured_batch_size: usize = {
-            #[cfg(any(feature = "embeddings", feature = "neural"))]
+            #[cfg(feature = "dense")]
             if crate::core::ort_execution_providers::gpu_active() {
                 256
             } else {
                 64
             }
-            #[cfg(not(any(feature = "embeddings", feature = "neural")))]
+            #[cfg(not(feature = "dense"))]
             64
         };
         // Approximate tokenizer tensors plus transformer activations per input.
@@ -324,29 +326,31 @@ impl EmbeddingEngine {
         &self.name
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn encode(&self, text: &str) -> anyhow::Result<TokenizedInput> {
         self.tokenizer.encode(text)
     }
 
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     #[allow(clippy::unused_self)] // same signature as the `embeddings` build
     fn encode(&self, _text: &str) -> anyhow::Result<TokenizedInput> {
         anyhow::bail!("Embeddings feature not enabled")
     }
 
-    /// The models directory, under the cache directory.
-    pub fn model_directory() -> PathBuf {
-        if let Ok(d) = crate::core::paths::cache_dir() {
-            return d.join("models");
-        }
-        PathBuf::from("models")
+    /// The models directory, under the cache directory. An error when the
+    /// cache directory cannot be resolved: a model is never looked for, or
+    /// downloaded, relative to the working directory.
+    pub fn model_directory() -> anyhow::Result<PathBuf> {
+        crate::core::paths::cache_dir()
+            .map(|d| d.join("models"))
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
     /// Check if the model files are present and loadable.
     pub fn is_available() -> bool {
         let selected = model_registry::resolve_model();
-        model_files_present(&Self::model_directory().join(selected.storage_dir_name()))
+        Self::model_directory()
+            .is_ok_and(|dir| model_files_present(&dir.join(selected.storage_dir_name())))
     }
 
     /// Ensure the selected model's files exist on disk, downloading them from
@@ -356,17 +360,16 @@ impl EmbeddingEngine {
     /// After `Ok`, [`is_available`](Self::is_available) is guaranteed true; on a
     /// warm cache it short-circuits without touching the network.
     ///
-    /// The explicit index-build path uses this to cold-start a fresh machine.
-    /// `is_available()` alone is only a file check, so the build path must call
-    /// this to actually trigger the download instead of bailing (#545).
+    /// `sobre embeddings provision` (and the model question in `init`) is the
+    /// one caller: nothing else downloads the model.
     pub fn ensure_downloaded() -> anyhow::Result<()> {
         let selected = model_registry::resolve_model();
-        let model_dir = Self::model_directory().join(selected.storage_dir_name());
+        let model_dir = Self::model_directory()?.join(selected.storage_dir_name());
         download::ensure_model(&model_dir, &selected)?;
         Ok(())
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn run_inference(&self, input: &TokenizedInput) -> anyhow::Result<Vec<f32>> {
         let seq_len = input.input_ids.len();
 
@@ -459,7 +462,7 @@ impl EmbeddingEngine {
     ///
     /// For the EmbeddingBag topology: concatenates tokens with per-row offsets,
     /// runs ONNX once, and L2-normalizes each output row.
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn run_inference_batch(&self, inputs: &[TokenizedInput]) -> anyhow::Result<Vec<Vec<f32>>> {
         if inputs.is_empty() {
             return Ok(Vec::new());
@@ -596,13 +599,13 @@ impl EmbeddingEngine {
         }
     }
 
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     #[allow(clippy::unused_self)] // same signature as the `embeddings` build
     fn run_inference(&self, _input: &TokenizedInput) -> anyhow::Result<Vec<f32>> {
         anyhow::bail!("Embeddings feature not enabled")
     }
 
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     #[allow(clippy::unused_self)] // same signature as the `embeddings` build
     fn run_inference_batch(&self, _inputs: &[TokenizedInput]) -> anyhow::Result<Vec<Vec<f32>>> {
         anyhow::bail!("Embeddings feature not enabled")
@@ -623,7 +626,7 @@ fn with_prefix(prefix: Option<&str>, text: &str) -> String {
 }
 
 /// Shape of `output_name` for a one-input batch, from a probe inference.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn probe_output_shape(
     session: &mut ort::session::Session,
     tokenizer: &tokenizer::Tokenizer,
@@ -711,22 +714,22 @@ pub fn cosine_similarity_raw(a: &[f32], b: &[f32]) -> f32 {
     dot / (norm_a * norm_b)
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 static SHARED_ENGINE: std::sync::OnceLock<anyhow::Result<EmbeddingEngine>> =
     std::sync::OnceLock::new();
 
 /// Global singleton embedding engine. Loaded once, shared across all consumers.
-/// Returns None if the embeddings feature is disabled or the model fails to load.
+/// Returns None if the dense feature is disabled or the model fails to load.
 /// NOTE: This function BLOCKS on first call while loading the ONNX model.
 /// For non-blocking access, use `try_shared_engine()` instead.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn shared_engine() -> Option<&'static EmbeddingEngine> {
     shared_engine_result().ok()
 }
 
 /// Global singleton embedding engine with the load error preserved for callers
 /// that can surface diagnostics to users.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn shared_engine_result() -> anyhow::Result<&'static EmbeddingEngine> {
     SHARED_ENGINE
         .get_or_init(EmbeddingEngine::load_default)
@@ -736,19 +739,19 @@ pub fn shared_engine_result() -> anyhow::Result<&'static EmbeddingEngine> {
 
 /// Non-blocking variant: returns the engine ONLY if already loaded.
 /// Never triggers model loading or download. Safe to call on hot paths.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
     SHARED_ENGINE.get()?.as_ref().ok()
 }
 
 /// Whether this process may load the ONNX model on a **detached background
-/// thread** (#519).
+/// thread**.
 ///
 /// ONNX Runtime registers its op schemas in global C++ static state while a
 /// model is loading. If a detached loader thread is still mid-load when the
 /// process returns from `main`, it races `libonnxruntime`'s static-destructor
 /// teardown — a use-after-free SIGSEGV inside `onnx::OpSchema` on an ORT worker
-/// thread. The shipped `lean-ctx` daemon/MCP server is long-lived, so its
+/// thread. The shipped `sobre` MCP server is long-lived, so its
 /// warmup always finishes well before exit; short-lived processes (`cargo test`/
 /// bench/doctest binaries, build-time generators) can exit mid-load, so we
 /// refuse the background spawn for them. Their semantic features simply stay
@@ -758,7 +761,7 @@ pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
 /// Note: blocking [`shared_engine`] loads are intentionally NOT gated — they
 /// finish on the caller's thread before the process exits, so no worker is ever
 /// active during teardown.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn background_load_allowed() -> bool {
     // Unit tests compile with cfg(test): a cheap, unambiguous short-circuit.
     // Integration/bench/doctest binaries link the lib in its normal config
@@ -770,7 +773,7 @@ pub fn background_load_allowed() -> bool {
 }
 
 /// `true` when the running executable is a Cargo test/bench/doctest artifact.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn current_exe_is_test_artifact() -> bool {
     std::env::current_exe()
         .ok()
@@ -782,8 +785,8 @@ fn current_exe_is_test_artifact() -> bool {
 /// directly inside `…/target/<profile>/deps/`. The shipped binary lives in a
 /// package `bin` directory (`/usr/bin`, `~/.local/bin`, `…/Homebrew/bin`, …) and
 /// is never a direct child of a `deps/` directory, so the parent-dir name is an
-/// install-location-independent signal (survives renames of the binary). (#519)
-#[cfg(feature = "embeddings")]
+/// install-location-independent signal (survives renames of the binary).
+#[cfg(feature = "dense")]
 fn exe_path_is_test_artifact(path: &Path) -> bool {
     path.parent()
         .and_then(Path::file_name)
@@ -832,18 +835,18 @@ mod tests {
 
     #[test]
     fn model_directory_follows_cache_dir() {
-        // Serialize env mutation: LEAN_CTX_CACHE_DIR is process-global and
+        // Serialize env mutation: SOBRE_CACHE_DIR is process-global and
         // shared with `ensure_downloaded_is_offline_noop_when_model_present`.
         let _lock = crate::core::data_dir::test_env_lock();
-        let unique = "/tmp/lean_ctx_test_embed_42xyz";
-        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", unique);
-        let dir = EmbeddingEngine::model_directory();
+        let unique = "/tmp/sobre_test_embed_42xyz";
+        crate::test_env::set_var("SOBRE_CACHE_DIR", unique);
+        let dir = EmbeddingEngine::model_directory().unwrap();
         assert_eq!(dir, std::path::Path::new(unique).join("models"));
         assert!(!EmbeddingEngine::is_available());
-        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
+        crate::test_env::remove_var("SOBRE_CACHE_DIR");
     }
 
-    /// #545: with a complete model cache, `ensure_downloaded` is a no-op that
+    /// With a complete model cache, `ensure_downloaded` is a no-op that
     /// never touches the network and agrees with `is_available` on the model
     /// directory. The build path relies on this so a cold availability check can
     /// route through the (real) download without redundantly re-fetching a model
@@ -851,11 +854,11 @@ mod tests {
     /// placeholder files are enough to exercise the short-circuit offline.
     #[test]
     fn ensure_downloaded_is_offline_noop_when_model_present() {
-        // Serialize env mutation (LEAN_CTX_CACHE_DIR is process-global) so a
+        // Serialize env mutation (SOBRE_CACHE_DIR is process-global) so a
         // sibling env test can't clobber the dir between set_var and the checks.
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join(format!("lc-embed-545-{}", std::process::id()));
-        crate::test_env::set_var("LEAN_CTX_CACHE_DIR", tmp.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_CACHE_DIR", tmp.to_str().unwrap());
 
         let selected = model_registry::resolve_model();
         let model_dir = tmp.join("models").join(selected.storage_dir_name());
@@ -866,53 +869,53 @@ mod tests {
         assert!(EmbeddingEngine::is_available());
         assert!(EmbeddingEngine::ensure_downloaded().is_ok());
 
-        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
+        crate::test_env::remove_var("SOBRE_CACHE_DIR");
         std::fs::remove_dir_all(&tmp).ok();
     }
 
-    /// #519: Cargo test/bench/doctest binaries live under `…/deps/`; the shipped
+    /// Cargo test/bench/doctest binaries live under `…/deps/`; the shipped
     /// binary lives in a `bin` directory. The parent-dir probe must distinguish
     /// them so background ORT loads are refused only in short-lived processes.
     #[test]
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn exe_path_test_artifact_detection() {
         // Cargo test/bench/doctest artifacts: parent dir is `deps`.
         assert!(exe_path_is_test_artifact(Path::new(
             "/repo/rust/target/debug/deps/conformance_suite-0a1b2c3d4e5f6789"
         )));
         assert!(exe_path_is_test_artifact(Path::new(
-            "/repo/rust/target/release/deps/lean_ctx-deadbeefcafef00d"
+            "/repo/rust/target/release/deps/sobre-deadbeefcafef00d"
         )));
         // Shipped/installed binary: never a direct child of `deps`.
         assert!(!exe_path_is_test_artifact(Path::new(
-            "/usr/local/bin/lean-ctx"
+            "/usr/local/bin/sobre"
         )));
         assert!(!exe_path_is_test_artifact(Path::new(
-            "/Users/x/.local/bin/lean-ctx"
+            "/Users/x/.local/bin/sobre"
         )));
         // A renamed shipped binary is still allowed (rename-independent signal).
         assert!(!exe_path_is_test_artifact(Path::new("/opt/tools/ctx")));
-        // The plain target dir build (e.g. `target/debug/lean-ctx`) is not under
+        // The plain target dir build (e.g. `target/debug/sobre`) is not under
         // `deps/` — treated as a product binary, not a test artifact.
         assert!(!exe_path_is_test_artifact(Path::new(
-            "/repo/rust/target/debug/lean-ctx"
+            "/repo/rust/target/debug/sobre"
         )));
     }
 
     /// In the unit-test binary `background_load_allowed` must be false via the
     /// `cfg!(test)` short-circuit — no detached ORT load may ever be spawned
-    /// from a test process (the #519 teardown race).
+    /// from a test process (the teardown race).
     #[test]
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn background_load_disallowed_in_tests() {
         assert!(!background_load_allowed());
     }
 
-    /// GL #452: the EmbeddingBag detection is purely name-based — exactly two
+    /// The EmbeddingBag detection is purely name-based — exactly two
     /// inputs with the second named `offsets`. Everything else (classic 2-/
     /// 3-input transformers, unnamed graphs) must stay on the transformer path.
     #[test]
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn embedding_bag_signature_detection() {
         // model2vec / potion export.
         assert!(is_embedding_bag_signature(&[
@@ -941,23 +944,23 @@ mod tests {
     // NOTE: `try_shared_engine_returns_none_when_not_initialized` lives in
     // `tests/embeddings_shared_engine.rs` (own process). SHARED_ENGINE is a
     // process-wide OnceLock: in the unit-test suite any sibling test that
-    // legitimately loads the engine (or #551 background activation) would
+    // legitimately loads the engine (or the background activation) would
     // initialize it first and make the assertion order-dependent/flaky.
 
-    /// Live proof for GL #397: loads a real HuggingFace repo through the
+    /// Live proof: loads a real HuggingFace repo through the
     /// `org/repo@rev` spec (download → SHA-256 lockfile → tokenizer.json →
     /// ONNX inference → dimension probe). Ignored by default (network + ~91MB);
     /// run explicitly:
-    /// `cargo test --lib --features embeddings -- --ignored custom_hf_model_end_to_end`
+    /// `cargo test --lib --features dense -- --ignored custom_hf_model_end_to_end`
     #[test]
     #[ignore = "downloads a real model from HuggingFace (~91MB)"]
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn custom_hf_model_end_to_end() {
         let model =
             model_registry::EmbeddingModel::parse("hf:sentence-transformers/all-MiniLM-L6-v2@main")
                 .expect("valid hf: spec");
 
-        let base = std::env::temp_dir().join("lean_ctx_test_custom_hf_e2e");
+        let base = std::env::temp_dir().join("sobre_test_custom_hf_e2e");
         download::ensure_model(&base.join(model.storage_dir_name()), &model).expect("download");
         let engine = EmbeddingEngine::load_model(&base, &model).expect("load custom model");
 
@@ -989,18 +992,18 @@ mod tests {
         );
     }
 
-    /// Live proof for GL #452: a model2vec EmbeddingBag graph end-to-end
+    /// Live proof: a model2vec EmbeddingBag graph end-to-end
     /// through the same `hf:` scheme (potion-base-8M, ~30MB). Ignored by
     /// default (network); run explicitly:
-    /// `cargo test --lib --features embeddings -- --ignored model2vec_potion_end_to_end`
+    /// `cargo test --lib --features dense -- --ignored model2vec_potion_end_to_end`
     #[test]
     #[ignore = "downloads a real model from HuggingFace (~30MB)"]
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     fn model2vec_potion_end_to_end() {
         let model = model_registry::EmbeddingModel::parse("hf:minishlab/potion-base-8M@main")
             .expect("valid hf: spec");
 
-        let base = std::env::temp_dir().join("lean_ctx_test_model2vec_e2e");
+        let base = std::env::temp_dir().join("sobre_test_model2vec_e2e");
         download::ensure_model(&base.join(model.storage_dir_name()), &model).expect("download");
         let engine = EmbeddingEngine::load_model(&base, &model).expect("load model2vec model");
 

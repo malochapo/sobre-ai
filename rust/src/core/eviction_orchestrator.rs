@@ -70,15 +70,15 @@ pub fn on_memory_pressure(level: memory_guard::PressureLevel) {
     // These caches are process-global rather than owned by a server target.
     if level >= memory_guard::PressureLevel::Hard {
         super::content_cache::clear();
+        #[cfg(feature = "dense")]
         super::ann_cache::clear();
         super::search_index::clear_resident();
-        super::graph_cache::invalidate(None);
     }
 }
 
 impl EvictionOrchestrator {
     pub fn new(cache: SharedCache, bm25_cache: SharedBm25Cache) -> Self {
-        let token_budget = super::cache::max_cache_tokens();
+        let token_budget = super::cache::CACHE_MAX_TOKENS;
         Self {
             cache,
             bm25_cache,
@@ -111,7 +111,7 @@ impl EvictionOrchestrator {
             ctrl.evaluate(effective_tokens)
         };
 
-        // #685: the homeostasis controller reasons over *cache-token*
+        // The homeostasis controller reasons over *cache-token*
         // utilization, but RSS pressure can come from structures the token
         // heuristic cannot see (ANN/HNSW graph, resident trigram + graph
         // indices, transient build state). At Hard/Critical RSS the guard's
@@ -165,19 +165,24 @@ impl EvictionOrchestrator {
                 }
                 let content_freed = super::content_cache::memory_usage_bytes();
                 super::content_cache::clear();
-                // #685: the ANN/HNSW graph, resident trigram indices and the
+                // The ANN/HNSW graph, resident trigram indices and the
                 // materialized graph indexes were invisible to eviction — on
                 // embedding-heavy sessions they dominated RSS while the
                 // guardian could only trim the (small) session cache.
-                let ann_freed = super::ann_cache::memory_usage_bytes();
-                super::ann_cache::clear();
+                #[cfg(feature = "dense")]
+                let ann_freed = {
+                    let bytes = super::ann_cache::memory_usage_bytes();
+                    super::ann_cache::clear();
+                    bytes
+                };
+                #[cfg(not(feature = "dense"))]
+                let ann_freed = 0usize;
                 super::search_index::clear_resident();
-                super::graph_cache::invalidate(None);
                 let trimmed = self.try_write_cache(SessionCache::trim_compressed_outputs);
                 memory_guard::jemalloc_purge();
                 tracing::info!(
                     "[eviction] unloaded indices (bm25={:.1}MB + content={:.1}MB + ann={:.1}MB freed, \
-                     search/graph residents dropped, {trimmed} outputs trimmed)",
+                     search residents dropped, {trimmed} outputs trimmed)",
                     bm25_bytes as f64 / 1_048_576.0,
                     content_freed as f64 / 1_048_576.0,
                     ann_freed as f64 / 1_048_576.0,
@@ -198,14 +203,14 @@ impl EvictionOrchestrator {
                 let cleared = self.try_write_cache(SessionCache::clear);
                 super::bm25_cache::unload(&self.bm25_cache);
                 super::content_cache::clear();
-                // #685: emergency must reach every resident structure.
+                // Emergency must reach every resident structure.
+                #[cfg(feature = "dense")]
                 super::ann_cache::clear();
                 super::search_index::clear_resident();
-                super::graph_cache::invalidate(None);
                 memory_guard::jemalloc_purge();
                 tracing::warn!(
                     "[eviction] EMERGENCY: cleared {cleared} cache entries + unloaded all indices \
-                     (bm25, content, ann, search, graph)"
+                     (bm25, content, ann, search)"
                 );
                 true
             }
@@ -236,10 +241,10 @@ impl EvictionOrchestrator {
     }
 }
 
-/// RSS floor (#685): guarantee a minimum eviction strength for a given guard
+/// RSS floor: guarantee a minimum eviction strength for a given guard
 /// pressure level, regardless of the token-based homeostasis verdict. Token
 /// utilization measures only the session cache; the structures that actually
-/// blew up in #685 (HNSW graph, resident indices, build transients) are
+/// blew up memory (HNSW graph, resident indices, build transients) are
 /// invisible to it — Hard/Critical RSS must always at least unload indices.
 fn floor_action_for_rss(
     level: memory_guard::PressureLevel,
@@ -282,9 +287,10 @@ mod tests {
 
     #[test]
     fn registry_fans_out_and_prunes_dropped_targets() {
-        // #685/#975-class: on_pressure(Critical) floors to EmergencyDrop, which
+        // on_pressure(Critical) floors to EmergencyDrop, which
         // clears the process-wide ann_cache — hold its cross-module test lock
         // so a concurrent ann_cache test can't observe a wiped cache mid-assertion.
+        #[cfg(feature = "dense")]
         let _ann_lock = crate::core::ann_cache::test_lock();
         let first = Arc::new(make_orchestrator());
         let second = Arc::new(make_orchestrator());
@@ -323,6 +329,7 @@ mod tests {
     fn emergency_clears_cache() {
         // See `registry_fans_out_and_prunes_dropped_targets` above: EmergencyDrop
         // clears the shared ann_cache, so hold its cross-module test lock.
+        #[cfg(feature = "dense")]
         let _ann_lock = crate::core::ann_cache::test_lock();
         let cache = Arc::new(tokio::sync::RwLock::new(SessionCache::new()));
         {
@@ -368,7 +375,7 @@ mod tests {
     #[test]
     fn rss_floor_escalates_weak_actions_under_hard_pressure() {
         // Session cache nearly empty → controller says None; Hard RSS must
-        // still unload indices (#685: token heuristic blind to index RAM).
+        // still unload indices (the token heuristic is blind to index RAM).
         let floored =
             floor_action_for_rss(memory_guard::PressureLevel::Hard, HomeostasisAction::None);
         assert_eq!(floored, HomeostasisAction::UnloadIndices);

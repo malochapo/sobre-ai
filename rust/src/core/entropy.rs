@@ -6,6 +6,7 @@ use flate2::write::GzEncoder;
 
 use super::tokens::{count_tokens, encode_tokens};
 
+#[cfg(test)]
 const BPE_ENTROPY_THRESHOLD: f64 = 1.0;
 
 /// Result of entropy-based compression: output text, token counts, and techniques used.
@@ -13,7 +14,6 @@ const BPE_ENTROPY_THRESHOLD: f64 = 1.0;
 pub struct EntropyResult {
     pub output: String,
     pub original_tokens: usize,
-    pub compressed_tokens: usize,
     pub techniques: Vec<String>,
 }
 
@@ -32,7 +32,7 @@ pub fn token_entropy_from_ids(tokens: &[u32]) -> f64 {
     // Sum in a canonical (sorted-by-count) order: f64 addition is not
     // associative, so folding over HashMap iteration order — random per instance
     // — would make the entropy, and thus `density`/`entropy` mode output,
-    // non-deterministic across processes and defeat prompt caching (#498).
+    // non-deterministic across processes and defeat prompt caching.
     let mut counts: Vec<usize> = freq.into_values().collect();
     counts.sort_unstable();
     counts.iter().fold(0.0_f64, |acc, &count| {
@@ -62,7 +62,7 @@ pub fn normalized_token_entropy_from_ids(tokens: &[u32]) -> f64 {
     if n_unique <= 1 {
         return 0.0;
     }
-    // Canonical summation order for determinism (#498); see `token_entropy_from_ids`.
+    // Canonical summation order for determinism; see `token_entropy_from_ids`.
     let mut counts: Vec<usize> = freq.into_values().collect();
     counts.sort_unstable();
     let h = counts.iter().fold(0.0_f64, |acc, &count| {
@@ -101,22 +101,23 @@ pub fn kolmogorov_proxy(content: &str) -> f64 {
 }
 
 /// Compresses content by removing low-entropy lines and deduplicating patterns.
+#[cfg(test)]
 pub fn entropy_compress(content: &str) -> EntropyResult {
     entropy_compress_with_thresholds(content, BPE_ENTROPY_THRESHOLD, 0.7, &[])
 }
 
 /// Entropy compression with the opportunistic semantic redundancy filter
-/// (#544) pinned OFF. The regular path uses the shared embedding engine
-/// whenever it happens to be loaded, so its output depends on runtime state.
-/// Benchmarks and the scorecard (#211) need run-to-run and machine-to-machine
-/// reproducibility, so they must go through this entry point.
+/// pinned OFF. The regular path uses the shared embedding engine
+/// whenever it happens to be loaded, so its output depends on runtime state;
+/// the property tests go through this entry point to stay reproducible.
+#[cfg(test)]
 pub fn entropy_compress_deterministic(content: &str) -> EntropyResult {
     entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[])
 }
 
 /// Entropy compression with file-type-adaptive thresholds and event emission.
-/// `force_keep` lines (explicit `protect` tokens, #709) survive verbatim; pass
-/// `&[]` to keep the pre-protect behaviour byte-identical (#498).
+/// `force_keep` lines (explicit `protect` tokens) survive verbatim; pass
+/// `&[]` to keep the pre-protect behaviour byte-identical.
 pub fn entropy_compress_adaptive(
     content: &str,
     path: &str,
@@ -134,7 +135,7 @@ pub fn entropy_compress_adaptive(
 
 /// Like [`entropy_compress_adaptive`] but overrides the learned BPE-entropy
 /// threshold (e.g. from the aggressiveness knob) while keeping the file-adaptive
-/// jaccard. Pure function of its inputs (#498). Higher `bpe_entropy` drops more
+/// jaccard. Pure function of its inputs. Higher `bpe_entropy` drops more
 /// low-information lines.
 pub fn entropy_compress_with_threshold(
     content: &str,
@@ -168,12 +169,12 @@ pub fn entropy_compress_task_conditioned(
     )
 }
 
-/// Real line embedder for the semantic redundancy filter (#544): uses the
+/// Real line embedder for the semantic redundancy filter: uses the
 /// shared neural engine only when it is ALREADY loaded (never blocks a read
 /// on a model load) and only for files small enough that per-line embedding
 /// stays within the read-path latency budget. Embeddings are cached by line
 /// hash so re-reads cost nothing.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     use std::collections::HashMap;
     use std::sync::Mutex;
@@ -183,7 +184,7 @@ fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     static LINE_EMBED_CACHE: Mutex<Option<HashMap<u64, Vec<f32>>>> = Mutex::new(None);
 
     let engine = if line_count <= MAX_LINES_FOR_SEMANTIC {
-        crate::tools::ctx_knowledge::embeddings::embedding_engine_nonblocking()
+        crate::tools::sobre_knowledge::embeddings::embedding_engine_nonblocking()
     } else {
         None
     };
@@ -214,7 +215,7 @@ fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     }
 }
 
-#[cfg(not(feature = "embeddings"))]
+#[cfg(not(feature = "dense"))]
 fn line_embedder(_line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
     |_: &str| None
 }
@@ -251,7 +252,7 @@ fn entropy_compress_inner(
     let kw_lower: Vec<String> = task_keywords.iter().map(|k| k.to_lowercase()).collect();
     let original_count = lines.len();
     let mut task_rescued = 0usize;
-    // Semantic redundancy (#544): when the embedding engine is already
+    // Semantic redundancy: when the embedding engine is already
     // loaded, kept lines that embed near-identically to earlier kept lines
     // are dropped (MMR). Without the engine the closure returns None and the
     // decision path is byte-identical to the Zipf-only filter.
@@ -261,7 +262,7 @@ fn entropy_compress_inner(
     let mut scoring_ctx = super::surprise::ScoringCtx::new();
     lines.retain(|line| {
         let trimmed = line.trim();
-        // Explicit protect tokens (#709) win over every lossy heuristic: a line
+        // Explicit protect tokens win over every lossy heuristic: a line
         // containing one is force-kept verbatim before any threshold is applied.
         if super::protect::line_is_protected(line, force_keep) {
             return true;
@@ -310,7 +311,7 @@ fn entropy_compress_inner(
     for group in &groups {
         if group.len() > 1 {
             for &idx in &group[1..] {
-                // Protected lines (#709) are a hard keep: never dedup them away,
+                // Protected lines are a hard keep: never dedup them away,
                 // not just exempt them from the entropy threshold above.
                 if !super::protect::line_is_protected(lines[idx], force_keep) {
                     skip_indices.insert(idx);
@@ -348,16 +349,10 @@ fn entropy_compress_inner(
     } else {
         output
     };
-    let final_tokens = if compressed_tokens > original_tokens {
-        original_tokens
-    } else {
-        compressed_tokens
-    };
 
     EntropyResult {
         output: final_output,
         original_tokens,
-        compressed_tokens: final_tokens,
         techniques,
     }
 }
@@ -377,7 +372,7 @@ fn entropy_compress_with_thresholds(
     )
 }
 
-/// #798: Walk kept lines in source order; when a kept line has unclosed
+/// Walk kept lines in source order; when a kept line has unclosed
 /// call/index delimiters `()` `[]`, force-keep subsequent lines until
 /// balance is restored. Prevents partial call expressions like
 /// `logger.info(` surviving without their arguments.
@@ -448,7 +443,6 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
         return EntropyResult {
             output: String::new(),
             original_tokens,
-            compressed_tokens: 0,
             techniques: vec![format!("density target={target:.2} (empty input)")],
         };
     }
@@ -494,7 +488,7 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
         kept_count += 1;
     }
 
-    // #798 Delimiter Balance Guard: when a kept line opens unclosed
+    // Delimiter Balance Guard: when a kept line opens unclosed
     // delimiters ( [ {, force-keep subsequent lines until the balance
     // is restored. This prevents `logger.info(` from being kept while
     // its arguments are dropped, leaving syntactically broken output.
@@ -507,13 +501,11 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
         }
     }
     let output = out_lines.join("\n");
-    let compressed_tokens = count_tokens(&output);
 
     let dropped = lines.len() - kept_count;
     EntropyResult {
         output,
         original_tokens,
-        compressed_tokens,
         techniques: vec![format!(
             "density target={target:.2} budget={budget} tok, kept {kept_count}/{} lines (⊘ {dropped})",
             lines.len()
@@ -521,49 +513,23 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
     }
 }
 
-/// Per-line entropy statistics for a block of content.
-#[derive(Debug)]
-pub struct EntropyAnalysis {
-    pub avg_entropy: f64,
-    pub low_entropy_count: usize,
-    pub high_entropy_count: usize,
-    pub total_lines: usize,
-}
-
-/// Analyzes per-line BPE token entropy, counting low/high entropy lines.
-pub fn analyze_entropy(content: &str) -> EntropyAnalysis {
-    let lines: Vec<&str> = content.lines().collect();
-    let total = lines.len();
+/// Mean BPE token entropy over the non-blank lines of `content` (0 when there
+/// are none).
+pub fn average_line_entropy(content: &str) -> f64 {
     let mut sum = 0.0;
-    let mut low = 0;
-    let mut high = 0;
     let mut counted = 0;
-
-    for line in &lines {
+    for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let h = token_entropy(trimmed);
-        sum += h;
+        sum += token_entropy(trimmed);
         counted += 1;
-        if h < BPE_ENTROPY_THRESHOLD {
-            low += 1;
-        }
-        if h > 3.0 {
-            high += 1;
-        }
     }
-
-    EntropyAnalysis {
-        avg_entropy: if counted > 0 {
-            sum / counted as f64
-        } else {
-            0.0
-        },
-        low_entropy_count: low,
-        high_entropy_count: high,
-        total_lines: total,
+    if counted > 0 {
+        sum / counted as f64
+    } else {
+        0.0
     }
 }
 
@@ -676,7 +642,7 @@ mod tests {
 
     #[test]
     fn empty_force_keep_is_byte_identical() {
-        // The protect feature must not perturb the unprotected path (#498).
+        // The protect feature must not perturb the unprotected path.
         let content = "fn a() {}\n// note\nlet x = 1;\nlet x = 1;\n// note\n";
         let a = entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[]);
         let b = entropy_compress_deterministic(content);
@@ -688,7 +654,7 @@ mod tests {
         let content = "fn main() {\n    println!(\"hello\");\n}\n\n// comment\n// another comment\n\nfn helper() {\n    let x = 42;\n}\n";
         let result = entropy_compress(content);
         assert!(!result.output.is_empty(), "should produce non-empty output");
-        assert!(result.compressed_tokens <= result.original_tokens);
+        assert!(count_tokens(&result.output) <= result.original_tokens);
     }
 
     #[test]
@@ -762,8 +728,8 @@ mod tests {
         let orig = count_tokens(&content);
         for target in [0.3, 0.5, 0.7] {
             let r = entropy_compress_to_density(&content, target);
-            let actual = r.compressed_tokens as f64 / orig as f64;
-            // Tolerance of 0.15: the delimiter balance guard (#798) may
+            let actual = count_tokens(&r.output) as f64 / orig as f64;
+            // Tolerance of 0.15: the delimiter balance guard may
             // force-keep call/index continuation lines beyond the budget.
             assert!(
                 actual <= target + 0.15,
@@ -779,7 +745,6 @@ mod tests {
         let a = entropy_compress_to_density(&content, 0.4);
         let b = entropy_compress_to_density(&content, 0.4);
         assert_eq!(a.output, b.output);
-        assert_eq!(a.compressed_tokens, b.compressed_tokens);
     }
 
     #[test]
@@ -801,13 +766,12 @@ mod tests {
     #[test]
     fn density_empty_input() {
         let r = entropy_compress_to_density("", 0.5);
-        assert_eq!(r.compressed_tokens, 0);
         assert!(r.output.is_empty());
     }
 
     #[test]
     fn density_delimiter_balance_guard() {
-        // #798: when `logger.info(` is kept, its continuation lines must
+        // When `logger.info(` is kept, its continuation lines must
         // also survive so the output is syntactically valid.
         let content = [
             "import logging",
@@ -838,7 +802,7 @@ mod tests {
 
     #[test]
     fn density_delimiter_backward_propagation() {
-        // #798 regression: when a high-entropy continuation line inside a
+        // Regression: when a high-entropy continuation line inside a
         // multi-line call is kept by the entropy scorer, the opener line
         // must also be force-kept (backward propagation through the span).
         //
@@ -895,5 +859,42 @@ mod tests {
             "high-entropy line must survive: {}",
             r.output
         );
+    }
+
+    // Property/fuzz tests go through the deterministic entry point: the
+    // semantic-redundancy filter would otherwise depend on whether the
+    // embedding engine happens to be loaded.
+    proptest::proptest! {
+        #[test]
+        fn output_is_subset_of_lines(content in "[a-zA-Z0-9(){};= \n]{10,800}") {
+            let result = entropy_compress_deterministic(&content);
+            for line in result.output.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                proptest::prop_assert!(
+                    content.contains(line.trim()),
+                    "entropy output line not found in original: {:?}",
+                    line
+                );
+            }
+        }
+
+        #[test]
+        fn tokens_not_greater(content in "[a-zA-Z0-9(){};= \n]{10,600}") {
+            let result = entropy_compress_deterministic(&content);
+            let compressed = count_tokens(&result.output);
+            proptest::prop_assert!(
+                compressed <= result.original_tokens,
+                "compressed {} > original {}",
+                compressed,
+                result.original_tokens
+            );
+        }
+
+        #[test]
+        fn no_panic_on_arbitrary_utf8(content in "\\PC{0,1000}") {
+            let _ = entropy_compress_deterministic(&content);
+        }
     }
 }

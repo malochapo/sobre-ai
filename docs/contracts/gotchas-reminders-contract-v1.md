@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Formalizes the Gotcha tracking system: structured provenance, category-specific decay, retrieval budgets, and time-bounded reminders.
+Formalizes the Gotcha tracking system: the gotcha schema, the store cap, and source-based confidence decay.
 
 ## Gotcha Schema
 
@@ -26,53 +26,28 @@ struct Gotcha {
     source: GotchaSource,
     prevented_count: u32,
     tags: Vec<String>,
-    provenance: Vec<ProvenanceRef>,  // NEW v1
-    expires_at: Option<DateTime<Utc>>,  // NEW v1
-    decay_rate_override: Option<f32>,   // NEW v1
 }
 ```
 
-## ProvenanceRef
+## Store limits and decay
 
-Structured origin tracking replacing the previous unstructured `source: String`:
+Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:
 
-```rust
-struct ProvenanceRef {
-    kind: String,           // "issue", "commit", "tool_call", "agent", "manual"
-    url: Option<String>,    // e.g. "https://gitlab.com/group/project/-/issues/123"
-    commit_hash: Option<String>,
-    tool_call_id: Option<String>,
-    session_id: Option<String>,
-}
-```
-
-## GotchaPolicy
-
-Configurable via `[memory.gotcha]` in the config file (`MemoryPolicy`):
-
-```toml
-[memory.gotcha]
-max_gotchas_per_project = 100
-retrieval_budget_per_room = 10      # max gotchas returned per category
-default_decay_rate = 0.03
-
-[memory.gotcha.category_decay_overrides]
-security = 0.005                    # security gotchas decay very slowly
-convention = 0.05                   # convention gotchas decay faster
-```
-
-## Expiration
-
-- `expires_at`: absolute time after which the gotcha is automatically archived
-- `decay_rate_override` per gotcha: overrides the category/default decay rate
-
-## Retrieval Budgets
-
-`retrieval_budget_per_room` limits how many gotchas are returned per category during recall. Prevents one noisy category from dominating context.
+- **Cap**: at most 100 gotchas per project (`MAX_GOTCHAS`). When a new gotcha
+  pushes the store over the cap, gotchas are sorted by confidence and the
+  lowest-confidence ones are dropped.
+- **Decay** (`GotchaStore::apply_decay`, run when the store is loaded): for a
+  gotcha not seen for at least one day, confidence drops by
+  `source_rate * 1 / (1 + 0.1 * occurrences) * days_since_last_seen / 7`.
+  The source rate is 0.02 (agent-reported), 0.03 (cross-session correlated)
+  or 0.05 (auto-detected).
+- **Archive threshold**: gotchas whose confidence falls below 0.15 are
+  removed from the store.
+- **Pending errors**: at most 10, each expiring after 15 minutes.
 
 ## Tool Actions
 
-`ctx_knowledge action=gotcha` records a gotcha for the current project:
+`sobre_knowledge action=gotcha` records a gotcha for the current project:
 `trigger` and `resolution` are required, `severity` and `category` optional
 (category defaults to `convention`). Recorded gotchas are recalled through the
 knowledge search.

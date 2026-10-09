@@ -1,18 +1,13 @@
-//! Shared root guard for the user-facing directory walks
-//! (`ctx_search`, `ctx_tree`, `ctx_glob`).
+//! Root guard for walks nobody asked for by name: a tool called without a
+//! `path` walks the project root, and the session overview and `sobre_compose`
+//! walk it on their own.
 //!
-//! The MCP server process is often spawned by the editor with `cwd == $HOME`
-//! (Cursor starts user-level servers from the home directory). A tool call
-//! whose `path` falls back to `"."` would then walk the **entire home
-//! directory** — on macOS every `stat` under `~/Library`, `~/Desktop`,
-//! `~/Pictures`, … fires a TCC privacy prompt (the #356 class), and on
-//! Windows it would hydrate cloud placeholders (#363).
-//!
-//! The graph/BM25/search-index builders already refuse such roots via
-//! `is_safe_scan_root_public`; this module applies the same policy to the
-//! direct walk fallbacks. Relative paths are absolutized against the process
-//! cwd first, so `lean-ctx grep` / `lean-ctx ls` from inside a real project
-//! keep working unchanged.
+//! The MCP server is often spawned with `cwd == $HOME` (Cursor starts
+//! user-level servers from the home directory), so that root can be the whole
+//! home directory. Walking it stats everything under `~/Library`, `~/Desktop`,
+//! … (a macOS TCC privacy prompt each, the class) and hydrates cloud
+//! placeholders on Windows. A path the agent names is always walked:
+//! that choice is the agent's (invariant 5).
 
 /// Returns an actionable `ERROR:` message when `dir` must not be walked,
 /// or `None` when the walk is safe to proceed.
@@ -57,9 +52,8 @@ mod tests {
 
     #[test]
     fn relative_dot_is_absolutized_not_blanket_refused() {
-        // The test process runs inside the lean-ctx repo (a real project with
-        // markers), so "." must absolutize to a safe root — this is exactly
-        // the `lean-ctx grep` / `lean-ctx ls` CLI case.
+        // The test process runs inside the sobre repo (a real project with
+        // markers), so "." must absolutize to a safe root.
         assert_eq!(deny_unsafe_walk_root("."), None);
     }
 }

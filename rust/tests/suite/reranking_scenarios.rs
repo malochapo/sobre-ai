@@ -3,9 +3,9 @@
 //! Tests validate that the reranking pipeline produces correct behavior
 //! across realistic code search scenarios.
 
-use lean_ctx::core::bm25_index::ChunkKind;
-use lean_ctx::core::hybrid_search::HybridResult;
-use lean_ctx::core::search_reranking::{QueryType, classify_query, rerank_pipeline};
+use sobre::core::bm25_index::ChunkKind;
+use sobre::core::hybrid_search::HybridResult;
+use sobre::core::search_reranking::{QueryType, classify_query, rerank_pipeline};
 
 fn make_result(file: &str, symbol: &str, kind: ChunkKind, score: f64) -> HybridResult {
     HybridResult {
@@ -16,7 +16,6 @@ fn make_result(file: &str, symbol: &str, kind: ChunkKind, score: f64) -> HybridR
         end_line: 20,
         snippet: format!("fn {symbol}() {{ /* ... */ }}"),
         rrf_score: score,
-        bm25_score: Some(score),
         dense_score: None,
         bm25_rank: Some(1),
         dense_rank: None,

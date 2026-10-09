@@ -1,17 +1,17 @@
-//! Managed ONNX Runtime provisioning (GH #732) — the consent-gated download
+//! Managed ONNX Runtime provisioning — the consent-gated download
 //! that makes embeddings work out of the box, without owning a GPU driver
 //! matrix.
 //!
-//! Policy (decided on the issue, aligned with epic #724):
+//! Policy:
 //!
 //! - Release binaries stay CPU-only `load-dynamic`; nothing is bundled.
-//! - Provisioning is **explicit** (`lean-ctx embeddings provision`) — never a
+//! - Provisioning is **explicit** (`sobre embeddings provision`) — never a
 //!   silent download on first tool call.
 //! - Only the official CPU runtime is managed. GPU/NPU execution providers
 //!   remain opt-in feature builds with user-supplied runtimes.
 //!
 //! The managed copy lives in the same layout as every other managed binary
-//! artifact (`<data_dir>/addons/bin/onnxruntime/<version>/`), is SHA-256
+//! artifact (`<data_dir>/onnxruntime/<version>/`), is SHA-256
 //! pinned against the official `microsoft/onnxruntime` release assets, and is
 //! resolved by `ort_environment::resolve_ort_dylib` right after
 //! `ORT_DYLIB_PATH` — the operator override always wins.
@@ -20,16 +20,21 @@
 //! Runtime ≥ 1.24); a version-lockstep test below fails the build if the
 //! crate is bumped without updating this table.
 
+#[cfg(feature = "dense")]
 use std::io::Read;
-use std::path::{Path, PathBuf};
+#[cfg(feature = "dense")]
+use std::path::Path;
+use std::path::PathBuf;
 
-use super::binhash::sha256_file;
+#[cfg(feature = "dense")]
+use super::binhash::{sha256_bytes, sha256_file};
 
 /// Managed ONNX Runtime version. Must satisfy `1.{ort::MINOR_VERSION}.x` of
 /// the `ort` crate compiled into this binary (guarded by a test when the
-/// `embeddings` feature is on).
+/// `dense` feature is on).
 pub const ORT_VERSION: &str = "1.24.4";
 
+#[cfg(feature = "dense")]
 /// One platform's official CPU runtime archive.
 #[derive(Debug)]
 struct OrtArchive {
@@ -41,6 +46,7 @@ struct OrtArchive {
     member: &'static str,
 }
 
+#[cfg(feature = "dense")]
 /// Official CPU archives for `ORT_VERSION`, keyed by Rust target triple.
 /// macOS x86_64 is absent upstream (Microsoft ships arm64-only since 1.24) —
 /// `archive_for` returns a descriptive error pointing at Homebrew.
@@ -101,11 +107,9 @@ fn dylib_filename() -> &'static str {
     }
 }
 
-/// The managed install dir: `<data_dir>/addons/bin/onnxruntime/<version>/`.
+/// The managed install dir: `<data_dir>/onnxruntime/<version>/`.
 pub fn managed_dir() -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?
-        .join("addons")
-        .join("bin")
+    Ok(crate::core::data_dir::sobre_data_dir()?
         .join("onnxruntime")
         .join(ORT_VERSION))
 }
@@ -117,6 +121,7 @@ pub fn managed_dylib_path() -> Option<PathBuf> {
     path.is_file().then_some(path)
 }
 
+#[cfg(feature = "dense")]
 /// Download, verify and install the managed CPU ONNX Runtime for this
 /// platform. Explicit consent flow: only the `embeddings provision` CLI (and
 /// doctor's suggestion text) reach this. Idempotent — an existing install
@@ -139,7 +144,7 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
         .get(archive.url)
         .header(
             "User-Agent",
-            &format!("lean-ctx/{}", env!("CARGO_PKG_VERSION")),
+            &format!("sobre/{}", env!("CARGO_PKG_VERSION")),
         )
         .call()
         .map_err(|e| format!("ONNX Runtime fetch failed: {e}"))?;
@@ -176,7 +181,10 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
         let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o444));
     }
     #[cfg(target_os = "macos")]
-    crate::core::codesign::adhoc_sign(&tmp);
+    let _ = std::process::Command::new("codesign")
+        .args(["--force", "-s", "-"])
+        .arg(&tmp)
+        .output();
 
     std::fs::rename(&tmp, &dest).map_err(|e| e.to_string())?;
 
@@ -196,6 +204,7 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
 /// URL suffix, matching the official asset naming).
 // The URLs are our own pinned lowercase constants, not user paths — a
 // case-insensitive Path::extension dance would only obscure that.
+#[cfg(feature = "dense")]
 #[allow(clippy::case_sensitive_file_extension_comparisons)]
 fn extract_member(bytes: &[u8], url: &str, member: &str) -> Result<Vec<u8>, String> {
     if url.ends_with(".tgz") || url.ends_with(".tar.gz") {
@@ -207,6 +216,7 @@ fn extract_member(bytes: &[u8], url: &str, member: &str) -> Result<Vec<u8>, Stri
     }
 }
 
+#[cfg(feature = "dense")]
 fn extract_tgz_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     let gz = flate2::read::GzDecoder::new(bytes);
     let mut tar = tar::Archive::new(gz);
@@ -229,6 +239,7 @@ fn extract_tgz_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     Err(format!("`{member}` not found in archive"))
 }
 
+#[cfg(feature = "dense")]
 fn extract_zip_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     let cursor = std::io::Cursor::new(bytes);
     let mut zip = zip::ZipArchive::new(cursor).map_err(|e| format!("zip open failed: {e}"))?;
@@ -241,24 +252,19 @@ fn extract_zip_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-fn sha256_bytes(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    crate::core::agent_identity::hex_encode(&hasher.finalize())
-}
-
-/// One-line status for doctor / `embeddings status`.
+/// One-line status for `embeddings status`.
+#[cfg(feature = "dense")]
 pub fn status_line() -> String {
     match managed_dylib_path() {
         Some(p) => format!("managed ONNX Runtime {ORT_VERSION}: {}", p.display()),
         None => format!(
-            "managed ONNX Runtime: not installed (run  lean-ctx embeddings provision  \
+            "managed ONNX Runtime: not installed (run  sobre embeddings provision  \
              to fetch the official CPU runtime {ORT_VERSION})"
         ),
     }
 }
 
+#[cfg(feature = "dense")]
 /// Rust target-triple key this build was compiled for — the key
 /// [`archive_for`] looks up.
 fn current_target_triple() -> &'static str {
@@ -279,14 +285,14 @@ fn current_target_triple() -> &'static str {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "dense"))]
 mod tests {
     use super::*;
 
     /// The managed version must satisfy the `ort` crate's API requirement —
     /// bumping `ort` without updating the pinned archives breaks provisioning
     /// invisibly, so make it a compile-visible test failure instead.
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     #[test]
     fn managed_version_matches_ort_api_level() {
         let minor: u32 = ORT_VERSION.split('.').nth(1).unwrap().parse().unwrap();

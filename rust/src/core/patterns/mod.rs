@@ -15,7 +15,6 @@ pub mod curl;
 pub mod dbt;
 pub mod deno;
 pub mod deploy;
-pub mod deps_cmd;
 pub mod docker;
 pub mod dotnet;
 pub mod env_filter;
@@ -81,7 +80,7 @@ use crate::core::tokens::count_tokens;
 pub fn compress_output(command: &str, output: &str) -> Option<String> {
     // Policy gate: protected commands (Passthrough + Verbatim) must
     // never be pattern-compressed. The caller (compress_if_beneficial
-    // or ctx_shell::handle) should have already checked, but we
+    // or sobre_shell::handle) should have already checked, but we
     // defend in depth here.
     let policy = crate::shell::output_policy::classify(command, &[]);
     if policy.is_protected() {
@@ -98,12 +97,6 @@ pub fn compress_output(command: &str, output: &str) -> Option<String> {
             output
         }
     };
-
-    if let Some(engine) = crate::core::filters::FilterEngine::load()
-        && let Some(filtered) = engine.apply(command, clean_output)
-    {
-        return shorter_only(filtered, output);
-    }
 
     // VCS history (git/jj/gh/glab/hg) is owned by its dedicated compressor. Its
     // lines look log-ish (one per commit) but are NOT application logs, so the
@@ -192,7 +185,7 @@ fn shorter_only(compressed: String, original: &str) -> Option<String> {
 type PatternMatcher = fn(&str) -> bool;
 type PatternHandler = fn(&str, &str) -> Option<String>;
 
-/// Ordered prefix → compressor dispatch table (#660 CC reduction): first
+/// Ordered prefix → compressor dispatch table (CC reduction): first
 /// matching entry wins, mirroring the previous `if c.starts_with(..) { return
 /// ...; }` cascade exactly — including that a matched entry's `None` is
 /// final, never falls through to a later entry. Registering a new CLI tool
@@ -516,7 +509,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         },
         |c, output| cmake::compress(c, output),
     ),
-    // --- data domain (#657) ---
+    // --- data domain ---
     (
         |c| c == "dbt" || c.starts_with("dbt "),
         |c, output| dbt::compress(c, output),
@@ -533,7 +526,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("spark-submit") || c.starts_with("spark-sql") || c.starts_with("pyspark"),
         |c, output| spark::compress(c, output),
     ),
-    // --- ai domain (#658) ---
+    // --- ai domain ---
     (
         |c| c == "ollama" || c.starts_with("ollama "),
         |c, output| ollama::compress(c, output),
@@ -542,7 +535,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("mlflow "),
         |c, output| mlflow::compress(c, output),
     ),
-    // --- security / supply-chain (#659) ---
+    // --- security / supply-chain ---
     (
         |c| c.starts_with("semgrep "),
         |c, output| semgrep::compress(c, output),
@@ -567,7 +560,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("swiftlint"),
         |c, output| swiftlint::compress(c, output),
     ),
-    // --- vcs / toolchain (#660) ---
+    // --- vcs / toolchain ---
     (
         |c| c == "jj" || c.starts_with("jj "),
         |c, output| jj::compress(c, output),
@@ -584,7 +577,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("gem "),
         |c, output| gem::compress(c, output),
     ),
-    // --- edge / infra (#661) ---
+    // --- edge / infra ---
     (
         |c| c == "pulumi" || c.starts_with("pulumi "),
         |c, output| pulumi::compress(c, output),
@@ -612,7 +605,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
     ),
 ];
 
-/// A grep-family search command, bare or with arguments (#980, #985).
+/// A grep-family search command, bare or with arguments.
 ///
 /// The bare form matters: `proxy::compress::infer_command` synthesises `grep`
 /// (no arguments) from tool names like `search_files`. The old `starts_with("grep ")`
@@ -635,6 +628,20 @@ pub fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
         .iter()
         .find(|(matches, _)| matches(c))
         .and_then(|(_, handle)| handle(c, output))
+}
+
+/// The non-empty lines of `text`, capped at `max` with a "... (N more lines)"
+/// tail. Shared by the per-tool patterns.
+pub(crate) fn compact_lines(text: &str, max: usize) -> String {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() <= max {
+        return lines.join("\n");
+    }
+    format!(
+        "{}\n... ({} more lines)",
+        lines[..max].join("\n"),
+        lines.len() - max
+    )
 }
 
 #[cfg(test)]
@@ -667,7 +674,7 @@ mod tests {
 
     #[test]
     fn routes_cargo_commands() {
-        let output = "   Compiling lean-ctx v2.1.1\n    Finished `release` profile [optimized] target(s) in 30.5s";
+        let output = "   Compiling sobre v2.1.1\n    Finished `release` profile [optimized] target(s) in 30.5s";
         assert!(compress_output("cargo build --release", output).is_some());
     }
 

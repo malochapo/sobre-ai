@@ -1,10 +1,9 @@
-//! PID-independent dedup for Cursor's double-fired hooks (#1032).
+//! PID-independent dedup for Cursor's double-fired hooks.
 //!
 //! Cursor spawns `preToolUse` twice — two separate processes, 2–128 ms apart,
-//! with byte-identical payloads (confirmed in `debug.log`). The redirect path
-//! then runs the lean-ctx subprocess twice and logs twice. A naive "temp file
-//! exists" guard misses, because [`super::redirect_temp_path`] mixes the PID into
-//! its hash, so the two processes target different paths.
+//! with byte-identical payloads (confirmed in `debug.log`). The hook would then
+//! do its work and log twice, and no per-process guard can catch it because each
+//! fire is its own process.
 //!
 //! This module coordinates the two processes through a shared, PID-independent
 //! claim/response pair keyed on the *semantic* call (event + tool + args), so the
@@ -13,7 +12,7 @@
 //! Correctness first: dedup must never break a redirect. Every failure path falls
 //! back to running the work, so the worst case degrades to today's duplicate
 //! behaviour rather than a dropped or corrupted response. The claim/resp files
-//! are pure side channels — the stdout body stays byte-identical (#498).
+//! are pure side channels — the stdout body stays byte-identical.
 
 use std::fs::{self, OpenOptions};
 use std::path::Path;
@@ -43,7 +42,7 @@ const CLEANUP_AGE: Duration = Duration::from_mins(1);
 pub(super) fn deduped<F: FnOnce() -> String>(event: &str, key_material: &str, work: F) -> String {
     match hook_dir() {
         Some(dir) => deduped_in(&dir, event, key_material, work),
-        // No usable temp dir → no caching, just do the work (never break the hook).
+        // No usable state dir → no caching, just do the work (never break the hook).
         None => work(),
     }
 }
@@ -144,24 +143,15 @@ fn key(event: &str, key_material: &str) -> String {
 }
 
 fn hook_dir() -> Option<std::path::PathBuf> {
-    let dir = std::env::temp_dir().join("lean-ctx-hook");
-    fs::create_dir_all(&dir).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
-    }
-    Some(dir)
+    super::shared_dir("dedup")
 }
 
 /// Extensions [`sweep_stale`] may delete: our own dedup side channels
-/// (`.claim`/`.resp`) and the redirect temp files (`.lctx`) the host reads back
-/// right after the hook returns. The `.lctx` files previously had no sweeper and
-/// leaked thousands of files (#1035).
+/// (`.claim`/`.resp`).
 fn is_sweepable_ext(p: &Path) -> bool {
     p.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| e == "claim" || e == "resp" || e == "lctx")
+        .is_some_and(|e| e == "claim" || e == "resp")
 }
 
 fn sweep_stale(dir: &Path) {
@@ -271,31 +261,18 @@ mod tests {
     #[test]
     fn missing_dir_falls_back_to_work() {
         // A non-existent, non-creatable dir must never break the hook.
-        let bogus = Path::new("/proc/nonexistent-lean-ctx/does/not/exist");
+        let bogus = Path::new("/proc/nonexistent-sobre/does/not/exist");
         let out = deduped_in(bogus, "redirect", "x", || "FALLBACK".to_string());
         assert_eq!(out, "FALLBACK");
     }
 
     #[test]
-    fn sweeps_redirect_and_dedup_extensions_only() {
-        // #1035: the redirect temp files (`.lctx`) must be sweepable so they stop
-        // leaking, alongside our own `.claim`/`.resp` side channels — but unrelated
+    fn sweeps_dedup_extensions_only() {
+        // Only our own `.claim`/`.resp` side channels are sweepable; unrelated
         // files must never be touched.
-        assert!(is_sweepable_ext(Path::new("abc.lctx")));
         assert!(is_sweepable_ext(Path::new("abc.claim")));
         assert!(is_sweepable_ext(Path::new("abc.resp")));
         assert!(!is_sweepable_ext(Path::new("abc.txt")));
         assert!(!is_sweepable_ext(Path::new("noext")));
-    }
-
-    #[test]
-    fn sweep_keeps_fresh_lctx() {
-        // A just-written redirect temp file is younger than CLEANUP_AGE, so the
-        // sweep must keep it (the host still needs to read it back).
-        let dir = tempfile::tempdir().unwrap();
-        let fresh = dir.path().join("fresh.lctx");
-        fs::write(&fresh, "x").unwrap();
-        sweep_stale(dir.path());
-        assert!(fresh.exists(), "a fresh .lctx must survive the sweep");
     }
 }

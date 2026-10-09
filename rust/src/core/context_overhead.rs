@@ -1,78 +1,52 @@
-//! Honest accounting of the fixed per-turn context lean-ctx injects (GitHub #361).
+//! Honest accounting of the fixed per-turn context sobre injects.
 //!
-//! Three components ride every request and — on a provider WITHOUT prompt caching
+//! Two components ride every request and — on a provider WITHOUT prompt caching
 //! — are re-billed on every turn:
 //!  - the exposed MCP **tool schemas** (description + input schema of each tool),
-//!  - the MCP **server instructions** block, and
-//!  - the **rules block** lean-ctx writes into the host's instruction file
-//!    (`CLAUDE.md` / `AGENTS.md`).
+//!  - the MCP **server instructions** block — the only guidance sobre gives;
+//!    it writes nothing into the host's own instruction files.
 //!
-//! `lean-ctx gain` measures *compression on lean-ctx-touched reads* — its
-//! denominator is lean-ctx traffic, not the provider bill. On a phase-isolated /
-//! non-caching workload (separate process per phase, no provider cache) the
-//! cached-re-read lever has no surface, so the headline can read net-positive
-//! while the bill moved net-negative. Surfacing this overhead — and stating the
-//! denominator — keeps the meter honest.
-//!
-//! Net bill impact ≈ `gross_saved_tokens − total_tokens() × turns`.
-
-use std::sync::OnceLock;
+//! `sobre gain` shows this figure next to the savings: the savings count
+//! tokens removed from tool output, while this prefix is added to every
+//! request. With the proxy in the path, the prefix is already inside the real
+//! cost the provider reported.
 
 use crate::core::tokens::count_tokens;
 
-/// A measured breakdown, in tokens, of the per-turn context lean-ctx adds.
+/// A measured breakdown, in tokens, of the per-turn context sobre adds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ContextOverhead {
     /// Number of MCP tools exposed (the schema-bearing surface).
     pub tool_count: usize,
     /// Tokens for all exposed tool descriptions + input schemas.
     pub tool_schema_tokens: usize,
-    /// Tokens for the MCP server instructions block (capped at the instruction budget).
+    /// Tokens for the MCP server instructions block.
     pub instruction_tokens: usize,
-    /// Tokens for the rules block injected into the host instruction file.
-    pub rules_block_tokens: usize,
 }
 
 impl ContextOverhead {
     /// Total per-turn overhead in tokens.
     #[must_use]
     pub fn total_tokens(&self) -> usize {
-        self.tool_schema_tokens + self.instruction_tokens + self.rules_block_tokens
-    }
-
-    /// Process-cached overhead. The tool surface and rules block are static and
-    /// the instruction block varies only with slow-moving session state, so a
-    /// once-per-process measurement is the right tradeoff for callers that render
-    /// repeatedly (the `gain` dashboard re-renders every second in `--live`) —
-    /// it avoids per-tick disk I/O and re-tokenization.
-    #[must_use]
-    pub fn cached() -> Self {
-        static CACHE: OnceLock<ContextOverhead> = OnceLock::new();
-        *CACHE.get_or_init(Self::measure)
+        self.tool_schema_tokens + self.instruction_tokens
     }
 
     /// Measure the overhead for the currently-configured MCP surface. Uses the
-    /// same advertisement policy as the live `tools/list` handler (candidate
-    /// set, profile gates, invoker, description compression), so the number
-    /// reflects what this install actually advertises (#572).
+    /// same advertisement policy as the live `tools/list` handler (the registry
+    /// with description compression), so the number reflects what this install
+    /// actually advertises.
     #[must_use]
     pub fn measure() -> Self {
         let tools = crate::server::tool_visibility::advertised_tool_defs_default();
         let tool_count = tools.len();
         let tool_schema_tokens = tools.iter().map(tool_tokens).sum();
 
-        let instructions =
-            crate::instructions::build_instructions(crate::tools::CrpMode::effective());
-        let instruction_tokens = count_tokens(&instructions);
-
-        // The rules block rides every turn in the host instruction file.
-        let rules_block_tokens = count_tokens(&crate::rules_inject::canonical_rules_block());
+        let instruction_tokens = count_tokens(&crate::instructions::build_instructions());
 
         Self {
             tool_count,
             tool_schema_tokens,
             instruction_tokens,
-            rules_block_tokens,
         }
     }
 }
@@ -88,79 +62,22 @@ pub fn tool_tokens(t: &rmcp::model::Tool) -> usize {
     desc + schema
 }
 
-/// Estimated per-turn overhead of native IDE tools (Read, Grep, Shell, Glob,
-/// Write, StrReplace) — lean-ctx replaces these 1:1, so only the delta above
-/// this baseline is attributable lean-ctx overhead.
-pub(crate) const NATIVE_BASELINE_TOKENS_PER_TURN: u64 = 2400;
-
-/// Conservative provider prompt-cache hit rate. Anthropic achieves ~90% on
-/// stable prefixes (#498), OpenAI ~50%. Default 75% cross-provider estimate.
-/// Returns 0.0 when `--no-cache-adjust` is active (#1104).
-fn provider_cache_hit_rate() -> f64 {
-    if no_cache_adjust_active() {
-        return 0.0;
-    }
-    0.75
-}
-
-// #1104: `--no-cache-adjust` forces cache_rate=0 (worst-case view).
-std::thread_local! {
-    static NO_CACHE_ADJUST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-pub fn set_no_cache_adjust(v: bool) {
-    NO_CACHE_ADJUST.with(|c| c.set(v));
-}
-
-fn no_cache_adjust_active() -> bool {
-    NO_CACHE_ADJUST.with(std::cell::Cell::get)
-}
-
-/// Net-of-injection reconciliation with baseline + cache corrections (#1104).
-///
-/// Two fixes over the original `saved - overhead × turns`:
-/// 1. **Baseline**: native tools also inject ~2,400 tok/turn of schemas — only
-///    the delta above that is lean-ctx's fault.
-/// 2. **Cache**: stable prefixes are cached by providers (Anthropic 90%,
-///    OpenAI 50%) — effective cost is `delta × (1 - cache_rate)`.
-#[must_use]
-pub fn net_of_injection(tokens_saved: u64, overhead_per_turn: u64, turns: u64) -> (u64, i64) {
-    let delta = overhead_per_turn.saturating_sub(NATIVE_BASELINE_TOKENS_PER_TURN);
-    let cache_rate = provider_cache_hit_rate();
-    let effective_per_turn = (delta as f64 * (1.0 - cache_rate)) as u64;
-    let total = effective_per_turn.saturating_mul(turns);
-    let net = tokens_saved as i64 - total as i64;
-    (total, net)
-}
-
-/// Provider turns (requests) the proxy actually observed carrying the injected
-/// prefix. The proxy is the only component that sees every provider turn, so its
-/// persisted request count is the honest multiplier for the per-turn injection
-/// tax. `0` when the proxy is not in the request path — we never guess turns we
-/// did not see, so [`net_of_injection`] then collapses to the gross savings.
-#[must_use]
-pub fn observed_turns() -> u64 {
-    crate::proxy::metrics::load_persisted().map_or(0, |m| m.requests_total)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn measure_reports_nonzero_components() {
-        // Isolated (default) config: shared rules injection, no pinned profile —
-        // every component carries tokens. `isolated_data_dir` also holds the env
-        // lock, so a concurrent test toggling the knobs can't perturb this.
+        // `isolated_data_dir` also holds the env lock, so a concurrent test
+        // toggling the knobs can't perturb this.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let o = ContextOverhead::measure();
         assert!(o.tool_count > 0, "must expose at least one tool");
         assert!(o.tool_schema_tokens > 0, "tool schemas carry tokens");
         assert!(o.instruction_tokens > 0, "instructions carry tokens");
-        assert!(o.rules_block_tokens > 0, "rules block carries tokens");
         assert_eq!(
             o.total_tokens(),
-            o.tool_schema_tokens + o.instruction_tokens + o.rules_block_tokens
+            o.tool_schema_tokens + o.instruction_tokens
         );
     }
 
@@ -170,19 +87,19 @@ mod tests {
             tool_count: 10,
             tool_schema_tokens: 100,
             instruction_tokens: 200,
-            rules_block_tokens: 50,
         };
-        assert_eq!(o.total_tokens(), 350);
+        assert_eq!(o.total_tokens(), 300);
     }
 
     #[test]
     fn per_turn_prefix_stays_within_budget() {
-        // Ratchet on the fixed per-turn prefix: the 17 tool schemas, the MCP
-        // instructions and the rules block. Measured at 5543 tokens; the budget
-        // leaves ~3% for small wording changes. A tool or a paragraph more fails
-        // here, which is the point — raise the budget only in the same commit
-        // that justifies the growth.
-        const PER_TURN_PREFIX_BUDGET_TOKENS: usize = 5700;
+        // Ratchet on the fixed per-turn prefix: the 15 tool schemas and the MCP
+        // instructions. Measured at 4697 tokens once sobre_session and
+        // sobre_knowledge kept their 14 useful actions; the budget leaves ~3%
+        // for small wording changes. A tool or a paragraph more fails here,
+        // which is the point — raise the budget only in the same commit that
+        // justifies the growth.
+        const PER_TURN_PREFIX_BUDGET_TOKENS: usize = 4840;
 
         let _iso = crate::core::data_dir::isolated_data_dir();
         let registered = crate::server::registry::build_registry().tool_defs().len();
@@ -194,36 +111,11 @@ mod tests {
         );
         assert!(
             o.total_tokens() <= PER_TURN_PREFIX_BUDGET_TOKENS,
-            "per-turn prefix = {} tok (schemas {} + instr {} + rules {}), budget {}",
+            "per-turn prefix = {} tok (schemas {} + instr {}), budget {}",
             o.total_tokens(),
             o.tool_schema_tokens,
             o.instruction_tokens,
-            o.rules_block_tokens,
             PER_TURN_PREFIX_BUDGET_TOKENS,
         );
-    }
-
-    #[test]
-    fn net_of_injection_subtracts_delta_above_baseline() {
-        // 3400 tok/turn - 2400 baseline = 1000 delta.
-        // With 75% cache: effective = 1000 * 0.25 = 250/turn.
-        // 8 turns: total = 2000, net = 10000 - 2000 = 8000.
-        let (total, net) = net_of_injection(10000, 3400, 8);
-        assert!(
-            total < 3000,
-            "cache + baseline must reduce tax, got {total}"
-        );
-        assert!(net > 7000, "net must reflect reduced tax, got {net}");
-    }
-
-    #[test]
-    fn net_of_injection_below_baseline_means_zero_tax() {
-        // 2000 tok/turn < 2400 baseline → delta = 0 → no tax at all.
-        assert_eq!(net_of_injection(5000, 2000, 100), (0, 5000));
-    }
-
-    #[test]
-    fn net_of_injection_collapses_to_gross_without_proxy_turns() {
-        assert_eq!(net_of_injection(1234, 3000, 0), (0, 1234));
     }
 }

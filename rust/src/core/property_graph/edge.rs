@@ -2,24 +2,18 @@
 
 use rusqlite::{Connection, params};
 
+/// What a file edge says. The first three are code references (one file needs
+/// the other); the last two are heuristics (see `queries`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EdgeKind {
     Imports,
-    Calls,
-    Defines,
-    Exports,
-    TypeRef,
-    TestedBy,
-    ChangedIn,
-    BuiltIn,
-    MentionedIn,
-    Affects,
-    Breaks,
-    /// Implicit module/package/re-export relationship (from graph_index)
+    /// Module declaration or re-export (`mod x;`, `__init__.py`, barrels).
     Module,
-    /// Git co-change correlation (files frequently changed together)
+    /// A type or extension-method use resolved to its defining file.
+    TypeRef,
+    /// Files changed together in recent git history.
     Cochange,
-    /// Sibling/orphan rescue edge (fallback connectivity)
+    /// Files in the same directory (connects files nothing else reaches).
     Sibling,
 }
 
@@ -27,45 +21,27 @@ impl EdgeKind {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Imports => "imports",
-            Self::Calls => "calls",
-            Self::Defines => "defines",
-            Self::Exports => "exports",
-            Self::TypeRef => "type_ref",
-            Self::TestedBy => "tested_by",
-            Self::ChangedIn => "changed_in",
-            Self::BuiltIn => "built_in",
-            Self::MentionedIn => "mentioned_in",
-            Self::Affects => "affects",
-            Self::Breaks => "breaks",
             Self::Module => "module",
+            Self::TypeRef => "type_ref",
             Self::Cochange => "cochange",
             Self::Sibling => "sibling",
         }
     }
 
-    pub fn parse(s: &str) -> Self {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
-            "calls" => Self::Calls,
-            "defines" => Self::Defines,
-            "exports" => Self::Exports,
-            "type_ref" => Self::TypeRef,
-            "tested_by" => Self::TestedBy,
-            "changed_in" => Self::ChangedIn,
-            "built_in" => Self::BuiltIn,
-            "mentioned_in" => Self::MentionedIn,
-            "affects" => Self::Affects,
-            "breaks" => Self::Breaks,
-            "module" => Self::Module,
-            "cochange" => Self::Cochange,
-            "sibling" => Self::Sibling,
-            _ => Self::Imports,
+            "imports" => Some(Self::Imports),
+            "module" => Some(Self::Module),
+            "type_ref" => Some(Self::TypeRef),
+            "cochange" => Some(Self::Cochange),
+            "sibling" => Some(Self::Sibling),
+            _ => None,
         }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct Edge {
-    pub id: Option<i64>,
     pub source_id: i64,
     pub target_id: i64,
     pub kind: EdgeKind,
@@ -75,7 +51,6 @@ pub struct Edge {
 impl Edge {
     pub fn new(source_id: i64, target_id: i64, kind: EdgeKind) -> Self {
         Self {
-            id: None,
             source_id,
             target_id,
             kind,
@@ -83,6 +58,7 @@ impl Edge {
         }
     }
 
+    #[cfg(test)]
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self
@@ -105,42 +81,58 @@ pub(super) fn upsert(conn: &Connection, edge: &Edge) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source_id, target_id, kind, metadata
+        "SELECT source_id, target_id, kind, metadata
          FROM edges WHERE source_id = ?1",
     )?;
     let edges = stmt
         .query_map(params![node_id], |row| {
-            Ok(Edge {
-                id: Some(row.get(0)?),
-                source_id: row.get(1)?,
-                target_id: row.get(2)?,
-                kind: EdgeKind::parse(&row.get::<_, String>(3)?),
-                metadata: row.get(4)?,
-            })
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get::<_, String>(2)?,
+                row.get(3)?,
+            ))
         })?
         .filter_map(std::result::Result::ok)
+        .filter_map(|(source_id, target_id, kind, metadata)| {
+            Some(Edge {
+                source_id,
+                target_id,
+                kind: EdgeKind::parse(&kind)?,
+                metadata,
+            })
+        })
         .collect();
     Ok(edges)
 }
 
+#[cfg(test)]
 pub(super) fn to_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source_id, target_id, kind, metadata
+        "SELECT source_id, target_id, kind, metadata
          FROM edges WHERE target_id = ?1",
     )?;
     let edges = stmt
         .query_map(params![node_id], |row| {
-            Ok(Edge {
-                id: Some(row.get(0)?),
-                source_id: row.get(1)?,
-                target_id: row.get(2)?,
-                kind: EdgeKind::parse(&row.get::<_, String>(3)?),
-                metadata: row.get(4)?,
-            })
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get::<_, String>(2)?,
+                row.get(3)?,
+            ))
         })?
         .filter_map(std::result::Result::ok)
+        .filter_map(|(source_id, target_id, kind, metadata)| {
+            Some(Edge {
+                source_id,
+                target_id,
+                kind: EdgeKind::parse(&kind)?,
+                metadata,
+            })
+        })
         .collect();
     Ok(edges)
 }

@@ -13,13 +13,9 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
 
     match cfg.proxy.enabled {
         Some(true) => {
-            let reachable = {
-                use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-                let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-                TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout()).is_ok()
-            };
+            let reachable = crate::proxy_setup::is_proxy_reachable(port);
             // Autostart has no backend on Windows/other platforms, so a missing
-            // autostart must never be a hard failure there (#416).
+            // autostart must never be a hard failure there.
             let supported = crate::proxy_autostart::is_supported();
 
             if reachable {
@@ -28,7 +24,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                     return Outcome {
                         ok: false,
                         line: format!(
-                            "{BOLD}Proxy{RST}  {YELLOW}running on port {port} but auth probe failed{RST}  {YELLOW}fix: lean-ctx proxy restart{RST}"
+                            "{BOLD}Proxy{RST}  {YELLOW}running on port {port} but auth probe failed{RST}  {YELLOW}fix: sobre proxy restart{RST}"
                         ),
                     };
                 }
@@ -37,7 +33,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                     Outcome {
                         ok: true,
                         line: format!(
-                            "{BOLD}Proxy{RST}  {GREEN}running on port {port}{RST}  {YELLOW}autostart not installed — persist: lean-ctx proxy enable{RST}"
+                            "{BOLD}Proxy{RST}  {GREEN}running on port {port}{RST}  {YELLOW}autostart not installed — persist: sobre proxy enable{RST}"
                         ),
                     }
                 } else {
@@ -52,16 +48,16 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                 Outcome {
                     ok: false,
                     line: format!(
-                        "{BOLD}Proxy{RST}  {RED}enabled but not reachable on port {port}{RST}  {YELLOW}fix: lean-ctx proxy start{RST}"
+                        "{BOLD}Proxy{RST}  {RED}enabled but not reachable on port {port}{RST}  {YELLOW}fix: sobre proxy start{RST}"
                     ),
                 }
             } else {
                 // Windows/other: no autostart backend, so a stopped proxy is a
-                // setup note (start it manually), not a doctor failure (#416).
+                // setup note (start it manually), not a doctor failure.
                 Outcome {
                     ok: true,
                     line: format!(
-                        "{BOLD}Proxy{RST}  {YELLOW}enabled but not running{RST}  {DIM}autostart unavailable on this platform — start: lean-ctx proxy start{RST}"
+                        "{BOLD}Proxy{RST}  {YELLOW}enabled but not running{RST}  {DIM}autostart unavailable on this platform — start: sobre proxy start{RST}"
                     ),
                 }
             }
@@ -69,70 +65,42 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
         Some(false) => Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Proxy{RST}  {DIM}disabled (optional feature){RST}  {DIM}enable: lean-ctx proxy enable{RST}"
+                "{BOLD}Proxy{RST}  {DIM}disabled (optional feature){RST}  {DIM}enable: sobre proxy enable{RST}"
             ),
         },
         None => Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Proxy{RST}  {DIM}not configured{RST}  {DIM}enable: lean-ctx proxy enable{RST}"
+                "{BOLD}Proxy{RST}  {DIM}not configured{RST}  {DIM}enable: sobre proxy enable{RST}"
             ),
         },
     }
 }
-/// Detects stale `ANTHROPIC_BASE_URL` in Claude Code settings pointing to the local
-/// lean-ctx proxy when the proxy is not enabled. Returns `None` when no mismatch exists
-/// (no check needed), `Some(Outcome)` when a stale URL is found.
+/// Detects agent configurations (Claude Code, Codex, OpenCode) that still
+/// point at the local proxy while the proxy is not enabled. Returns `None`
+/// when there are none.
 pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
     use crate::core::config::Config;
 
     let home = dirs::home_dir()?;
-    let cfg = Config::load();
-    let port = crate::proxy_setup::default_port();
-
-    if cfg.proxy.enabled == Some(true) {
+    let stale = crate::proxy_setup::stale_proxy_agents(&home);
+    if stale.is_empty() {
         return None;
     }
-
-    let settings_dir = crate::core::editor_registry::claude_state_dir(&home);
-    let settings_path = settings_dir.join("settings.json");
-    let content = std::fs::read_to_string(&settings_path).ok()?;
-    let doc: serde_json::Value = crate::core::jsonc::parse_jsonc(&content).ok()?;
-
-    let base_url = doc
-        .get("env")
-        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    if base_url.is_empty() {
-        return None;
-    }
-
-    let local_proxy = format!("http://127.0.0.1:{port}");
-    let is_local = base_url == local_proxy
-        || base_url == format!("http://localhost:{port}")
-        || base_url.starts_with("http://127.0.0.1:")
-        || base_url.starts_with("http://localhost:");
-
-    if !is_local {
-        return None;
-    }
-
-    let state = if cfg.proxy.enabled == Some(false) {
+    let state = if Config::load().proxy.enabled == Some(false) {
         "disabled"
     } else {
         "not configured"
     };
+    let agents = stale.join(", ");
 
     Some(Outcome {
         ok: false,
         line: format!(
-            "{BOLD}Proxy env{RST}  {RED}ANTHROPIC_BASE_URL → {base_url} but proxy is {state}{RST}\n\
-             {DIM}         Claude Code routes API traffic to lean-ctx, but lean-ctx proxy is {state}.{RST}\n\
-             {DIM}         This causes 401 auth failures. Fix:{RST}\n\
-             {YELLOW}           lean-ctx proxy cleanup    {DIM}(remove stale URL){RST}\n\
-             {YELLOW}           lean-ctx proxy enable     {DIM}(enable the proxy){RST}"
+            "{BOLD}Proxy env{RST}  {RED}{agents} → local proxy, but proxy is {state}{RST}\n\
+             {DIM}         Their API requests go to a proxy that is {state} and fail. Fix:{RST}\n\
+             {YELLOW}           sobre proxy cleanup    {DIM}(remove stale URL){RST}\n\
+             {YELLOW}           sobre proxy enable     {DIM}(enable the proxy){RST}"
         ),
     })
 }
@@ -152,18 +120,8 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
         return None;
     }
 
-    let settings_path = crate::core::editor_registry::claude_state_dir(&home).join("settings.json");
-    let content = std::fs::read_to_string(&settings_path).ok()?;
-    let doc: serde_json::Value = crate::core::jsonc::parse_jsonc(&content).ok()?;
-
-    let base_url = doc
-        .get("env")
-        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    // No local redirect → nothing to warn about.
-    if !crate::proxy_setup::is_local_lean_ctx_url(base_url) {
+    // No redirect of sobre's → nothing to warn about.
+    if !crate::proxy_setup::claude_points_at_proxy(&home) {
         return None;
     }
 
@@ -178,41 +136,63 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
             "{BOLD}Claude auth{RST}  {RED}ANTHROPIC_BASE_URL → proxy but no ANTHROPIC_API_KEY (Pro/Max subscription){RST}\n\
              {DIM}         A subscription token only authenticates against api.anthropic.com; routing it{RST}\n\
              {DIM}         through the proxy causes a login loop / 401. Fix one of:{RST}\n\
-             {YELLOW}           lean-ctx proxy disable     {DIM}(keep your subscription; use ctx_* MCP tools for savings){RST}\n\
-             {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: lean-ctx proxy enable  (pay-as-you-go via proxy){RST}"
+             {YELLOW}           sobre proxy disable     {DIM}(keep your subscription; use sobre_* MCP tools for savings){RST}\n\
+             {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: sobre proxy enable  (pay-as-you-go via proxy){RST}"
         ),
     })
 }
 pub(crate) fn proxy_upstream_outcome() -> Outcome {
-    use crate::core::config::{Config, ProxyProvider, is_local_proxy_url};
+    let cfg = crate::core::config::Config::load();
+    upstream_outcome(&cfg.proxy, crate::proxy_setup::default_port())
+}
 
-    let cfg = Config::load();
+/// The upstream check for `proxy`, served on `proxy_port`. Only an upstream
+/// that is the proxy's own address fails; a loopback URL on another port is a
+/// local model server, such as Ollama on `http://127.0.0.1:11434`.
+pub(super) fn upstream_outcome(
+    proxy: &crate::core::config::ProxyConfig,
+    proxy_port: u16,
+) -> Outcome {
+    use crate::core::config::{ProxyProvider, is_local_proxy_url};
+
     let checks = [
         (
             "Anthropic",
             "proxy.upstreams.anthropic",
-            cfg.proxy.resolve_upstream(ProxyProvider::Anthropic),
+            proxy.resolve_upstream_checked(ProxyProvider::Anthropic),
         ),
         (
             "OpenAI",
             "proxy.upstreams.openai",
-            cfg.proxy.resolve_upstream(ProxyProvider::OpenAi),
-        ),
-        (
-            "Gemini",
-            "proxy.upstreams.gemini",
-            cfg.proxy.resolve_upstream(ProxyProvider::Gemini),
+            proxy.resolve_upstream_checked(ProxyProvider::OpenAi),
         ),
     ];
+    // A configured value the proxy cannot use: it falls back to the
+    // provider's default, so requests meant elsewhere go to the provider.
+    for (label, key, resolved) in &checks {
+        if let Err(e) = resolved {
+            return Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Proxy upstream{RST}  {RED}invalid {label} upstream, the proxy uses the provider default: {e}{RST}  {YELLOW}set {key} to an http(s) URL{RST}"
+                ),
+            };
+        }
+    }
+    let checks = checks.map(|(label, key, resolved)| (label, key, resolved.unwrap_or_default()));
 
     let mut custom = Vec::new();
     let mut plaintext = Vec::new();
     for (label, key, resolved) in &checks {
-        if is_local_proxy_url(resolved) {
+        let loopback = is_local_proxy_url(resolved);
+        let port = resolved
+            .rsplit_once(':')
+            .and_then(|(_, rest)| rest.split('/').next()?.parse::<u16>().ok());
+        if loopback && port == Some(proxy_port) {
             return Outcome {
                 ok: false,
                 line: format!(
-                    "{BOLD}Proxy upstream{RST}  {RED}{label} upstream points back to local proxy{RST}  {YELLOW}run: lean-ctx config set {key} <url>{RST}"
+                    "{BOLD}Proxy upstream{RST}  {RED}{label} upstream points back to the proxy itself{RST}  {YELLOW}run: sobre config set {key} <url>{RST}"
                 ),
             };
         }
@@ -230,16 +210,12 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
         ) || matches!(
             *label,
             "OpenAI" if resolved == "https://api.openai.com"
-        ) || matches!(
-            *label,
-            "Gemini" if resolved == "https://generativelanguage.googleapis.com"
         );
         if !is_default {
             custom.push(format!("{label}={resolved}"));
-            // Past the loopback guard above, any `http://` is a non-loopback
-            // plaintext upstream the user wrote. Valid config, but worth a
-            // standing security reminder.
-            if resolved.starts_with("http://") {
+            // Plaintext to another machine: valid config, but worth a
+            // standing security reminder. Loopback never leaves the machine.
+            if resolved.starts_with("http://") && !loopback {
                 plaintext.push(*label);
             }
         }
@@ -264,7 +240,7 @@ pub(crate) fn proxy_upstream_outcome() -> Outcome {
         Outcome { ok: true, line }
     }
 }
-/// #449 drift check: warns when the running proxy forwards to a different
+/// Drift check: warns when the running proxy forwards to a different
 /// upstream than config.toml resolves to (an edit that failed validation).
 /// Returns `None` when the proxy is down or in sync, so the board stays quiet
 /// unless there is something actionable.
@@ -276,13 +252,12 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
         return None;
     }
     let port = crate::proxy_setup::default_port();
-    let (live_anthropic, live_openai, live_gemini) = proxy_live_upstreams(port)?;
+    let (live_anthropic, live_openai) = proxy_live_upstreams(port)?;
     let configured = cfg.proxy.resolve_all();
 
     let drifted: Vec<String> = [
         ("Anthropic", &configured.anthropic, &live_anthropic),
         ("OpenAI", &configured.openai, &live_openai),
-        ("Gemini", &configured.gemini, &live_gemini),
     ]
     .into_iter()
     .filter(|(_, configured, live)| upstream_drifted(configured, live))
@@ -295,7 +270,7 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
     Some(Outcome {
         ok: false,
         line: format!(
-            "{BOLD}Proxy upstream drift{RST}  {YELLOW}{} — check the upstream in config.toml, then: lean-ctx proxy restart{RST}",
+            "{BOLD}Proxy upstream drift{RST}  {YELLOW}{} — check the upstream in config.toml, then: sobre proxy restart{RST}",
             drifted.join("; ")
         ),
     })

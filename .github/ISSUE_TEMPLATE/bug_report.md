@@ -7,9 +7,11 @@ labels: bug
 
 **sobre version:** (run `sobre --version`)
 
+**Build:** (`sobre-<target>` or `sobre-dense-<target>` release binary, `make install`, or a source build — with which `--features`?)
+
 **OS:** (macOS / Linux / Windows)
 
-**AI tool:** (Cursor / Claude Code / Copilot / Crush / other)
+**Agent:** (Claude Code / Codex / Copilot CLI / Cursor / Gemini CLI / OpenCode / VS Code / Windsurf / Zed)
 
 **What happened:**
 
@@ -21,6 +23,11 @@ labels: bug
 1. 
 2. 
 3. 
+
+**`sobre doctor` output:**
+```
+(paste the output of `sobre doctor` here)
+```
 
 **Relevant output:**
 ```

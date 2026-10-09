@@ -1,7 +1,7 @@
 //! Auto-generated config schema from `Config` struct metadata.
 //!
-//! Used by `lean-ctx config schema` to emit JSON and by
-//! `lean-ctx config validate` to check user config.toml files.
+//! Used by `sobre config init` to document every key, and by `sobre
+//! doctor` to flag keys of a user config.toml that no setting reads.
 
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -68,8 +68,8 @@ impl ConfigSchema {
     /// Combines the hand-written schema (which carries descriptions, types and
     /// help text) with the keys derived from the live `Config` struct. The
     /// struct is the source of truth for *what is valid*, so a field added to
-    /// `Config` is recognised by `config apply` / `config validate` immediately,
-    /// without anyone remembering to mirror it into `sections_*.rs` (#456).
+    /// `Config` is recognised by `doctor`'s unknown-key check immediately,
+    /// without anyone remembering to mirror it into `sections_*.rs`.
     pub fn known_keys(&self) -> Vec<String> {
         let mut keys = Vec::new();
         for (section, schema) in &self.sections {
@@ -94,8 +94,8 @@ impl ConfigSchema {
 }
 
 /// Every TOML key the `Config` struct serialises to, in dot-separated form
-/// (e.g. `allow_paths`, `proxy`, `proxy.port`). Derived from
-/// `Config::default()` so validation tracks the struct automatically (#456).
+/// (e.g. `search_roots`, `proxy`, `proxy.port`). Derived from
+/// `Config::default` so validation tracks the struct automatically.
 ///
 /// Option fields that default to `None` are omitted by serde and therefore not
 /// listed here; those keys still come from the hand-written schema. Emitting the
@@ -160,8 +160,8 @@ mod tests {
     ///
     /// A `sections_*.rs` entry that hardcodes its default — `json!(false)`,
     /// `json!([])` — instead of reading `cfg.<field>` keeps compiling after the
-    /// struct field is deleted. The key then stays in `config schema`, in
-    /// `config validate` and in the published
+    /// struct field is deleted. The key then stays in `config init`, in
+    /// `doctor`'s unknown-key check and in the published
     /// `docs/reference/generated/config-keys.md` while nothing reads it: a
     /// setting the user can write that silently does nothing. `shell_allowlist`,
     /// `shell_allowlist_extra` and `update_check_disabled` each survived their
@@ -215,13 +215,13 @@ mod tests {
         );
     }
 
-    /// Mirrors the acceptance rule used by `config validate` / `config apply`:
+    /// Mirrors the acceptance rule `doctor` uses for unknown keys:
     /// a key is valid if it is listed verbatim or sits under a known section.
     fn accepted(known: &[String], key: &str) -> bool {
         known.iter().any(|k| k == key) || known.iter().any(|k| key.starts_with(&format!("{k}.")))
     }
 
-    /// #456: every field the `Config` struct actually serialises must be
+    /// Every field the `Config` struct actually serialises must be
     /// accepted by validation, or the hand-written schema has drifted.
     #[test]
     fn known_keys_cover_every_config_struct_field() {
@@ -236,16 +236,13 @@ mod tests {
         );
     }
 
-    /// Spot-check the concrete keys from the #456 report so a future schema/struct
+    /// Spot-check the concrete keys from the report so a future schema/struct
     /// refactor that reintroduces the drift fails loudly.
     #[test]
-    fn known_keys_recognise_reported_456_keys() {
+    fn known_keys_recognise_reported_keys() {
         let known = ConfigSchema::generate().known_keys();
-        for key in ["allow_paths", "proxy"] {
-            assert!(
-                accepted(&known, key),
-                "validation must recognise '{key}' (#456)"
-            );
+        for key in ["search_roots", "proxy"] {
+            assert!(accepted(&known, key), "validation must recognise '{key}'");
         }
     }
 
@@ -255,7 +252,7 @@ mod tests {
     /// `Config::default()` and it never appears in `config_derived_keys`: such a
     /// field is settable via `config set` **only** if it was hand-added to a
     /// `sections_*.rs` schema. Forgetting that is the `Unknown config key: <x>`
-    /// regression a user hit before #507. Guard the whole
+    /// regression a user hit. Guard the whole
     /// class so a new `Option` knob can't silently become un-settable again — if you add an `Option` scalar to
     /// `Config`, register it in `sections_*.rs` and list it here.
     #[test]
@@ -269,9 +266,52 @@ mod tests {
         ] {
             assert!(
                 schema.lookup(key).is_some(),
-                "`lean-ctx config set {key} <v>` fails with 'Unknown config key' — \
+                "`sobre config set {key} <v>` fails with 'Unknown config key' — \
                  add `{key}` to a sections_*.rs schema"
             );
         }
+    }
+}
+
+/// INVARIANTS.md §2: at most 15 configuration keys. A key is a top-level field
+/// or a field of `[proxy]`; a table a key holds (`proxy.upstreams`) counts
+/// once, whatever it contains. Adding a key means
+/// updating this list, which is the point: it must be a deliberate change.
+#[cfg(test)]
+mod key_cap {
+    const KEY_CAP: usize = 15;
+    const KEYS: &[&str] = &[
+        "compression_level",
+        "debug_log",
+        "embedding_model",
+        "hook_binary",
+        "ignore",
+        "passthrough_commands",
+        "proxy.enabled",
+        "proxy.port",
+        "proxy.upstreams",
+        "search_roots",
+        "shell_timeout_secs",
+    ];
+
+    #[test]
+    fn config_keys_are_the_documented_set_and_under_the_cap() {
+        let mut counted: Vec<String> = super::ConfigSchema::generate()
+            .known_keys()
+            .into_iter()
+            .filter(|k| k != "proxy")
+            .map(|k| {
+                let parts: Vec<&str> = k.split('.').collect();
+                if parts[0] == "proxy" && parts.len() > 2 {
+                    format!("proxy.{}", parts[1])
+                } else {
+                    k
+                }
+            })
+            .collect();
+        counted.sort();
+        counted.dedup();
+        assert_eq!(counted, KEYS, "the configuration keys changed");
+        assert!(KEYS.len() <= KEY_CAP, "{} keys, cap {KEY_CAP}", KEYS.len());
     }
 }

@@ -1,9 +1,11 @@
 //! Graph traversal queries: dependents, dependencies, impact analysis,
 //! dependency chains (BFS-based shortest path).
 //!
-//! All traversal queries support multi-edge traversal: imports, calls,
-//! exports, type_ref, tested_by, and more. Edge kinds are weighted
-//! for impact scoring.
+//! Two classes of edges. Code references (imports, module declarations and
+//! re-exports, type uses) say one file needs another: dependencies,
+//! dependents, impact and chains follow only these. Heuristics (files changed
+//! together in git, files in the same directory) say two files tend to be
+//! read together: only `related_files` adds them.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -11,40 +13,30 @@ use rusqlite::{Connection, params};
 
 #[derive(Debug, Clone)]
 pub struct ImpactResult {
-    pub root_file: String,
     pub affected_files: Vec<String>,
     pub max_depth_reached: usize,
     pub edges_traversed: usize,
 }
 
-#[derive(Debug, Clone)]
-pub struct DependencyChain {
-    pub path: Vec<String>,
-    pub depth: usize,
-}
+/// Edge kinds that are code references: one file needs the other.
+const REFERENCE_EDGE_KINDS: &str = "'imports','module','type_ref'";
 
-/// Edge kinds considered structural (code connectivity).
-const STRUCTURAL_EDGE_KINDS: &str =
-    "'imports','calls','exports','type_ref','tested_by','module','cochange','sibling'";
+/// References plus the heuristics, for `related_files` only.
+const RELATED_EDGE_KINDS: &str = "'imports','module','type_ref','cochange','sibling'";
 
-/// Weight multiplier per edge kind for impact scoring.
-pub fn edge_weight(kind: &str) -> f64 {
+/// Weight multiplier per edge kind, for impact attenuation and related ranking.
+pub(crate) fn edge_weight(kind: &str) -> f64 {
     match kind {
         "imports" => 1.0,
-        "calls" => 0.8,
-        "exports" => 0.7,
         "module" => 0.6,
         "type_ref" => 0.5,
-        "tested_by" => 0.4,
         "cochange" => 0.35,
-        "defines" => 0.3,
         "sibling" => 0.25,
-        "changed_in" => 0.2,
         _ => 0.1,
     }
 }
 
-/// Files that depend on `file_path` via structural edges (imports, calls, type_ref, etc.).
+/// Files that reference `file_path`.
 pub(super) fn dependents(conn: &Connection, file_path: &str) -> anyhow::Result<Vec<String>> {
     let sql = format!(
         "SELECT DISTINCT p_src.path
@@ -55,7 +47,7 @@ pub(super) fn dependents(conn: &Connection, file_path: &str) -> anyhow::Result<V
          JOIN paths p_tgt ON p_tgt.id = n_tgt.file_id
          WHERE p_tgt.path = ?1
            AND p_src.path != ?1
-           AND e.kind IN ({STRUCTURAL_EDGE_KINDS})"
+           AND e.kind IN ({REFERENCE_EDGE_KINDS})"
     );
     let mut stmt = conn.prepare(&sql)?;
 
@@ -69,33 +61,8 @@ pub(super) fn dependents(conn: &Connection, file_path: &str) -> anyhow::Result<V
     Ok(results)
 }
 
-/// Files that `file_path` depends on via structural edges.
-pub(super) fn dependencies(conn: &Connection, file_path: &str) -> anyhow::Result<Vec<String>> {
-    let sql = format!(
-        "SELECT DISTINCT p_tgt.path
-         FROM edges e
-         JOIN nodes n_src ON e.source_id = n_src.id
-         JOIN nodes n_tgt ON e.target_id = n_tgt.id
-         JOIN paths p_src ON p_src.id = n_src.file_id
-         JOIN paths p_tgt ON p_tgt.id = n_tgt.file_id
-         WHERE p_src.path = ?1
-           AND p_tgt.path != ?1
-           AND e.kind IN ({STRUCTURAL_EDGE_KINDS})"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-
-    let mut results: Vec<String> = stmt
-        .query_map(params![file_path], |row| row.get(0))?
-        .filter_map(std::result::Result::ok)
-        .collect();
-
-    results.sort();
-    results.dedup();
-    Ok(results)
-}
-
-/// Weighted BFS from `file_path` following reverse structural edges up to `max_depth`.
-/// Edge weights attenuate propagation: calls edges carry less impact than imports.
+/// Weighted BFS from `file_path` following reverse reference edges up to `max_depth`.
+/// Edge weights attenuate propagation: a type use carries less impact than an import.
 /// Nodes only propagate when cumulative weight exceeds the threshold (0.1).
 pub(super) fn impact_analysis(
     conn: &Connection,
@@ -143,62 +110,15 @@ pub(super) fn impact_analysis(
     visited.remove(file_path);
 
     Ok(ImpactResult {
-        root_file: file_path.to_string(),
         affected_files: visited.into_iter().collect(),
         max_depth_reached,
         edges_traversed,
     })
 }
 
-/// BFS shortest path from `from` to `to` following structural edges.
-pub(super) fn dependency_chain(
-    conn: &Connection,
-    from: &str,
-    to: &str,
-) -> anyhow::Result<Option<DependencyChain>> {
-    // Same canonicalization as `impact_analysis`.
-    let from = from.replace('\\', "/");
-    let to = to.replace('\\', "/");
-    let from = from.as_str();
-    let to = to.as_str();
-    let forward_graph = build_forward_graph(conn)?;
-
-    let mut visited: HashSet<String> = HashSet::new();
-    let mut parent: HashMap<String, String> = HashMap::new();
-    let mut queue: VecDeque<String> = VecDeque::new();
-
-    visited.insert(from.to_string());
-    queue.push_back(from.to_string());
-
-    while let Some(current) = queue.pop_front() {
-        if current == to {
-            let mut path = vec![to.to_string()];
-            let mut cursor = to.to_string();
-            while let Some(prev) = parent.get(&cursor) {
-                path.push(prev.clone());
-                cursor = prev.clone();
-            }
-            path.reverse();
-            let depth = path.len() - 1;
-            return Ok(Some(DependencyChain { path, depth }));
-        }
-
-        if let Some(deps) = forward_graph.get(&current) {
-            for dep in deps {
-                if visited.insert(dep.clone()) {
-                    parent.insert(dep.clone(), current.clone());
-                    queue.push_back(dep.clone());
-                }
-            }
-        }
-    }
-
-    Ok(None)
-}
-
-/// Related files for a given path: direct neighbors via any structural edge,
+/// Related files for a given path: direct neighbors via a reference or a heuristic,
 /// sorted by edge weight (strongest relationship first). Returns (path, weight) pairs.
-pub fn related_files(
+pub(crate) fn related_files(
     conn: &Connection,
     file_path: &str,
     limit: usize,
@@ -215,7 +135,7 @@ pub fn related_files(
          JOIN paths p_other ON p_other.id = n_other.file_id
          WHERE p_self.path = ?1
            AND p_other.path != ?1
-           AND e.kind IN ({STRUCTURAL_EDGE_KINDS})"
+           AND e.kind IN ({RELATED_EDGE_KINDS})"
     );
     let mut stmt = conn.prepare(&sql)?;
 
@@ -245,7 +165,7 @@ fn build_weighted_reverse_graph(
          JOIN nodes n_tgt ON e.target_id = n_tgt.id
          JOIN paths p_src ON p_src.id = n_src.file_id
          JOIN paths p_tgt ON p_tgt.id = n_tgt.file_id
-         WHERE e.kind IN ({STRUCTURAL_EDGE_KINDS})
+         WHERE e.kind IN ({REFERENCE_EDGE_KINDS})
            AND p_src.path != p_tgt.path"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -276,34 +196,4 @@ fn build_weighted_reverse_graph(
         .into_iter()
         .map(|(k, v)| (k, v.into_iter().collect()))
         .collect())
-}
-
-fn build_forward_graph(conn: &Connection) -> anyhow::Result<HashMap<String, Vec<String>>> {
-    let sql = format!(
-        "SELECT DISTINCT p_src.path, p_tgt.path
-         FROM edges e
-         JOIN nodes n_src ON e.source_id = n_src.id
-         JOIN nodes n_tgt ON e.target_id = n_tgt.id
-         JOIN paths p_src ON p_src.id = n_src.file_id
-         JOIN paths p_tgt ON p_tgt.id = n_tgt.file_id
-         WHERE e.kind IN ({STRUCTURAL_EDGE_KINDS})
-           AND p_src.path != p_tgt.path"
-    );
-    let mut stmt = conn.prepare(&sql)?;
-
-    let mut graph: HashMap<String, Vec<String>> = HashMap::new();
-    let rows = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-    })?;
-
-    for row in rows {
-        let (source, target) = row?;
-        graph.entry(source).or_default().push(target);
-    }
-
-    for deps in graph.values_mut() {
-        deps.sort();
-        deps.dedup();
-    }
-    Ok(graph)
 }

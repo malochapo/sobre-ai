@@ -1,8 +1,6 @@
 use chrono::Utc;
 
-use super::{
-    DIM, RST, compact_score, display_user_path, print_compact_status, shell_aliases_outcome,
-};
+use super::{DIM, RST, compact_score, display_user_path, print_compact_status};
 
 pub(super) struct DoctorFixOptions {
     pub json: bool,
@@ -12,12 +10,12 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     let report = build_and_persist_fix_report(opts.json)?;
     if opts.json {
         let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-        println!("{json_text}");
+        crate::outln!("{json_text}");
     } else {
         let (passed, total) = compact_score();
         print_compact_status(passed, total);
         if let Ok(path) = crate::core::setup_report::doctor_report_path() {
-            println!("  {DIM}report saved:{RST} {}", display_user_path(&path));
+            crate::outln!("  {DIM}report saved:{RST} {}", display_user_path(&path));
         }
     }
     Ok(i32::from(!report.success))
@@ -36,260 +34,86 @@ fn build_and_persist_fix_report(
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
-    let mut shell_step = SetupStepReport {
-        name: "shell_hook".to_string(),
+    // The same agent connection `init` runs: MCP entry, hooks and skill for
+    // every installed agent.
+    let mut agents_step = SetupStepReport {
+        name: "agents".to_string(),
         ok: true,
         items: Vec::new(),
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    let before = shell_aliases_outcome();
-    if before.ok {
-        shell_step.items.push(SetupItem {
-            name: "init --global".to_string(),
-            status: "already".to_string(),
-            path: None,
-            note: None,
-        });
-    } else {
-        if quiet {
-            crate::cli::install_shell_hook_quiet(&["--global".to_string()]);
-        } else {
-            crate::cli::install_shell_hook(&["--global".to_string()]);
-        }
-        let after = shell_aliases_outcome();
-        shell_step.ok = after.ok;
-        shell_step.items.push(SetupItem {
-            name: "init --global".to_string(),
-            status: if after.ok {
-                "fixed".to_string()
-            } else {
-                "failed".to_string()
-            },
-            path: None,
-            note: if after.ok {
-                None
-            } else {
-                Some("shell hook still not detected by doctor checks".to_string())
-            },
-        });
-        if !after.ok {
-            shell_step
-                .warnings
-                .push("shell hook not detected after init --global".to_string());
-        }
-    }
-    steps.push(shell_step);
-
-    let mut mcp_step = SetupStepReport {
-        name: "mcp_config".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let binary = crate::core::portable_binary::resolve_portable_binary();
-    let targets = crate::core::editor_registry::build_targets(&home);
-    for t in &targets {
-        if !t.detect_path.exists() {
+    for outcome in crate::setup::connect_agents(&[], false) {
+        if !outcome.detected {
             continue;
         }
-        let short = t.config_path.to_string_lossy().to_string();
-
-        let mode = if t.agent_key.is_empty() {
-            crate::hooks::HookMode::Mcp
+        let status = if !outcome.errors.is_empty() {
+            "error"
+        } else if outcome.files.is_empty() {
+            "already"
         } else {
-            crate::hooks::recommend_hook_mode(&t.agent_key)
+            "repaired"
         };
-
-        let res = crate::core::editor_registry::write_config_with_options(
-            t,
-            &binary,
-            crate::core::editor_registry::WriteOptions {
-                overwrite_invalid: true,
-            },
+        agents_step.ok &= outcome.errors.is_empty();
+        agents_step.items.push(SetupItem {
+            name: outcome.name.to_string(),
+            status: status.to_string(),
+            path: None,
+            note: (!outcome.files.is_empty()).then(|| {
+                outcome
+                    .files
+                    .iter()
+                    .map(|(p, _)| crate::setup::display_path(p, &home))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }),
+        });
+        agents_step.warnings.extend(
+            outcome
+                .warnings
+                .iter()
+                .map(|w| format!("{}: {w}", outcome.name)),
         );
-
-        match res {
-            Ok(r) => {
-                let status = match r.action {
-                    crate::core::editor_registry::WriteAction::Created => "created",
-                    crate::core::editor_registry::WriteAction::Updated => "updated",
-                    crate::core::editor_registry::WriteAction::Already => "already",
-                };
-                let note_parts: Vec<String> = [Some(format!("mode={mode}")), r.note]
-                    .into_iter()
-                    .flatten()
-                    .collect();
-                mcp_step.items.push(SetupItem {
-                    name: t.name.to_string(),
-                    status: status.to_string(),
-                    path: Some(short),
-                    note: Some(note_parts.join("; ")),
-                });
-            }
-            Err(e) => {
-                mcp_step.ok = false;
-                mcp_step.items.push(SetupItem {
-                    name: t.name.to_string(),
-                    status: "error".to_string(),
-                    path: Some(short),
-                    note: Some(e.clone()),
-                });
-                mcp_step.errors.push(format!("{}: {e}", t.name));
-            }
-        }
+        agents_step.errors.extend(
+            outcome
+                .errors
+                .iter()
+                .map(|e| format!("{}: {e}", outcome.name)),
+        );
     }
-    if mcp_step.items.is_empty() {
-        mcp_step
+    if agents_step.items.is_empty() {
+        agents_step
             .warnings
-            .push("no supported AI tools detected; skipped MCP config repair".to_string());
+            .push("no supported AI tools detected; nothing to repair".to_string());
     }
-    steps.push(mcp_step);
+    steps.push(agents_step);
 
-    // Resolve workspace/user dual-scope conflicts (issue #338)
-    let mut ws_scope_step = SetupStepReport {
-        name: "workspace_scope".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let user_scope_mcp_locations = super::lean_ctx_mcp_location_names(&home);
-    let ws_fixed = super::workspace_scope::fix_workspace_dual_scope(&user_scope_mcp_locations);
-    ws_scope_step.items.push(SetupItem {
-        name: "dual_scope_dedup".to_string(),
-        status: if ws_fixed > 0 {
-            format!("fixed {ws_fixed}")
-        } else {
-            "clean".to_string()
-        },
-        path: None,
-        note: if ws_fixed > 0 {
-            Some("removed lean-ctx from workspace-scope (user-scope preferred)".to_string())
-        } else {
-            None
-        },
-    });
-    steps.push(ws_scope_step);
-
-    let mut rules_step = SetupStepReport {
-        name: "agent_rules".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let inj = crate::rules_inject::inject_all_rules(&home);
-    if !inj.injected.is_empty() {
-        rules_step.items.push(SetupItem {
-            name: "injected".to_string(),
-            status: inj.injected.len().to_string(),
-            path: None,
-            note: Some(inj.injected.join(", ")),
-        });
-    }
-    if !inj.updated.is_empty() {
-        rules_step.items.push(SetupItem {
-            name: "updated".to_string(),
-            status: inj.updated.len().to_string(),
-            path: None,
-            note: Some(inj.updated.join(", ")),
-        });
-    }
-    if !inj.already.is_empty() {
-        rules_step.items.push(SetupItem {
-            name: "already".to_string(),
-            status: inj.already.len().to_string(),
-            path: None,
-            note: Some(inj.already.join(", ")),
-        });
-    }
-    if !inj.errors.is_empty() {
-        rules_step.ok = false;
-        rules_step.errors.extend(inj.errors.clone());
-    }
-    steps.push(rules_step);
-
-    // Rules dedup (#578): a duplicated rules block bills every session twice.
-    // Auto-heal here so `doctor --fix` (and the dashboard fix route) leave
-    // exactly one canonical carrier per client — same guarantees as the CLI
-    // command: only owned files/marked blocks, `.bak` backups for edits.
-    {
-        let mut dedup_step = SetupStepReport {
-            name: "rules_dedup".to_string(),
+    for (name, prune_result) in [
+        ("bm25_cache_prune", prune_bm25_caches()),
+        ("graph_cache_prune", prune_graph_caches()),
+    ] {
+        steps.push(SetupStepReport {
+            name: name.to_string(),
             ok: true,
-            items: Vec::new(),
+            items: vec![SetupItem {
+                name: "prune".to_string(),
+                status: if prune_result.removed > 0 {
+                    "pruned".to_string()
+                } else {
+                    "clean".to_string()
+                },
+                path: None,
+                note: Some(format!(
+                    "scanned {}, removed {}, freed {:.1} MB",
+                    prune_result.scanned,
+                    prune_result.removed,
+                    prune_result.bytes_freed as f64 / 1_048_576.0
+                )),
+            }],
             warnings: Vec::new(),
             errors: Vec::new(),
-        };
-        let project = std::env::current_dir().unwrap_or_else(|_| home.clone());
-        for line in crate::cli::rules_dedup::auto_apply(&home, &project) {
-            let failed = line.starts_with("FAILED");
-            if failed {
-                dedup_step.warnings.push(line.clone());
-            }
-            dedup_step.items.push(SetupItem {
-                name: "dedup".to_string(),
-                status: if failed { "failed" } else { "applied" }.to_string(),
-                path: None,
-                note: Some(line),
-            });
-        }
-        if !dedup_step.items.is_empty() {
-            steps.push(dedup_step);
-        }
-    }
-
-    let mut hooks_step = SetupStepReport {
-        name: "agent_hooks".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let targets = crate::core::editor_registry::build_targets(&home);
-    for t in &targets {
-        if !t.detect_path.exists() || t.agent_key.trim().is_empty() {
-            continue;
-        }
-        let mode = crate::hooks::recommend_hook_mode(&t.agent_key);
-        crate::hooks::install_agent_hook_with_mode(&t.agent_key, true, mode);
-        hooks_step.items.push(SetupItem {
-            name: format!("{} hooks", t.name),
-            status: "installed".to_string(),
-            path: Some(t.detect_path.to_string_lossy().to_string()),
-            note: Some(format!("mode={mode}; merge-based install/repair")),
         });
     }
-    if !hooks_step.items.is_empty() {
-        steps.push(hooks_step);
-    }
-
-    let mut bm25_step = SetupStepReport {
-        name: "bm25_cache_prune".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let prune_result = crate::cli::prune_bm25_caches();
-    bm25_step.items.push(SetupItem {
-        name: "prune".to_string(),
-        status: if prune_result.removed > 0 {
-            "pruned".to_string()
-        } else {
-            "clean".to_string()
-        },
-        path: None,
-        note: Some(format!(
-            "scanned {}, removed {}, freed {:.1} MB",
-            prune_result.scanned,
-            prune_result.removed,
-            prune_result.bytes_freed as f64 / 1_048_576.0
-        )),
-    });
-    steps.push(bm25_step);
 
     let mut proxy_env_step = SetupStepReport {
         name: "proxy_env".to_string(),
@@ -331,8 +155,8 @@ fn build_and_persist_fix_report(
 
     // Prune knowledge stores whose project_root was deleted (removed git
     // worktrees, thrown-away projects). They can never be written again, so
-    // their per-store eviction cap can never self-heal — pure accumulated bloat
-    // (GH #615). Only the explicit --fix path deletes; the background lifecycle
+    // their per-store eviction cap can never self-heal — pure accumulated bloat.
+    // Only the explicit --fix path deletes; the background lifecycle
     // never does, since a missing root can also be a temporarily-unmounted drive.
     let mut orphan_step = SetupStepReport {
         name: "orphaned_knowledge".to_string(),
@@ -391,6 +215,7 @@ fn build_and_persist_fix_report(
         started_at,
         finished_at,
         success,
+        dry_run: false,
         platform: PlatformInfo {
             os: std::env::consts::OS.to_string(),
             arch: std::env::consts::ARCH.to_string(),
@@ -402,7 +227,161 @@ fn build_and_persist_fix_report(
 
     let path = doctor_report_path()?;
     let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-    crate::config_io::write_atomic_with_backup(&path, &json_text)?;
+    crate::config_io::write_atomic(&path, &json_text)?;
 
     Ok(report)
+}
+
+pub(super) struct PruneResult {
+    pub scanned: u32,
+    pub removed: u32,
+    pub bytes_freed: u64,
+}
+
+/// Drop BM25 indexes that are quarantined, over the persist cap, or belong to
+/// a project that no longer exists. A dropped index is rebuilt on next use.
+pub(super) fn prune_bm25_caches() -> PruneResult {
+    let mut result = PruneResult {
+        scanned: 0,
+        removed: 0,
+        bytes_freed: 0,
+    };
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
+        return result;
+    };
+    let Ok(entries) = std::fs::read_dir(data_dir.join("vectors")) else {
+        return result;
+    };
+    let max_bytes = crate::core::config::DEFAULT_BM25_PERSIST_MB * 1024 * 1024;
+
+    for dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+        result.scanned += 1;
+
+        let quarantined = dir.join("bm25_index.bin.zst.quarantined");
+        if let Ok(meta) = std::fs::metadata(&quarantined)
+            && std::fs::remove_file(&quarantined).is_ok()
+        {
+            result.bytes_freed += meta.len();
+            result.removed += 1;
+        }
+
+        let index_path = dir.join("bm25_index.bin.zst");
+        if let Ok(meta) = std::fs::metadata(&index_path)
+            && meta.len() > max_bytes
+            && std::fs::remove_file(&index_path).is_ok()
+        {
+            result.bytes_freed += meta.len();
+            result.removed += 1;
+        }
+
+        if let Ok(root) = std::fs::read_to_string(dir.join("project_root.txt"))
+            && !std::path::Path::new(root.trim()).exists()
+        {
+            remove_dir(&dir, &mut result);
+        }
+    }
+    result
+}
+
+/// Drop property graphs whose project no longer exists (the meta file records
+/// the absolute root) and pathologically large ones (> 100 MB). A dropped
+/// graph is rebuilt on the next query.
+pub(super) fn prune_graph_caches() -> PruneResult {
+    let mut result = PruneResult {
+        scanned: 0,
+        removed: 0,
+        bytes_freed: 0,
+    };
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
+        return result;
+    };
+    let Ok(entries) = std::fs::read_dir(data_dir.join("graphs")) else {
+        return result;
+    };
+
+    for dir in entries.flatten().map(|e| e.path()).filter(|p| p.is_dir()) {
+        let meta_file = dir.join("graph.meta.json");
+        let db_file = dir.join("graph.db");
+        if !meta_file.exists() && !db_file.exists() {
+            continue;
+        }
+        result.scanned += 1;
+
+        let orphaned = std::fs::read_to_string(&meta_file)
+            .ok()
+            .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+            .and_then(|v| v.get("project_root")?.as_str().map(String::from))
+            .is_some_and(|root| !root.is_empty() && !std::path::Path::new(&root).exists());
+        let oversized = std::fs::metadata(&db_file).is_ok_and(|m| m.len() > 100 * 1024 * 1024);
+        if orphaned || oversized {
+            remove_dir(&dir, &mut result);
+        }
+    }
+    result
+}
+
+fn remove_dir(dir: &std::path::Path, result: &mut PruneResult) {
+    let freed = dir_size(dir);
+    if std::fs::remove_dir_all(dir).is_ok() {
+        result.bytes_freed += freed;
+        result.removed += 1;
+    }
+}
+
+fn dir_size(path: &std::path::Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|e| e.path())
+        .map(|p| {
+            if p.is_dir() {
+                dir_size(&p)
+            } else {
+                std::fs::metadata(&p).map_or(0, |m| m.len())
+            }
+        })
+        .sum()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{prune_bm25_caches, prune_graph_caches};
+
+    #[test]
+    fn prune_drops_indexes_of_deleted_projects_only() {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let live = tempfile::tempdir().unwrap();
+        let live_root = live.path().to_string_lossy().to_string();
+        let gone_root = "/nonexistent/sobre-prune-test".to_string();
+
+        let vectors = data.path().join("vectors");
+        let graphs = data.path().join("graphs");
+        for (name, root) in [("gone", &gone_root), ("live", &live_root)] {
+            let bm25 = vectors.join(name);
+            std::fs::create_dir_all(&bm25).unwrap();
+            std::fs::write(bm25.join("project_root.txt"), root).unwrap();
+            std::fs::write(bm25.join("bm25_index.bin.zst"), b"x").unwrap();
+
+            let graph = graphs.join(name);
+            std::fs::create_dir_all(&graph).unwrap();
+            std::fs::write(graph.join("graph.db"), b"x").unwrap();
+            std::fs::write(
+                graph.join("graph.meta.json"),
+                serde_json::json!({ "project_root": root }).to_string(),
+            )
+            .unwrap();
+        }
+
+        let bm25 = prune_bm25_caches();
+        assert_eq!((bm25.scanned, bm25.removed), (2, 1));
+        assert!(!vectors.join("gone").exists());
+        assert!(vectors.join("live").exists());
+
+        let graph = prune_graph_caches();
+        assert_eq!((graph.scanned, graph.removed), (2, 1));
+        assert!(!graphs.join("gone").exists());
+        assert!(graphs.join("live").exists());
+    }
 }

@@ -418,7 +418,7 @@ mod verbatim_output_tests {
         assert!(!is_verbatim_output("tail --follow server.log"));
     }
 
-    /// GH #688 (severe): a `sed`/`awk` file dump must never enter the generic
+    /// (severe): a `sed`/`awk` file dump must never enter the generic
     /// terse pipeline — its dictionary layer word-substitutes code identifiers
     /// that happen to match English words (`function`→`fn`, `return`→`ret`)
     /// with no code-awareness, corrupting source read via a range-print
@@ -427,7 +427,7 @@ mod verbatim_output_tests {
     fn sed_awk_file_dumps_are_verbatim() {
         assert!(is_verbatim_output("sed -n '1,50p' build_windows.ps1"));
         assert!(is_verbatim_output("sed -n '/start/,/end/p' file.rs"));
-        // #1084: semicolon-separated multi-range selectors must stay verbatim
+        // Semicolon-separated multi-range selectors must stay verbatim
         assert!(is_verbatim_output(
             "sed -n '236,270p;780,800p' custom_components/solvis_control/const.py"
         ));
@@ -450,7 +450,7 @@ mod verbatim_output_tests {
     /// The in-place check is token-based: filenames or pattern text containing
     /// "-i" as a substring are NOT in-place flags — a substring match would
     /// silently drop those dumps back into the terse pipeline (the exact
-    /// corruption GH #688 fixes).
+    /// corruption fixes).
     #[test]
     fn sed_awk_filenames_containing_dash_i_stay_verbatim() {
         assert!(is_verbatim_output("sed -n '1,20p' my-input.txt"));
@@ -928,7 +928,7 @@ mod verbatim_output_tests {
     #[test]
     fn cat_output_preserved() {
         let content = r#"{
-  "name": "lean-ctx",
+  "name": "sobre",
   "version": "3.5.16",
   "description": "Context Runtime for AI Agents",
   "main": "index.js",
@@ -944,7 +944,7 @@ mod verbatim_output_tests {
         );
     }
 
-    /// GH #688 (severe) regression: a `sed -n` range-print of PowerShell
+    /// (severe) regression: a `sed -n` range-print of PowerShell
     /// source must come back byte-exact. Before the classification fix, this
     /// fell through to the generic terse pipeline, which word-substituted
     /// `function`->`fn`, `return`->`ret` and dropped bare `else` lines as
@@ -1034,7 +1034,7 @@ mod cli_api_data_tests {
 
     #[test]
     fn gh_search_and_release_verbatim() {
-        assert!(is_verbatim_output("gh search repos lean-ctx"));
+        assert!(is_verbatim_output("gh search repos sobre"));
         assert!(is_verbatim_output("gh release view v3.5.18"));
         assert!(is_verbatim_output("gh gist view abc123"));
         assert!(is_verbatim_output("gh gist list"));
@@ -1276,7 +1276,7 @@ mod structural_output_tests {
 /// Regression guard: test-runner output must never have its pass/fail summaries
 /// compressed or truncated away — even a large, fully-passing run. This is the
 /// exact failure where a multi-crate `cargo test` lost its per-binary
-/// `test result:` lines and the user had to fall back to `lean-ctx raw`.
+/// `test result:` lines and the user had to fall back to `sobre raw`.
 #[cfg(test)]
 mod test_runner_output_tests {
     use super::super::engine::compress_if_beneficial;

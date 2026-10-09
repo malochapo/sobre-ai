@@ -1,385 +1,153 @@
-use super::shared::{handle_invalid_json_write, try_text_inject_mcp_entry};
 use super::*;
-use serde_json::Value;
 use std::path::PathBuf;
 
-fn target(name: &'static str, path: PathBuf, ty: ConfigType) -> EditorTarget {
+fn target(agent_key: &str, path: PathBuf, ty: ConfigType) -> EditorTarget {
     EditorTarget {
-        name,
-        agent_key: "test".to_string(),
+        name: "test",
+        agent_key: agent_key.to_string(),
         config_path: path,
         detect_path: PathBuf::from("/nonexistent"),
         config_type: ty,
     }
 }
 
-#[test]
-fn mcp_json_upserts_and_preserves_other_servers_without_auto_approve() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("mcp.json");
-    std::fs::write(
-            &path,
-            r#"{ "mcpServers": { "other": { "command": "other-bin" }, "lean-ctx": { "command": "/old/path/lean-ctx", "autoApprove": [] } } }"#,
-        )
-        .unwrap();
-
-    let t = target("test", path.clone(), ConfigType::McpJson);
-    let res = write_mcp_json(&t, "/new/path/lean-ctx", WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Updated);
-
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
-    assert_eq!(
-        json["mcpServers"]["lean-ctx"]["command"],
-        "/new/path/lean-ctx"
-    );
-    assert!(json["mcpServers"]["lean-ctx"].get("autoApprove").is_none());
+fn read(path: &std::path::Path) -> Value {
+    crate::core::jsonc::parse_jsonc(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
 #[test]
-fn mcp_json_upserts_and_preserves_other_servers_with_auto_approve_for_cursor() {
+fn mcp_json_replaces_sobre_and_keeps_other_servers_without_approval_settings() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("mcp.json");
     std::fs::write(
-            &path,
-            r#"{ "mcpServers": { "other": { "command": "other-bin" }, "lean-ctx": { "command": "/old/path/lean-ctx", "autoApprove": [] } } }"#,
-        )
-        .unwrap();
+        &path,
+        r#"{ "mcpServers": { "other": { "command": "other-bin" }, "sobre": { "command": "/old/path/sobre", "autoApprove": [] } } }"#,
+    )
+    .unwrap();
 
-    let t = target("Cursor", path.clone(), ConfigType::McpJson);
-    let res = write_mcp_json(&t, "/new/path/lean-ctx", WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Updated);
-
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
+    let t = target("cursor", path.clone(), ConfigType::McpJson);
     assert_eq!(
-        json["mcpServers"]["lean-ctx"]["command"],
-        "/new/path/lean-ctx"
+        write_config(&t, "/new/path/sobre").unwrap(),
+        WriteAction::Updated
     );
-    assert!(json["mcpServers"]["lean-ctx"]["autoApprove"].is_array());
-    assert!(
-        json["mcpServers"]["lean-ctx"]["autoApprove"]
-            .as_array()
-            .unwrap()
-            .len()
-            > 5
+    assert_eq!(
+        write_config(&t, "/new/path/sobre").unwrap(),
+        WriteAction::Already
+    );
+
+    let json = read(&path);
+    assert_eq!(json["mcpServers"]["other"]["command"], "other-bin");
+    assert_eq!(json["mcpServers"]["sobre"]["command"], "/new/path/sobre");
+    assert!(json["mcpServers"]["sobre"].get("autoApprove").is_none());
+}
+
+#[test]
+fn json_configs_keep_comments_and_key_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.json");
+    let original = "{\n  // my theme\n  \"theme\": \"One Dark\",\n  \"context_servers\": {\n    \"other\": { \"command\": \"x\" },\n  },\n  \"vim_mode\": true,\n}\n";
+    std::fs::write(&path, original).unwrap();
+
+    let t = target("zed", path.clone(), ConfigType::Zed);
+    assert_eq!(
+        write_config(&t, "/bin/sobre").unwrap(),
+        WriteAction::Updated
+    );
+
+    let out = std::fs::read_to_string(&path).unwrap();
+    assert!(out.contains("// my theme"), "{out}");
+    assert!(out.find("\"theme\"").unwrap() < out.find("\"vim_mode\"").unwrap());
+    assert_eq!(
+        read(&path)["context_servers"]["sobre"]["command"],
+        "/bin/sobre"
+    );
+    assert_eq!(read(&path)["context_servers"]["other"]["command"], "x");
+}
+
+#[test]
+fn a_missing_config_is_created_with_only_the_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("sub/opencode.json");
+
+    let t = target("opencode", path.clone(), ConfigType::OpenCode);
+    assert_eq!(
+        write_config(&t, "/bin/sobre").unwrap(),
+        WriteAction::Created
+    );
+    assert_eq!(
+        read(&path),
+        serde_json::json!({
+            "mcp": { "sobre": { "type": "local", "command": ["/bin/sobre"], "enabled": true } }
+        })
     );
 }
 
 #[test]
-fn codex_toml_upserts_existing_section() {
+fn an_unparseable_config_is_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("mcp.json");
+    let broken = r#"{ "mcpServers": { BROKEN "other": true } "#;
+    std::fs::write(&path, broken).unwrap();
+
+    let t = target("cursor", path.clone(), ConfigType::McpJson);
+    let err = write_config(&t, "/bin/sobre").unwrap_err();
+    assert!(err.contains("left unchanged"), "{err}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+}
+
+#[test]
+fn codex_toml_upserts_existing_section_and_keeps_the_rest() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("config.toml");
     std::fs::write(
         &path,
-        r#"[mcp_servers.lean-ctx]
-command = "old"
-args = ["x"]
-"#,
+        "model = \"o3\" # mine\n\n[mcp_servers.sobre]\ncommand = \"old\"\nargs = [\"x\"]\n\n[mcp_servers.sobre.env]\nFOO = \"bar\"\n",
     )
     .unwrap();
 
-    let t = target("test", path.clone(), ConfigType::Codex);
-    let res = write_codex_config(&t, "new").unwrap();
-    assert_eq!(res.action, WriteAction::Updated);
+    let t = target("codex", path.clone(), ConfigType::Codex);
+    assert_eq!(write_config(&t, "new").unwrap(), WriteAction::Updated);
+    assert_eq!(write_config(&t, "new").unwrap(), WriteAction::Already);
 
     let content = std::fs::read_to_string(&path).unwrap();
-    assert!(content.contains(r#"command = "new""#));
-    assert!(content.contains("args = []"));
-}
-
-#[test]
-fn upsert_codex_toml_inserts_new_section_when_missing() {
-    let updated = upsert_codex_toml("[other]\nx=1\n", "lean-ctx");
-    assert!(updated.contains("[mcp_servers.lean-ctx]"));
-    assert!(updated.contains("command = \"lean-ctx\""));
-    assert!(updated.contains("args = []"));
-}
-
-#[test]
-fn codex_toml_uses_single_quotes_for_backslash_paths() {
-    let win_path = r"C:\Users\Foo\AppData\Roaming\npm\lean-ctx.cmd";
-    let updated = upsert_codex_toml("", win_path);
-    assert!(
-        updated.contains(&format!("command = '{win_path}'")),
-        "Windows paths must use TOML single quotes to avoid backslash escapes: {updated}"
-    );
-}
-
-#[test]
-fn codex_toml_uses_double_quotes_for_unix_paths() {
-    let unix_path = "/usr/local/bin/lean-ctx";
-    let updated = upsert_codex_toml("", unix_path);
-    assert!(
-        updated.contains(&format!("command = \"{unix_path}\"")),
-        "Unix paths should use double quotes: {updated}"
-    );
-}
-
-#[test]
-fn upsert_codex_toml_inserts_parent_before_orphaned_tool_subtables() {
-    let input = "\
-[mcp_servers.lean-ctx.tools.ctx_multi_read]
-approval_mode = \"approve\"
-
-[mcp_servers.lean-ctx.tools.ctx_read]
-approval_mode = \"approve\"
-";
-    let updated = upsert_codex_toml(input, "lean-ctx");
-    let parent_pos = updated
-        .find("[mcp_servers.lean-ctx]\n")
-        .expect("parent section must be inserted");
-    let tools_pos = updated
-        .find("[mcp_servers.lean-ctx.tools.")
-        .expect("tool sub-tables must be preserved");
-    assert!(
-        parent_pos < tools_pos,
-        "parent must come before tool sub-tables:\n{updated}"
-    );
-    assert!(updated.contains("command = \"lean-ctx\""));
-    assert!(updated.contains("args = []"));
-    assert!(updated.contains("approval_mode = \"approve\""));
-}
-
-#[test]
-fn upsert_codex_toml_handles_issue_191_windows_scenario() {
-    let input = "\
-[mcp_servers.lean-ctx.tools.ctx_multi_read]
-approval_mode = \"approve\"
-
-[mcp_servers.lean-ctx.tools.ctx_read]
-approval_mode = \"approve\"
-
-[mcp_servers.lean-ctx.tools.ctx_search]
-approval_mode = \"approve\"
-
-[mcp_servers.lean-ctx.tools.ctx_tree]
-approval_mode = \"approve\"
-";
-    let win_path = r"C:\Users\wudon\AppData\Roaming\npm\lean-ctx.cmd";
-    let updated = upsert_codex_toml(input, win_path);
-    assert!(
-        updated.contains(&format!("command = '{win_path}'")),
-        "Windows path must use single quotes: {updated}"
-    );
-    let parent_pos = updated.find("[mcp_servers.lean-ctx]\n").unwrap();
-    let first_tool = updated.find("[mcp_servers.lean-ctx.tools.").unwrap();
-    assert!(parent_pos < first_tool);
+    assert!(content.contains("model = \"o3\" # mine"), "{content}");
+    assert_eq!(content.matches("[mcp_servers.sobre]").count(), 1);
+    assert!(content.contains("[mcp_servers.sobre.env]\nFOO = \"bar\""));
+    let doc: toml::Value = toml::from_str(&content).unwrap();
+    assert_eq!(doc["mcp_servers"]["sobre"]["command"].as_str(), Some("new"));
     assert_eq!(
-        updated.matches("[mcp_servers.lean-ctx]\n").count(),
-        1,
-        "parent section must appear exactly once"
+        doc["mcp_servers"]["sobre"]["args"].as_array().map(Vec::len),
+        Some(0)
     );
 }
 
 #[test]
-fn upsert_codex_toml_does_not_duplicate_parent_when_present() {
-    let input = "\
-[mcp_servers.lean-ctx]
-command = \"old\"
-args = [\"x\"]
-
-[mcp_servers.lean-ctx.tools.ctx_read]
-approval_mode = \"approve\"
-";
-    let updated = upsert_codex_toml(input, "new");
+fn codex_toml_round_trips_windows_paths() {
+    let win_path = r"C:\Users\Foo\AppData\Roaming\npm\sobre.cmd";
+    let updated = upsert_codex_toml("[other]\nx = 1\n", win_path).unwrap();
+    assert!(updated.starts_with("[other]\nx = 1\n"), "{updated}");
+    let doc: toml::Value = toml::from_str(&updated).unwrap();
     assert_eq!(
-        updated.matches("[mcp_servers.lean-ctx]").count(),
-        1,
-        "must not duplicate parent section"
-    );
-    assert!(updated.contains("command = \"new\""));
-    assert!(updated.contains("args = []"));
-    assert!(updated.contains("approval_mode = \"approve\""));
-}
-
-#[test]
-fn upsert_codex_toml_strips_stale_env_subtable() {
-    // #594: an older lean-ctx pinned LEAN_CTX_DATA_DIR in a `.env` subtable,
-    // which collapsed config onto the data dir for the MCP server. Re-running
-    // setup/update must drop it so the CLI and MCP resolve the same config.
-    let input = "\
-[mcp_servers.lean-ctx]
-command = \"/old/lean-ctx\"
-args = []
-
-[mcp_servers.lean-ctx.env]
-LEAN_CTX_DATA_DIR = \"/home/user/.local/share/lean-ctx\"
-
-[mcp_servers.lean-ctx.tools.ctx_read]
-approval_mode = \"approve\"
-";
-    let updated = upsert_codex_toml(input, "/new/lean-ctx");
-    assert!(
-        !updated.contains("LEAN_CTX_DATA_DIR"),
-        "stale env pin must be stripped:\n{updated}"
-    );
-    assert!(
-        !updated.contains("[mcp_servers.lean-ctx.env]"),
-        "emptied env sub-table must be removed:\n{updated}"
-    );
-    assert!(updated.contains("command = \"/new/lean-ctx\""));
-    assert!(
-        updated.contains("[mcp_servers.lean-ctx.tools.ctx_read]"),
-        "unrelated tool sub-tables must be preserved:\n{updated}"
-    );
-    assert_eq!(
-        updated.matches("[mcp_servers.lean-ctx]").count(),
-        1,
-        "parent section preserved exactly once"
+        doc["mcp_servers"]["sobre"]["command"].as_str(),
+        Some(win_path)
     );
 }
 
 #[test]
-fn auto_approve_contains_core_tools() {
-    let tools = auto_approve_tools();
-    assert!(tools.contains(&"ctx_read"));
-    assert!(tools.contains(&"ctx_shell"));
-    assert!(tools.contains(&"ctx_search"));
-    assert!(tools.contains(&"ctx_session"));
-    assert!(tools.contains(&"ctx"));
-    // autoApprove is written into client configs: a name the registry does not
-    // serve is an approval for a tool that answers "Unknown tool".
-    for t in &tools {
-        assert!(
-            *t == "ctx" || crate::server::registry::is_registered(t),
-            "{t} is auto-approved but not registered"
-        );
-    }
-}
-
-#[test]
-fn windsurf_config_omits_auto_approve() {
+fn check_mode_records_without_writing() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("mcp_config.json");
+    let path = dir.path().join("mcp.json");
 
-    let t = EditorTarget {
-        name: "Windsurf",
-        agent_key: "windsurf".to_string(),
-        config_path: path.clone(),
-        detect_path: PathBuf::from("/nonexistent"),
-        config_type: ConfigType::McpJson,
-    };
-    let res = write_mcp_json(&t, "/usr/local/bin/lean-ctx", WriteOptions::default()).unwrap();
-    assert_eq!(res.action, WriteAction::Created);
+    crate::config_io::journal::begin(true);
+    let t = target("windsurf", path.clone(), ConfigType::McpJson);
+    let action = write_config(&t, "/bin/sobre");
+    let recorded = crate::config_io::journal::take();
+    crate::config_io::journal::end();
 
-    let json: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert!(json["mcpServers"]["lean-ctx"]["autoApprove"].is_null());
+    assert_eq!(action.unwrap(), WriteAction::Created);
+    assert!(!path.exists());
     assert_eq!(
-        json["mcpServers"]["lean-ctx"]["command"],
-        "/usr/local/bin/lean-ctx"
-    );
-}
-
-#[test]
-fn text_inject_into_existing_mcp_object() {
-    let content = r#"{
-  "mcp": {}
-}"#;
-    let value = serde_json::json!({"type": "local", "command": ["lean-ctx"]});
-    let result = try_text_inject_mcp_entry(content, "mcp", "lean-ctx", &value);
-    assert!(result.is_some());
-    let patched = result.unwrap();
-    assert!(patched.contains("\"lean-ctx\""));
-    assert!(patched.contains("\"type\": \"local\""));
-}
-
-#[test]
-fn text_inject_creates_container_when_missing() {
-    let content = r#"{
-  "some_other_key": "value"
-}"#;
-    let value = serde_json::json!({"command": "lean-ctx"});
-    // For mcpServers container
-    let result = try_text_inject_mcp_entry(content, "mcpServers", "lean-ctx", &value);
-    assert!(result.is_some());
-    let patched = result.unwrap();
-    assert!(patched.contains("\"mcpServers\""));
-    assert!(patched.contains("\"lean-ctx\""));
-
-    // For mcp container (OpenCode)
-    let result2 = try_text_inject_mcp_entry(content, "mcp", "lean-ctx", &value);
-    assert!(result2.is_some());
-    let patched2 = result2.unwrap();
-    assert!(patched2.contains("\"mcp\""));
-    assert!(patched2.contains("\"lean-ctx\""));
-
-    // For context_servers container (Zed)
-    let result3 = try_text_inject_mcp_entry(content, "context_servers", "lean-ctx", &value);
-    assert!(result3.is_some());
-    let patched3 = result3.unwrap();
-    assert!(patched3.contains("\"context_servers\""));
-    assert!(patched3.contains("\"lean-ctx\""));
-}
-
-#[test]
-fn text_inject_into_populated_mcp_object() {
-    let content = r#"{
-  "mcp": {
-    "other-server": {"type": "local"}
-  }
-}"#;
-    let value = serde_json::json!({"type": "local", "command": ["lean-ctx"]});
-    let result = try_text_inject_mcp_entry(content, "mcp", "lean-ctx", &value);
-    assert!(result.is_some());
-    let patched = result.unwrap();
-    assert!(patched.contains("\"lean-ctx\""));
-    assert!(patched.contains("\"other-server\""));
-}
-
-#[test]
-fn handle_invalid_json_skips_when_entry_already_present() {
-    let content = r#"{ invalid json "lean-ctx": stuff }"#;
-    let value = serde_json::json!({"type": "local"});
-    let result = handle_invalid_json_write(
-        std::path::Path::new("/tmp/test.json"),
-        content,
-        "mcp",
-        "lean-ctx",
-        &value,
-        true,
-    );
-    assert!(result.is_ok());
-    let r = result.unwrap();
-    assert_eq!(r.action, WriteAction::Already);
-}
-
-#[test]
-fn handle_invalid_json_returns_error_when_inject_disabled() {
-    let content = r"{ invalid json without key }";
-    let value = serde_json::json!({"type": "local"});
-    let result = handle_invalid_json_write(
-        std::path::Path::new("/tmp/test.json"),
-        content,
-        "mcp",
-        "lean-ctx",
-        &value,
-        false,
-    );
-    assert!(result.is_err());
-}
-
-#[test]
-fn handle_invalid_json_does_not_overwrite_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("opencode.json");
-    let invalid_content = r#"{ "mcp": { BROKEN "other": true } }"#;
-    std::fs::write(&path, invalid_content).unwrap();
-
-    let value = serde_json::json!({"type": "local", "command": ["lean-ctx"]});
-    let result = handle_invalid_json_write(&path, invalid_content, "mcp", "lean-ctx", &value, true);
-    assert!(result.is_ok());
-    let r = result.unwrap();
-    assert_eq!(r.action, WriteAction::Updated);
-
-    // Original file should still exist (not deleted/renamed)
-    let final_content = std::fs::read_to_string(&path).unwrap();
-    assert!(
-        final_content.contains("lean-ctx"),
-        "lean-ctx should be injected"
-    );
-    assert!(
-        final_content.contains("BROKEN"),
-        "original content preserved"
+        recorded,
+        vec![(path, crate::config_io::journal::Change::Created)]
     );
 }

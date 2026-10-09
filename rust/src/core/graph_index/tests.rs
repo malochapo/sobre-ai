@@ -2,6 +2,7 @@
 //! `super::*` resolves to the `graph_index` module.
 
 use super::*;
+use crate::core::index_paths::graph_match_key;
 use tempfile::tempdir;
 
 #[test]
@@ -13,7 +14,7 @@ fn marker_in_ancestry_found_at_repo_root() {
     std::fs::create_dir_all(&sub).unwrap();
     std::fs::create_dir(repo.join(".git")).unwrap();
 
-    // repo/rust/src is a legit scan root: .git lives two levels up (GL#438).
+    // repo/rust/src is a legit scan root: .git lives two levels up.
     assert!(has_marker_in_ancestry(&sub, &stop));
     assert!(has_marker_in_ancestry(&repo, &stop));
 }
@@ -49,14 +50,6 @@ fn dir_marker_detects_each_project_type() {
         std::fs::write(tmp.path().join(marker), "x").unwrap();
         assert!(dir_has_project_marker(tmp.path()), "{marker}: present");
     }
-}
-
-#[test]
-fn test_short_hash_deterministic() {
-    let h1 = short_hash("/Users/test/project");
-    let h2 = short_hash("/Users/test/project");
-    assert_eq!(h1, h2);
-    assert_eq!(h1.len(), 8);
 }
 
 #[test]
@@ -117,7 +110,6 @@ fn test_compute_hash_deterministic() {
 #[test]
 fn test_project_index_new() {
     let idx = ProjectIndex::new("/test");
-    assert_eq!(idx.version, INDEX_VERSION);
     assert_eq!(idx.project_root, "/test");
     assert!(idx.files.is_empty());
 }
@@ -190,16 +182,6 @@ class UserService {
     let (start, end) = find_symbol_range(content, &sig);
     assert_eq!(start, 5);
     assert!(end >= start);
-}
-
-#[test]
-fn test_parse_stale_index_version() {
-    let json = format!(
-        r#"{{"version":{},"project_root":"/test","last_scan":"now","files":{{}},"edges":[],"symbols":{{}}}}"#,
-        INDEX_VERSION - 1
-    );
-    let parsed: ProjectIndex = serde_json::from_str(&json).unwrap();
-    assert_ne!(parsed.version, INDEX_VERSION);
 }
 
 #[test]
@@ -331,7 +313,7 @@ fn content_aware_staleness_detects_edits_and_additions() {
 
 #[test]
 fn touch_without_content_change_keeps_index_fresh() {
-    // #324: an mtime bump with identical bytes (touch / git checkout / no-op
+    // An mtime bump with identical bytes (touch / git checkout / no-op
     // format) must NOT trigger a rescan — only a real content change does.
     let _env = crate::core::data_dir::test_env_lock();
     let td = tempdir().expect("tempdir");
@@ -376,7 +358,7 @@ fn safe_scan_root_rejects_home_downloads() {
 #[test]
 fn safe_scan_root_rejects_cloud_sync_roots() {
     // ~/OneDrive (and friends) must never be a scan root: walking them forces
-    // OneDrive/Dropbox/Drive to hydrate every on-demand placeholder (#363).
+    // OneDrive/Dropbox/Drive to hydrate every on-demand placeholder.
     if let Some(home) = dirs::home_dir() {
         for dir in ["OneDrive", "Dropbox", "Google Drive"] {
             let cloud = home.join(dir);
@@ -397,10 +379,10 @@ fn safe_scan_root_rejects_cloud_sync_roots() {
 #[serial_test::serial]
 fn safe_scan_root_refused_for_standalone_under_documents() {
     // Both guards are needed: `#[serial]` and `test_env_lock` are separate
-    // mutexes, and `LEAN_CTX_TCC_STANDALONE` is read by every path
+    // mutexes, and `SOBRE_TCC_STANDALONE` is read by every path
     // normalization, including in tests that take only the lock.
     let _env_lock = crate::core::data_dir::test_env_lock();
-    // #356: a launchd-standalone process (daemon/proxy, ppid 1) must refuse to
+    // A launchd-standalone process (daemon/proxy, ppid 1) must refuse to
     // scan *any* path under ~/Documents — including a real nested project —
     // before normalize/marker-probe/read_dir touches the filesystem. Editor- and
     // CLI-attached processes (covered by the other tests) keep indexing them.
@@ -410,13 +392,13 @@ fn safe_scan_root_refused_for_standalone_under_documents() {
     let doc_proj = home.join("Documents/some-project");
     let doc_proj_str = doc_proj.to_string_lossy().to_string();
 
-    crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+    crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
     assert!(
         !is_safe_scan_root(&doc_proj_str),
         "standalone process must refuse ~/Documents scan roots"
     );
     assert!(!is_safe_scan_root_public(&doc_proj_str));
-    crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+    crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
 }
 
 #[test]
@@ -444,7 +426,7 @@ fn safe_scan_root_accepts_multi_repo_parent() {
 #[test]
 fn csharp_graph_edges_end_to_end() {
     // Full edge pipeline for a small C# project: `using` resolution (import
-    // edges) + same-namespace type usage (type_ref edges, GH #398). Regression
+    // edges) + same-namespace type usage (type_ref edges). Regression
     // for the empty C# Call Graph / sparse graph report (NINA) and the false
     // "leaf node" blast radius that the old alphabetical namespace chain caused.
     const USER_SERVICE: &str = "namespace App.Services;\n\
@@ -501,10 +483,10 @@ public class OrderRepository { public void Persist() {} }\n";
     );
 }
 
-/// GH #398 regression — the durable mirror must carry the C# same-namespace
-/// blast radius. The bug every previous fix missed: `ctx_impact` wrote precise
+/// Regression — the durable mirror must carry the C# same-namespace
+/// blast radius. The bug every previous fix missed: the impact builder wrote precise
 /// `type_ref` edges into the PropertyGraph, but every `ProjectIndex::save()`
-/// (daemon reindex, dashboard, `ctx_graph`) mirrors graph_index over it via
+/// (`sobre index build`, `sobre_graph`) mirrors graph_index over it via
 /// `clear_code_graph()` — and graph_index emitted none, silently wiping the
 /// blast radius and leaving the consumer a false-negative leaf. With type_ref
 /// edges now produced here, the mirrored graph keeps the consumer reachable.
@@ -541,7 +523,7 @@ public Motor(Engine engine) { _engine = engine; }\n}\n";
     }
     build_edges_cached(&mut index, &cache);
 
-    // Mirror exactly as the daemon/dashboard reindex does.
+    // Mirror exactly as a reindex does.
     let pg = CodeGraph::open_in_memory().expect("in-memory graph");
     populate_from_project_index(&pg, &index).expect("mirror index");
 
@@ -564,7 +546,7 @@ public Motor(Engine engine) { _engine = engine; }\n}\n";
     );
 }
 
-/// GH #398 bug class (Go): the durable mirror must carry a *directory-scoped*
+/// Bug class (Go): the durable mirror must carry a *directory-scoped*
 /// same-package `type_ref` edge — Go files in one package (== one directory)
 /// use each other's types with no import. The decisive correctness property:
 /// a homonymous type in another directory (another package) must NOT be linked,
@@ -664,7 +646,7 @@ fn safe_scan_root_accepts_dotnet_project() {
 
 #[test]
 fn gdscript_scene_edges_end_to_end() {
-    // #315: `preload/load("res://…tscn")` yields import edges even though the
+    // `preload/load("res://…tscn")` yields import edges even though the
     // `.tscn` isn't indexed yet, `extends "res://…gd"` resolves to the base
     // script, and `graph related <scene>` finds the importing script.
     const MAIN: &str = "extends Node\n\n\
@@ -710,7 +692,8 @@ func _ready():\n\tvar level = load(\"res://scenes/Main.tscn\")\n";
     );
 
     // AC2: `graph related scenes/Main.tscn` surfaces the importing script.
-    let related = index.get_related("scenes/Main.tscn", 2);
+    let related = crate::core::graph_provider::GraphProvider::from_index(&index)
+        .related("scenes/Main.tscn", 2);
     assert!(
         related.contains(&"main.gd".to_string()),
         "graph related <scene> should surface the importer, got {related:?}"
@@ -719,7 +702,7 @@ func _ready():\n\tvar level = load(\"res://scenes/Main.tscn\")\n";
 
 #[test]
 fn lua_require_edges_end_to_end() {
-    // #360: a Lua project is no longer an empty graph — `require("a.b")` produces
+    // A Lua project is no longer an empty graph — `require("a.b")` produces
     // an import edge to `a/b.lua`, `require("pkg")` resolves to `pkg/init.lua`,
     // and `graph related` surfaces the importer.
     const MAIN: &str = "local util = require(\"lib.util\")\n\
@@ -765,7 +748,8 @@ local function run()\n\treturn util.add(1, 2)\nend\n";
     );
 
     // `graph related lib/util.lua` surfaces the importer.
-    let related = index.get_related("lib/util.lua", 2);
+    let related =
+        crate::core::graph_provider::GraphProvider::from_index(&index).related("lib/util.lua", 2);
     assert!(
         related.contains(&"main.lua".to_string()),
         "graph related should surface the importer, got {related:?}"
@@ -774,10 +758,10 @@ local function run()\n\treturn util.add(1, 2)\nend\n";
 
 #[test]
 fn tscn_scene_indexed_with_script_edges() {
-    // #316: a real on-disk Godot project. The `.tscn` scene is indexed as a
+    // A real on-disk Godot project. The `.tscn` scene is indexed as a
     // graph node, its `[ext_resource]` script becomes a Scene→Script import
     // edge, and GDScript member symbols (`@export var`) surface in the graph.
-    // Acquire the env lock (scan reads LEAN_CTX_DATA_DIR) but do not mutate it,
+    // Acquire the env lock (scan reads SOBRE_DATA_DIR) but do not mutate it,
     // so we never race data-dir-sensitive tests.
     let _env = crate::core::data_dir::test_env_lock();
     let td = tempdir().expect("tempdir");
@@ -829,7 +813,7 @@ fn tscn_scene_indexed_with_script_edges() {
 
 #[test]
 fn scan_skips_node_modules_without_git_dir() {
-    // #400: a monorepo without a top-level `.git` used to index node_modules
+    // A monorepo without a top-level `.git` used to index node_modules
     // wholesale, because the ignore crate only applies `.gitignore` files
     // inside git repositories. The vendor-dir walk filter must skip them
     // regardless of git state.
@@ -864,7 +848,7 @@ fn scan_skips_node_modules_without_git_dir() {
 
 #[test]
 fn scan_respects_gitignore_without_git_dir() {
-    // #400 second half: `require_git(false)` makes `.gitignore` files
+    // Second half: `require_git(false)` makes `.gitignore` files
     // effective even when no `.git` directory exists.
     let _env = crate::core::data_dir::test_env_lock();
     let td = tempdir().expect("tempdir");
@@ -891,7 +875,7 @@ fn scan_respects_gitignore_without_git_dir() {
     );
 }
 
-// ---- #934: parallel scan determinism ----
+// ---- parallel scan determinism ----
 
 /// Write a varied multi-language corpus and return the sorted scan targets
 /// `(absolute_path, rel, ext)`.

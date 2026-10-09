@@ -7,14 +7,14 @@ use crate::tools::CrpMode;
 ///
 /// Provides a compact map of the entire project, organized by task relevance.
 /// Files are shown at different detail levels based on their relevance score:
-/// - Level 0 (full): directly task-relevant files → full content (use ctx_read)
+/// - Level 0 (full): directly task-relevant files → full content (use sobre_read)
 /// - Level 1 (signatures): graph neighbors → key signatures
 /// - Level 2 (reference): distant files → name + line count only
 ///
 /// This implements lazy evaluation for context: start with the overview,
 /// then zoom into specific files as needed.
 /// Returns the rendered overview plus whether it is the complete graph-backed
-/// view (#1134). `false` means the partial, still-indexing fallback — callers
+/// view. `false` means the partial, still-indexing fallback — callers
 /// must take it from here rather than pattern-matching the body text.
 pub(crate) fn handle(
     _cache: &SessionCache,
@@ -28,7 +28,7 @@ pub(crate) fn handle(
         crate::core::index_orchestrator::ensure_all_background(&project_root);
         return (partial_overview(&project_root), false);
     };
-    let gp = &open.provider;
+    let gp = &open;
 
     let (task_files, task_keywords) = if let Some(task_desc) = task {
         parse_task_hints(task_desc)
@@ -59,34 +59,12 @@ pub(crate) fn handle(
         let low: Vec<&_> = relevance.iter().filter(|r| r.score < 0.3).collect();
 
         if !high.is_empty() {
-            use crate::core::context_field::{ContextItemId, ContextKind, ViewCosts};
-            use crate::core::context_handles::HandleRegistry;
-
-            let mut handle_reg = HandleRegistry::new();
-            output.push("▸ DIRECTLY RELEVANT (use ctx_read or ctx_expand @ref):".to_string());
+            output.push("▸ DIRECTLY RELEVANT (use sobre_read):".to_string());
             for r in &high {
-                let line_count = file_line_count(&r.path);
-                let item_id = ContextItemId::from_file(&r.path);
-                let view_costs = ViewCosts::from_full_tokens(line_count * 5);
-                let handle = handle_reg.register(
-                    item_id,
-                    ContextKind::File,
-                    &r.path,
-                    &format!(
-                        "{} {}L score={:.1}",
-                        short_path(&r.path),
-                        line_count,
-                        r.score
-                    ),
-                    &view_costs,
-                    r.score,
-                    false,
-                );
                 output.push(format!(
-                    "  @{} {} {}L  phi={:.2}  mode={}",
-                    handle.ref_label,
+                    "  {} {}L  score={:.2}  mode={}",
                     short_path(&r.path),
-                    line_count,
+                    file_line_count(&r.path),
                     r.score,
                     r.recommended_mode
                 ));
@@ -96,7 +74,7 @@ pub(crate) fn handle(
 
         if !medium.is_empty() {
             let knowledge = crate::core::knowledge::ProjectKnowledge::load(&project_root);
-            output.push("▸ CONTEXT (use ctx_read signatures/map):".to_string());
+            output.push("▸ CONTEXT (use sobre_read signatures/map):".to_string());
             for r in medium.iter().take(20) {
                 let line_count = file_line_count(&r.path);
                 let doc = extract_module_doc(&r.path)
@@ -165,10 +143,10 @@ pub(crate) fn handle(
         } else {
             format!("  scanned {scan_age}")
         };
-        // #658 F6: the header counts file-level (import/type_ref) edges; the
+        // F6: the header counts file-level (import/type_ref) edges; the
         // function-level call graph is a separate artifact. When one has been
-        // built (ctx_callgraph persists lazily), surface it too — otherwise a
-        // single-file project reads "0 edges" while callgraph clearly has some.
+        // built (the sobre_graph call actions persist it lazily), surface it too —
+        // otherwise a single-file project reads "0 edges" while it has call edges.
         let call_edges =
             crate::core::call_graph::CallGraph::load(&project_root).map_or(0, |g| g.edges.len());
         let call_info = if call_edges > 0 {
@@ -218,12 +196,10 @@ pub(crate) fn handle(
     }
     append_graph_hotspots_section(&mut output, &project_root, gp);
 
-    if true {
-        let wakeup = build_wakeup_briefing(&project_root, task);
-        if !wakeup.is_empty() {
-            output.push(String::new());
-            output.push(wakeup);
-        }
+    let wakeup = build_wakeup_briefing(&project_root, task);
+    if !wakeup.is_empty() {
+        output.push(String::new());
+        output.push(wakeup);
     }
 
     (output.join("\n"), true)
@@ -353,7 +329,9 @@ pub(crate) fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> S
         }
     }
 
-    if let Some(session) = crate::core::session::SessionState::load_latest() {
+    if let Some(session) =
+        crate::core::session::SessionState::load_latest_for_project_root(project_root)
+    {
         if let Some(ref task) = session.task {
             parts.push(format!("LAST_TASK:{}", task.description));
         }
@@ -373,24 +351,6 @@ pub(crate) fn build_wakeup_briefing(project_root: &str, task: Option<&str>) -> S
         for r in crate::core::prospective_memory::reminders_for_task(project_root, t) {
             parts.push(r);
         }
-    }
-
-    // Prune dead/stale agents before listing so the briefing never shows ghosts
-    // from crashed or exited MCP processes (#419). `ctx_agent list` and the
-    // dashboard already do this; the wake-up briefing must too. Scope to the
-    // current project root — the briefing is about peers on *this* project.
-    let registry = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
-        registry.cleanup_stale(24);
-    })
-    .map(|(registry, ())| registry)
-    .unwrap_or_default();
-    let active_agents = registry.list_active(Some(project_root));
-    if !active_agents.is_empty() {
-        let agents: Vec<String> = active_agents
-            .iter()
-            .map(|a| format!("{}({})", a.agent_id, a.role.as_deref().unwrap_or("-")))
-            .collect();
-        parts.push(format!("AGENTS:{}", agents.join(",")));
     }
 
     if parts.is_empty() {
@@ -516,7 +476,7 @@ fn file_line_count(path: &str) -> usize {
 }
 
 /// Builds an immediately-useful overview while the knowledge graph is still
-/// being indexed in the background (#2365). Instead of only telling the user to
+/// being indexed in the background. Instead of only telling the user to
 /// "try again in 1-2 minutes", we return what is already available: a shallow
 /// directory tree, the detected project markers, and persistent project
 /// knowledge — plus a note that the richer graph-based view will follow.
@@ -531,8 +491,13 @@ fn partial_overview(project_root: &str) -> String {
     }
     out.push(String::new());
 
-    // Shallow tree (depth 2) of what's on disk right now.
-    let (tree, _) = crate::tools::ctx_tree::handle(project_root, 2, false, true);
+    // Shallow tree (depth 2) of what's on disk right now; never of a broad
+    // root such as the home directory.
+    let (tree, _) = if crate::tools::walk_guard::deny_unsafe_walk_root(project_root).is_none() {
+        crate::tools::sobre_tree::handle(project_root, 2, false, true)
+    } else {
+        (String::new(), 0)
+    };
     if !tree.trim().is_empty() {
         out.push("STRUCTURE (depth 2):".to_string());
         out.push(tree);
@@ -555,7 +520,7 @@ fn partial_overview(project_root: &str) -> String {
 
     out.push(
         "The full task-relevant graph view (signatures, neighbors, relevance) will be \
-         available shortly — call ctx_compose again without a task to get it."
+         available shortly — call sobre_compose again without a task to get it."
             .to_string(),
     );
     out.join("\n")
@@ -620,7 +585,7 @@ mod tests {
         assert!(s.is_char_boundary(start));
     }
 
-    /// #658 F6: when a persisted call graph exists, the overview header must
+    /// F6: when a persisted call graph exists, the overview header must
     /// surface its edge count — a single-file project has 0 file-level edges
     /// but may well have call edges, and the two surfaces must not contradict.
     #[test]
@@ -631,7 +596,7 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
         let data = tempfile::tempdir().expect("data dir");
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path().to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data.path().to_str().unwrap());
 
         let root = tmp.path();
         std::fs::write(root.join("Cargo.toml"), "[package]\nname = \"demo\"\n").unwrap();
@@ -677,6 +642,6 @@ mod tests {
             "overview header must show persisted call edges, got:\n{out}"
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 }

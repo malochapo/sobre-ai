@@ -1,4 +1,4 @@
-.PHONY: setup-hooks install dev test preflight preflight-fast help
+.PHONY: setup-hooks install dev preflight preflight-fast help
 
 # ── Setup ─────────────────────────────────────────────────
 
@@ -10,16 +10,13 @@ setup-hooks: ## Configure git to use .githooks/ for hooks
 
 install: ## Build release + install to ~/.local/bin
 	cd rust && cargo install --path . --force --locked --root "$$HOME/.local"
-	@echo "Installed: $$(lean-ctx --version)"
+	@echo "Installed: $$("$$HOME/.local/bin/sobre" --version)"
 
 dev: ## Quick debug build + copy to ~/.local/bin
 	cd rust && cargo build
 	@mkdir -p "$$HOME/.local/bin"
-	cp rust/target/debug/lean-ctx "$$HOME/.local/bin/lean-ctx"
-	@echo "Dev installed: $$(lean-ctx --version)"
-
-test: ## Run all Rust tests + clippy
-	cd rust && cargo test && cargo clippy
+	cp rust/target/debug/sobre "$$HOME/.local/bin/sobre"
+	@echo "Dev installed: $$("$$HOME/.local/bin/sobre" --version)"
 
 # ── CI gates ─────────────────────────────────────────────
 # CI runs scripts/preflight.sh too, so green here means green there.

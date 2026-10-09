@@ -15,8 +15,8 @@ pub fn uri_to_path(uri: &str) -> Option<String> {
     // Windows `file:///C:/path` URIs strip to `/C:/path`, which is NOT an
     // absolute Windows path (no drive prefix at the start) and would be rejected
     // below — so on Windows+Cursor every workspace root failed to parse and the
-    // session fell back to the home dir as project root (GL discussion #273:
-    // "MCP root misconfigured (resolves to C:/Users/<user>)"). Drop the single
+    // session fell back to the home dir as project root
+    // ("MCP root misconfigured (resolves to C:/Users/<user>)"). Drop the single
     // leading slash before the drive letter so it parses as `C:/path`. POSIX
     // paths keep their leading slash (on Unix `/C:/x` is a legitimate path).
     #[cfg(windows)]
@@ -37,27 +37,31 @@ pub fn uri_to_path(uri: &str) -> Option<String> {
     Some(s)
 }
 
+/// Decode `%XX` escapes into bytes, then read the bytes as UTF-8: `%C3%A9`
+/// is `é`. A `%` not followed by two hex digits stays as it is; `%00` is
+/// dropped.
 fn percent_decode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut chars = s.bytes();
-    while let Some(b) = chars.next() {
-        if b == b'%' {
-            let hi = chars.next().and_then(hex_val);
-            let lo = chars.next().and_then(hex_val);
-            if let (Some(h), Some(l)) = (hi, lo) {
-                let byte = h << 4 | l;
-                if byte == 0 {
-                    continue;
-                }
-                out.push(byte as char);
-            } else {
-                out.push('%');
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%'
+            && let (Some(h), Some(l)) = (
+                bytes.get(i + 1).copied().and_then(hex_val),
+                bytes.get(i + 2).copied().and_then(hex_val),
+            )
+        {
+            let byte = h << 4 | l;
+            if byte != 0 {
+                out.push(byte);
             }
+            i += 3;
         } else {
-            out.push(b as char);
+            out.push(bytes[i]);
+            i += 1;
         }
     }
-    out
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn hex_val(b: u8) -> Option<u8> {
@@ -131,21 +135,15 @@ pub fn valid_dir_paths_from_uris(uris: &[String]) -> Vec<String> {
         .collect()
 }
 
-/// Detect project root from IDE-specific environment variables.
-/// Priority: LEAN_CTX_PROJECT_ROOT > CLAUDE_PROJECT_DIR
+/// Detect the project root from the host's own environment
+/// (`CLAUDE_PROJECT_DIR`, set by Claude Code).
 pub fn root_from_env() -> Option<String> {
-    for var in ["LEAN_CTX_PROJECT_ROOT", "CLAUDE_PROJECT_DIR"] {
-        if let Ok(val) = std::env::var(var) {
-            let trimmed = val.trim().to_string();
-            if !trimmed.is_empty()
-                && Path::new(&trimmed).is_dir()
-                && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(&trimmed))
-            {
-                return Some(trimmed);
-            }
-        }
-    }
-    None
+    let val = std::env::var("CLAUDE_PROJECT_DIR").ok()?;
+    let trimmed = val.trim().to_string();
+    (!trimmed.is_empty()
+        && Path::new(&trimmed).is_dir()
+        && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(&trimmed)))
+    .then_some(trimmed)
 }
 
 /// Split a `WORKSPACE_FOLDER_PATHS` value into individual paths.
@@ -171,8 +169,8 @@ fn split_workspace_paths(raw: &str) -> Vec<String> {
 /// Cursor declares the MCP `roots` capability but does NOT implement
 /// `roots/list` (it answers `-32601 Method not found`) and launches stdio MCP
 /// servers with `cwd = /`. Without this signal the project root falls back to an
-/// unsafe directory and relative tool paths resolve against the wrong tree
-/// (#699). This variable is the Cursor-sanctioned way to learn the active
+/// unsafe directory and relative tool paths resolve against the wrong tree.
+/// This variable is the Cursor-sanctioned way to learn the active
 /// workspace folder(s). The same broad/unsafe-root guards as MCP roots apply.
 pub fn root_from_workspace_env() -> Option<String> {
     let raw = std::env::var("WORKSPACE_FOLDER_PATHS").ok()?;
@@ -182,7 +180,7 @@ pub fn root_from_workspace_env() -> Option<String> {
 /// All valid, safe workspace directories from `WORKSPACE_FOLDER_PATHS`.
 ///
 /// Used to register the sibling folders of a multi-root workspace as extra
-/// trusted roots, so explicit paths into them are not rejected by the path jail.
+/// roots, so searches span them too.
 pub fn workspace_roots_from_env() -> Vec<String> {
     let Ok(raw) = std::env::var("WORKSPACE_FOLDER_PATHS") else {
         return Vec::new();
@@ -197,6 +195,18 @@ pub fn workspace_roots_from_env() -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// L11: a non-ASCII directory name survives the URI decode.
+    #[test]
+    fn percent_decode_reads_utf8() {
+        assert_eq!(
+            percent_decode("/home/r%C3%A9mi/projet"),
+            "/home/rémi/projet"
+        );
+        assert_eq!(percent_decode("/a%2"), "/a%2");
+        assert_eq!(percent_decode("/a%zz/b"), "/a%zz/b");
+        assert_eq!(percent_decode("/a%00b"), "/ab");
+    }
 
     #[cfg(unix)]
     #[test]
@@ -233,7 +243,7 @@ mod tests {
 
     #[test]
     fn detects_leading_slash_windows_drive() {
-        // GL #273: the `/C:/…` shape (from a Windows `file:///C:/…` URI) must be
+        // The `/C:/…` shape (from a Windows `file:///C:/…` URI) must be
         // recognised so the leading slash can be stripped. Runs on every
         // platform so Linux CI guards the logic the Windows-only wiring uses.
         assert!(has_leading_slash_drive("/C:/Users/dev"));
@@ -250,7 +260,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn parse_file_uri_windows_drive_strips_leading_slash() {
-        // GL #273: Cursor on Windows reports roots as `file:///C:/…`; these must
+        // Cursor on Windows reports roots as `file:///C:/…`; these must
         // parse to an absolute `C:/` path instead of being rejected (which left
         // the session falling back to the home dir as project root).
         let got = uri_to_path("file:///C:/Users/dev/project").expect("windows drive uri");

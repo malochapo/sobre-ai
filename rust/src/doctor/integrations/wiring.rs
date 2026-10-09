@@ -23,22 +23,13 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck
         };
     };
 
-    let entry = v
-        .get("mcpServers")
-        .and_then(|m| m.get("lean-ctx"))
-        .cloned()
-        .or_else(|| {
-            v.get("mcp")
-                .and_then(|m| m.get("servers"))
-                .and_then(|m| m.get("lean-ctx"))
-                .cloned()
-        });
+    let entry = v.get("mcpServers").and_then(|m| m.get("sobre")).cloned();
 
     let Some(e) = entry else {
         return NamedCheck {
             name: "MCP config".to_string(),
             ok: false,
-            detail: format!("lean-ctx missing ({})", path.display()),
+            detail: format!("sobre missing ({})", path.display()),
         };
     };
 
@@ -65,10 +56,10 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     if cmd == portable.trim() {
         return true;
     }
-    if cmd == "lean-ctx" {
+    if cmd == "sobre" {
         return true;
     }
-    // #708: a configured verbatim hook binary ($HOME/.local/bin/lean-ctx for
+    // A configured verbatim hook binary ($HOME/.local/bin/sobre for
     // settings synced across machines) is the expected command by definition —
     // never flag it stale, or doctor --fix would rewrite it back to the
     // machine-absolute path and restart the sync ping-pong.
@@ -77,7 +68,7 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     {
         return true;
     }
-    if let Some(resolved) = resolve_lean_ctx_binary()
+    if let Some(resolved) = resolve_sobre_binary()
         && cmd == resolved.to_string_lossy().trim()
     {
         return true;
@@ -85,37 +76,48 @@ pub(crate) fn cmd_matches_expected(cmd: &str, portable: &str) -> bool {
     false
 }
 
-/// Collect the `lean-ctx` binary tokens that appear immediately before a
-/// ` hook ` invocation inside a hook config file. Managed hook commands look
-/// like `"<binary> hook rewrite"` / `"<binary> hook redirect"` /
-/// `"<binary> hook codex-pretooluse"`, so the token directly preceding a
-/// ` hook ` delimiter is the binary the hook will execute.
+/// The programs of the `sobre` hook commands in a hook config file, unquoted:
+/// every JSON string that is a hook command `<binary> hook <action>`
+/// ([`crate::hooks::hook_program`]), so a path with a space reads whole.
 pub(crate) fn hook_binary_refs(content: &str) -> Vec<String> {
-    let pieces: Vec<&str> = content.split(" hook ").collect();
-    if pieces.len() < 2 {
-        return Vec::new();
-    }
-    pieces[..pieces.len() - 1]
+    json_strings(content)
         .iter()
-        .filter_map(|piece| {
-            // The binary token is the trailing run before " hook ", bounded by
-            // whitespace or JSON string delimiters. Splitting on whitespace
-            // alone breaks on minified JSON (e.g. `serde_json::to_string`
-            // output), where there is no space between the opening quote and
-            // the command — we would otherwise capture the whole JSON prefix.
-            piece
-                .rsplit(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == '`')
-                .find(|tok| !tok.is_empty())
-                .map(|tok| tok.trim_end_matches(',').to_string())
-        })
-        .filter(|tok| tok.contains("lean-ctx"))
+        .filter(|s| crate::hooks::is_sobre_hook_command(s))
+        .filter_map(|s| crate::hooks::hook_program(s).map(str::to_string))
         .collect()
 }
 
-/// If a hook file references a `lean-ctx` binary path that does not match the
+/// The string literals of a JSON (or JSONC) text, unescaped; tolerant of
+/// anything between them, so it reads a file a parser would refuse.
+fn json_strings(content: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = content.chars();
+    while let Some(c) = chars.next() {
+        if c != '"' {
+            continue;
+        }
+        let mut s = String::new();
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => break,
+                '\\' => match chars.next() {
+                    Some('n') => s.push('\n'),
+                    Some('t') => s.push('\t'),
+                    Some(other) => s.push(other),
+                    None => {}
+                },
+                other => s.push(other),
+            }
+        }
+        out.push(s);
+    }
+    out
+}
+
+/// If a hook file references a `sobre` binary path that does not match the
 /// currently installed binary (and none of its references do), return that
 /// stale path. Returns `None` when there are no hook references or at least one
-/// reference points at the current binary (or the bare `lean-ctx` PATH command).
+/// reference points at the current binary (or the bare `sobre` PATH command).
 pub(crate) fn stale_hook_binary(content: &str, binary: &str) -> Option<String> {
     let refs = hook_binary_refs(content);
     if refs.is_empty() || refs.iter().any(|r| cmd_matches_expected(r, binary)) {
@@ -124,22 +126,9 @@ pub(crate) fn stale_hook_binary(content: &str, binary: &str) -> Option<String> {
     refs.into_iter().next()
 }
 
-pub(crate) fn check_rules_file(path: &std::path::Path) -> NamedCheck {
-    let ok = path.exists();
-    NamedCheck {
-        name: "Rules file".to_string(),
-        ok,
-        detail: if ok {
-            path.display().to_string()
-        } else {
-            format!("missing ({})", path.display())
-        },
-    }
-}
-
-/// Cascade hook health for Windsurf (#593). `lean-ctx init` writes observe +
-/// pre_mcp_tool_use hooks into `~/.codeium/windsurf/hooks.json`; the `hook
-/// observe` command is the stable marker. A missing file is genuine drift, fixed
+/// Cascade hook health for Windsurf. `sobre init` writes observe hooks into
+/// `~/.codeium/windsurf/hooks.json`; the `hook observe` command is the
+/// marker. A missing file is genuine drift, fixed
 /// by re-running setup.
 pub(crate) fn check_windsurf_hooks(home: &std::path::Path) -> NamedCheck {
     let path = home.join(".codeium/windsurf/hooks.json");
@@ -150,55 +139,49 @@ pub(crate) fn check_windsurf_hooks(home: &std::path::Path) -> NamedCheck {
         detail: if ok {
             format!("ok ({})", path.display())
         } else {
-            "missing (run: lean-ctx init)".to_string()
+            "missing (run: sobre init)".to_string()
         },
     }
 }
 
 /// Skill is intentionally absent for agents that consume dedicated markdown rules
 /// (Windsurf): no `SKILL.md` is installed, by design. Stating it explicitly stops
-/// users from treating the absence as a fault (#593).
+/// users from treating the absence as a fault.
 pub(crate) fn skill_not_applicable_note() -> NamedCheck {
     NamedCheck {
         name: "Skill".to_string(),
         ok: true,
-        detail: "N/A by design — Windsurf uses MCP + rules + Cascade hooks".to_string(),
+        detail: "N/A — Windsurf has no skills; it gets the MCP instructions".to_string(),
     }
 }
 
-/// Most recent real `ctx_*` MCP tool call from the event log ("12m ago" /
-/// "never"). #593: the clearest signal of whether the agent actually drives
-/// lean-ctx through MCP — an empty `watch` plus "never" means the agent is using
-/// native tools instead of `ctx_*`, not that lean-ctx is broken. Never fails
-/// (informational), and reads the live event log so it is naturally dynamic.
+/// Most recent `sobre_*` MCP tool call from the usage ledger ("12m ago" /
+/// "never"). The clearest signal of whether the agent actually drives
+/// sobre through MCP — an empty `watch` plus "never" means the agent is using
+/// native tools instead of `sobre_*`, not that sobre is broken. Never fails
+/// (informational), and reads the live ledger so it is naturally dynamic.
 pub(crate) fn last_ctx_call_check() -> NamedCheck {
     let detail = match last_ctx_call_ago() {
-        Some(ago) => format!("{ago} (most recent ctx_* MCP call)"),
-        None => "never — the agent has not called any ctx_* MCP tool yet".to_string(),
+        Some(ago) => format!("{ago} (most recent sobre_* MCP call)"),
+        None => "never — the agent has not called any sobre_* MCP tool yet".to_string(),
     };
     NamedCheck {
-        name: "Last ctx_* call".to_string(),
+        name: "Last sobre_* call".to_string(),
         ok: true,
         detail,
     }
 }
 
 pub(crate) fn last_ctx_call_ago() -> Option<String> {
-    let path = crate::core::paths::state_dir().ok()?.join("events.jsonl");
-    let content = std::fs::read_to_string(&path).ok()?;
-    let ts = content
-        .lines()
+    use chrono::TimeZone;
+    let last = crate::core::usage::load()
+        .into_iter()
         .rev()
-        .filter_map(|l| serde_json::from_str::<crate::core::events::LeanCtxEvent>(l).ok())
-        .find_map(|ev| {
-            let crate::core::events::EventKind::ToolCall { tool, .. } = ev.kind;
-            tool.starts_with("ctx_").then_some(ev.timestamp)
-        })?;
-    let parsed = chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.3f").ok()?;
-    let delta = chrono::Local::now()
-        .naive_local()
-        .signed_duration_since(parsed);
-    Some(humanize_ago(delta))
+        .find(|ev| ev.str("sobre.surface") == Some("mcp"))?;
+    let at = chrono::Local
+        .timestamp_opt(i64::try_from(last.unix_secs()).ok()?, 0)
+        .single()?;
+    Some(humanize_ago(chrono::Local::now().signed_duration_since(at)))
 }
 
 pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
@@ -211,13 +194,5 @@ pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
         format!("{}h ago", secs / 3600)
     } else {
         format!("{}d ago", secs / 86_400)
-    }
-}
-
-pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::path::PathBuf> {
-    match name {
-        "Windsurf" => Some(home.join(".codeium/windsurf/rules/lean-ctx.md")),
-        "OpenCode" => Some(home.join(".config/opencode/AGENTS.md")),
-        _ => None,
     }
 }

@@ -437,7 +437,7 @@ fn compress_system_df(output: &str) -> String {
         .collect();
 
     if lines.is_empty() {
-        return compact_output(output, 10);
+        return super::compact_lines(output, 10);
     }
 
     for line in &lines {
@@ -448,7 +448,7 @@ fn compress_system_df(output: &str) -> String {
     }
 
     if parts.is_empty() {
-        compact_output(output, 10)
+        super::compact_lines(output, 10)
     } else {
         parts.join("\n")
     }
@@ -479,7 +479,7 @@ fn compress_info(output: &str) -> String {
     }
 
     if key_info.is_empty() {
-        return compact_output(output, 10);
+        return super::compact_lines(output, 10);
     }
     key_info.join("\n")
 }
@@ -499,21 +499,9 @@ fn compress_version(output: &str) -> String {
     }
 
     if parts.is_empty() {
-        return compact_output(output, 5);
+        return super::compact_lines(output, 5);
     }
     parts.join("\n")
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
 }
 
 fn compress_json_value(val: &serde_json::Value, depth: usize) -> String {

@@ -1,162 +1,9 @@
-//! Install/environment wiring: shell hooks, MCP registration, editor
-//! surfaces, session state, container env, CWD sanity, LSP servers.
+//! Install/environment wiring: MCP registration, editor
+//! surfaces, session state, CWD sanity, LSP servers.
 
 #[allow(clippy::wildcard_imports)]
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
-
-/// Cognition v2 activation: how many science-backed subsystems have actually
-/// fired on this install. Proves the stack is wired (not dead code) without
-/// needing external instrumentation — `lean-ctx introspect cognition` drills in.
-pub(crate) fn cognition_activity_outcome() -> Outcome {
-    let snap = crate::core::introspect::snapshot();
-    let total = snap.len();
-    let active = snap.iter().filter(|(_, a)| a.count > 0).count();
-    // Before any tool calls have run nothing has fired yet — neutral, not a
-    // failure. Always pass; the value is the visibility, not a gate.
-    let line = if active == 0 {
-        format!(
-            "{BOLD}Cognition{RST}  {DIM}no activity recorded yet{RST}  {DIM}(inspect: lean-ctx introspect cognition){RST}"
-        )
-    } else {
-        format!(
-            "{BOLD}Cognition{RST}  {GREEN}{active}/{total} subsystems active{RST}  {DIM}(details: lean-ctx introspect cognition){RST}"
-        )
-    };
-    Outcome { ok: true, line }
-}
-/// Reports the format-aware passthrough (#342): output already in a compact,
-/// token-oriented format (TOON by default) is preserved verbatim instead of
-/// recompressed, so an agent's proof-of-output-shape survives intact.
-pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Compact-format passthrough{RST}  {GREEN}{}{RST}  {DIM}(preserved verbatim, not recompressed){RST}",
-            crate::core::config::PRESERVE_COMPACT_FORMATS.join(", ")
-        ),
-    }
-}
-/// Check if an RC file contains lean-ctx and collect name + update needs.
-fn check_shell_rc(
-    name: &str,
-    path: &std::path::Path,
-    parts: &mut Vec<String>,
-    needs_update: &mut Vec<String>,
-) {
-    if rc_contains_lean_ctx(path) {
-        parts.push(format!("{DIM}{name}{RST}"));
-        if !rc_has_pipe_guard(path) && is_active_shell(name) {
-            needs_update.push(name.to_string());
-        }
-    }
-}
-
-pub(crate) fn shell_aliases_outcome() -> Outcome {
-    let Some(home) = dirs::home_dir() else {
-        return Outcome {
-            ok: false,
-            line: format!("{BOLD}Shell aliases{RST}  {RED}could not resolve home directory{RST}"),
-        };
-    };
-
-    let mut parts = Vec::new();
-    let mut needs_update = Vec::new();
-
-    check_shell_rc(
-        "~/.zshrc",
-        &home.join(".zshrc"),
-        &mut parts,
-        &mut needs_update,
-    );
-    check_shell_rc(
-        "~/.bashrc",
-        &home.join(".bashrc"),
-        &mut parts,
-        &mut needs_update,
-    );
-    check_shell_rc(
-        "~/.config/fish/config.fish",
-        &home.join(".config").join("fish").join("config.fish"),
-        &mut parts,
-        &mut needs_update,
-    );
-
-    #[cfg(windows)]
-    {
-        let ps_profile = home
-            .join("Documents")
-            .join("PowerShell")
-            .join("Microsoft.PowerShell_profile.ps1");
-        let ps_profile_legacy = home
-            .join("Documents")
-            .join("WindowsPowerShell")
-            .join("Microsoft.PowerShell_profile.ps1");
-        if rc_contains_lean_ctx(&ps_profile) {
-            parts.push(format!("{DIM}PowerShell profile{RST}"));
-            if !rc_has_pipe_guard(&ps_profile) {
-                needs_update.push("PowerShell profile".to_string());
-            }
-        } else if rc_contains_lean_ctx(&ps_profile_legacy) {
-            parts.push(format!("{DIM}WindowsPowerShell profile{RST}"));
-            if !rc_has_pipe_guard(&ps_profile_legacy) {
-                needs_update.push("WindowsPowerShell profile".to_string());
-            }
-        }
-    }
-
-    if parts.is_empty() {
-        let hint = if cfg!(windows) {
-            "no \"lean-ctx\" in PowerShell profile, ~/.zshrc or ~/.bashrc"
-        } else {
-            "no \"lean-ctx\" in ~/.zshrc, ~/.bashrc, or ~/.config/fish/config.fish"
-        };
-        Outcome {
-            ok: false,
-            line: format!("{BOLD}Shell aliases{RST}  {RED}{hint}{RST}"),
-        }
-    } else if !needs_update.is_empty() {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Shell aliases{RST}  {YELLOW}outdated hook in {} — run {BOLD}lean-ctx init --global{RST}{YELLOW} to fix (pipe guard missing){RST}",
-                needs_update.join(", ")
-            ),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Shell aliases{RST}  {GREEN}lean-ctx referenced in {}{RST}",
-                parts.join(", ")
-            ),
-        }
-    }
-}
-pub(crate) fn agent_aliases_outcome() -> Outcome {
-    let declined = dirs::home_dir().is_some_and(|h| crate::shell_hook::agent_aliases_declined(&h));
-    if !declined {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}Agent aliases{RST}  {DIM}enabled (claude, codex, gemini){RST}"),
-        };
-    }
-    let warn = if crate::core::config::ShellActivation::resolve()
-        == crate::core::config::ShellActivation::AgentsOnly
-    {
-        format!(
-            "  {YELLOW}hint: shell activation agents-only — compression still active via _lc() hook{RST}"
-        )
-    } else {
-        String::new()
-    };
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Agent aliases{RST}  {GREEN}skipped (init --no-agent-aliases){RST}{warn}"
-        ),
-    }
-}
 
 pub(crate) fn mcp_config_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
@@ -167,7 +14,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
     };
 
     let locations = mcp_config_locations(&home);
-    let location_names = lean_ctx_mcp_location_names(&home);
+    let location_names = sobre_mcp_location_names(&home);
     let mut found: Vec<String> = Vec::new();
     let mut exists_no_ref: Vec<String> = Vec::new();
 
@@ -190,7 +37,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         Outcome {
             ok: true,
             line: format!(
-                "{BOLD}MCP config{RST}  {GREEN}lean-ctx found in: {}{RST}",
+                "{BOLD}MCP config{RST}  {GREEN}sobre found in: {}{RST}",
                 found.join(", ")
             ),
         }
@@ -198,20 +45,20 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         let has_claude = exists_no_ref.iter().any(|n| n.starts_with("Claude Code"));
         let cause = if has_claude {
             format!(
-                "{DIM}(Claude Code may overwrite ~/.claude.json on startup — lean-ctx entry missing from mcpServers){RST}"
+                "{DIM}(Claude Code may overwrite ~/.claude.json on startup — sobre entry missing from mcpServers){RST}"
             )
         } else {
             String::new()
         };
         let hint = if has_claude {
-            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx init --agent claude){RST}")
+            format!("{DIM}(run: sobre doctor --fix OR sobre init --agent claude){RST}")
         } else {
-            format!("{DIM}(run: lean-ctx doctor --fix OR lean-ctx init){RST}")
+            format!("{DIM}(run: sobre doctor --fix OR sobre init){RST}")
         };
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP config{RST}  {YELLOW}config exists for {} but mcpServers does not contain lean-ctx{RST}  {cause} {hint}",
+                "{BOLD}MCP config{RST}  {YELLOW}config exists for {} but mcpServers does not contain sobre{RST}  {cause} {hint}",
                 exists_no_ref.join(", "),
             ),
         }
@@ -219,12 +66,12 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         Outcome {
             ok: false,
             line: format!(
-                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: lean-ctx init){RST}"
+                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: sobre init){RST}"
             ),
         }
     }
 }
-/// WSL2 + VS Code (GH #669): VS Code's start-on-demand MCP lifecycle has a
+/// WSL2 + VS Code: VS Code's start-on-demand MCP lifecycle has a
 /// known client-side race — the first tool call of a fresh conversation can
 /// fire against cached tool metadata before the server's implementation is
 /// bound, failing with `Cannot read properties of undefined (reading 'invoke')`
@@ -235,57 +82,17 @@ pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
         return None;
     }
     let home = dirs::home_dir()?;
-    if !lean_ctx_mcp_location_names(&home).contains("VS Code") {
+    if !sobre_mcp_location_names(&home).contains("VS Code") {
         return None;
     }
     Some(Outcome {
         ok: true,
         line: format!(
-            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first ctx_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → lean-ctx → Start){RST}"
+            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first sobre_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → sobre → Start){RST}"
         ),
     })
 }
 
-pub(crate) fn plan_mode_outcomes() -> Vec<Outcome> {
-    let status = crate::core::editor_registry::plan_mode::check_plan_mode_status();
-    let mut results = Vec::new();
-
-    if let Some(configured) = status.vscode_configured {
-        if configured {
-            results.push(Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Plan mode{RST}  VS Code  {GREEN}planAgent tools configured{RST}"
-                ),
-            });
-        } else {
-            results.push(Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Plan mode{RST}  VS Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx init){RST}"
-                ),
-            });
-        }
-    }
-
-    if let Some(configured) = status.claude_configured {
-        if configured {
-            results.push(Outcome {
-                ok: true,
-                line: format!("{BOLD}Plan mode{RST}  Claude Code  {GREEN}permissions present{RST}"),
-            });
-        } else {
-            results.push(Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Plan mode{RST}  Claude Code  {YELLOW}not configured{RST}  {DIM}(run: lean-ctx init){RST}"
-                ),
-            });
-        }
-    }
-
-    results
-}
 pub(crate) fn session_state_outcome() -> Outcome {
     use crate::core::session::SessionState;
 
@@ -302,7 +109,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
             }
         }
         // No session for THIS cwd — but sessions for other workspaces may be
-        // live (GH #694: doctor run from a shell whose cwd is not one of the
+        // live (doctor run from a shell whose cwd is not one of the
         // open project roots claimed "no active session" and looked broken).
         // Surface the recent sessions with their roots instead of denying
         // their existence.
@@ -324,7 +131,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
 }
 
 /// Renders "recent: root1 (2h ago), root2 (5m ago)" for the newest sessions
-/// across ALL workspaces (multi-window setups, GH #694). `None` when no
+/// across ALL workspaces (multi-window setups). `None` when no
 /// session exists at all.
 fn recent_sessions_line(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
     format_recent_sessions(crate::core::session::SessionState::list_sessions(), now)
@@ -373,61 +180,6 @@ pub(crate) fn humanize_age(age: chrono::Duration) -> String {
         format!("{}d ago", mins / (24 * 60))
     }
 }
-pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
-    if !crate::shell::is_container() {
-        return vec![];
-    }
-    let env_sh = crate::core::paths::config_dir().map_or_else(
-        |_| "/root/.lean-ctx/env.sh".to_string(),
-        |d| d.join("env.sh").to_string_lossy().to_string(),
-    );
-
-    let mut outcomes = vec![];
-
-    let shell_name = std::env::var("SHELL").unwrap_or_default();
-    let is_bash = shell_name.contains("bash") || shell_name.is_empty();
-
-    if is_bash {
-        let has_bash_env = std::env::var("BASH_ENV").is_ok();
-        outcomes.push(if has_bash_env {
-            Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}BASH_ENV{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
-                    std::env::var("BASH_ENV").unwrap_or_default()
-                ),
-            }
-        } else {
-            Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}BASH_ENV{RST}  {RED}not set{RST}  {YELLOW}(add to Dockerfile: ENV BASH_ENV=\"{env_sh}\"){RST}"
-                ),
-            }
-        });
-    }
-
-    let has_claude_env = std::env::var("CLAUDE_ENV_FILE").is_ok();
-    outcomes.push(if has_claude_env {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}CLAUDE_ENV_FILE{RST}  {GREEN}set{RST}  {DIM}({}){RST}",
-                std::env::var("CLAUDE_ENV_FILE").unwrap_or_default()
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}CLAUDE_ENV_FILE{RST}  {RED}not set{RST}  {YELLOW}(for Claude Code: ENV CLAUDE_ENV_FILE=\"{env_sh}\"){RST}"
-            ),
-        }
-    });
-
-    outcomes
-}
-
 pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
     use crate::lsp::config::{KNOWN_SERVERS, find_binary_in_path};
 
@@ -455,61 +207,4 @@ pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
             }
         })
         .collect()
-}
-/// True when `cwd_str` points inside an IDE/agent config directory rather than a
-/// real project (LM Studio, Claude, Codex). Matches both POSIX (`/`)
-/// and Windows (`\`) separators so the warning fires on every platform.
-pub(crate) fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
-    crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))
-}
-
-/// Warn if lean-ctx is running as an MCP server from a directory that lacks
-/// a project marker and looks like an IDE/agent tool directory (e.g. .lmstudio,
-/// .claude). This usually means the MCP client launched the process from the
-/// wrong CWD, causing "path escapes project root" errors for every tool call.
-pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
-    let is_mcp = crate::core::runtime_flags::mcp_server_enabled();
-    if !is_mcp {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}MCP server CWD{RST}  {DIM}(not running as MCP server){RST}"),
-        };
-    }
-
-    let Ok(cwd) = std::env::current_dir() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}MCP server CWD{RST}  {YELLOW}could not resolve{RST}"),
-        };
-    };
-
-    let has_marker = crate::core::pathutil::has_project_marker(&cwd);
-    let cwd_str = cwd.to_string_lossy();
-    let suspicious = cwd_looks_like_agent_dir(&cwd_str);
-
-    if has_marker {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {GREEN}under project root{RST}  {DIM}{}{RST}",
-                cwd.display()
-            ),
-        }
-    } else if suspicious {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}launched from an IDE/agent config dir{RST}  {DIM}lean-ctx was launched from {}, which is not a project root. It auto-corrects to your real project on the first absolute path (#580); for relative paths to resolve immediately, set `cwd` in your MCP client config to your project directory.{RST}",
-                cwd.display()
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}no project marker found in CWD{RST}  {DIM}cwd={} — \"path escapes project root\" errors may occur for files outside this directory. Add `cwd` to your MCP client config or add `extra_roots` / `allow_paths` in config.toml{RST}",
-                cwd.display()
-            ),
-        }
-    }
 }

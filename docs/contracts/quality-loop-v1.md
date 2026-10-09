@@ -1,48 +1,66 @@
 # Quality Loop v1 — Edit-Outcome Feedback into Mode Selection
 
-Status: experimental (GL #494)
+Status: experimental
 Owner: core engine
-Consumers: `auto_mode_resolver`, `ctx_patch`
+Consumers: `auto_mode_resolver`, `sobre_patch`
 
 ## Problem
 
-`BounceTracker` and `path_mode_memory` close the feedback loop for *re-read*
-bounces (compressed read → full re-read), but an edit that fails because the
-file was last read in a compressed mode taught the system nothing: the agent
-quoted an `old_string` from a `map`/`signatures` rendering whose body was
-never in context, the edit missed, and the next read of a similar file was
-compressed exactly the same way.
+`BounceTracker` closes the feedback loop for *re-read* bounces (compressed
+read → full re-read). It does not cover edits that fail because the file was
+last read in a compressed mode: the agent quotes an `old_text` from a
+`map`/`signatures` rendering whose body was never in context, or edits against
+line anchors that have since drifted. Without a separate signal, the next read
+of a similar file would be compressed the same way.
 
 ## Signals
 
-Edit outcomes are recorded by the edit engine behind `ctx_patch`
-(`tools/impl_edit.rs`, via `core::edit_quality::record_edit_outcome`; anchored
-edits via `record_anchored_edit_outcome`),
-keyed by the **mode of the last lean-ctx read of that file** (session cache
-`last_mode`). Only two outcomes carry signal:
+Edit outcomes are recorded by the two edit engines behind `sobre_patch`, keyed
+by the **mode of the last sobre read of that file** (session cache
+`last_mode`):
+
+- string replacement (`op=replace_unique`): `tools/impl_edit.rs`
+  `record_outcome` → `core::edit_quality::record_edit_outcome`
+- anchored ops (`set_line`, `replace_lines`, `insert_after`, `delete`, …):
+  `tools/sobre_patch/mod.rs` `record_outcome` →
+  `core::edit_quality::record_anchored_edit_outcome`
+
+Only these outcomes carry signal:
 
 | Outcome | Condition | Recorded as |
 |---|---|---|
-| Success | replacement applied (`CacheEffect::Invalidate`) | success for `(ext, last_mode)` |
-| Compression-correlated failure | `old_string` not found (auto-escalation `CacheEffect::StoreFull`, or plain miss after a `full` read as baseline) | failure for `(ext, last_mode)` |
+| Success | edit applied (`CacheEffect::Invalidate`) | success for `(ext, last_mode)` |
+| Compression-correlated failure | string replacement: `old_text` not found (auto-escalation `CacheEffect::StoreFull`, or plain miss after a `full` read as baseline) | failure for `(ext, last_mode)` |
+| Stale-anchor failure | anchored op returns `CONFLICT:` (the anchors the model edited against had drifted) | failure for `(ext, last_mode)` |
 
-Explicitly **not** recorded (no compression signal): `create=true`, empty or
-identical `old_string`/`new_string`, preimage/TOCTOU mismatches, missing
-files, already-applied edits, and files never read through lean-ctx
-(`last_mode` empty).
+Explicitly **not** recorded (no compression signal): file creation
+(`sobre_patch op=create`; a new file has no recorded read mode), empty or identical `old_text`/`new_text`,
+preimage/TOCTOU mismatches, missing files, already-applied edits, structural
+errors in anchored ops, and files never read through sobre (`last_mode`
+empty).
 
 ## Feedback rules
 
 ### 1. Per-path one-shot escalation
 
-A compression-correlated failure (last mode ≠ `full`) arms a pending
-escalation for that path. The **next** `mode=auto` resolution of the same
-path returns `full` (resolver source: `edit_fail_escalation`), then the
-escalation is consumed. Pending escalations expire after **1 hour**.
+A failure arms a pending escalation for that path, unless the last read mode
+already equals the escalation target. There are two independent one-shot
+escalations (`core/edit_quality.rs`), checked first in
+`core/auto_mode_resolver.rs::resolve`:
 
-This complements the immediate in-response escalation that the edit engine already
-appends (full content in the error message): the in-response copy serves the
-retry, the pending escalation serves the next independent read.
+| Failure | Arms (when last mode ≠ target) | Next `mode=auto` resolution | Resolver source |
+|---|---|---|---|
+| Stale `sobre_patch` anchor (`CONFLICT:`) | anchored escalation | `anchored` (fresh line anchors, so the agent retries by reference) | `anchored_edit_fail_escalation` |
+| `old_text` not found | full escalation | `full` | `edit_fail_escalation` |
+
+The anchored escalation is checked before the full one. Each escalation is
+consumed by the resolution that uses it, and pending escalations expire after
+**1 hour**.
+
+For string replacement this complements the immediate in-response escalation
+that the edit engine appends (full content in the error message): the
+in-response copy serves the retry, the pending escalation serves the next
+independent read.
 
 ### 2. Per-(extension × mode) risky penalty
 
@@ -65,28 +83,30 @@ affect `py|map` or `rs|signatures`.
 
 ## Persistence
 
-`edit_quality.json` in the data directory (respects `LEAN_CTX_DATA_DIR`), atomic
-tmp+rename writes, flushed every 10 recordings and on server shutdown.
+None. The store lives in memory for the life of the process: one run's edits
+never change how a later run reads.
 
 Bounds:
 
 | Limit | Value |
 |---|---|
-| Pair decay (no failure) | 30 days |
 | Escalation TTL | 1 hour |
 | Max pairs | 200 (oldest-failure evicted) |
-| Max pending escalations | 100 (oldest evicted) |
+| Max pending escalations | 100 per escalation kind (oldest evicted) |
 
 ## Observability
 
 The store has no report surface; its effect shows in auto-mode resolution,
-where the sources `edit_fail_escalation` and `edit_quality_penalty` appear.
+where the sources `anchored_edit_fail_escalation`, `edit_fail_escalation` and
+`edit_quality_penalty` appear.
 
 ## Invariants
 
-- Recording an outcome never blocks an edit: store access is lock-guarded and
-  failures to lock are silently skipped.
-- The penalty only ever *escalates* toward `full`; it never picks a lossier
-  mode than the resolver would have chosen.
-- No regression of bounce semantics: `BounceTracker` / `path_mode_memory`
-  remain independent signals evaluated before the quality loop's penalty.
+- Recording an outcome never fails an edit: store access goes through a
+  process-global mutex, and a poisoned lock is skipped silently.
+- The risky penalty (rule 2) only ever replaces the resolved mode with `full`;
+  it never picks a lossier mode than the resolver would have chosen. The
+  one-shot escalations (rule 1) return `full` or `anchored`, depending on
+  which kind of failure armed them.
+- No regression of bounce semantics: `BounceTracker` remains an independent
+  signal, evaluated before the quality loop's penalty.

@@ -1,124 +1,116 @@
 # Knowledge Policy Contract v1
 
-GitLab: `#2317`
+## Purpose
 
-## Ziel
+A versioned governance contract for project knowledge (facts and the
+history of consolidations) that is:
 
-Ein **versionierter Governance-Vertrag** für Project Knowledge (Facts/Patterns/History + Relations), der:
-
-- **bounded** ist (keine unkontrollierte Growth/Outputs),
-- **deterministisch** ist (stable ordering + stable semantics),
-- **replayable** ist (Timeline/History bleibt interpretierbar),
-- **sicher** ist (kein secret leakage, policy-gated surfaces).
+- **bounded**: stores and outputs have fixed caps,
+- **deterministic**: stable ordering and stable semantics,
+- **replayable**: a replaced value stays reachable (`recall as_of`),
+- **safe**: no secret leakage; surfaces are policy-gated.
 
 ## Version
 
-- v1 (dieses Dokument). Die Policy-Daten tragen keine eigene `schema_version`.
+- v1 (this document). The policy data carries no `schema_version` of its own.
 
-## Policy Surface
+## Policy source
 
-### Config
+The policy is `MemoryPolicy` (`rust/src/core/memory_policy.rs`). Every caller
+uses `MemoryPolicy::default()`: there is no config-file section and no
+environment override for it, so the values below are fixed.
 
-Policy wird über `Config.memory` geladen und validiert:
+### Knowledge (`KnowledgePolicy`)
 
-- Runtime: `rust/src/core/config/mod.rs` (`memory_policy_effective`)
-- Structs: `rust/src/core/memory_policy.rs`
+| Field | Value |
+|---|---|
+| `max_facts` | 200 |
+| `max_history` | 100 |
+| `contradiction_threshold` | 0.5 |
+| `recall_facts_limit` | 10 (`core/budgets.rs`) |
 
-Minimaler TOML-Ausschnitt:
+### Lifecycle (`LifecyclePolicy`)
 
-```toml
-[memory.knowledge]
-max_facts = 200
-max_patterns = 50
-max_history = 100
-contradiction_threshold = 0.5
+| Field | Value |
+|---|---|
+| `low_confidence_threshold` | 0.3 |
+| `stale_days` | 30 |
+| `similarity_threshold` | 0.85 |
+| `base_stability_days` | 90.0 |
+| `prune_unretrieved_after_days` | 90 |
+| `reclaim_headroom_pct` | 0.25 (a full store settles at 75%) |
 
-# Retrieval budgets (bounded outputs)
-recall_facts_limit = 10
-rooms_limit = 25
-timeline_limit = 25
-relations_limit = 40
+`MemoryPolicy` also holds embeddings and admission sub-policies;
+their defaults are in the same file. None of it is configurable.
 
-[memory.lifecycle]
-decay_rate = 0.01
-low_confidence_threshold = 0.3
-stale_days = 30
-similarity_threshold = 0.85
-
-# Verlustfreie Kapazitäts-Reclaim (#995)
-reclaim_headroom_pct = 0.25   # voller Store siedelt sich bei 1 - pct (= 75%) an
-reclaim_enabled = true        # false ⇒ nur Overflow kappen (Escape Hatch)
-```
-
-### Env Overrides (optional)
-
-Die Runtime akzeptiert env overrides für zentrale Felder (siehe `memory_policy.rs`).
-
-## Semantik (MUST)
+## Semantics (MUST)
 
 ### Facts
 
-- Facts sind logisch durch `(category, key)` adressiert.
+- A fact is addressed by `(category, key)`.
 - Current vs archived:
   - current: `valid_until == None`
   - archived: `valid_until != None`
-- Updates **dürfen** den vorherigen Zustand nicht “vergessen”: Timeline muss eine nachvollziehbare Folge liefern (archived versions + current).
+- An update must not lose the previous state: `recall` with `as_of` returns
+  the version valid at that date, archived or current.
 
 ### Contradictions
 
-- Contradiction detection:
-  - Case-insensitive equality ⇒ **kein** Widerspruch.
-  - Word-similarity über Schwelle ⇒ **kein** Widerspruch (verhindert false positives bei semantisch gleichen Werten).
-- Severity semantics (stabil):
-  - `High`: `existing.confidence >= 0.9` **und** `existing.confirmation_count >= 2`
+Checked against the current fact with the same `(category, key)`
+(`core/knowledge/core.rs`, `check_contradiction`):
+
+- Case-insensitive equal values ⇒ **no** contradiction.
+- Word similarity above 0.8 ⇒ **no** contradiction (avoids false positives
+  on semantically equal values).
+- Severity:
+  - `High`: `existing.confidence >= 0.9` **and** `existing.confirmation_count >= 2`
   - `Medium`: `existing.confidence >= contradiction_threshold`
-  - `Low`: sonst
+  - `Low`: otherwise
 
-### Retrieval Budgets (bounded, deterministisch)
+### Retrieval budgets (bounded, deterministic)
 
-- `recall_facts_limit`: max facts in Recall Outputs
-- `rooms_limit`: max rooms in `ctx_knowledge action=rooms`
-- `timeline_limit`: max entries in `ctx_knowledge action=timeline`
-- `relations_limit`: max edges in `ctx_knowledge action=relations|relations_diagram`
+- `recall_facts_limit`: max facts in recall outputs
 
-Ordering ist deterministisch (stable sort tie-breaks), danach erfolgt Truncation.
+Results are sorted with stable tie-breaks, then truncated.
 
 ### Lifecycle
 
-- Confidence decay + consolidation + compaction laufen deterministisch und bounded:
-  - Runtime: `rust/src/core/memory_lifecycle.rs`
-  - Parameter: `decay_rate`, `low_confidence_threshold`, `stale_days`, `similarity_threshold`, `max_facts`
+Confidence decay (an Ebbinghaus curve), consolidation and compaction are
+deterministic and bounded (`rust/src/core/memory_lifecycle.rs`), parameterised
+by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
+`similarity_threshold` and `max_facts`.
 
-### Verlustfreie Eviction (MUST, #995)
+### Lossless eviction (MUST)
 
-- **Kein Hard-Drop.** Jeder Store (facts/history/procedures/patterns) evictet
-  ausschließlich über den einen Kapazitäts-Manager
-  (`rust/src/core/memory_capacity.rs::reclaim_store`). Der entfernte Tail wird
-  **vor** dem Löschen nach `memory/archive/<store>/` archiviert und ist
-  wiederherstellbar.
-- **Eine Formel + Hysterese.** `reclaim_target(max, reclaim_headroom_pct)` ist die
-  einzige Zielgrößen-Berechnung. Ein Reclaim triggert nur bei `len >= max` und
-  siedelt den Store dann bei `reclaim_target` an (kein Churn pro Write).
-- **Default-on, gated.** `reclaim_enabled = true` ist Standard; `false` kappt nur
-  den Overflow (Daten bleiben in beiden Fällen verlustfrei).
-- **Retention-Ranking** je Store ist deterministisch (stable sort tie-breaks):
-  facts nach `is_current` + Output-Ranking, history/patterns nach Recency,
-  procedures nach `procedural_memory::retention_cmp`.
-- **Archive-Erreichbarkeit.** `rehydrate_reach` ist an `max_files` gekoppelt
-  (`ArchiveConfig`), sodass jedes retainte Archiv für Recall/Restore erreichbar ist.
+- **No hard drop.** Every store (facts, history) evicts
+  only through the capacity manager
+  (`rust/src/core/memory_capacity.rs::reclaim_store`). The evicted tail is
+  archived **before** removal. Facts are archived at
+  `memory/archive/archive-*.json`; history under
+  `memory/archive/<store>/<project-hash>/archive-*.json`
+  (`rust/src/core/memory_archive.rs`).
+- **One formula plus hysteresis.** `reclaim_target(max, reclaim_headroom_pct)`
+  (`max - ceil(max * pct)`, with `pct` clamped to `[0.0, 0.95]`) is the only
+  target-size calculation. A reclaim triggers only when `len >= max` and then
+  settles the store at `reclaim_target`, so there is no churn on every write.
+- **Retention ranking** per store is deterministic (stable sort tie-breaks):
+  facts by `is_current` then output ranking, history newest first.
+- **Archive reachability.** `ArchiveConfig::default()` sets both `max_files`
+  and `rehydrate_reach` to 16, so every retained facts archive is reachable:
+  a `recall` that matches no current fact brings matching archived facts
+  back.
 
-## Tool Surface
+## Tool surface
 
-- `ctx_knowledge` (MCP): `rust/src/tools/ctx_knowledge/`
-  - `action=policy` + `value=show|validate` (policy visibility + range validation)
-  - `action=consolidate` (+ `dry_run=true` ⇒ Preview ohne Writes), `action=consolidate_preview`
-  - `action=restore` (`store`, `query`, `limit`) ⇒ verlustfreies Undo aus dem Archiv
-- CLI-Parität: `lean-ctx knowledge consolidate [--all] [--dry-run]` und
-  `lean-ctx knowledge restore [--store …] [--query …] [--limit N]`
-- Relations: `rust/src/tools/ctx_knowledge_relations.rs` (bounded + deterministic outputs)
+- `sobre_knowledge` (MCP): `rust/src/tools/sobre_knowledge/`,
+  registered in `rust/src/tools/registered/sobre_knowledge.rs`. Its actions
+  are `remember`, `recall`, `search`, `status`, `remove`, `consolidate`
+  (with `dry_run=true` ⇒ preview without writes) and `gotcha`.
+- From a shell: `sobre call sobre_knowledge --project-root <path> --json
+  '{"action":"consolidate"}'`
 
-## Security & Privacy
+## Security & privacy
 
-- Keine Secrets in Knowledge/Artifacts/Logs; Redaction + path boundaries gelten auch für Memory I/O.
-- Outputs sind bounded; Policies müssen nicht zu Token-Burn führen.
-
+- No secrets in knowledge, artifacts or logs; redaction and path boundaries
+  apply to memory I/O as well.
+- Outputs are bounded so policies do not cause token burn.

@@ -1,20 +1,6 @@
 use chrono::Utc;
 
-use super::types::{JudgedPair, KnowledgeFact};
-
-pub(super) fn confidence_stars(confidence: f32) -> &'static str {
-    if confidence >= 0.95 {
-        "★★★★★"
-    } else if confidence >= 0.85 {
-        "★★★★"
-    } else if confidence >= 0.7 {
-        "★★★"
-    } else if confidence >= 0.5 {
-        "★★"
-    } else {
-        "★"
-    }
-}
+use super::types::KnowledgeFact;
 
 pub(super) fn string_similarity(a: &str, b: &str) -> f32 {
     let a_lower = a.to_lowercase();
@@ -37,12 +23,7 @@ pub(super) fn string_similarity(a: &str, b: &str) -> f32 {
 }
 
 pub(crate) fn sort_fact_for_output(a: &KnowledgeFact, b: &KnowledgeFact) -> std::cmp::Ordering {
-    // Pure salience ordering for display/grouping. The observation tier (#802) lives
-    // in the *selection* layer (`recall_for_output`, `semantic_recall`,
-    // `recall_by_category_for_output`) which has query context to keep a summary above
-    // incidental matches yet below an exact key hit; the display then preserves that
-    // order. Keeping this comparator tier-free avoids side effects on
-    // wakeup/summary/aaak, where facts are already grouped by category.
+    // Pure salience ordering for display/grouping.
     salience_score(b)
         .cmp(&salience_score(a))
         .then_with(|| {
@@ -99,12 +80,7 @@ fn salience_score(f: &KnowledgeFact) -> u32 {
 
     let archetype_bonus = f.archetype.salience_bonus();
 
-    let fidelity_bonus = f
-        .fidelity
-        .as_ref()
-        .map_or(0u32, |fi| (fi.structural * 10.0) as u32);
-
-    base + quality_bonus + recency_bonus + archetype_bonus + fidelity_bonus
+    base + quality_bonus + recency_bonus + archetype_bonus
 }
 
 pub(super) fn hash_project_root(root: &str) -> String {
@@ -161,7 +137,6 @@ pub fn find_cross_key_similar(
     new_key: &str,
     new_value: &str,
     all_facts: &[KnowledgeFact],
-    judged_pairs: &[JudgedPair],
     limit: usize,
 ) -> Vec<SimilarFact> {
     let composite_key = format!("{new_category}/{new_key}");
@@ -173,14 +148,6 @@ pub fn find_cross_key_similar(
         }
         let other_key = format!("{}/{}", f.category, f.key);
         if other_key == composite_key {
-            continue;
-        }
-
-        let already_judged = judged_pairs.iter().any(|jp| {
-            (jp.key_a == composite_key && jp.key_b == other_key)
-                || (jp.key_a == other_key && jp.key_b == composite_key)
-        });
-        if already_judged {
             continue;
         }
 
@@ -210,8 +177,7 @@ pub fn find_cross_key_similar(
 }
 
 pub(super) fn fact_version_id_v1(f: &KnowledgeFact) -> String {
-    use md5::{Digest, Md5};
-    let mut hasher = Md5::new();
+    let mut hasher = blake3::Hasher::new();
     hasher.update(f.category.as_bytes());
     hasher.update(b"\n");
     hasher.update(f.key.as_bytes());
@@ -221,5 +187,5 @@ pub(super) fn fact_version_id_v1(f: &KnowledgeFact) -> String {
     hasher.update(f.source_session.as_bytes());
     hasher.update(b"\n");
     hasher.update(f.created_at.to_rfc3339().as_bytes());
-    crate::core::agent_identity::hex_encode(&hasher.finalize())
+    hasher.finalize().to_hex().to_string()
 }

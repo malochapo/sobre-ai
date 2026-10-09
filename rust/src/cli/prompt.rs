@@ -1,11 +1,8 @@
 //! Shared interactive-confirmation helpers for consequential CLI writes.
 //!
-//! Originally lived privately in [`crate::cli::security_cmd`] for the
-//! `yolo` / `secure` master switches (#507). Promoted to a shared module for
-//! #852 so the same governance — *show the consequence, then require explicit
-//! approval* — guards every state-mutating write that can clobber existing
-//! state (knowledge overwrites, behavior-changing `config set`), not just the
-//! security toggles.
+//! One governance — *show the consequence, then require explicit approval* —
+//! guards every state-mutating write that can clobber existing state
+//! (knowledge overwrites, behavior-changing `config set`).
 //!
 //! Invariant: with no TTY and no `--yes` we **refuse** rather than silently
 //! apply. An automated/unattended run must never weaken state without an
@@ -17,11 +14,10 @@ const BOLD: &str = "\x1b[1m";
 const YELLOW: &str = "\x1b[33m";
 const RST: &str = "\x1b[0m";
 
-/// True if the user passed an explicit approval flag (`-y`, `--yes`,
-/// `--force`, `-f`). These bypass the interactive prompt for scripts/CI.
+/// True if the user passed the approval flag (`--yes`, `-y`), which bypasses
+/// the interactive prompt for scripts/CI.
 pub(crate) fn wants_yes(args: &[String]) -> bool {
-    args.iter()
-        .any(|a| matches!(a.as_str(), "-y" | "--yes" | "--force" | "-f"))
+    args.iter().any(|a| matches!(a.as_str(), "-y" | "--yes"))
 }
 
 /// Confirm a consequential change.
@@ -35,7 +31,7 @@ pub(crate) fn confirm(prompt: &str, assume_yes: bool) -> bool {
         return true;
     }
     if !std::io::stdin().is_terminal() {
-        eprintln!(
+        crate::errln!(
             "{YELLOW}Refusing to apply a consequential change non-interactively.{RST} Re-run with {BOLD}--yes{RST} to confirm."
         );
         return false;
@@ -57,8 +53,7 @@ mod tests {
     fn wants_yes_detects_flags() {
         assert!(wants_yes(&["--yes".to_string()]));
         assert!(wants_yes(&["-y".to_string()]));
-        assert!(wants_yes(&["--force".to_string()]));
-        assert!(wants_yes(&["-f".to_string()]));
+        assert!(!wants_yes(&["--force".to_string()]));
         assert!(!wants_yes(&["open".to_string()]));
         assert!(!wants_yes(&[]));
     }

@@ -1,897 +1,507 @@
-use std::fs;
+//! Removes what `init` wrote into the agents' configs: sobre's MCP entries,
+//! hooks, skill and plugin. The containers sobre's entries leave empty go too,
+//! and a file that held nothing else is deleted. Everything else stays as the
+//! user wrote it.
+
 use std::path::{Path, PathBuf};
 
-use super::parsers::{
-    remove_lean_ctx_block, remove_lean_ctx_from_json, remove_lean_ctx_from_toml,
-    remove_lean_ctx_login_block,
-};
-use super::{
-    backup_before_modify, copilot_instructions_path, remove_marked_block, safe_remove, safe_write,
-    shorten,
-};
+use serde_json::{Map, Value};
 
-pub(super) fn remove_project_agent_files(dry_run: bool) -> bool {
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let agents = cwd.join("AGENTS.md");
-    let lean_ctx_md = cwd.join("LEAN-CTX.md");
+use super::shorten;
 
-    const START: &str = crate::core::rules_canonical::START_MARK;
-    const END: &str = crate::core::rules_canonical::END_MARK;
-    const OWNED: &str = crate::core::rules_canonical::PROJECT_LEAN_CTX_OWNED_MARKER;
-
-    let mut removed = false;
-
-    // AGENTS.md: surgical marker-based removal (already correct)
-    if agents.exists()
-        && let Ok(content) = fs::read_to_string(&agents)
-        && content.contains(START)
-    {
-        let cleaned = remove_marked_block(&content, START, END);
-        if cleaned != content {
-            backup_before_modify(&agents, dry_run);
-            if let Err(e) = safe_write(&agents, &cleaned, dry_run) {
-                tracing::warn!("Failed to update project AGENTS.md: {e}");
-            } else {
-                let verb = if dry_run { "Would remove" } else { "✓" };
-                println!("  {verb} Project: removed lean-ctx block from AGENTS.md");
-                removed = true;
-            }
-        }
-    }
-
-    // LEAN-CTX.md: only delete if we own it
-    if lean_ctx_md.exists()
-        && let Ok(content) = fs::read_to_string(&lean_ctx_md)
-        && content.contains(OWNED)
-    {
-        if let Err(e) = safe_remove(&lean_ctx_md, dry_run) {
-            tracing::warn!("Failed to remove project LEAN-CTX.md: {e}");
-        } else {
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Project: removed LEAN-CTX.md");
-            removed = true;
-        }
-    }
-
-    // Dedicated lean-ctx files in project: safe to delete entirely
-    let rel = ".cursor/rules/lean-ctx.mdc";
-    let path = cwd.join(rel);
-    if path.exists()
-        && let Ok(content) = fs::read_to_string(&path)
-        && content.contains("lean-ctx")
-    {
-        let _ = safe_remove(&path, dry_run);
-        let verb = if dry_run { "Would remove" } else { "✓" };
-        println!("  {verb} Project: removed {rel}");
-        removed = true;
-    }
-
-    // Shared project files: surgically remove lean-ctx content, keep user content
-    let shared_project_files = [
-        ".cursorrules",
-        ".windsurfrules",
-        // #555: lean-ctx writes a marked block into the repo Copilot instructions.
-        ".github/copilot-instructions.md",
-    ];
-    for rel in &shared_project_files {
-        let path = cwd.join(rel);
-        if !path.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-
-        let cleaned = remove_lean_ctx_section_from_rules(&content);
-        if cleaned.trim().is_empty() {
-            backup_before_modify(&path, dry_run);
-            let _ = safe_remove(&path, dry_run);
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Project: removed {rel}");
-        } else {
-            backup_before_modify(&path, dry_run);
-            let _ = safe_write(&path, &cleaned, dry_run);
-            let verb = if dry_run { "Would clean" } else { "✓" };
-            println!("  {verb} Project: removed lean-ctx content from {rel}");
-        }
-        removed = true;
-    }
-
-    // Project-level MCP/hook JSON files: surgically remove lean-ctx entries
-    for (rel, label) in [
-        (".vscode/mcp.json", "Project .vscode/mcp.json"),
-        (".github/mcp.json", "Project .github/mcp.json"),
-        (
-            ".github/hooks/hooks.json",
-            "Project .github/hooks/hooks.json",
-        ),
-    ] {
-        let path = cwd.join(rel);
-        if !path.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&path) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-        backup_before_modify(&path, dry_run);
-        // These files use standard MCP JSON format — try hook cleanup which handles both
-        removed |= apply_hook_cleanup(&path, label, &content, dry_run);
-    }
-
-    // Project-level .claude/settings.local.json: surgically remove lean-ctx hooks
-    let claude_settings = cwd.join(".claude/settings.local.json");
-    if claude_settings.exists()
-        && let Ok(content) = fs::read_to_string(&claude_settings)
-        && content.contains("lean-ctx")
-    {
-        backup_before_modify(&claude_settings, dry_run);
-        removed |= apply_hook_cleanup(
-            &claude_settings,
-            "Project .claude/settings.local.json",
-            &content,
-            dry_run,
-        );
-    }
-
-    removed
-}
-
-/// Remove the lean-ctx section from .cursorrules / .windsurfrules.
-/// These files have lean-ctx content appended starting with the canonical
-/// `START_MARK` comment. The content has no end marker, so we remove from
-/// the marker to the end of the lean-ctx block (next heading or end of file).
-pub(super) fn remove_lean_ctx_section_from_rules(content: &str) -> String {
-    // If the file has the HTML comment markers, use marker-based removal.
-    const MARKER_START: &str = crate::core::rules_canonical::START_MARK;
-    const MARKER_END: &str = crate::core::rules_canonical::END_MARK;
-    if content.contains(MARKER_START) {
-        return remove_marked_block(content, MARKER_START, MARKER_END);
-    }
-
-    // Otherwise, remove from `# Context Engineering Layer` heading to end of file
-    // or next non-lean-ctx heading.
-    let heading = "# Context Engineering Layer";
-    let mut out = String::with_capacity(content.len());
-    let mut in_block = false;
-
-    for line in content.lines() {
-        if !in_block && line.trim() == heading {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            if line.starts_with('#') && line.trim() != heading {
-                in_block = false;
-                out.push_str(line);
-                out.push('\n');
-            }
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    // Trim trailing whitespace added by separation
-    while out.ends_with("\n\n") {
-        out.pop();
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
-// Shell hook removal
-// ---------------------------------------------------------------------------
-
-pub(super) fn remove_shell_hook(home: &Path, dry_run: bool) -> bool {
-    let shell = std::env::var("SHELL").unwrap_or_default();
-    let mut removed = false;
-
-    if dry_run {
-        println!("  Would remove shell hook dropin files (.zshenv.d, .bashenv.d)");
-    } else {
-        crate::shell_hook::uninstall_all(false);
-    }
-
-    let rc_files: Vec<PathBuf> = vec![
-        home.join(".zshrc"),
-        home.join(".bashrc"),
-        // Bash login profiles: may carry the "source ~/.bashrc" snippet init_posix adds.
-        home.join(".bash_profile"),
-        home.join(".bash_login"),
-        home.join(".profile"),
-        home.join(".config/fish/config.fish"),
-        #[cfg(windows)]
-        home.join("Documents/PowerShell/Microsoft.PowerShell_profile.ps1"),
-    ];
-
-    for rc in &rc_files {
-        if !rc.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(rc) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-
-        let mut cleaned = remove_lean_ctx_block(&content);
-        cleaned = remove_source_lines(&cleaned);
-        cleaned = remove_lean_ctx_login_block(&cleaned);
-        if cleaned.trim() != content.trim() {
-            let bak = rc.with_extension("lean-ctx.bak");
-            if !dry_run {
-                let _ = fs::copy(rc, &bak);
-            }
-            if let Err(e) = safe_write(rc, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {}: {}", rc.display(), e);
-            } else {
-                let short = shorten(rc, home);
-                let verb = if dry_run { "Would remove" } else { "✓" };
-                println!("  {verb} Shell hook removed from {short}");
-                if !dry_run {
-                    println!("    Backup: {}", shorten(&bak, home));
-                }
-                removed = true;
-            }
-        }
-    }
-
-    let hook_files = [
-        "shell-hook.zsh",
-        "shell-hook.bash",
-        "shell-hook.fish",
-        "shell-hook.ps1",
-    ];
-    let lc_dir = crate::core::paths::config_dir().unwrap_or_else(|_| home.join(".config/lean-ctx"));
-    for f in &hook_files {
-        let path = lc_dir.join(f);
-        if path.exists() {
-            let _ = safe_remove(&path, dry_run);
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Removed {}", path.display());
-            removed = true;
-        }
-    }
-
-    if !removed && !shell.is_empty() {
-        println!("  · No shell hook found");
-    }
-
-    removed
-}
-
-fn remove_source_lines(content: &str) -> String {
-    content
-        .lines()
-        .filter(|line| {
-            !line.contains("lean-ctx/shell-hook.") && !line.contains("lean-ctx\\shell-hook.")
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-        + "\n"
-}
-
-// ---------------------------------------------------------------------------
-// MCP config removal (JSON / YAML / TOML)
-// ---------------------------------------------------------------------------
-
-pub(super) fn remove_mcp_configs(home: &Path, dry_run: bool) -> bool {
-    let claude_cfg_dir_json = std::env::var("CLAUDE_CONFIG_DIR").ok().map_or_else(
-        || PathBuf::from("/nonexistent"),
-        |d| PathBuf::from(d).join(".claude.json"),
-    );
-    let configs: Vec<(&str, PathBuf)> = vec![
-        ("Cursor", home.join(".cursor/mcp.json")),
-        ("Claude Code (config dir)", claude_cfg_dir_json),
-        ("Claude Code (home)", home.join(".claude.json")),
-        ("Windsurf", home.join(".codeium/windsurf/mcp_config.json")),
-        ("Gemini CLI", home.join(".gemini/settings.json")),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("config.toml"),
-        ),
-        ("OpenCode", home.join(".config/opencode/opencode.json")),
-        ("Copilot CLI", home.join(".copilot/mcp-config.json")),
-    ];
-
-    let mut removed = false;
-
-    for (name, path) in &configs {
-        if !path.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(path) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-
-        let is_toml = path.extension().and_then(|e| e.to_str()) == Some("toml");
-
-        let cleaned = if is_toml {
-            Some(remove_lean_ctx_from_toml(&content))
-        } else {
-            let mut cleaned = remove_lean_ctx_from_json(&content);
-            // OpenCode: also clean up shadow-mode permission denies (read/grep/glob/bash)
-            // that lean-ctx may have set via `apply_shadow_permissions` — they don't
-            // contain "lean-ctx" so the generic JSON cleanup above won't touch them.
-            if *name == "OpenCode"
-                && let Some(ref c) = cleaned
-                && let Some(stripped) = remove_shadow_permissions_from_json(c)
-            {
-                cleaned = Some(stripped);
-            }
-            cleaned
-        };
-
-        if let Some(cleaned) = cleaned {
-            backup_before_modify(path, dry_run);
-            if let Err(e) = safe_write(path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {} config: {}", name, e);
-            } else {
-                let verb = if dry_run { "Would update" } else { "✓" };
-                println!("  {verb} MCP config removed from {name}");
-                removed = true;
-            }
-        }
-    }
-
-    // Zed: uses `context_servers` key — handled by remove_lean_ctx_from_json
-    let zed_path = crate::core::editor_registry::zed_settings_path(home);
-    if zed_path.exists()
-        && let Ok(content) = fs::read_to_string(&zed_path)
-        && content.contains("lean-ctx")
-    {
-        backup_before_modify(&zed_path, dry_run);
-        if let Some(cleaned) = remove_lean_ctx_from_json(&content) {
-            if let Err(e) = safe_write(&zed_path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update Zed config: {e}");
-            } else {
-                let verb = if dry_run { "Would update" } else { "✓" };
-                println!("  {verb} MCP config removed from Zed");
-                removed = true;
-            }
-        }
-    }
-
-    let vscode_path = crate::core::editor_registry::vscode_mcp_path();
-    let label = "VS Code / Copilot";
-    if vscode_path.exists()
-        && let Ok(content) = fs::read_to_string(&vscode_path)
-        && content.contains("lean-ctx")
-        && let Some(cleaned) = remove_lean_ctx_from_json(&content)
-    {
-        backup_before_modify(&vscode_path, dry_run);
-        if let Err(e) = safe_write(&vscode_path, &cleaned, dry_run) {
-            tracing::warn!("Failed to update {label} config: {e}");
-        } else {
-            let verb = if dry_run { "Would update" } else { "✓" };
-            println!("  {verb} MCP config removed from {label}");
-            removed = true;
-        }
-    }
-
-    removed
-}
-
-// ---------------------------------------------------------------------------
-// Plan mode settings cleanup
-// ---------------------------------------------------------------------------
-
-pub(super) fn remove_plan_mode_settings(_home: &Path, dry_run: bool) -> bool {
-    let mut removed = false;
-
-    // VS Code settings.json: remove lean-ctx plan tools from additionalTools array
-    if let Some(vscode_settings) = crate::core::editor_registry::plan_mode::vscode_settings_path()
-        && vscode_settings.exists()
-        && let Ok(content) = fs::read_to_string(&vscode_settings)
-        && content.contains("lean-ctx")
-        && let Ok(mut parsed) = crate::core::jsonc::parse_jsonc(&content)
-    {
-        let mut modified = false;
-        let key = "github.copilot.chat.planAgent.additionalTools";
-        if let Some(tools) = parsed.get_mut(key).and_then(|t| t.as_array_mut()) {
-            let before = tools.len();
-            tools.retain(|t| !t.as_str().is_some_and(|s| s.contains("lean-ctx")));
-            if tools.len() < before {
-                modified = true;
-            }
-        }
-        if modified {
-            backup_before_modify(&vscode_settings, dry_run);
-            if let Ok(cleaned) = serde_json::to_string_pretty(&parsed) {
-                let _ = safe_write(&vscode_settings, &(cleaned + "\n"), dry_run);
-                let verb = if dry_run { "Would clean" } else { "✓" };
-                println!("  {verb} VS Code plan mode tools cleaned (other tools preserved)");
-                removed = true;
-            }
-        }
-    }
-
-    // Claude Code: permissions.allow cleaned via hook cleanup (already handled there)
-
-    removed
-}
-
-// ---------------------------------------------------------------------------
-// Rules files removal (shared vs dedicated)
-// ---------------------------------------------------------------------------
-
-pub(super) fn remove_rules_files(home: &Path, dry_run: bool) -> bool {
-    // Dedicated files: entirely owned by lean-ctx — safe to delete
-    let dedicated_files: Vec<(&str, PathBuf)> = vec![
-        (
-            "Claude Code",
-            crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md"),
-        ),
-        ("Cursor", home.join(".cursor/rules/lean-ctx.mdc")),
-        (
-            "Gemini CLI (dedicated)",
-            crate::rules_inject::gemini_dedicated_rules_path(home),
-        ),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("LEAN-CTX.md"),
-        ),
-        ("Windsurf", home.join(".codeium/windsurf/rules/lean-ctx.md")),
-        (
-            "Zed",
-            crate::core::editor_registry::zed_config_dir(home).join("rules/lean-ctx.md"),
-        ),
-    ];
-
-    // Shared files: contain user content + lean-ctx block with markers.
-    // Only remove the <!-- lean-ctx --> ... <!-- /lean-ctx --> section.
-    let shared_files: Vec<(&str, PathBuf)> = vec![
-        (
-            "Claude Code",
-            crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"),
-        ),
-        ("Claude Code (home)", home.join(".claude/CLAUDE.md")),
-        ("Gemini CLI", home.join(".gemini/GEMINI.md")),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("instructions.md"),
-        ),
-        ("VS Code", copilot_instructions_path(home)),
-        ("Copilot CLI", home.join(".copilot/instructions.md")),
-        ("OpenCode", home.join(".config/opencode/AGENTS.md")),
-        (
-            "Codex CLI",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("AGENTS.md"),
-        ),
-    ];
-
-    let mut removed = false;
-
-    // --- Dedicated: delete if contains lean-ctx ---
-    for (name, path) in &dedicated_files {
-        if !path.exists() {
-            continue;
-        }
-        if let Ok(content) = fs::read_to_string(path)
-            && content.contains("lean-ctx")
-        {
-            if let Err(e) = safe_remove(path, dry_run) {
-                tracing::warn!("Failed to remove {name} rules: {e}");
-            } else {
-                let verb = if dry_run { "Would remove" } else { "✓" };
-                println!("  {verb} Rules removed from {name}");
-                removed = true;
-            }
-        }
-    }
-
-    // --- Shared: surgically remove lean-ctx section, keep user content ---
-    const HTML_START: &str = crate::core::rules_canonical::START_MARK;
-    const HTML_END: &str = crate::core::rules_canonical::END_MARK;
-
-    for (name, path) in &shared_files {
-        if !path.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(path) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-
-        let cleaned = if content.contains(HTML_START) && content.contains(HTML_END) {
-            remove_marked_block(&content, HTML_START, HTML_END)
-        } else {
-            remove_lean_ctx_block_from_md(&content)
-        };
-
-        if cleaned.trim().is_empty() {
-            backup_before_modify(path, dry_run);
-            let _ = safe_remove(path, dry_run);
-            let verb = if dry_run { "Would remove" } else { "✓" };
-            println!("  {verb} Rules removed from {name} (file was lean-ctx only)");
-        } else if cleaned.trim() != content.trim() {
-            backup_before_modify(path, dry_run);
-            let _ = safe_write(path, &cleaned, dry_run);
-            let verb = if dry_run { "Would clean" } else { "✓" };
-            println!("  {verb} Rules removed from {name} (user content preserved)");
-        }
-        removed = true;
-    }
-
-    if !removed {
-        println!("  · No rules files found");
-    }
-    removed
-}
-
-fn remove_lean_ctx_block_from_md(content: &str) -> String {
-    // Detect both HTML-comment markers and old heading-based markers.
-    let start_marker = crate::core::rules_canonical::START_MARK;
-    let end_marker = crate::core::rules_canonical::END_MARK;
-    let heading = "# Context Engineering Layer";
-    let mut out = String::with_capacity(content.len());
-    let mut in_block = false;
-
-    for line in content.lines() {
-        if !in_block && (line.contains(start_marker) || line.trim() == heading) {
-            in_block = true;
-            continue;
-        }
-        if in_block {
-            if line.contains(end_marker) {
-                in_block = false;
-                continue;
-            }
-            if line.starts_with('#') && line.trim() != heading && !line.contains(start_marker) {
-                in_block = false;
-                out.push_str(line);
-                out.push('\n');
-            }
-            continue;
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-
-    while out.starts_with('\n') {
-        out.remove(0);
-    }
-    while out.ends_with("\n\n") {
-        out.pop();
-    }
-    out
-}
-
-// ---------------------------------------------------------------------------
-// Hook files removal
-// ---------------------------------------------------------------------------
-
-/// Apply hook cleanup result to a file: write cleaned content, remove if entirely
-/// lean-ctx, or leave untouched on parse error / no changes.
-fn apply_hook_cleanup(path: &Path, label: &str, content: &str, dry_run: bool) -> bool {
-    let verb = if dry_run { "Would" } else { "✓" };
-    match remove_lean_ctx_from_hooks_json(content) {
-        HookCleanupResult::Cleaned(cleaned) => {
-            if let Err(e) = safe_write(path, &cleaned, dry_run) {
-                tracing::warn!("Failed to update {label}: {e}");
-                return false;
-            }
-            println!("  {verb} {label} cleaned (user settings preserved)");
-            true
-        }
-        HookCleanupResult::EntirelyLeanCtx => {
-            if let Err(e) = safe_remove(path, dry_run) {
-                tracing::warn!("Failed to remove {label}: {e}");
-                return false;
-            }
-            println!("  {verb} {label} removed");
-            true
-        }
-        HookCleanupResult::Unchanged => false,
-        HookCleanupResult::ParseError => {
-            tracing::warn!("Could not parse {label}, leaving untouched");
-            false
-        }
-    }
-}
-
-pub(super) fn remove_hook_files(home: &Path, dry_run: bool) -> bool {
-    let claude_hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
-    let hook_files: Vec<PathBuf> = vec![
-        claude_hooks_dir.join("lean-ctx-rewrite.sh"),
-        claude_hooks_dir.join("lean-ctx-redirect.sh"),
-        claude_hooks_dir.join("lean-ctx-rewrite-native"),
-        claude_hooks_dir.join("lean-ctx-redirect-native"),
-        home.join(".cursor/hooks/lean-ctx-rewrite.sh"),
-        home.join(".cursor/hooks/lean-ctx-redirect.sh"),
-        home.join(".cursor/hooks/lean-ctx-rewrite-native"),
-        home.join(".cursor/hooks/lean-ctx-redirect-native"),
-        home.join(".gemini/hooks/lean-ctx-rewrite-gemini.sh"),
-        home.join(".gemini/hooks/lean-ctx-redirect-gemini.sh"),
-        home.join(".gemini/hooks/lean-ctx-hook-gemini.sh"),
-        crate::core::home::resolve_codex_dir()
-            .unwrap_or_else(|| home.join(".codex"))
-            .join("hooks/lean-ctx-rewrite-codex.sh"),
-        home.join(".codeium/windsurf/hooks/lean-ctx-rewrite.sh"),
-        home.join(".codeium/windsurf/hooks/lean-ctx-redirect.sh"),
-    ];
-
-    let mut removed = false;
-    for path in &hook_files {
-        if path.exists() {
-            if let Err(e) = safe_remove(path, dry_run) {
-                tracing::warn!("Failed to remove hook {}: {e}", path.display());
-            } else {
-                removed = true;
-            }
-        }
-    }
-
-    if removed {
-        let verb = if dry_run { "Would remove" } else { "✓" };
-        println!("  {verb} Hook scripts removed");
-    }
-
-    // Claude Code global settings: surgically remove lean-ctx hook entries
-    // Both settings.json and settings.local.json can contain hooks
-    for claude_settings_name in ["settings.json", "settings.local.json"] {
-        let claude_settings =
-            crate::core::editor_registry::claude_state_dir(home).join(claude_settings_name);
-        if !claude_settings.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&claude_settings) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-        backup_before_modify(&claude_settings, dry_run);
-        removed |= apply_hook_cleanup(
-            &claude_settings,
-            &format!("Claude Code {claude_settings_name}"),
-            &content,
-            dry_run,
-        );
-    }
-
-    // hooks.json: surgically remove lean-ctx entries instead of deleting
-    for (label, hj_path) in [
-        ("Cursor", home.join(".cursor/hooks.json")),
-        (
-            "Codex",
-            crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("hooks.json"),
-        ),
-        ("Windsurf", home.join(".codeium/windsurf/hooks.json")),
-        ("Copilot (global)", home.join(".copilot/hooks/hooks.json")),
-        ("Gemini CLI", home.join(".gemini/settings.json")),
-    ] {
-        if !hj_path.exists() {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(&hj_path) else {
-            continue;
-        };
-        if !content.contains("lean-ctx") {
-            continue;
-        }
-
-        backup_before_modify(&hj_path, dry_run);
-        removed |= apply_hook_cleanup(&hj_path, label, &content, dry_run);
-    }
-
-    removed
-}
-
-/// Result of attempting to remove lean-ctx from a JSON config file.
-#[derive(Debug)]
-pub(super) enum HookCleanupResult {
-    /// No lean-ctx references found; file unchanged.
+/// What uninstall does to one config file.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Cleanup {
+    /// Nothing of sobre's is in it.
     Unchanged,
-    /// lean-ctx entries removed; cleaned JSON content with remaining settings returned.
-    Cleaned(String),
-    /// File is entirely lean-ctx-only; safe to delete.
-    EntirelyLeanCtx,
-    /// JSON parse failed; file should NOT be touched.
-    ParseError,
+    /// sobre's entries are gone; the rest of the file, as written.
+    Rewrite(String),
+    /// Only sobre's entries (and format boilerplate) were in it.
+    Delete,
 }
 
-/// Remove shadow-mode permission denies (read/grep/glob/bash = "deny") from
-/// an opencode.json content string. Returns `Some(cleaned)` if entries were
-/// removed, or `None` if no shadow permission entries were found.
-fn remove_shadow_permissions_from_json(content: &str) -> Option<String> {
-    let mut json: serde_json::Value = serde_json::from_str(content).ok()?;
-    let obj = json.as_object_mut()?;
-    let perms = obj.get_mut("permission")?.as_object_mut()?;
+/// Keys hosts or `init` add to an otherwise empty file (`{"version": 1}`).
+const BOILERPLATE: [&str; 2] = ["version", "$schema"];
 
-    let shadow_tools = ["read", "grep", "glob", "bash"];
-    let mut changed = false;
-    for &tool in &shadow_tools {
-        if perms.get(tool).and_then(|v| v.as_str()) == Some("deny") {
-            perms.remove(tool);
-            changed = true;
+/// A JSON config `init` writes into, and what of sobre's may be in it.
+struct JsonConfig {
+    agent: &'static str,
+    path: PathBuf,
+    /// The object holding MCP servers, when sobre's entry may be there.
+    mcp_container: Option<&'static str>,
+    /// Whether sobre's hooks may be in the file's `hooks` object.
+    hooks: bool,
+}
+
+fn json_configs(home: &Path) -> Vec<JsonConfig> {
+    let mut configs: Vec<JsonConfig> = Vec::new();
+    for target in crate::core::editor_registry::build_targets(home) {
+        let container = match target.config_type {
+            crate::core::editor_registry::ConfigType::Codex => continue,
+            crate::core::editor_registry::ConfigType::Zed => "context_servers",
+            crate::core::editor_registry::ConfigType::VsCodeMcp => "servers",
+            crate::core::editor_registry::ConfigType::OpenCode => "mcp",
+            _ => "mcpServers",
+        };
+        configs.push(JsonConfig {
+            agent: target.name,
+            path: target.config_path,
+            mcp_container: Some(container),
+            hooks: false,
+        });
+    }
+    let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
+    for (agent, path) in [
+        (
+            "Claude Code",
+            crate::core::editor_registry::claude_state_dir(home).join("settings.json"),
+        ),
+        ("Cursor", home.join(".cursor/hooks.json")),
+        ("Codex CLI", codex_dir.join("hooks.json")),
+        ("Windsurf", home.join(".codeium/windsurf/hooks.json")),
+        (
+            "Copilot",
+            crate::hooks::agents::copilot_hooks_dir(home).join("hooks.json"),
+        ),
+        ("Gemini CLI", home.join(".gemini/settings.json")),
+    ] {
+        match configs.iter_mut().find(|c| c.path == path) {
+            Some(existing) => existing.hooks = true,
+            None => configs.push(JsonConfig {
+                agent,
+                path,
+                mcp_container: None,
+                hooks: true,
+            }),
         }
     }
-
-    if !changed {
-        return None;
-    }
-
-    if perms.is_empty() {
-        obj.remove("permission");
-    }
-
-    serde_json::to_string_pretty(&json).ok()
+    configs
 }
 
-/// Check if a single string value references lean-ctx.
-fn str_is_lean_ctx(s: &str) -> bool {
-    s.contains("lean-ctx")
-}
+/// Removes sobre from every agent config, skill and plugin. Returns true when
+/// anything was removed.
+pub(super) fn remove_agent_files(home: &Path) -> bool {
+    let mut removed = false;
+    try_claude_mcp_remove();
 
-/// For flat hook entries: check `command`, `bash`, or any string field for lean-ctx.
-fn flat_entry_is_lean_ctx(entry: &serde_json::Value) -> bool {
-    let Some(obj) = entry.as_object() else {
-        return false;
-    };
-    for key in ["command", "bash"] {
-        if let Some(serde_json::Value::String(s)) = obj.get(key)
-            && str_is_lean_ctx(s)
-        {
-            return true;
+    for config in json_configs(home) {
+        let Ok(content) = std::fs::read_to_string(&config.path) else {
+            continue;
+        };
+        let backup = read_backup(&config.path);
+        let result = clean_json_text(&content, backup.as_deref(), |root| {
+            if let Some(container) = config.mcp_container {
+                remove_mcp_entry(root, container);
+            }
+            if config.hooks {
+                remove_sobre_hooks(root);
+            }
+        });
+        removed |= apply(config.agent, &config.path, result, home);
+    }
+
+    let codex_config = crate::core::home::resolve_codex_config_path()
+        .unwrap_or_else(|| home.join(".codex/config.toml"));
+    if let Ok(content) = std::fs::read_to_string(&codex_config) {
+        let result = clean_codex_toml(&content, read_backup(&codex_config).as_deref());
+        removed |= apply("Codex CLI", &codex_config, result, home);
+    }
+
+    let plugin = home.join(".config/opencode/plugins/sobre.js");
+    if plugin.exists() {
+        removed |= apply("OpenCode", &plugin, Ok(Cleanup::Delete), home);
+    }
+
+    for dir in crate::setup::skill::installed_dirs(home) {
+        removed = true;
+        if let Err(e) = std::fs::remove_dir_all(&dir) {
+            println!("  ✗ Could not delete {}: {e}", shorten(&dir, home));
+        } else {
+            println!("  ✓ Deleted the skill {}", shorten(&dir, home));
+            remove_dir_if_empty(dir.parent());
         }
     }
-    false
+    removed
 }
 
-/// For nested hook entries (`{matcher, hooks: [{command: ...}]}`):
-/// Remove only lean-ctx sub-hooks, preserving user hooks in the same group.
-/// Returns true if the entry was modified or should be removed entirely.
-fn clean_nested_entry(entry: &mut serde_json::Value) -> bool {
-    let Some(obj) = entry.as_object_mut() else {
-        return false;
-    };
-    let Some(sub_hooks) = obj.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
-        return false;
-    };
-    let before = sub_hooks.len();
-    sub_hooks.retain(|h| !flat_entry_is_lean_ctx(h));
-    sub_hooks.len() < before
+/// The copy of `path` `init` kept from before sobre first edited it. An
+/// empty copy means sobre created the file: there is nothing to restore.
+fn read_backup(path: &Path) -> Option<String> {
+    std::fs::read_to_string(crate::config_io::backup_path_for(path))
+        .ok()
+        .filter(|backup| !backup.is_empty())
 }
 
-/// Remove lean-ctx hook entries from hooks/settings JSON, preserving other entries.
+/// Writes or deletes `path` as `result` says, and drops the copy `init` kept
+/// of the file as it was before sobre.
+fn apply(agent: &str, path: &Path, result: Result<Cleanup, String>, home: &Path) -> bool {
+    let short = shorten(path, home);
+    let done = match result {
+        Ok(Cleanup::Unchanged) => false,
+        Ok(Cleanup::Rewrite(content)) => {
+            if let Err(e) = crate::config_io::write_atomic(path, &content) {
+                println!("  ✗ Could not update {short}: {e}");
+                return false;
+            }
+            println!("  ✓ Removed sobre from {short} ({agent})");
+            true
+        }
+        Ok(Cleanup::Delete) => {
+            if let Err(e) = std::fs::remove_file(path) {
+                println!("  ✗ Could not delete {short}: {e}");
+                return false;
+            }
+            println!("  ✓ Deleted {short} ({agent}: nothing but sobre in it)");
+            true
+        }
+        Err(e) => {
+            println!("  ✗ {short} could not be read as config ({e}); left untouched");
+            return false;
+        }
+    };
+    let _ = std::fs::remove_file(crate::config_io::backup_path_for(path));
+    if !path.exists() {
+        remove_dir_if_empty(path.parent());
+    }
+    done
+}
+
+/// Removes a directory sobre created (`plugins/`, `skills/`, `hooks/`) once
+/// nothing is left in it.
+fn remove_dir_if_empty(dir: Option<&Path>) {
+    if let Some(dir) = dir
+        && dir
+            .file_name()
+            .is_some_and(|n| matches!(n.to_str(), Some("plugins" | "skills" | "hooks")))
+    {
+        let _ = std::fs::remove_dir(dir);
+    }
+}
+
+/// Applies `edit` to the JSON(C) `content` and says what uninstall should do
+/// with the file. Objects and arrays `edit` empties are removed with it.
 ///
-/// Handles multiple formats:
-/// - Flat: `{command: "lean-ctx ..."}` (Cursor hooks.json)
-/// - Nested: `{matcher: "...", hooks: [{type: "command", command: "lean-ctx ..."}]}` (Claude/Codex)
-/// - Copilot: `{bash: "lean-ctx ..."}` (Copilot hooks)
-pub(super) fn remove_lean_ctx_from_hooks_json(content: &str) -> HookCleanupResult {
-    let Ok(mut parsed) = crate::core::jsonc::parse_jsonc(content) else {
-        return HookCleanupResult::ParseError;
+/// `backup` is the file as it was before sobre first edited it. When removing
+/// sobre's entries gives back exactly what it held, the backup's own text is
+/// restored, so the file is byte for byte what the user had; a file that had
+/// a backup existed before sobre and is never deleted.
+pub(super) fn clean_json_text(
+    content: &str,
+    backup: Option<&str>,
+    edit: impl FnOnce(&mut Map<String, Value>),
+) -> Result<Cleanup, String> {
+    let parsed = crate::core::jsonc::parse_jsonc(content).map_err(|e| e.to_string())?;
+    let Value::Object(before) = parsed else {
+        return Ok(Cleanup::Unchanged);
     };
-    let mut modified = false;
+    let mut unpruned = before.clone();
+    edit(&mut unpruned);
+    if unpruned == before {
+        return Ok(Cleanup::Unchanged);
+    }
+    let mut pruned = unpruned.clone();
+    prune_emptied(&before, &mut pruned);
 
-    // Clean permissions.allow AND permissions.deny entries like "mcp__lean-ctx__*"
-    for perm_key in ["allow", "deny"] {
-        if let Some(perms) = parsed
-            .get_mut("permissions")
-            .and_then(|p| p.get_mut(perm_key))
-            .and_then(|a| a.as_array_mut())
+    if let Some(backup) = backup {
+        if let Ok(Value::Object(original)) = crate::core::jsonc::parse_jsonc(backup)
+            && (original == pruned || original == unpruned)
         {
-            let before = perms.len();
-            perms.retain(|p| !p.as_str().is_some_and(|s| s.contains("lean-ctx")));
-            if perms.len() < before {
-                modified = true;
-            }
+            return Ok(Cleanup::Rewrite(backup.to_string()));
         }
+    } else if pruned.keys().all(|k| BOILERPLATE.contains(&k.as_str())) {
+        return Ok(Cleanup::Delete);
     }
+    Ok(Cleanup::Rewrite(crate::core::jsonc::rewrite_preserving(
+        content,
+        &Value::Object(pruned),
+    )))
+}
 
-    if let Some(hooks) = parsed.get_mut("hooks").and_then(|h| h.as_object_mut()) {
-        for entries in hooks.values_mut() {
-            if let Some(arr) = entries.as_array_mut() {
-                let before = arr.len();
-
-                // First: clean sub-hooks inside nested entries
-                for entry in arr.iter_mut() {
-                    if clean_nested_entry(entry) {
-                        modified = true;
-                    }
-                }
-
-                // Remove entries that are now empty nested groups
-                arr.retain(|entry| {
-                    if let Some(sub) = entry.get("hooks").and_then(|h| h.as_array())
-                        && sub.is_empty()
-                    {
-                        return false;
-                    }
-                    true
-                });
-
-                // Then: remove flat entries that are lean-ctx
-                arr.retain(|entry| {
-                    if entry.get("hooks").is_some() {
-                        return true; // nested — already handled above
-                    }
-                    !flat_entry_is_lean_ctx(entry)
-                });
-
-                if arr.len() < before {
-                    modified = true;
-                }
-            }
+/// Drops the objects and arrays that were non-empty in `before` and are empty
+/// in `after`: the containers that held only what was removed.
+fn prune_emptied(before: &Map<String, Value>, after: &mut Map<String, Value>) {
+    after.retain(|key, value| match (before.get(key), value) {
+        (Some(Value::Object(old)), Value::Object(new)) => {
+            prune_emptied(old, new);
+            new.is_empty() == old.is_empty()
         }
-    }
-
-    if !modified {
-        return HookCleanupResult::Unchanged;
-    }
-
-    // Remove empty event arrays after cleanup
-    if let Some(hooks) = parsed.get_mut("hooks").and_then(|h| h.as_object_mut()) {
-        hooks.retain(|_, v| v.as_array().is_none_or(|a| !a.is_empty()));
-    }
-
-    // Remove empty permissions arrays and empty permissions object
-    if let Some(perms) = parsed
-        .get_mut("permissions")
-        .and_then(|p| p.as_object_mut())
-    {
-        for key in ["allow", "deny"] {
-            if perms
-                .get(key)
-                .and_then(|a| a.as_array())
-                .is_some_and(Vec::is_empty)
-            {
-                perms.remove(key);
-            }
-        }
-    }
-    if parsed
-        .get("permissions")
-        .and_then(|p| p.as_object())
-        .is_some_and(serde_json::Map::is_empty)
-    {
-        parsed.as_object_mut().map(|o| o.remove("permissions"));
-    }
-
-    // Check if any meaningful content remains. `version` / `$schema` are
-    // format boilerplate written by installers (e.g. Copilot hooks.json
-    // `{"hooks": {}, "version": 1}`) — an otherwise-empty file is still
-    // entirely lean-ctx-owned and safe to delete (GL #558).
-    let has_remaining = parsed.as_object().is_some_and(|obj| {
-        obj.iter().any(|(key, val)| match key.as_str() {
-            "hooks" => val.as_object().is_some_and(|h| !h.is_empty()),
-            "version" | "$schema" => false,
-            _ => !val.is_null(),
-        })
+        (Some(Value::Array(old)), Value::Array(new)) => new.is_empty() == old.is_empty(),
+        _ => true,
     });
+}
 
-    let pretty = match serde_json::to_string_pretty(&parsed) {
-        Ok(s) => s + "\n",
-        Err(_) => return HookCleanupResult::ParseError,
+fn remove_mcp_entry(root: &mut Map<String, Value>, container: &str) {
+    if let Some(servers) = root.get_mut(container).and_then(Value::as_object_mut) {
+        servers.remove("sobre");
+    }
+}
+
+/// True for a hook entry whose command (`command`, Copilot's `bash` and
+/// `powershell`) is one of sobre's.
+fn is_sobre_hook(entry: &Value) -> bool {
+    ["command", "bash", "powershell"].iter().any(|k| {
+        entry
+            .get(*k)
+            .and_then(Value::as_str)
+            .is_some_and(crate::hooks::is_sobre_hook_command)
+    })
+}
+
+/// Removes sobre's hooks from the `hooks` object, in each host's shape: flat
+/// entries (Cursor, Windsurf, Copilot) and matcher groups holding a `hooks`
+/// list (Claude Code, Codex, Gemini). A group left without hooks goes too.
+fn remove_sobre_hooks(root: &mut Map<String, Value>) {
+    let Some(events) = root.get_mut("hooks").and_then(Value::as_object_mut) else {
+        return;
     };
+    for entries in events.values_mut().filter_map(Value::as_array_mut) {
+        entries.retain_mut(|entry| {
+            if is_sobre_hook(entry) {
+                return false;
+            }
+            match entry.get_mut("hooks").and_then(Value::as_array_mut) {
+                Some(group) => {
+                    let had_hooks = !group.is_empty();
+                    group.retain(|h| !is_sobre_hook(h));
+                    !(had_hooks && group.is_empty())
+                }
+                None => true,
+            }
+        });
+    }
+}
 
-    if has_remaining {
-        HookCleanupResult::Cleaned(pretty)
-    } else {
-        HookCleanupResult::EntirelyLeanCtx
+/// Removes `[mcp_servers.sobre]` (and `[mcp_servers]` if it held only that)
+/// and the hooks flag `init` added from Codex's `config.toml`. Like
+/// [`clean_json_text`], restores `backup` verbatim when that is what is left.
+fn clean_codex_toml(content: &str, backup: Option<&str>) -> Result<Cleanup, String> {
+    let mut doc = content
+        .parse::<toml_edit::DocumentMut>()
+        .map_err(|e| e.to_string())?;
+    let mut changed = false;
+    if let Some(servers) = doc
+        .get_mut("mcp_servers")
+        .and_then(toml_edit::Item::as_table_like_mut)
+    {
+        changed |= servers.remove("sobre").is_some();
+        if changed && servers.is_empty() {
+            doc.remove("mcp_servers");
+        }
+    }
+    let mut text = doc.to_string();
+    if let Some(without_flag) = crate::hooks::remove_codex_hooks_flag(&text) {
+        text = without_flag;
+        changed = true;
+    }
+    if !changed {
+        return Ok(Cleanup::Unchanged);
+    }
+    match backup {
+        Some(backup)
+            if toml::from_str::<toml::Value>(backup).ok()
+                == toml::from_str::<toml::Value>(&text).ok() =>
+        {
+            Ok(Cleanup::Rewrite(backup.to_string()))
+        }
+        None if text.trim().is_empty() => Ok(Cleanup::Delete),
+        _ => Ok(Cleanup::Rewrite(text)),
+    }
+}
+
+/// Claude Code rewrites `~/.claude.json` while it runs; its CLI removes the
+/// entry in a way it keeps. The file is cleaned afterwards either way.
+fn try_claude_mcp_remove() {
+    let _ = std::process::Command::new("claude")
+        .args(["mcp", "remove", "sobre", "--scope", "user"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clean_mcp(content: &str, container: &str) -> Cleanup {
+        clean_json_text(content, None, |root| remove_mcp_entry(root, container)).unwrap()
+    }
+
+    fn clean_hooks(content: &str) -> Cleanup {
+        clean_json_text(content, None, remove_sobre_hooks).unwrap()
+    }
+
+    #[test]
+    fn mcp_entry_goes_and_the_rest_keeps_its_text() {
+        let input = "{\n  // mine\n  \"theme\": \"x\",\n  \"mcpServers\": {\n    \"other\": { \"command\": \"o\" },\n    \"sobre\": { \"command\": \"/bin/sobre\" }\n  }\n}\n";
+        let Cleanup::Rewrite(out) = clean_mcp(input, "mcpServers") else {
+            panic!("expected a rewrite");
+        };
+        assert_eq!(
+            out,
+            "{\n  // mine\n  \"theme\": \"x\",\n  \"mcpServers\": {\n    \"other\": { \"command\": \"o\" }\n  }\n}\n"
+        );
+    }
+
+    #[test]
+    fn a_container_left_empty_goes_and_an_only_sobre_file_is_deleted() {
+        let input = "{\n  \"theme\": \"x\",\n  \"context_servers\": { \"sobre\": { \"command\": \"s\" } }\n}\n";
+        assert_eq!(
+            clean_mcp(input, "context_servers"),
+            Cleanup::Rewrite("{\n  \"theme\": \"x\"\n}\n".to_string())
+        );
+        assert_eq!(
+            clean_mcp(
+                r#"{ "mcpServers": { "sobre": { "command": "s" } } }"#,
+                "mcpServers"
+            ),
+            Cleanup::Delete
+        );
+    }
+
+    #[test]
+    fn a_users_empty_container_is_left_alone() {
+        let input = r#"{ "mcpServers": {}, "x": 1 }"#;
+        assert_eq!(clean_mcp(input, "mcpServers"), Cleanup::Unchanged);
+    }
+
+    #[test]
+    fn nested_hook_groups_keep_the_users_hooks() {
+        let input = r#"{
+  "permissions": { "allow": ["Bash(ls)"] },
+  "hooks": {
+    "PostToolUse": [
+      { "matcher": "Bash", "hooks": [
+        { "type": "command", "command": "/bin/sobre hook compress" },
+        { "type": "command", "command": "my-check" }
+      ] },
+      { "matcher": ".*", "hooks": [{ "type": "command", "command": "/bin/sobre hook observe" }] }
+    ],
+    "Stop": [{ "matcher": ".*", "hooks": [{ "type": "command", "command": "/bin/sobre hook observe" }] }]
+  }
+}"#;
+        let Cleanup::Rewrite(out) = clean_hooks(input) else {
+            panic!("expected a rewrite");
+        };
+        let v = crate::core::jsonc::parse_jsonc(&out).unwrap();
+        assert_eq!(v["permissions"]["allow"][0], "Bash(ls)");
+        let post = v["hooks"]["PostToolUse"].as_array().unwrap();
+        assert_eq!(post.len(), 1);
+        assert_eq!(post[0]["hooks"][0]["command"], "my-check");
+        assert!(v["hooks"].get("Stop").is_none(), "{out}");
+    }
+
+    #[test]
+    fn another_tools_hook_named_observe_is_kept() {
+        let input = r#"{
+  "hooks": {
+    "Stop": [
+      { "matcher": ".*", "hooks": [{ "type": "command", "command": "/opt/acme/bin/acme hook observe" }] },
+      { "matcher": ".*", "hooks": [{ "type": "command", "command": "/bin/sobre hook observe" }] }
+    ]
+  }
+}"#;
+        let Cleanup::Rewrite(out) = clean_hooks(input) else {
+            panic!("expected a rewrite");
+        };
+        let v = crate::core::jsonc::parse_jsonc(&out).unwrap();
+        let stop = v["hooks"]["Stop"].as_array().unwrap();
+        assert_eq!(stop.len(), 1, "{out}");
+        assert_eq!(
+            stop[0]["hooks"][0]["command"],
+            "/opt/acme/bin/acme hook observe"
+        );
+    }
+
+    #[test]
+    fn flat_and_copilot_hooks_files_holding_only_sobre_are_deleted() {
+        let cursor = r#"{ "version": 1, "hooks": { "preToolUse": [{ "matcher": "Shell", "command": "/bin/sobre hook cursor" }] } }"#;
+        assert_eq!(clean_hooks(cursor), Cleanup::Delete);
+        let copilot = r#"{ "version": 1, "hooks": { "postToolUse": [{ "type": "command", "bash": "\"/bin/sobre\" hook compress", "powershell": "& \"/bin/sobre\" hook compress" }] } }"#;
+        assert_eq!(clean_hooks(copilot), Cleanup::Delete);
+    }
+
+    #[test]
+    fn a_hooks_file_with_user_hooks_is_kept() {
+        let input = r#"{ "version": 1, "hooks": { "preToolUse": [
+            { "matcher": "Shell", "command": "/bin/sobre hook cursor" },
+            { "matcher": "Shell", "command": "my-own" }
+        ] } }"#;
+        let Cleanup::Rewrite(out) = clean_hooks(input) else {
+            panic!("expected a rewrite");
+        };
+        assert!(out.contains("my-own") && !out.contains("sobre"), "{out}");
+    }
+
+    #[test]
+    fn unparseable_json_is_an_error_and_files_without_sobre_are_unchanged() {
+        assert!(clean_json_text("{ broken", None, remove_sobre_hooks).is_err());
+        assert_eq!(
+            clean_hooks(r#"{ "hooks": { "Stop": [{ "command": "mine" }] } }"#),
+            Cleanup::Unchanged
+        );
+    }
+
+    #[test]
+    fn codex_config_loses_only_what_init_added() {
+        let user = "model = \"o3\"\n\n[features]\nweb_search = true\n";
+        let crate::hooks::CodexHooksFlag::Added(with_flag) =
+            crate::hooks::ensure_codex_hooks_enabled(user).unwrap()
+        else {
+            panic!("flag added");
+        };
+        let installed =
+            crate::core::editor_registry::upsert_codex_toml(&with_flag, "/bin/sobre").unwrap();
+        assert_eq!(
+            clean_codex_toml(&installed, None).unwrap(),
+            Cleanup::Rewrite(user.to_string())
+        );
+
+        let only_sobre = crate::core::editor_registry::upsert_codex_toml("", "/bin/sobre").unwrap();
+        assert_eq!(
+            clean_codex_toml(&only_sobre, None).unwrap(),
+            Cleanup::Delete
+        );
+
+        let users_flag = "[features]\nhooks = true\n";
+        assert_eq!(
+            clean_codex_toml(users_flag, None).unwrap(),
+            Cleanup::Unchanged
+        );
+    }
+
+    #[test]
+    fn the_backup_text_comes_back_when_nothing_else_changed() {
+        let original = "{ \"theme\": \"GitHub\" }\n";
+        let installed = "{\n  \"theme\": \"GitHub\",\n  \"mcpServers\": { \"sobre\": { \"command\": \"s\" } }\n}\n";
+        let result = clean_json_text(installed, Some(original), |root| {
+            remove_mcp_entry(root, "mcpServers");
+        })
+        .unwrap();
+        assert_eq!(result, Cleanup::Rewrite(original.to_string()));
+
+        // The user's empty container from before sobre comes back too.
+        let had_empty = "{ \"mcpServers\": {} }";
+        let installed = "{ \"mcpServers\": { \"sobre\": { \"command\": \"s\" } } }";
+        let result = clean_json_text(installed, Some(had_empty), |root| {
+            remove_mcp_entry(root, "mcpServers");
+        })
+        .unwrap();
+        assert_eq!(result, Cleanup::Rewrite(had_empty.to_string()));
+    }
+
+    #[test]
+    fn a_file_that_existed_before_sobre_is_never_deleted() {
+        let user_changed_since = "{ \"other\": 1 }";
+        let installed = "{ \"mcpServers\": { \"sobre\": { \"command\": \"s\" } } }";
+        let Cleanup::Rewrite(out) = clean_json_text(installed, Some(user_changed_since), |root| {
+            remove_mcp_entry(root, "mcpServers");
+        })
+        .unwrap() else {
+            panic!("expected a rewrite");
+        };
+        assert_eq!(
+            crate::core::jsonc::parse_jsonc(&out).unwrap(),
+            serde_json::json!({})
+        );
     }
 }

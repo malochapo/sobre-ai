@@ -1,27 +1,15 @@
 use std::path::{Path, PathBuf};
 
-use super::paths::{claude_mcp_json_path, vscode_mcp_path, zed_config_dir, zed_settings_path};
+use super::paths::{
+    claude_mcp_json_path, opencode_config_path, vscode_mcp_path, zed_config_dir, zed_settings_path,
+};
 use super::types::{ConfigType, EditorTarget};
 
 pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
-    #[cfg(windows)]
-    let opencode_cfg = if let Ok(appdata) = std::env::var("APPDATA") {
-        PathBuf::from(appdata)
-            .join("opencode")
-            .join("opencode.json")
-    } else {
-        home.join(".config/opencode/opencode.json")
-    };
-    #[cfg(not(windows))]
-    let opencode_cfg = home.join(".config/opencode/opencode.json");
-
-    #[cfg(windows)]
+    let opencode_cfg = opencode_config_path(home);
     let opencode_detect = opencode_cfg
         .parent()
-        .map(|p| p.to_path_buf())
-        .unwrap_or_else(|| home.join(".config/opencode"));
-    #[cfg(not(windows))]
-    let opencode_detect = home.join(".config/opencode");
+        .map_or_else(|| home.join(".config/opencode"), Path::to_path_buf);
 
     vec![
         EditorTarget {
@@ -93,10 +81,15 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
 
 pub fn detect_claude_path() -> PathBuf {
     let which_cmd = if cfg!(windows) { "where" } else { "which" };
+    // `where` lists every match, one per line: the first is the one run.
     if let Ok(output) = std::process::Command::new(which_cmd).arg("claude").output()
         && output.status.success()
+        && let Some(first) = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
     {
-        return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+        return PathBuf::from(first);
     }
     if let Ok(dir) = std::env::var("CLAUDE_CONFIG_DIR") {
         let dir = dir.trim();
@@ -112,10 +105,10 @@ pub fn detect_claude_path() -> PathBuf {
         if claude_json.exists() {
             return claude_json;
         }
-        // State dir counts as installed: doctor's Claude checks, rules_inject
-        // and skills all key off `~/.claude/` existing. Without this fallback
+        // State dir counts as installed: doctor's Claude checks and the skill
+        // both key off `~/.claude/` existing. Without this fallback
         // a machine with only the state dir hits a dead loop — doctor says
-        // "run: lean-ctx init", but setup skips Claude (detect_path missing)
+        // "run: sobre init", but setup skips Claude (detect_path missing)
         // and the warning never clears.
         let state_dir = super::claude_state_dir(&home);
         if state_dir.exists() {
@@ -180,34 +173,4 @@ pub fn detect_vscode_path() -> PathBuf {
         return PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
     }
     PathBuf::from("/nonexistent")
-}
-
-#[cfg(test)]
-mod footgun_audit_tests {
-    //! #361 Phase 4 — host-default footgun audit. The failure class is "shipped
-    //! default misrepresents the product": a host where lean-ctx registers `ctx_*`
-    //! as opt-in MCP tools *next to* the native ones, with nothing steering the
-    //! agent to use them — so the default experience shows none of the savings
-    //! (the R1 "102 native bash / 0 ctx_shell" finding). These tests pin the
-    //! invariants that keep every host out of that trap.
-
-    #[test]
-    fn injected_nudge_steers_the_heavy_tools_to_ctx() {
-        // The nudge must be substantive. With shadow_mode=true (default),
-        // native tools are denied at the permission level, so the nudge
-        // carries the shadow-minimal block listing exclusive ctx_* tools.
-        let block = crate::rules_inject::canonical_rules_block();
-        assert!(
-            block.contains("ctx_compose"),
-            "nudge must mention ctx_compose (the entry-point tool)"
-        );
-        assert!(
-            block.contains("ctx_search") || block.contains("ctx_callgraph"),
-            "nudge must mention exclusive tools"
-        );
-        assert!(
-            block.contains("auto-route") || block.contains("NEVER use native"),
-            "nudge must indicate native tools are handled"
-        );
-    }
 }

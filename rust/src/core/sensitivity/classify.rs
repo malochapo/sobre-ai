@@ -1,7 +1,7 @@
 //! Classification + redaction helpers for the sensitivity model.
 //!
 //! Only high-precision signals raise a level, to avoid false positives:
-//! - secret-like paths ([`is_secret_like`]) and detected secrets → `Secret`
+//! - detected secrets → `Secret`
 //! - Luhn-validated card numbers and mod-97-validated IBANs → `Confidential`
 
 use std::sync::OnceLock;

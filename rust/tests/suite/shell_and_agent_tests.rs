@@ -1,13 +1,13 @@
-//! E2E tests for shell detection, `LEAN_CTX_SHELL` override,
+//! E2E tests for shell detection (`$SHELL`),
 //! agent init, Windows path handling,
-//! and pipe-guard (stdout not a terminal → bypass lean-ctx).
+//! and pipe-guard (stdout not a terminal → bypass sobre).
 // noqa: SIZE_OK — single-responsibility E2E test module for the CLI binary.
 
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-fn lean_ctx_bin() -> String {
-    env!("CARGO_BIN_EXE_lean-ctx").to_string()
+fn sobre_bin() -> String {
+    env!("CARGO_BIN_EXE_sobre").to_string()
 }
 
 fn run_with_env(
@@ -15,7 +15,7 @@ fn run_with_env(
     env_vars: &[(&str, &str)],
     stdin_data: Option<&str>,
 ) -> (String, String, i32) {
-    let mut cmd = Command::new(lean_ctx_bin());
+    let mut cmd = Command::new(sobre_bin());
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -25,7 +25,7 @@ fn run_with_env(
         cmd.env(k, v);
     }
 
-    let mut child = cmd.spawn().expect("failed to spawn lean-ctx");
+    let mut child = cmd.spawn().expect("failed to spawn sobre");
 
     if let Some(data) = stdin_data {
         child
@@ -48,7 +48,7 @@ fn run_hook_test(
     env_vars: &[(&str, &str)],
     stdin_data: Option<&str>,
 ) -> (String, String, i32) {
-    let mut cmd = Command::new(lean_ctx_bin());
+    let mut cmd = Command::new(sobre_bin());
     cmd.args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -58,7 +58,7 @@ fn run_hook_test(
         cmd.env(k, v);
     }
 
-    let mut child = cmd.spawn().expect("failed to spawn lean-ctx");
+    let mut child = cmd.spawn().expect("failed to spawn sobre");
 
     if let Some(data) = stdin_data {
         child
@@ -76,57 +76,35 @@ fn run_hook_test(
     (stdout, stderr, code)
 }
 
-fn assert_hook_command_suffix(actual: Option<&str>, expected_suffix: &str) {
-    let actual = actual.expect("hook command should exist");
-    assert!(
-        actual.contains("lean-ctx"),
-        "expected hook command to reference lean-ctx, got {actual:?}"
-    );
-    assert!(
-        actual.ends_with(expected_suffix),
-        "expected hook command to end with {expected_suffix:?}, got {actual:?}"
-    );
-}
-
 #[test]
-fn lean_ctx_shell_override_uses_specified_shell() {
+fn posix_shell_from_env_is_used() {
     if cfg!(windows) {
         return; // /bin/sh not available on Windows
     }
     let (stdout, _stderr, code) = run_with_env(
-        &["-c", "echo lean_ctx_shell_works"],
-        &[("LEAN_CTX_SHELL", "/bin/sh")],
+        &["-c", "echo sobre_shell_works"],
+        &[("SHELL", "/bin/sh")],
         None,
     );
     assert_eq!(code, 0, "should succeed with /bin/sh");
     assert!(
-        stdout.contains("lean_ctx_shell_works"),
+        stdout.contains("sobre_shell_works"),
         "should see echo output: {stdout}"
     );
 }
 
 #[test]
-fn lean_ctx_shell_override_bash() {
+fn bash_from_env_is_used() {
     if !std::path::Path::new("/bin/bash").exists() {
         return;
     }
     let (stdout, _stderr, code) = run_with_env(
         &["-c", "echo $BASH_VERSION"],
-        &[("LEAN_CTX_SHELL", "/bin/bash")],
+        &[("SHELL", "/bin/bash")],
         None,
     );
     assert_eq!(code, 0, "should succeed with /bin/bash");
     assert!(!stdout.trim().is_empty(), "BASH_VERSION should be set");
-}
-
-#[test]
-fn lean_ctx_shell_override_invalid_shell_fails() {
-    let (_stdout, _stderr, code) = run_with_env(
-        &["-c", "echo hello"],
-        &[("LEAN_CTX_SHELL", "/nonexistent/shell")],
-        None,
-    );
-    assert_ne!(code, 0, "should fail with nonexistent shell");
 }
 
 #[test]
@@ -172,8 +150,8 @@ fn shell_exec_env_var_expansion() {
         return; // $VAR syntax is bash-only; PowerShell uses $env:VAR
     }
     let (stdout, _stderr, code) = run_with_env(
-        &["-c", "echo $TEST_LEAN_CTX_VAR"],
-        &[("TEST_LEAN_CTX_VAR", "expanded_value")],
+        &["-c", "echo $TEST_SOBRE_VAR"],
+        &[("TEST_SOBRE_VAR", "expanded_value")],
         None,
     );
     assert_eq!(code, 0);
@@ -200,42 +178,97 @@ fn agent_init_unknown_agent_fails() {
         run_with_env(&["init", "--agent", "nonexistent_agent"], &[], None);
     assert_ne!(code, 0, "unknown agent should fail");
     assert!(
-        stderr.contains("Unknown agent"),
+        stderr.contains("unknown agent"),
         "should say unknown: {stderr}"
     );
 }
 
 #[test]
-fn codex_pretooluse_rewrites_rewritable_bash_with_updated_input() {
-    let input =
-        r#"{"tool_name":"Bash","tool_input":{"command":"git status"},"command":"git status"}"#;
-    let (stdout, stderr, code) = run_hook_test(&["hook", "codex-pretooluse"], &[], Some(input));
-    assert_eq!(code, 0, "hook should rewrite without blocking: {stderr}");
-    assert!(
-        stderr.trim().is_empty(),
-        "stderr should stay empty for non-blocking rewrites: {stderr}"
+fn hook_compress_replaces_long_bash_output_with_a_labelled_copy() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let home_s = home.path().to_string_lossy().to_string();
+    let stdout_text: String = (0..120)
+        .map(|i| {
+            format!(
+                "commit {i:040x}\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 10:00:{:02} 2026 +0000\n\n    change number {i}\n\n",
+                i % 60
+            )
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    let input = serde_json::json!({
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "tool_input": { "command": "git log" },
+        "tool_response": { "stdout": stdout_text, "stderr": "", "interrupted": false, "isImage": false }
+    })
+    .to_string();
+    let (stdout, stderr, code) = run_hook_test(
+        &["hook", "compress"],
+        &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
+        Some(&input),
     );
+    assert_eq!(code, 0, "hook compress must not fail: {stderr}");
     let parsed: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("stdout should contain hook JSON");
-    assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
-    let command = parsed["hookSpecificOutput"]["updatedInput"]["command"]
-        .as_str()
-        .expect("updated command should be a string");
-    let expected_binary = if cfg!(windows) {
-        "lean-ctx.exe"
-    } else {
-        "lean-ctx"
-    };
+    let updated = &parsed["hookSpecificOutput"]["updatedToolOutput"];
     assert!(
-        command.contains(expected_binary)
-            && command.contains("-c")
-            && command.contains("git status"),
-        "updated command should wrap git status with lean-ctx: {command}"
+        updated["stdout"]
+            .as_str()
+            .is_some_and(|s| s.contains("[sobre: output compressed")),
+        "compressed output must say so: {parsed}"
+    );
+    assert!(
+        parsed.get("decision").is_none() && !stdout.contains("permissionDecision"),
+        "a post-run hook never decides anything: {stdout}"
     );
 }
 
 #[test]
-fn agent_init_codex_installs_compatible_hooks_and_instructions() {
+fn hook_cursor_wraps_known_commands_without_a_permission_decision() {
+    let home = tempfile::tempdir().expect("tempdir");
+    let home_s = home.path().to_string_lossy().to_string();
+    let input = r#"{"tool_name":"Shell","tool_input":{"command":"git status"}}"#;
+    let (stdout, stderr, code) = run_hook_test(
+        &["hook", "cursor"],
+        &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
+        Some(input),
+    );
+    assert_eq!(code, 0, "hook cursor must not fail: {stderr}");
+    let parsed: serde_json::Value =
+        serde_json::from_str(stdout.trim()).expect("stdout should contain hook JSON");
+    let command = parsed["updated_input"]["command"]
+        .as_str()
+        .expect("updated command");
+    assert!(command.contains("-c") && command.contains("git status"));
+    assert!(
+        !stdout.contains("permission"),
+        "sobre never emits a permission decision: {stdout}"
+    );
+
+    // A Cursor rule naming the command keeps it as written.
+    std::fs::create_dir_all(home.path().join(".cursor")).unwrap();
+    std::fs::write(
+        home.path().join(".cursor/cli-config.json"),
+        r#"{"permissions":{"allow":["Shell(git diff)"]}}"#,
+    )
+    .unwrap();
+    // A different command: Cursor double-fires, so a repeated command replays
+    // the first reply for a few seconds.
+    let (stdout, _stderr, _code) = run_hook_test(
+        &["hook", "cursor"],
+        &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],
+        Some(r#"{"tool_name":"Shell","tool_input":{"command":"git diff"}}"#),
+    );
+    assert_eq!(
+        stdout.trim(),
+        "{}",
+        "a host rule on the command blocks the rewrite"
+    );
+}
+
+#[test]
+fn agent_init_codex_installs_hooks_and_skill() {
     let tmpdir = tempfile::tempdir().expect("create tempdir");
     let home = tmpdir.path();
     let codex_dir = home.join(".codex");
@@ -250,29 +283,31 @@ fn agent_init_codex_installs_compatible_hooks_and_instructions() {
         ("USERPROFILE", home_str.as_str()),
     ];
 
-    let (_stdout, stderr, code) =
-        run_with_env(&["init", "--agent", "codex", "--global"], &envs, None);
+    let (_stdout, stderr, code) = run_with_env(&["init", "--agent", "codex"], &envs, None);
     assert_eq!(code, 0, "codex init should succeed: {stderr}");
 
+    for name in ["AGENTS.md", "SOBRE.md"] {
+        assert!(
+            !codex_dir.join(name).exists(),
+            "init must not write {name}: rules travel in the MCP instructions"
+        );
+    }
     assert!(
-        codex_dir.join("AGENTS.md").exists(),
-        "AGENTS.md should exist"
-    );
-    assert!(
-        codex_dir.join("LEAN-CTX.md").exists(),
-        "LEAN-CTX.md should exist"
+        codex_dir.join("skills/sobre/SKILL.md").exists(),
+        "init installs the sobre skill for Codex"
     );
 
     let hooks: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(codex_dir.join("hooks.json")).unwrap())
             .expect("hooks.json should be valid");
-    assert_hook_command_suffix(
-        hooks["hooks"]["PreToolUse"][0]["hooks"][0]["command"].as_str(),
-        "hook codex-pretooluse",
+    assert!(
+        hooks["hooks"].get("PreToolUse").is_none(),
+        "no pre-run hook for Codex: it would require an allow decision"
     );
-    assert_hook_command_suffix(
-        hooks["hooks"]["SessionStart"][0]["hooks"][0]["command"].as_str(),
-        "hook codex-session-start",
+    assert!(hooks.to_string().contains(" hook observe"));
+    assert!(
+        !hooks.to_string().contains("codex-session-start"),
+        "no session-start rules hook: rules travel in the MCP instructions"
     );
 
     let config = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap_or_default();
@@ -283,117 +318,11 @@ fn agent_init_codex_installs_compatible_hooks_and_instructions() {
 }
 
 #[test]
-fn hook_rewrite_works_with_shell_override() {
-    let input = r#"{"tool_name":"Bash","command":"git status"}"#;
-    let (stdout, _stderr, _code) = run_hook_test(
-        &["hook", "rewrite"],
-        &[("LEAN_CTX_SHELL", "/bin/sh")],
-        Some(input),
-    );
-    if !stdout.trim().is_empty() {
-        let v: serde_json::Value =
-            serde_json::from_str(&stdout).expect("hook output should be valid JSON");
-        assert!(
-            v["hookSpecificOutput"]["updatedInput"]["command"]
-                .as_str()
-                .is_some(),
-            "should have command field"
-        );
-    }
-}
-
-#[test]
-fn generated_script_handles_windows_path() {
-    let script = lean_ctx::hooks::generate_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
-    assert!(
-        script.contains("LEAN_CTX_BIN=\"/c/Users/Jaina/bin/lean-ctx.exe\""),
-        "Windows bash path should be properly quoted in script"
-    );
-}
-
-#[test]
-fn generated_script_handles_path_with_spaces() {
-    let script = lean_ctx::hooks::generate_rewrite_script("/c/Program Files/lean-ctx/lean-ctx.exe");
-    assert!(
-        script.contains("LEAN_CTX_BIN=\"/c/Program Files/lean-ctx/lean-ctx.exe\""),
-        "path with spaces should be quoted"
-    );
-}
-
-#[test]
-fn generated_compact_script_handles_windows_path() {
-    let script =
-        lean_ctx::hooks::generate_compact_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
-    assert!(
-        script.contains("LEAN_CTX_BIN=\"/c/Users/Jaina/bin/lean-ctx.exe\""),
-        "compact script should handle Windows path"
-    );
-}
-
-#[test]
-fn generated_script_skips_own_binary() {
-    let script = lean_ctx::hooks::generate_rewrite_script("lean-ctx");
-    assert!(
-        script.contains("lean-ctx ") || script.contains("$LEAN_CTX_BIN "),
-        "script should reference lean-ctx for self-skip check"
-    );
-}
-
-#[test]
-fn bash_script_with_windows_binary_path_produces_valid_json() {
-    if cfg!(windows) {
-        return; // bash not available on Windows CI
-    }
-    let script =
-        lean_ctx::hooks::generate_compact_rewrite_script("/c/Users/Jaina/bin/lean-ctx.exe");
-    let script_path =
-        std::env::temp_dir().join(format!("lean_ctx_winpath_test_{}.sh", std::process::id()));
-    std::fs::write(&script_path, &script).expect("write script");
-
-    let input = r#"{"tool_name":"Bash","command":"git status"}"#;
-    let mut child = Command::new("bash")
-        .arg(&script_path)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn bash");
-
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(input.as_bytes())
-        .unwrap();
-
-    let output = child.wait_with_output().expect("failed to wait");
-    let _ = std::fs::remove_file(&script_path);
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    if !stdout.trim().is_empty() {
-        let v: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_else(|e| {
-            panic!("invalid JSON from Windows path script: {e}\nraw: {stdout}")
-        });
-        let cmd = v["hookSpecificOutput"]["updatedInput"]["command"]
-            .as_str()
-            .expect("should have command");
-        assert!(
-            cmd.contains("/c/Users/Jaina/bin/lean-ctx.exe"),
-            "rewritten command should use the Windows bash path: {cmd}"
-        );
-        assert!(
-            cmd.contains("git status"),
-            "original command should be preserved: {cmd}"
-        );
-    }
-}
-
-#[test]
 fn piped_output_is_not_compressed() {
     if cfg!(windows) {
         return;
     }
-    let bin = lean_ctx_bin();
+    let bin = sobre_bin();
     let script = r#"echo "line one"; echo "line two"; echo "line three""#.to_string();
     let output = Command::new(&bin)
         .args(["-c", &script])
@@ -409,31 +338,31 @@ fn piped_output_is_not_compressed() {
 }
 
 #[test]
-fn lean_ctx_c_preserves_output_when_piped() {
+fn sobre_c_preserves_output_when_piped() {
     if cfg!(windows) {
         return;
     }
-    let bin = lean_ctx_bin();
+    let bin = sobre_bin();
 
     let output = Command::new(&bin)
         .args(["-c", "echo MARKER_STRING_12345"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .expect("run lean-ctx -c echo");
+        .expect("run sobre -c echo");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("MARKER_STRING_12345"),
-        "lean-ctx -c must preserve output content when piped: {stdout}"
+        "sobre -c must preserve output content when piped: {stdout}"
     );
 }
 
 #[test]
-fn lean_ctx_c_multiline_preserves_all_lines_when_piped() {
+fn sobre_c_multiline_preserves_all_lines_when_piped() {
     if cfg!(windows) {
         return;
     }
-    let bin = lean_ctx_bin();
+    let bin = sobre_bin();
     let cmd = "echo LINE_A && echo LINE_B && echo LINE_C";
     let output = Command::new(&bin)
         .args(["-c", cmd])

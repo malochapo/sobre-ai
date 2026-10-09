@@ -2,6 +2,9 @@
 
 What does this PR change and why?
 
+Does it add an MCP tool or a config key? Then name the one it replaces
+(`INVARIANTS.md` caps both).
+
 ## Test plan
 
 - [ ] `scripts/preflight.sh full` (fmt, clippy, rustdoc, generated docs, file

@@ -4,7 +4,7 @@
 //! sentence-transformers metadata on explicit request. Files are cached
 //! per-model under the models directory and only downloaded once.
 //!
-//! Supply-chain integrity (GL #397): after the first successful download a
+//! Supply-chain integrity: after the first successful download a
 //! `model.lock.json` records the SHA-256 of every artifact (trust-on-first-use).
 //! Any later re-download of the same file must reproduce the pinned hash —
 //! an upstream repo that silently swaps bytes under the same revision fails hard.
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use super::model_registry::{EmbeddingModel, POOLING_FILE, PROMPTS_FILE, SEQ_LEN_FILE};
 
-const USER_AGENT: &str = concat!("lean-ctx/", env!("CARGO_PKG_VERSION"));
+const USER_AGENT: &str = concat!("sobre/", env!("CARGO_PKG_VERSION"));
 
 /// Lockfile name storing `{ filename: sha256-hex }` per model directory.
 const LOCKFILE: &str = "model.lock.json";
@@ -166,12 +166,13 @@ fn download_file(
 
     tracing::info!("Downloading {local_name} ...");
 
-    let agent: ureq::Agent = ureq::config::Config::builder()
-        .tls_config(crate::core::http_client::platform_tls_config())
-        .timeout_connect(Some(Duration::from_secs(30)))
-        .timeout_global(Some(Duration::from_mins(5)))
-        .build()
-        .into();
+    // Bounds connection setup only: a large but progressing download is
+    // never cut off.
+    let agent = crate::core::http_client::ureq_agent_with_timeouts(
+        Some(Duration::from_secs(30)),
+        Some(Duration::from_secs(30)),
+        Some(Duration::from_secs(60)),
+    );
     let response = agent
         .get(url)
         .header("User-Agent", USER_AGENT)
@@ -235,20 +236,9 @@ fn download_file(
     Ok(())
 }
 
-/// Compute the SHA-256 of a file as lowercase hex (streaming, 64KB chunks).
+/// The SHA-256 of a file as lowercase hex.
 fn sha256_file(path: &Path) -> anyhow::Result<String> {
-    use sha2::{Digest, Sha256};
-    let mut file = std::fs::File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buf = vec![0u8; 65536];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(crate::core::agent_identity::hex_encode(&hasher.finalize()))
+    crate::core::artifacts_exec::binhash::sha256_file(path).map_err(anyhow::Error::msg)
 }
 
 fn read_lockfile(model_dir: &Path) -> std::collections::BTreeMap<String, String> {
@@ -295,7 +285,7 @@ mod tests {
 
     #[test]
     fn sha256_and_lockfile_roundtrip() {
-        let dir = std::env::temp_dir().join("lean_ctx_test_lockfile_v1");
+        let dir = std::env::temp_dir().join("sobre_test_lockfile_v1");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -321,7 +311,7 @@ mod tests {
 
     #[test]
     fn empty_lockfile_is_not_written() {
-        let dir = std::env::temp_dir().join("lean_ctx_test_lockfile_empty_v1");
+        let dir = std::env::temp_dir().join("sobre_test_lockfile_empty_v1");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         write_lockfile(&dir, &std::collections::BTreeMap::new()).unwrap();

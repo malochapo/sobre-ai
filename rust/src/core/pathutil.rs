@@ -6,18 +6,16 @@ use std::path::{Path, PathBuf};
 ///
 /// On non-Windows platforms this is equivalent to `std::fs::canonicalize`.
 pub fn safe_canonicalize(path: &Path) -> std::io::Result<PathBuf> {
-    // TCC choke-point (#356): a launchd-standalone process (daemon/proxy/auto-
-    // updater, ppid 1) must never realpath a path under ~/Documents, ~/Desktop
-    // or ~/Downloads — the `stat` trips the macOS privacy prompt in lean-ctx's
+    // TCC choke-point: a launchd-standalone process (the proxy, ppid 1) must
+    // never realpath a path under ~/Documents, ~/Desktop
+    // or ~/Downloads — the `stat` trips the macOS privacy prompt in sobre's
     // own name, and every release re-invalidates the grant (new cdhash), so it
     // re-prompts forever. Heuristic call sites (project-root detection, session
     // matching, path normalization, scan-root checks) all funnel through here,
     // so guarding the sink protects them centrally instead of one opt-in check
     // per call site. Return the path unchanged (lexical) rather than touching
-    // the filesystem. Security boundaries (PathJail) deliberately bypass this
-    // guard via `canonicalize_secure` — they only resolve paths the client
-    // explicitly asked to access, where a prompt is legitimate, and must keep
-    // resolving symlinks to detect jail escapes.
+    // the filesystem. `canonicalize_secure` deliberately bypasses this guard
+    // for paths the user explicitly configured, where a prompt is legitimate.
     if !may_probe_path(path) {
         return Ok(path.to_path_buf());
     }
@@ -38,15 +36,16 @@ pub fn safe_canonicalize_or_self(path: &Path) -> PathBuf {
 }
 
 /// SECURITY canonicalize: always resolves symlinks, even under ~/Documents in a
-/// launchd-standalone process. PathJail relies on this to detect symlink jail
-/// escapes (#356 must never weaken the security boundary). A standalone process
-/// only reaches here for a path the client *explicitly* asked to access, where a
+/// launchd-standalone process. Config writes rely on this to follow a
+/// user-managed symlink to its real target. A standalone process
+/// only reaches here for a path the user *explicitly* configured, where a
 /// one-time TCC prompt is legitimate — unlike the self-initiated heuristic
 /// probes that [`safe_canonicalize`] suppresses.
 pub fn canonicalize_secure(path: &Path) -> std::io::Result<PathBuf> {
     canonicalize_raw(path)
 }
 
+#[cfg(test)]
 /// Like `canonicalize_secure` but returns the original path on failure.
 pub fn canonicalize_secure_or_self(path: &Path) -> PathBuf {
     canonicalize_secure(path).unwrap_or_else(|_| path.to_path_buf())
@@ -57,16 +56,9 @@ pub fn canonicalize_secure_or_self(path: &Path) -> PathBuf {
 /// Falls back to the original path if canonicalize doesn't complete within the timeout.
 /// Self-healing: after a timeout, subsequent calls to slow mounts skip the thread entirely.
 ///
-/// Heuristic variant — honours the #356 TCC guard (see [`safe_canonicalize`]).
+/// Heuristic variant — honours the TCC guard (see [`safe_canonicalize`]).
 pub fn safe_canonicalize_bounded(path: &Path, timeout_ms: u64) -> PathBuf {
     canonicalize_bounded_with(path, timeout_ms, safe_canonicalize_or_self)
-}
-
-/// SECURITY variant of [`safe_canonicalize_bounded`] — bypasses the #356 TCC
-/// guard so PathJail keeps resolving symlinks to detect jail escapes. See
-/// [`canonicalize_secure`] for why a prompt here (explicit request) is legitimate.
-pub fn canonicalize_secure_bounded(path: &Path, timeout_ms: u64) -> PathBuf {
-    canonicalize_bounded_with(path, timeout_ms, canonicalize_secure_or_self)
 }
 
 /// Shared timeout machinery for the bounded canonicalizers. `resolve` selects
@@ -99,7 +91,7 @@ fn canonicalize_bounded_with(
     } else {
         io_health::record_freeze();
         tracing::warn!(
-            "[SECURITY] canonicalize timed out ({}ms) for {}; PathJail checks on \
+            "[SECURITY] canonicalize timed out ({}ms) for {}; path checks on \
              uncanonicalized paths may be less reliable",
             effective_timeout.as_millis(),
             path.display()
@@ -137,9 +129,9 @@ pub fn strip_verbatim_str(path: &str) -> Option<String> {
 ///
 /// Returns `None` when the path does not carry a single-letter drive prefix.
 /// Callers must apply this **only on Windows hosts**: clients running under
-/// MSYS2/Git Bash hand POSIX-style drive paths to a native Windows lean-ctx.
+/// MSYS2/Git Bash hand POSIX-style drive paths to a native Windows sobre.
 /// On Linux/macOS `/c/...` is a literal directory and must pass through
-/// untouched (GH #397 — the unconditional rewrite broke every `ctx_*` tool
+/// untouched (the unconditional rewrite broke every `sobre_*` tool
 /// for Linux projects rooted under `/c/...` and similar paths).
 fn translate_msys_drive_prefix(p: &str) -> Option<String> {
     if p.len() >= 3
@@ -157,7 +149,7 @@ fn translate_msys_drive_prefix(p: &str) -> Option<String> {
 /// Lexical (string-only) part of [`normalize_tool_path`]: MSYS2 drive prefix
 /// (Windows hosts only), separators, double slashes, trailing slash. Performs
 /// **no** filesystem access, so it is safe on persisted paths in
-/// TCC-standalone processes (launchd daemon, #356) and as a dedupe key where
+/// TCC-standalone processes (launchd daemon) and as a dedupe key where
 /// symlink resolution is not worth a `realpath` per entry.
 pub fn normalize_tool_path_lexical(path: &str) -> String {
     let mut p = match strip_verbatim_str(path) {
@@ -190,14 +182,14 @@ pub fn normalize_tool_path_lexical(path: &str) -> String {
 /// Handles MSYS2/Git Bash drive prefixes on Windows hosts
 /// (`/c/Users/...` -> `C:/Users/...`), mixed separators, double slashes, and
 /// trailing slashes. Uses forward slashes for consistency. On non-Windows
-/// hosts `/c/...` is a literal directory and passes through unchanged (#397).
+/// hosts `/c/...` is a literal directory and passes through unchanged.
 pub fn normalize_tool_path(path: &str) -> String {
     let mut p = normalize_tool_path_lexical(path);
 
     // Resolve symlinks for absolute paths to ensure cache key consistency.
     // Skip relative paths (preserve "." / "../" as-is), root-only paths (/ or C:/),
     // slow mounts (WSL DrvFS /mnt/) where canonicalize can hang, and paths a
-    // TCC-standalone process must not stat (launchd daemon + ~/Documents, #356).
+    // TCC-standalone process must not stat (launchd daemon + ~/Documents).
     // Uses safe_canonicalize to strip Windows \\?\ prefix.
     let is_absolute = p.starts_with('/') || (p.len() >= 3 && p.as_bytes()[1] == b':');
     let is_root_only = p == "/" || (p.len() <= 3 && p.ends_with('/') && is_absolute);
@@ -218,7 +210,7 @@ pub fn normalize_tool_path(path: &str) -> String {
 
 /// Agent/IDE CLI config or sandbox directories some clients launch their MCP
 /// server from, but which are never a user's project root. Adopting one as the
-/// project root jails every real repository path out — the root cause of #580
+/// project root mis-roots every real repository path — the root cause of a Windows bug
 /// (GitHub Copilot CLI launches from `~/.copilot`; Cursor, Windsurf, Gemini CLI
 /// and LM Studio behave similarly). This is the canonical set: every "is this an
 /// agent dir?" check across the codebase delegates here so the list never drifts.
@@ -234,7 +226,7 @@ pub const AGENT_CONFIG_DIRS: &[&str] = &[
 
 /// Returns `true` if `dir` is — or lies inside — a known agent/IDE config dir
 /// ([`AGENT_CONFIG_DIRS`]). Separator-agnostic so Windows backslash paths
-/// (`C:\Users\me\.copilot`) match too; #580 is a Windows Copilot report.
+/// (`C:\Users\me\.copilot`) match too (a Windows Copilot report).
 pub fn is_agent_config_dir(dir: &Path) -> bool {
     let s = dir.to_string_lossy().replace('\\', "/");
     AGENT_CONFIG_DIRS
@@ -245,8 +237,8 @@ pub fn is_agent_config_dir(dir: &Path) -> bool {
 /// Returns `true` if the directory is too broad to be a valid project root.
 /// Rejects the home directory, filesystem root, `.` (bare CWD), and agent/IDE
 /// config directories ([`AGENT_CONFIG_DIRS`]). Used to prevent adopting a bogus
-/// project root and writing project-scoped data into the global `~/.lean-ctx/`
-/// data directory.
+/// project root and writing project-scoped data into the global data
+/// directory.
 pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     if let Some(home) = dirs::home_dir()
         && dir == home
@@ -277,7 +269,7 @@ pub const PROJECT_MARKERS: &[&str] = &[
 
 /// Returns `true` if `dir` contains at least one known project marker.
 ///
-/// TCC guard (#356): a launchd-owned process (daemon/proxy/auto-updater) must
+/// TCC guard: a launchd-owned process (the proxy) must
 /// not stat marker files under `~/Documents` & co. — the probe itself pops the
 /// macOS privacy prompt. For those processes this conservatively reports
 /// "no marker" without touching the filesystem.
@@ -293,8 +285,8 @@ pub fn has_project_marker(dir: &Path) -> bool {
 ///
 /// Security boundaries must use this instead of `FileType::is_symlink`:
 /// Rust's `is_symlink()` reports `false` for NTFS junctions, which redirect
-/// exactly like directory symlinks and would otherwise bypass jail/TOCTOU
-/// checks on Windows (GL#442).
+/// exactly like directory symlinks and would otherwise slip past symlink
+/// checks on Windows.
 pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
     if meta.file_type().is_symlink() {
         return true;
@@ -303,7 +295,7 @@ pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
     {
         use std::os::windows::fs::MetadataExt;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-        return meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
     }
     #[cfg(not(windows))]
     false
@@ -313,8 +305,8 @@ pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
 /// home subdirectories (`Documents`, `Desktop`, `Downloads`).
 ///
 /// macOS guards these with TCC: the first time a process *enumerates or stats
-/// inside* one, the OS pops a privacy prompt ("lean-ctx would like to access
-/// files in your Documents folder", #356). They are also never valid project
+/// inside* one, the OS pops a privacy prompt ("sobre would like to access
+/// files in your Documents folder"). They are also never valid project
 /// roots or multi-repo workspace parents, so scan heuristics should treat them
 /// as off-limits *without* calling `read_dir` (which is what trips the prompt).
 pub fn is_tcc_sensitive_home_dir(dir: &Path) -> bool {
@@ -339,7 +331,7 @@ pub fn is_tcc_sensitive_home_dir(dir: &Path) -> bool {
 ///
 /// Unlike [`is_tcc_sensitive_home_dir`] (which only matches the magic dirs
 /// themselves), this also matches nested paths like `~/Documents/proj/src`,
-/// because *any* `stat` below the magic dir trips the TCC prompt (#356).
+/// because *any* `stat` below the magic dir trips the TCC prompt.
 pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
     if !cfg!(target_os = "macos") {
         return false;
@@ -356,22 +348,23 @@ pub fn is_under_tcc_protected_dir(path: &Path) -> bool {
 /// it was started (or re-parented) by `launchd` rather than by a
 /// TCC-granted host like a terminal or an editor.
 ///
-/// Context (#356): TCC permissions attach to the *responsible process*. The
-/// lean-ctx daemon/proxy LaunchAgents and the scheduled auto-updater run
-/// directly under `launchd` (ppid 1), so any `stat`/`read_dir` they perform
-/// under `~/Documents` pops the privacy prompt **in lean-ctx's own name** —
-/// and because every release replaces the ad-hoc-signed binary (new cdhash),
-/// a previously granted permission is invalidated on each update, re-prompting
-/// forever. Such processes must never probe TCC-protected paths on their own
+/// Context: TCC permissions attach to the *responsible process*. The
+/// sobre proxy LaunchAgent runs directly under `launchd` (ppid 1), so any
+/// `stat`/`read_dir` it performs under `~/Documents` pops the privacy prompt
+/// **in sobre's own name** — and because every release replaces the
+/// ad-hoc-signed binary (new cdhash), a previously granted permission is
+/// invalidated on each update, re-prompting forever. Such processes must never probe TCC-protected paths on their own
 /// initiative. Child processes of a terminal or editor (MCP server, CLI)
 /// inherit their host's TCC grant and keep full functionality.
 pub fn process_is_tcc_standalone() -> bool {
     #[cfg(target_os = "macos")]
     {
-        // Deliberately uncached: getppid is a cheap syscall, the env override
-        // must stay testable within one process, and a daemonizing fork could
-        // change the answer after startup.
-        if let Ok(v) = std::env::var("LEAN_CTX_TCC_STANDALONE") {
+        // Deliberately uncached: getppid is a cheap syscall, the test override
+        // must stay switchable within one process, and a daemonizing fork could
+        // change the answer after startup. The env override exists for tests
+        // only; the shipped binary never reads it.
+        #[cfg(test)]
+        if let Ok(v) = std::env::var("SOBRE_TCC_STANDALONE") {
             match v.trim() {
                 "1" | "true" => return true,
                 "0" | "false" => return false,
@@ -381,10 +374,9 @@ pub fn process_is_tcc_standalone() -> bool {
         // A process carrying the deny-~/Documents seatbelt sentinel is, by
         // construction, a launchd-standalone descendant: the sentinel is set
         // only by the LaunchAgent plist env and the self re-exec, and child
-        // processes inherit it. This catches a daemon the long-lived standalone
-        // proxy spawned via `start_daemon` (ppid = proxy, not 1), whose code-side
-        // path guards would otherwise stay off because `getppid()` is no longer
-        // 1. (#356)
+        // processes inherit it. This catches a process the standalone proxy
+        // spawned (ppid = proxy, not 1), whose code-side path guards would
+        // otherwise stay off because `getppid()` is no longer 1.
         if std::env::var_os(crate::core::tcc_guard_sandbox::SEATBELT_SENTINEL).is_some() {
             return true;
         }
@@ -398,12 +390,11 @@ pub fn process_is_tcc_standalone() -> bool {
 }
 
 /// Returns `true` when this process may `stat`/`read_dir`/`canonicalize`
-/// `path` without risking a macOS TCC privacy prompt in lean-ctx's name.
+/// `path` without risking a macOS TCC privacy prompt in sobre's name.
 ///
 /// Heuristic call sites (project-marker probes, session/root matching) must
-/// consult this before touching paths from persisted state; security
-/// boundaries (PathJail) are exempt — they only ever canonicalize paths the
-/// client explicitly asked to access, in which case a prompt is legitimate.
+/// consult this before touching paths from persisted state. Paths the client
+/// explicitly asked to access are exempt: a prompt is legitimate then.
 pub fn may_probe_path(path: &Path) -> bool {
     !(process_is_tcc_standalone() && is_under_tcc_protected_dir(path))
 }
@@ -412,7 +403,7 @@ pub fn may_probe_path(path: &Path) -> bool {
 /// least 2 immediate child directories that each contain a project marker.
 pub fn has_multi_repo_children(dir: &Path) -> bool {
     // Never enumerate the home dir or macOS TCC-protected dirs: read_dir there
-    // pops a macOS privacy prompt (#356) and they are never workspace parents.
+    // pops a macOS privacy prompt and they are never workspace parents.
     // `is_tcc_sensitive_home_dir` only matches the magic dirs themselves;
     // `!may_probe_path` additionally refuses *nested* paths like
     // `~/Documents/proj` when this process is launchd-standalone.
@@ -431,9 +422,58 @@ pub fn has_multi_repo_children(dir: &Path) -> bool {
     count >= 2
 }
 
+/// Heuristic canonicalize — honours the TCC guard, so it never pops a
+/// privacy prompt on its own initiative.
+pub fn canonicalize_or_self(path: &Path) -> PathBuf {
+    safe_canonicalize_bounded(path, 2000)
+}
+
+/// `search_roots` come from `config.toml`, where no shell ever runs — users
+/// writing `"$HOME/code"` or `"~/code"` got a literal, never-matching path.
+/// Only the home directory is expanded (`~`, `$HOME`, `${HOME}`):
+/// any other `$VAR` would depend on the environment of whichever process
+/// reads the file, so it stays literal.
+pub fn expand_user_path(raw: &str) -> PathBuf {
+    let rest = if matches!(raw, "~" | "$HOME" | "${HOME}") {
+        Some("")
+    } else {
+        ["~/", "$HOME/", "${HOME}/"]
+            .iter()
+            .find_map(|prefix| raw.strip_prefix(prefix))
+    };
+    match (rest, dirs::home_dir()) {
+        (Some(""), Some(home)) => home,
+        (Some(r), Some(home)) => home.join(r),
+        _ => PathBuf::from(raw),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expand_user_path_expands_home_only() {
+        let home = dirs::home_dir().expect("home dir");
+
+        assert_eq!(expand_user_path("~"), home);
+        assert_eq!(expand_user_path("~/code"), home.join("code"));
+        assert_eq!(expand_user_path("$HOME/code"), home.join("code"));
+        assert_eq!(expand_user_path("${HOME}/code"), home.join("code"));
+        // Absolute paths pass through untouched.
+        assert_eq!(expand_user_path("/etc"), PathBuf::from("/etc"));
+    }
+
+    #[test]
+    fn expand_user_path_leaves_other_vars_literal() {
+        // Any variable but HOME would make the path depend on the reader's env.
+        crate::test_env::set_var("SOBRE_TEST_SUB", "sub");
+        assert_eq!(
+            expand_user_path("$SOBRE_TEST_SUB/code"),
+            PathBuf::from("$SOBRE_TEST_SUB/code")
+        );
+        crate::test_env::remove_var("SOBRE_TEST_SUB");
+    }
 
     #[test]
     fn strip_regular_verbatim() {
@@ -447,7 +487,7 @@ mod tests {
         let Some(home) = dirs::home_dir() else {
             return;
         };
-        // Home itself and the macOS magic dirs are off-limits (#356).
+        // Home itself and the macOS magic dirs are off-limits.
         assert!(is_tcc_sensitive_home_dir(&home));
         assert!(is_tcc_sensitive_home_dir(&home.join("Documents")));
         assert!(is_tcc_sensitive_home_dir(&home.join("Desktop")));
@@ -474,7 +514,7 @@ mod tests {
         let Some(home) = dirs::home_dir() else {
             return;
         };
-        // The magic dirs themselves and anything nested below them (#356).
+        // The magic dirs themselves and anything nested below them.
         assert!(is_under_tcc_protected_dir(&home.join("Documents")));
         assert!(is_under_tcc_protected_dir(
             &home.join("Documents/deep/nested/project")
@@ -492,7 +532,7 @@ mod tests {
     #[serial_test::serial]
     fn tcc_standalone_blocks_probes_under_protected_dirs() {
         // `#[serial]` and `test_env_lock` are two different mutexes; the tests
-        // in this module need both. `LEAN_CTX_TCC_STANDALONE` is read by
+        // in this module need both. `SOBRE_TCC_STANDALONE` is read by
         // `is_tcc_standalone` (line ~376) on every path normalization, so
         // setting it here reaches any test that resolves a path — most of which
         // serialize on `test_env_lock`, not on `#[serial]`.
@@ -502,7 +542,7 @@ mod tests {
         };
         let doc_proj = home.join("Documents/some-project");
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         assert!(process_is_tcc_standalone());
         assert!(!may_probe_path(&doc_proj));
         // Non-protected paths stay probeable even for standalone processes.
@@ -510,10 +550,10 @@ mod tests {
         // has_project_marker must refuse without touching the filesystem.
         assert!(!has_project_marker(&doc_proj));
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "0");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "0");
         assert!(!process_is_tcc_standalone());
         assert!(may_probe_path(&doc_proj));
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
     #[test]
@@ -529,8 +569,8 @@ mod tests {
         // No explicit override: a process carrying the deny-~/Documents seatbelt
         // sentinel (inherited from its sandboxed launchd parent) counts as
         // standalone even when ppid != 1, so its heuristic probes stay
-        // suppressed — this is the proxy→daemon chain the ppid check missed. (#356)
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        // suppressed — this is the proxy→daemon chain the ppid check missed.
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
         crate::test_env::set_var(crate::core::tcc_guard_sandbox::SEATBELT_SENTINEL, "1");
         assert!(process_is_tcc_standalone());
         assert!(!may_probe_path(&doc_proj));
@@ -552,11 +592,11 @@ mod tests {
         // A path that does NOT exist under ~/Documents. With the TCC choke-point
         // guard active, `safe_canonicalize` returns Ok(input) *without* calling
         // `std::fs::canonicalize` (which would Err on a missing path) — proving
-        // the filesystem is never touched (#356). This is the structural fix:
+        // the filesystem is never touched. This is the structural fix:
         // every heuristic canonicalize funnels through here.
-        let missing = home.join("Documents/lean-ctx-tcc-test-does-not-exist-xyzzy");
+        let missing = home.join("Documents/sobre-tcc-test-does-not-exist-xyzzy");
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         let guarded = safe_canonicalize(&missing);
         assert!(
             guarded.is_ok(),
@@ -566,45 +606,45 @@ mod tests {
         assert_eq!(safe_canonicalize_or_self(&missing), missing);
 
         // Outside the protected dirs the guard never engages, even when standalone.
-        let tmp_missing = Path::new("/tmp/lean-ctx-tcc-test-does-not-exist-xyzzy");
+        let tmp_missing = Path::new("/tmp/sobre-tcc-test-does-not-exist-xyzzy");
         assert!(safe_canonicalize(tmp_missing).is_err());
 
         // Without standalone the guard is inactive: a missing ~/Documents path
         // Errs from the real `std::fs::canonicalize` as before.
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "0");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "0");
         assert!(safe_canonicalize(&missing).is_err());
 
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
     #[test]
     #[cfg(target_os = "macos")]
     #[serial_test::serial]
-    fn canonicalize_secure_bypasses_tcc_guard_for_pathjail() {
+    fn canonicalize_secure_bypasses_tcc_guard() {
         let _env_lock = crate::core::data_dir::test_env_lock();
-        // SECURITY counterpart to the test above (#356): PathJail must keep
-        // resolving symlinks even when standalone under ~/Documents, so the jail
-        // can detect escapes. `canonicalize_secure` therefore must NOT honour the
+        // Counterpart to the test above: following a user-managed
+        // symlink must keep working when standalone under ~/Documents.
+        // `canonicalize_secure` therefore must NOT honour the
         // guard — it always touches the filesystem. We prove that by feeding a
         // missing ~/Documents path while standalone: the guarded path returns
         // Ok(lexical) (no stat), while the secure path Errs (it did stat).
         let Some(home) = dirs::home_dir() else {
             return;
         };
-        let missing = home.join("Documents/lean-ctx-secure-canon-does-not-exist-xyzzy");
+        let missing = home.join("Documents/sobre-secure-canon-does-not-exist-xyzzy");
 
-        crate::test_env::set_var("LEAN_CTX_TCC_STANDALONE", "1");
+        crate::test_env::set_var("SOBRE_TCC_STANDALONE", "1");
         // Guarded sink short-circuits (no fs access).
         assert_eq!(safe_canonicalize(&missing).unwrap(), missing);
         // Security sink ignores the guard and actually stats -> Err on a missing
-        // path. If this ever returns Ok(lexical), the jail's symlink-escape
-        // detection has silently regressed under ~/Documents.
+        // path. If this ever returns Ok(lexical), symlink resolution has
+        // silently regressed under ~/Documents.
         assert!(
             canonicalize_secure(&missing).is_err(),
             "canonicalize_secure must bypass the TCC guard and touch the filesystem"
         );
         assert_eq!(canonicalize_secure_or_self(&missing), missing);
-        crate::test_env::remove_var("LEAN_CTX_TCC_STANDALONE");
+        crate::test_env::remove_var("SOBRE_TCC_STANDALONE");
     }
 
     #[test]
@@ -631,8 +671,8 @@ mod tests {
     #[test]
     fn strip_str_regular() {
         assert_eq!(
-            strip_verbatim_str(r"\\?\E:\code\lean-ctx"),
-            Some("E:/code/lean-ctx".to_string())
+            strip_verbatim_str(r"\\?\E:\code\sobre"),
+            Some("E:/code/sobre".to_string())
         );
     }
 
@@ -665,7 +705,7 @@ mod tests {
     }
 
     // The drive translation itself is platform-independent and testable
-    // everywhere; only its *application* is gated on Windows hosts (#397).
+    // everywhere; only its *application* is gated on Windows hosts.
     #[test]
     fn msys_drive_prefix_translation() {
         assert_eq!(
@@ -685,16 +725,16 @@ mod tests {
     #[test]
     fn normalize_msys_path_to_native() {
         assert_eq!(
-            normalize_tool_path("/c/Users/ABC/AppData/lean-ctx"),
-            "C:/Users/ABC/AppData/lean-ctx"
+            normalize_tool_path("/c/Users/ABC/AppData/sobre"),
+            "C:/Users/ABC/AppData/sobre"
         );
         assert_eq!(
-            normalize_tool_path("/D/Program Files/lean-ctx.exe"),
-            "D:/Program Files/lean-ctx.exe"
+            normalize_tool_path("/D/Program Files/sobre.exe"),
+            "D:/Program Files/sobre.exe"
         );
     }
 
-    // GH #397: on Linux/macOS, /c/… is a literal directory — a Linux project
+    // On Linux/macOS, /c/… is a literal directory — a Linux project
     // rooted there must not be rewritten to a Windows drive path.
     #[cfg(not(windows))]
     #[test]
@@ -712,30 +752,30 @@ mod tests {
     #[test]
     fn normalize_native_windows_path_unchanged() {
         assert_eq!(
-            normalize_tool_path("C:/Users/ABC/lean-ctx.exe"),
-            "C:/Users/ABC/lean-ctx.exe"
+            normalize_tool_path("C:/Users/ABC/sobre.exe"),
+            "C:/Users/ABC/sobre.exe"
         );
     }
 
     #[test]
     fn normalize_backslash_windows_path() {
         assert_eq!(
-            normalize_tool_path(r"C:\Users\ABC\lean-ctx.exe"),
-            "C:/Users/ABC/lean-ctx.exe"
+            normalize_tool_path(r"C:\Users\ABC\sobre.exe"),
+            "C:/Users/ABC/sobre.exe"
         );
     }
 
     #[test]
     fn normalize_unix_path_unchanged() {
         assert_eq!(
-            normalize_tool_path("/usr/local/bin/lean-ctx"),
-            "/usr/local/bin/lean-ctx"
+            normalize_tool_path("/usr/local/bin/sobre"),
+            "/usr/local/bin/sobre"
         );
     }
 
     #[test]
     fn normalize_windows_path_with_spaces_and_backslashes() {
-        // The exact "paths with spaces" scenario reported on Windows (#324):
+        // The exact "paths with spaces" scenario reported on Windows:
         // backslashes are converted to forward slashes (so client render layers
         // never escape-mangle them) while spaces in directory names survive.
         assert_eq!(
@@ -751,8 +791,8 @@ mod tests {
     #[test]
     fn normalize_double_slashes() {
         assert_eq!(
-            normalize_tool_path("C:/Users//ABC//lean-ctx"),
-            "C:/Users/ABC/lean-ctx"
+            normalize_tool_path("C:/Users//ABC//sobre"),
+            "C:/Users/ABC/sobre"
         );
     }
 
@@ -805,7 +845,7 @@ mod tests {
 
     #[test]
     fn broad_root_rejects_copilot_and_friends() {
-        // #580: the previously-missing agent/IDE dirs must now be rejected so
+        // The previously-missing agent/IDE dirs must now be rejected so
         // they are never adopted as the project root (the Copilot CLI case).
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.copilot")));
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.cursor")));
@@ -826,14 +866,14 @@ mod tests {
 
     #[test]
     fn agent_config_dir_matches_windows_backslash() {
-        // #580 is a Windows Copilot report — backslash paths must match too.
+        // Is a Windows Copilot report — backslash paths must match too.
         assert!(is_agent_config_dir(Path::new(r"C:\Users\me\.copilot")));
         assert!(is_agent_config_dir(Path::new(r"C:\Users\me\.copilot\mcp")));
     }
 
     #[test]
     fn agent_config_dir_ignores_real_projects() {
-        assert!(!is_agent_config_dir(Path::new("/home/user/code/lean-ctx")));
+        assert!(!is_agent_config_dir(Path::new("/home/user/code/sobre")));
         assert!(!is_agent_config_dir(Path::new(r"C:\src\app")));
     }
 
@@ -946,7 +986,7 @@ mod tests {
         assert!(is_symlink_or_reparse(&meta));
     }
 
-    /// Runs in the windows-latest CI lane (GL#442). Symlink creation needs
+    /// Runs in the windows-latest CI lane. Symlink creation needs
     /// either admin or Developer Mode — skip gracefully when unavailable.
     #[cfg(windows)]
     #[test]

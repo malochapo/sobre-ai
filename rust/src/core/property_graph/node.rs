@@ -44,7 +44,6 @@ impl NodeKind {
 
 #[derive(Debug, Clone)]
 pub struct Node {
-    pub id: Option<i64>,
     pub kind: NodeKind,
     pub name: String,
     pub file_path: String,
@@ -56,7 +55,6 @@ pub struct Node {
 impl Node {
     pub fn file(path: &str) -> Self {
         Self {
-            id: None,
             kind: NodeKind::File,
             name: path.to_string(),
             file_path: path.to_string(),
@@ -68,7 +66,6 @@ impl Node {
 
     pub fn symbol(name: &str, file_path: &str, kind: NodeKind) -> Self {
         Self {
-            id: None,
             kind,
             name: name.to_string(),
             file_path: file_path.to_string(),
@@ -78,63 +75,17 @@ impl Node {
         }
     }
 
+    #[cfg(test)]
     pub fn with_lines(mut self, start: usize, end: usize) -> Self {
         self.line_start = Some(start);
         self.line_end = Some(end);
         self
     }
 
+    #[cfg(test)]
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self
-    }
-
-    pub fn commit(hash: &str, message: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Commit,
-            name: hash.to_string(),
-            file_path: String::new(),
-            line_start: None,
-            line_end: None,
-            metadata: Some(message.to_string()),
-        }
-    }
-
-    pub fn test(path: &str, test_name: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Test,
-            name: test_name.to_string(),
-            file_path: path.to_string(),
-            line_start: None,
-            line_end: None,
-            metadata: None,
-        }
-    }
-
-    pub fn knowledge(id: &str, summary: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Knowledge,
-            name: id.to_string(),
-            file_path: String::new(),
-            line_start: None,
-            line_end: None,
-            metadata: Some(summary.to_string()),
-        }
-    }
-
-    pub fn issue(id: &str, title: &str) -> Self {
-        Self {
-            id: None,
-            kind: NodeKind::Issue,
-            name: id.to_string(),
-            file_path: String::new(),
-            line_start: None,
-            line_end: None,
-            metadata: Some(title.to_string()),
-        }
     }
 }
 
@@ -175,7 +126,6 @@ pub(super) fn get_by_path(conn: &Connection, file_path: &str) -> anyhow::Result<
             params![file_path],
             |row| {
                 Ok(Node {
-                    id: Some(row.get(0)?),
                     kind: NodeKind::parse(&row.get::<_, String>(1)?),
                     name: row.get(2)?,
                     file_path: row.get(3)?,
@@ -202,7 +152,6 @@ pub(super) fn get_by_symbol(
             params![name, file_path],
             |row| {
                 Ok(Node {
-                    id: Some(row.get(0)?),
                     kind: NodeKind::parse(&row.get::<_, String>(1)?),
                     name: row.get(2)?,
                     file_path: row.get(3)?,
@@ -216,20 +165,17 @@ pub(super) fn get_by_symbol(
     Ok(result)
 }
 
-pub(super) fn remove_by_file(conn: &Connection, file_path: &str) -> anyhow::Result<()> {
-    conn.execute(
-        "DELETE FROM edges WHERE source_id IN (
-             SELECT n.id FROM nodes n JOIN paths p ON p.id = n.file_id WHERE p.path = ?1
-         ) OR target_id IN (
-             SELECT n.id FROM nodes n JOIN paths p ON p.id = n.file_id WHERE p.path = ?1
-         )",
-        params![file_path],
-    )?;
-    conn.execute(
-        "DELETE FROM nodes WHERE file_id = (SELECT id FROM paths WHERE path = ?1)",
-        params![file_path],
-    )?;
-    Ok(())
+/// Escape `LIKE` wildcards so a name or path matches literally: `_` and `%`
+/// are ordinary characters in identifiers and file names.
+fn like_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '\\' | '%' | '_') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
 }
 
 pub(super) fn find_symbols(
@@ -238,15 +184,17 @@ pub(super) fn find_symbols(
     file_filter: Option<&str>,
     kind_filter: Option<&str>,
 ) -> anyhow::Result<Vec<Node>> {
-    let name_lower = name.to_lowercase();
+    let name_lower = like_escape(&name.to_lowercase());
     let mut sql = String::from(
         "SELECT n.id, n.kind, n.name, p.path, n.line_start, n.line_end, n.metadata
          FROM nodes n JOIN paths p ON p.id = n.file_id WHERE n.kind != 'file'
-         AND LOWER(name) LIKE '%' || ?1 || '%'",
+         AND LOWER(name) LIKE '%' || ?1 || '%' ESCAPE '\\'",
     );
     let mut param_idx = 2;
     if file_filter.is_some() {
-        sql.push_str(&format!(" AND p.path LIKE '%' || ?{param_idx} || '%'"));
+        sql.push_str(&format!(
+            " AND p.path LIKE '%' || ?{param_idx} || '%' ESCAPE '\\'"
+        ));
         param_idx += 1;
     }
     if kind_filter.is_some() {
@@ -259,7 +207,7 @@ pub(super) fn find_symbols(
     let params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = {
         let mut v: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(name_lower)];
         if let Some(f) = file_filter {
-            v.push(Box::new(f.to_string()));
+            v.push(Box::new(like_escape(f)));
         }
         if let Some(k) = kind_filter {
             v.push(Box::new(k.to_string()));
@@ -271,7 +219,6 @@ pub(super) fn find_symbols(
 
     let rows = stmt.query_map(refs.as_slice(), |row| {
         Ok(Node {
-            id: Some(row.get(0)?),
             kind: NodeKind::parse(&row.get::<_, String>(1)?),
             name: row.get(2)?,
             file_path: row.get(3)?,
@@ -293,10 +240,10 @@ pub(super) fn find_symbols(
 /// its `file_path` (definitions, call-sites and `type_ref` targets all stamp
 /// the definer), so this maps a bare type/class name to its source file(s).
 ///
-/// Powers the `ctx_impact analyze` symbol-name fallback (GH #398): a user who
-/// asks for the impact of a *class* (`ctx_impact analyze ArcPoint`) instead of
+/// Powers the `sobre_graph action=impact` symbol-name fallback: a user who
+/// asks for the impact of a *class* (`sobre_graph impact ArcPoint`) instead of
 /// a file path is resolved to the file(s) that define it. Results are sorted
-/// for output determinism (#498).
+/// for output determinism.
 pub(super) fn resolve_symbol_def_files(
     conn: &Connection,
     name: &str,
@@ -325,7 +272,6 @@ pub(super) fn all_symbols(conn: &Connection) -> anyhow::Result<Vec<Node>> {
     )?;
     let rows = stmt.query_map([], |row| {
         Ok(Node {
-            id: Some(row.get(0)?),
             kind: NodeKind::parse(&row.get::<_, String>(1)?),
             name: row.get(2)?,
             file_path: row.get(3)?,
@@ -352,7 +298,7 @@ pub(super) fn symbol_count(conn: &Connection) -> anyhow::Result<usize> {
 
 /// Number of `file` nodes — accurate on both builder paths (the `file_catalog`
 /// table is only populated by the minimal/non-embeddings builder, so it cannot
-/// back a count). Used by the `ctx_impact analyze` diagnostic (GH #398).
+/// back a count). Used by the `sobre_graph action=impact` diagnostic.
 pub(super) fn file_count(conn: &Connection) -> anyhow::Result<usize> {
     let c: i64 = conn.query_row(
         "SELECT COUNT(*) FROM nodes WHERE kind = 'file'",
@@ -368,7 +314,7 @@ pub(super) fn all_edges_flat(
     // The `edges` table carries no weight column — impact scoring derives the
     // weight from the edge kind (see `queries::edge_weight`). Selecting a
     // non-existent `e.weight` made this query error out, so PG `edges()` always
-    // returned empty (#682.3). Compute the weight from the kind instead.
+    // returned empty. Compute the weight from the kind instead.
     let mut stmt = conn.prepare(
         "SELECT p1.path, p2.path, e.kind
          FROM edges e

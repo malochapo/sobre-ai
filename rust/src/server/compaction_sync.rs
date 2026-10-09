@@ -2,69 +2,45 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::core::cache::SessionCache;
-use crate::core::context_radar::RadarEvent;
 
 pub static LAST_COMPACTION_TS: AtomicU64 = AtomicU64::new(0);
-
-/// Effective cache policy: "aggressive" (default), "safe", or "off".
-pub fn effective_cache_policy() -> &'static str {
-    static POLICY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    POLICY.get_or_init(|| {
-        None::<String>
-            .as_deref()
-            .unwrap_or("aggressive")
-            .to_lowercase()
-    })
-}
 
 /// Check if a host compaction event occurred since our last check.
 /// If so, reset all `full_content_delivered` flags so the next read
 /// delivers full content instead of a stub.
 ///
-/// Detection strategy (#808):
-/// 1. Check `last_compaction.json` marker file first (written atomically by
-///    the observe hook). This is only a few bytes, immune to being displaced
-///    by large events.
-/// 2. Fall back to scanning the tail of `context_radar.jsonl` (256 KB window)
-///    for older hook binaries that don't write the marker.
+/// Detection reads the `last_compaction.json` marker file, written
+/// atomically by the observe hook. It is only a few bytes, immune to being
+/// displaced by large events.
 pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
-    let last_seen = LAST_COMPACTION_TS.load(Ordering::Relaxed);
+    let mut last_seen = LAST_COMPACTION_TS.load(Ordering::Relaxed);
+    if last_seen == 0 {
+        // A new process: the stub index remembers the compaction it was last
+        // emptied for, so an old marker does not empty it again.
+        last_seen = crate::core::read_stub_index::compaction_seen_in_dir(data_dir);
+        LAST_COMPACTION_TS.store(last_seen, Ordering::Relaxed);
+    }
 
-    let latest_ts = check_compaction_marker(data_dir, last_seen)
-        .or_else(|| scan_radar_tail(data_dir, last_seen));
-
-    let Some(latest_compaction_ts) = latest_ts else {
+    let Some(latest_compaction_ts) = check_compaction_marker(data_dir, last_seen) else {
         return false;
     };
 
     LAST_COMPACTION_TS.store(latest_compaction_ts, Ordering::Relaxed);
     let reset_count = cache.reset_delivery_flags();
-    crate::core::cache_telemetry::record_compaction(reset_count as u64);
-    // Drop the persistent stub index too (#955): the conversation's context was
+    // Drop the persistent stub index too: the conversation's context was
     // summarised away, so neither a warm nor a cold stub may claim "you already
     // have this". Writes the emptied index synchronously so a restart in the
     // crash window can't resurrect a pre-compaction stub.
-    crate::core::read_stub_index::reset_in_dir(data_dir);
+    crate::core::read_stub_index::reset_in_dir(data_dir, latest_compaction_ts);
     if reset_count > 0 {
-        eprintln!(
-            "[lean-ctx] compaction detected — reset {reset_count} delivery flags for re-read"
-        );
+        eprintln!("[sobre] compaction detected — reset {reset_count} delivery flags for re-read");
     }
-
-    std::thread::spawn(|| {
-        if let Some(session) = crate::core::session::SessionState::load_latest()
-            && let Some(ref root) = session.project_root
-            && (!session.findings.is_empty() || !session.decisions.is_empty())
-        {
-            crate::tools::startup::auto_consolidate_knowledge(root);
-        }
-    });
 
     true
 }
 
 // ---------------------------------------------------------------------------
-// Detection: marker file (primary, #808)
+// Detection: marker file
 // ---------------------------------------------------------------------------
 
 /// Read `last_compaction.json` — a few-byte file written atomically by the
@@ -78,60 +54,10 @@ fn check_compaction_marker(data_dir: &Path, since_ts: u64) -> Option<u64> {
     if ts > since_ts { Some(ts) } else { None }
 }
 
-// ---------------------------------------------------------------------------
-// Detection: radar tail scan (fallback for older hook binaries)
-// ---------------------------------------------------------------------------
-
-/// Scan only the tail of radar JSONL for a compaction event newer than `since_ts`.
-/// #808: window widened from 4 KB to 256 KB so large `agent_response` /
-/// `thinking` events (up to 50 000 chars each) cannot bury the compaction entry.
-fn scan_radar_tail(data_dir: &Path, since_ts: u64) -> Option<u64> {
-    use std::io::{Read, Seek, SeekFrom};
-
-    let radar_path = data_dir.join("context_radar.jsonl");
-    let mut file = std::fs::File::open(&radar_path).ok()?;
-    let file_len = file.metadata().ok()?.len();
-
-    const TAIL_BYTES: u64 = 256 * 1024; // #808: was 4096
-    let content = if file_len <= TAIL_BYTES {
-        let mut s = String::new();
-        file.read_to_string(&mut s).ok()?;
-        s
-    } else {
-        file.seek(SeekFrom::End(-(TAIL_BYTES as i64))).ok()?;
-        let mut buf = vec![0u8; TAIL_BYTES as usize];
-        let n = file.read(&mut buf).ok()?;
-        let s = String::from_utf8_lossy(&buf[..n]).into_owned();
-        if let Some(idx) = s.find('\n') {
-            s[idx + 1..].to_string()
-        } else {
-            s
-        }
-    };
-
-    for line in content.lines().rev() {
-        if line.is_empty() {
-            continue;
-        }
-        let event: RadarEvent = match serde_json::from_str(line) {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        if event.ts <= since_ts {
-            break;
-        }
-        if event.event_type == "compaction" {
-            return Some(event.ts);
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serial_test::serial;
-    use std::io::Write;
     use tempfile::TempDir;
 
     fn make_cache_with_delivered(paths: &[&str]) -> SessionCache {
@@ -143,14 +69,18 @@ mod tests {
         cache
     }
 
+    fn write_marker(dir: &TempDir, ts: u64) {
+        std::fs::write(
+            dir.path().join("last_compaction.json"),
+            format!(r#"{{"ts":{ts}}}"#),
+        )
+        .unwrap();
+    }
+
     #[test]
     #[serial]
-    fn no_reset_without_compaction_event() {
+    fn no_reset_without_compaction_marker() {
         let dir = TempDir::new().unwrap();
-        let radar = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&radar).unwrap();
-        writeln!(f, r#"{{"ts":1000,"event_type":"mcp_call","tokens":50}}"#).unwrap();
-        drop(f);
 
         LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
         let mut cache = make_cache_with_delivered(&["/tmp/a.rs"]);
@@ -162,11 +92,7 @@ mod tests {
     #[serial]
     fn resets_after_compaction() {
         let dir = TempDir::new().unwrap();
-        let radar = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&radar).unwrap();
-        writeln!(f, r#"{{"ts":1000,"event_type":"mcp_call","tokens":50}}"#).unwrap();
-        writeln!(f, r#"{{"ts":2000,"event_type":"compaction","tokens":0}}"#).unwrap();
-        drop(f);
+        write_marker(&dir, 2000);
 
         LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
         let mut cache = make_cache_with_delivered(&["/tmp/a.rs", "/tmp/b.rs"]);
@@ -175,16 +101,15 @@ mod tests {
         assert!(sync_if_compacted(&mut cache, dir.path()));
         assert!(!cache.is_full_delivered("/tmp/a.rs"));
         assert!(!cache.is_full_delivered("/tmp/b.rs"));
+        assert_eq!(LAST_COMPACTION_TS.load(Ordering::Relaxed), 2000);
     }
 
+    /// The same marker timestamp does not trigger a reset a second time.
     #[test]
     #[serial]
     fn does_not_double_reset() {
         let dir = TempDir::new().unwrap();
-        let radar = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&radar).unwrap();
-        writeln!(f, r#"{{"ts":2000,"event_type":"compaction","tokens":0}}"#).unwrap();
-        drop(f);
+        write_marker(&dir, 2000);
 
         LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
         let mut cache = make_cache_with_delivered(&["/tmp/a.rs"]);
@@ -196,105 +121,35 @@ mod tests {
         assert!(cache.is_full_delivered("/tmp/a.rs"));
     }
 
-    // --- #808 new tests ---
-
-    /// The marker file alone (without a radar entry) triggers a reset,
-    /// and the same marker timestamp does not trigger it a second time.
+    /// L10: a new process does not empty the stub index again for a
+    /// compaction an earlier process already handled.
     #[test]
     #[serial]
-    fn marker_alone_triggers_reset() {
+    fn a_handled_compaction_is_not_handled_again_by_a_new_process() {
         let dir = TempDir::new().unwrap();
-        // No context_radar.jsonl — only the marker
-        let marker = dir.path().join("last_compaction.json");
-        std::fs::write(&marker, r#"{"ts":5000}"#).unwrap();
-        // Need a radar file to exist (sync_if_compacted checks marker OR radar)
-        let radar = dir.path().join("context_radar.jsonl");
-        std::fs::write(&radar, "").unwrap();
+        write_marker(&dir, 2000);
 
         LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
-        let mut cache = make_cache_with_delivered(&["/tmp/x.rs"]);
-        assert!(cache.is_full_delivered("/tmp/x.rs"));
-
-        // First call: marker is newer than last_seen (0) → reset
+        let mut cache = make_cache_with_delivered(&["/tmp/a.rs"]);
         assert!(sync_if_compacted(&mut cache, dir.path()));
-        assert!(!cache.is_full_delivered("/tmp/x.rs"));
-        assert_eq!(LAST_COMPACTION_TS.load(Ordering::Relaxed), 5000);
 
-        // Re-deliver, then call again: same marker ts → no reset
-        cache.mark_full_delivered("/tmp/x.rs");
+        // A new process starts with no memory of its own.
+        LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
+        let mut fresh = make_cache_with_delivered(&["/tmp/b.rs"]);
+        assert!(!sync_if_compacted(&mut fresh, dir.path()));
+        assert!(fresh.is_full_delivered("/tmp/b.rs"));
+    }
+
+    /// A corrupt marker file is ignored.
+    #[test]
+    #[serial]
+    fn corrupt_marker_is_ignored() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join("last_compaction.json"), "not valid json").unwrap();
+
+        LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
+        let mut cache = make_cache_with_delivered(&["/tmp/corrupt.rs"]);
         assert!(!sync_if_compacted(&mut cache, dir.path()));
-        assert!(cache.is_full_delivered("/tmp/x.rs"));
-    }
-
-    /// A compaction event buried under a large (10 KB+) event line is still
-    /// detected via the widened 256 KB fallback window. This reproduces the
-    /// original bug — the old 4 KB window would miss it.
-    #[test]
-    #[serial]
-    fn compaction_buried_under_large_event_line_is_still_detected() {
-        let dir = TempDir::new().unwrap();
-        let radar = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&radar).unwrap();
-
-        // Write the compaction event
-        writeln!(f, r#"{{"ts":3000,"event_type":"compaction","tokens":0}}"#).unwrap();
-
-        // Bury it under a large agent_response event (10 KB content)
-        let large_content = "x".repeat(10_000);
-        writeln!(
-            f,
-            r#"{{"ts":3001,"event_type":"agent_response","tokens":2500,"content":"{large_content}"}}"#
-        )
-        .unwrap();
-        drop(f);
-
-        LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
-        let mut cache = make_cache_with_delivered(&["/tmp/buried.rs"]);
-        assert!(cache.is_full_delivered("/tmp/buried.rs"));
-
-        // Must find the compaction despite the large event after it
-        assert!(sync_if_compacted(&mut cache, dir.path()));
-        assert!(!cache.is_full_delivered("/tmp/buried.rs"));
-    }
-
-    /// Marker file takes priority over the radar scan: even if the radar
-    /// has no compaction event, the marker triggers a reset.
-    #[test]
-    #[serial]
-    fn marker_takes_priority_over_empty_radar() {
-        let dir = TempDir::new().unwrap();
-        let radar = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&radar).unwrap();
-        writeln!(f, r#"{{"ts":1000,"event_type":"mcp_call","tokens":50}}"#).unwrap();
-        drop(f);
-
-        let marker = dir.path().join("last_compaction.json");
-        std::fs::write(&marker, r#"{"ts":4000}"#).unwrap();
-
-        LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
-        let mut cache = make_cache_with_delivered(&["/tmp/priority.rs"]);
-        assert!(sync_if_compacted(&mut cache, dir.path()));
-        assert!(!cache.is_full_delivered("/tmp/priority.rs"));
-        assert_eq!(LAST_COMPACTION_TS.load(Ordering::Relaxed), 4000);
-    }
-
-    /// A corrupt or empty marker file is ignored — falls back to radar scan.
-    #[test]
-    #[serial]
-    fn corrupt_marker_falls_back_to_radar() {
-        let dir = TempDir::new().unwrap();
-        let radar = dir.path().join("context_radar.jsonl");
-        let mut f = std::fs::File::create(&radar).unwrap();
-        writeln!(f, r#"{{"ts":6000,"event_type":"compaction","tokens":0}}"#).unwrap();
-        drop(f);
-
-        let marker = dir.path().join("last_compaction.json");
-        std::fs::write(&marker, "not valid json").unwrap();
-
-        LAST_COMPACTION_TS.store(0, Ordering::Relaxed);
-        let mut cache = make_cache_with_delivered(&["/tmp/fallback.rs"]);
-        // Corrupt marker ignored → radar scan finds the compaction
-        assert!(sync_if_compacted(&mut cache, dir.path()));
-        assert!(!cache.is_full_delivered("/tmp/fallback.rs"));
+        assert!(cache.is_full_delivered("/tmp/corrupt.rs"));
     }
 }

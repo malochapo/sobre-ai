@@ -7,11 +7,11 @@ use super::types::*;
 const MAX_FINDINGS: usize = 20;
 const MAX_DECISIONS: usize = 10;
 const MAX_FILES: usize = 50;
-const MAX_EVIDENCE: usize = 500;
 pub(crate) const BATCH_SAVE_INTERVAL: u32 = 5;
-/// #717: max time an unsaved change may linger before it is flushed even
-/// below the batch threshold — the dashboard reads session JSONs from disk,
-/// so a slow trickle of tool calls must still become visible promptly.
+/// Max time an unsaved change may linger before it is flushed even
+/// below the batch threshold — `sobre_session load` and `list` read session
+/// JSONs from disk, so a slow trickle of tool calls must still reach it
+/// promptly.
 pub(crate) const SESSION_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_mins(1);
 
 impl Default for SessionState {
@@ -35,29 +35,31 @@ impl SessionState {
             findings: Vec::new(),
             decisions: Vec::new(),
             files_touched: Vec::new(),
-            test_results: None,
-            progress: Vec::new(),
-            next_steps: Vec::new(),
-            evidence: Vec::new(),
-            active_structured_intent: None,
             stats: SessionStats::default(),
-            terse_mode: false,
-            compression_level: String::new(),
-            last_consolidate_ts: None,
             extra_roots: Vec::new(),
-            playbook: super::playbook::Playbook::default(),
-            last_semantic_query: None,
             last_flush: None,
         }
-        .with_compression_from_config()
     }
 
-    fn with_compression_from_config(mut self) -> Self {
-        let cfg = crate::core::config::Config::load();
-        let level = crate::core::config::CompressionLevel::effective(&cfg);
-        self.compression_level = level.label().to_string();
-        self.terse_mode = level.is_active();
-        self
+    /// Replace this session's record with `other`, keeping where this process
+    /// works: the project root, the shell directory and the extra roots.
+    pub fn replace_record(&mut self, other: Self) {
+        let project_root = self.project_root.take();
+        let shell_cwd = self.shell_cwd.take();
+        let extra_roots = std::mem::take(&mut self.extra_roots);
+        *self = other;
+        self.project_root = project_root;
+        self.shell_cwd = shell_cwd;
+        self.extra_roots = extra_roots;
+    }
+
+    /// Whether the session holds anything worth saving: a task, findings,
+    /// decisions or touched files.
+    pub fn has_record(&self) -> bool {
+        self.task.is_some()
+            || !self.findings.is_empty()
+            || !self.decisions.is_empty()
+            || !self.files_touched.is_empty()
     }
 
     /// Bumps the version counter and marks the session as dirty.
@@ -68,10 +70,9 @@ impl SessionState {
     }
 
     /// Returns `true` if enough changes have accumulated to warrant a disk
-    /// save — or, since #717, if any change has waited longer than
-    /// `SESSION_FLUSH_INTERVAL`: the 5-change batch alone left slow
-    /// sessions invisible to the dashboard (stuck "idle") for the whole
-    /// batch window. A fresh in-memory session flushes its first change
+    /// save — or, if any change has waited longer than
+    /// `SESSION_FLUSH_INTERVAL`: the 5-change batch alone kept slow
+    /// sessions off disk for the whole batch window. A fresh in-memory session flushes its first change
     /// immediately so new activity surfaces at once.
     pub fn should_save(&self) -> bool {
         if self.stats.unsaved_changes == 0 {
@@ -86,149 +87,13 @@ impl SessionState {
         }
     }
 
-    /// Sets the active task and infers a structured intent from the description.
+    /// Sets the task the agent stated (`sobre_session action=task`).
     pub fn set_task(&mut self, description: &str, intent: Option<&str>) {
         self.task = Some(TaskInfo {
             description: description.to_string(),
             intent: intent.map(std::string::ToString::to_string),
-            progress_pct: None,
         });
-
-        let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();
-        let si = if touched.is_empty() {
-            crate::core::intent_engine::StructuredIntent::from_query(description)
-        } else {
-            crate::core::intent_engine::StructuredIntent::from_query_with_session(
-                description,
-                &touched,
-            )
-        };
-        if si.confidence >= 0.7 {
-            self.active_structured_intent = Some(si);
-        }
-
         self.increment();
-    }
-
-    /// Auto-infers the task from available context (plans, git diff, file patterns).
-    /// Only sets if no explicit task is already set or it's stale.
-    pub fn auto_infer_task(&mut self) {
-        // Don't overwrite explicitly set tasks
-        if self.task.is_some() {
-            return;
-        }
-
-        // Source 1: Active .cursor/plans/*.plan.md
-        if let Some(task_from_plan) = Self::infer_task_from_plans() {
-            self.set_task(&task_from_plan, Some("plan"));
-            return;
-        }
-
-        // Source 2: git diff summary
-        if let Some(ref root) = self.project_root
-            && let Some(task_from_git) = Self::infer_task_from_git(root)
-        {
-            self.set_task(&task_from_git, Some("git"));
-            return;
-        }
-
-        // Source 3: File patterns from intent engine
-        if self.files_touched.len() >= 3 {
-            let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();
-            let intent = crate::core::intent_engine::StructuredIntent::from_file_patterns(&touched);
-            if intent.confidence >= 0.5 {
-                let dirs: std::collections::HashSet<&str> = touched
-                    .iter()
-                    .filter_map(|f| std::path::Path::new(f).parent()?.to_str())
-                    .collect();
-                let primary_dir = dirs.iter().next().unwrap_or(&".");
-                let desc = format!("Working on {} ({})", primary_dir, intent.task_type.as_str());
-                self.set_task(&desc, Some("inferred"));
-            }
-        }
-    }
-
-    fn infer_task_from_plans() -> Option<String> {
-        let plans_dir = std::path::Path::new(".cursor/plans");
-        if !plans_dir.exists() {
-            return None;
-        }
-
-        let mut newest: Option<(std::time::SystemTime, String)> = None;
-        if let Ok(entries) = std::fs::read_dir(plans_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if !path.to_string_lossy().ends_with(".plan.md") {
-                    continue;
-                }
-                let mtime = entry.metadata().ok()?.modified().ok()?;
-                let content = std::fs::read_to_string(&path).ok()?;
-
-                // Check if plan has active (pending/in_progress) todos
-                let has_active =
-                    content.contains("status: pending") || content.contains("status: in_progress");
-                if !has_active {
-                    continue;
-                }
-
-                // Extract plan name from frontmatter
-                let name = content
-                    .lines()
-                    .find(|l| l.starts_with("name:"))
-                    .map_or("Unknown Plan", |l| {
-                        l.trim_start_matches("name:").trim().trim_matches('"')
-                    });
-
-                let better = newest.as_ref().is_none_or(|(t, _)| mtime > *t);
-                if better {
-                    newest = Some((mtime, name.to_string()));
-                }
-            }
-        }
-
-        newest.map(|(_, name)| name)
-    }
-
-    fn infer_task_from_git(project_root: &str) -> Option<String> {
-        let output = std::process::Command::new("git")
-            .args(["diff", "--stat", "--no-color"])
-            .current_dir(project_root)
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let stat = String::from_utf8_lossy(&output.stdout);
-        let lines: Vec<&str> = stat.lines().collect();
-        if lines.is_empty() {
-            return None;
-        }
-
-        // Last line typically has "N files changed, M insertions(+), K deletions(-)"
-        let summary_line = lines.last()?;
-        if !summary_line.contains("changed") {
-            return None;
-        }
-
-        // Find common directory prefix
-        let file_lines: Vec<&str> = lines[..lines.len() - 1].to_vec();
-        let dirs: std::collections::HashSet<&str> = file_lines
-            .iter()
-            .filter_map(|l| {
-                let path = l.split('|').next()?.trim();
-                std::path::Path::new(path).parent()?.to_str()
-            })
-            .collect();
-
-        let primary = if dirs.len() == 1 {
-            dirs.into_iter().next().unwrap_or(".")
-        } else {
-            "multiple dirs"
-        };
-
-        Some(format!("Modified: {} in {}", summary_line.trim(), primary))
     }
 
     /// Records a finding (discovery or observation) in the session log.
@@ -272,7 +137,6 @@ impl SessionState {
                 existing.file_ref = Some(r.to_string());
             }
         } else {
-            let item_id = crate::core::context_field::ContextItemId::from_file(path);
             self.files_touched.push(FileTouched {
                 path: path.to_string(),
                 file_ref: file_ref.map(std::string::ToString::to_string),
@@ -281,7 +145,6 @@ impl SessionState {
                 last_mode: mode.to_string(),
                 tokens,
                 stale: false,
-                context_item_id: Some(item_id.to_string()),
                 summary: None,
             });
             while self.files_touched.len() > MAX_FILES {
@@ -313,70 +176,9 @@ impl SessionState {
     }
 
     /// Increments the tool call counter and accumulates token savings.
-    pub fn record_tool_call(&mut self, tokens_saved: u64, tokens_input: u64) {
+    pub fn record_tool_call(&mut self, tokens_saved: u64) {
         self.stats.total_tool_calls += 1;
         self.stats.total_tokens_saved += tokens_saved;
-        self.stats.total_tokens_input += tokens_input;
-    }
-
-    /// Appends an auditable evidence record for a tool invocation.
-    pub fn record_tool_receipt(
-        &mut self,
-        tool: &str,
-        action: Option<&str>,
-        input_md5: &str,
-        output_md5: &str,
-        agent_id: Option<&str>,
-        client_name: Option<&str>,
-    ) {
-        let now = Utc::now();
-        let mut push = |key: String| {
-            self.evidence.push(EvidenceRecord {
-                kind: EvidenceKind::ToolCall,
-                key,
-                value: None,
-                tool: Some(tool.to_string()),
-                input_md5: Some(input_md5.to_string()),
-                output_md5: Some(output_md5.to_string()),
-                agent_id: agent_id.map(std::string::ToString::to_string),
-                client_name: client_name.map(std::string::ToString::to_string),
-                timestamp: now,
-            });
-        };
-
-        push(format!("tool:{tool}"));
-        if let Some(a) = action {
-            push(format!("tool:{tool}:{a}"));
-        }
-        while self.evidence.len() > MAX_EVIDENCE {
-            self.evidence.remove(0);
-        }
-        self.increment();
-    }
-
-    /// Appends a manual (non-tool) evidence record to the audit log.
-    #[cfg(test)]
-    pub fn record_manual_evidence(&mut self, key: &str, value: Option<&str>) {
-        self.evidence.push(EvidenceRecord {
-            kind: EvidenceKind::Manual,
-            key: key.to_string(),
-            value: value.map(std::string::ToString::to_string),
-            tool: None,
-            input_md5: None,
-            output_md5: None,
-            agent_id: None,
-            client_name: None,
-            timestamp: Utc::now(),
-        });
-        while self.evidence.len() > MAX_EVIDENCE {
-            self.evidence.remove(0);
-        }
-        self.increment();
-    }
-
-    /// Increments the session-level cache hit counter.
-    pub fn record_cache_hit(&mut self) {
-        self.stats.cache_hits += 1;
     }
 
     /// Increments the session-level command counter.
@@ -385,66 +187,40 @@ impl SessionState {
     }
 
     /// Returns the effective working directory for shell commands.
-    /// Priority: explicit cwd arg > session shell_cwd > project_root > process cwd.
-    /// Explicit CWD and stored shell_cwd are jail-checked against the project root
-    /// to prevent MCP clients from escaping the workspace.
+    /// Priority: explicit cwd arg (relative to the project root) > session
+    /// shell_cwd > project_root > process cwd. sobre does not confine it: the
+    /// agent host decides where commands may run (invariant 5).
     pub fn effective_cwd(&self, explicit_cwd: Option<&str>) -> String {
-        self.effective_cwd_checked(explicit_cwd).0
-    }
-
-    /// Like [`Self::effective_cwd`], but also reports *why* an explicit `cwd`
-    /// request was rejected by the project-root jail and silently replaced with
-    /// the project root (#629).
-    ///
-    /// The jail itself is deliberate sandboxing (it stops MCP clients escaping
-    /// the workspace) and must stay — the only gap was that the substitution was
-    /// silent, so a caller running `pwd && ls` in what they think is dir A
-    /// actually ran in the project root with no indication why. Callers that
-    /// surface output to a human/agent (e.g. `ctx_shell`) use the returned
-    /// `Option<String>` reason to append a one-line hint instead of letting the
-    /// swap pass unnoticed; `effective_cwd` keeps the original lossless behaviour.
-    pub fn effective_cwd_checked(&self, explicit_cwd: Option<&str>) -> (String, Option<String>) {
-        let root = self.project_root.as_deref().unwrap_or(".");
         if let Some(cwd) = explicit_cwd
             && !cwd.is_empty()
             && cwd != "."
         {
-            return Self::jail_cwd(cwd, root);
+            let p = std::path::Path::new(cwd);
+            let abs = if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                std::path::Path::new(self.project_root.as_deref().unwrap_or(".")).join(p)
+            };
+            return crate::core::pathutil::safe_canonicalize_or_self(&abs)
+                .to_string_lossy()
+                .to_string();
         }
         if let Some(ref cwd) = self.shell_cwd {
-            return (cwd.clone(), None);
+            return cwd.clone();
         }
         if let Some(ref r) = self.project_root {
-            return (r.clone(), None);
+            return r.clone();
         }
-        (
-            std::env::current_dir()
-                .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string()),
-            None,
-        )
+        std::env::current_dir()
+            .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())
     }
 
-    /// Verifies that `candidate` is within the project jail.
-    ///
-    /// Falls back to `fallback_root` if the candidate escapes, returning the
-    /// jail-rejection reason as the second tuple element so callers can surface
-    /// it instead of silently substituting the root (#629). `None` means the
-    /// candidate was accepted as-is.
-    fn jail_cwd(candidate: &str, fallback_root: &str) -> (String, Option<String>) {
-        let p = std::path::Path::new(candidate);
-        match crate::core::pathjail::jail_path(p, std::path::Path::new(fallback_root)) {
-            Ok(jailed) => (jailed.to_string_lossy().to_string(), None),
-            Err(reason) => (fallback_root.to_string(), Some(reason.to_string())),
-        }
-    }
-
-    /// Persist an explicit, jail-accepted `cwd` argument as the live shell
-    /// cwd (#707). `update_shell_cwd` only tracks `cd` inside the command
+    /// Persist an explicit `cwd` argument as the live shell
+    /// cwd. `update_shell_cwd` only tracks `cd` inside the command
     /// text, but clients that switch checkouts mid-session (Claude Code
     /// after `EnterWorktree`) pass the new directory as the `cwd` *param* of
     /// every subsequent call — without persisting it, the worktree-divergence
-    /// detection in path resolution never sees the switch. Callers must pass
-    /// a cwd that already passed the project-root jail.
+    /// detection in path resolution never sees the switch.
     pub fn note_explicit_cwd(&mut self, cwd: &str) {
         let path = std::path::Path::new(cwd);
         if path.is_absolute() && path.is_dir() {
@@ -459,24 +235,16 @@ impl SessionState {
     /// Updates shell_cwd by detecting `cd` in the command.
     /// Handles: `cd /abs/path`, `cd rel/path` (relative to current cwd),
     /// `cd ..`, and chained commands like `cd foo && ...`.
-    /// The new CWD is jail-checked against the project root.
     pub fn update_shell_cwd(&mut self, command: &str) {
         let base = self.effective_cwd(None);
         if let Some(new_cwd) = extract_cd_target(command, &base) {
             let path = std::path::Path::new(&new_cwd);
             if path.exists() && path.is_dir() {
-                let canonical = crate::core::pathutil::safe_canonicalize_or_self(path)
-                    .to_string_lossy()
-                    .to_string();
-                let root = self.project_root.as_deref().unwrap_or(".");
-                if crate::core::pathjail::jail_path(
-                    std::path::Path::new(&canonical),
-                    std::path::Path::new(root),
-                )
-                .is_ok()
-                {
-                    self.shell_cwd = Some(canonical);
-                }
+                self.shell_cwd = Some(
+                    crate::core::pathutil::safe_canonicalize_or_self(path)
+                        .to_string_lossy()
+                        .to_string(),
+                );
             }
         }
     }

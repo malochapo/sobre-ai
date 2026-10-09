@@ -1,4 +1,4 @@
-//! Cross-file type-reference edges (GH #398).
+//! Cross-file type-reference edges.
 //!
 //! C#, Java, Go and Kotlin resolve types declared in the same namespace/package
 //! **without any import statement**, so import edges alone miss those file
@@ -8,9 +8,9 @@
 //! It is the single source of truth for that resolution, shared by:
 //! - the durable `graph_index` -> `PropertyGraph` mirror (`graph_index::edges`),
 //!   so a background reindex reproduces the edges instead of dropping them
-//!   (the GH #398 regression: the mirror clears the graph and previously had no
-//!   type-usage edges, silently wiping `ctx_impact`'s blast radius), and
-//! - the `ctx_impact` graph builder, which additionally emits the symbol-level
+//!   (the regression: the mirror clears the graph and previously had no
+//!   type-usage edges, silently wiping the impact blast radius), and
+//! - the impact graph builder, which additionally emits the symbol-level
 //!   edges `dead_code` relies on.
 //!
 //! Both callers therefore agree on the file-level blast radius.
@@ -59,7 +59,7 @@ pub struct ResolveScope {
 }
 
 /// The resolution scope for a file, by language. Centralizes what was
-/// previously duplicated across the mirror and both `ctx_impact` index paths.
+/// previously duplicated across the mirror and both impact index paths.
 pub fn resolve_scope(rel_path: &str, ext: &str, analysis: &DeepAnalysis) -> ResolveScope {
     match ext {
         "cs" | "kt" | "kts" => ResolveScope {
@@ -303,16 +303,13 @@ pub fn cross_file_type_edges(files: &[FileAnalysis]) -> Vec<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::deep_queries::{TypeDef, TypeDefKind, TypeUse};
+    use crate::core::deep_queries::{TypeDef, TypeUse};
 
     fn type_def(name: &str, namespace: Option<&str>, line: usize, end: usize) -> TypeDef {
         TypeDef {
             name: name.to_string(),
-            kind: TypeDefKind::Class,
             line,
             end_line: end,
-            is_exported: true,
-            generics: Vec::new(),
             namespace: namespace.map(str::to_string),
         }
     }
@@ -324,11 +321,11 @@ mod tests {
         }
     }
 
-    /// GH #398 (+ #641 namespace-aware): the TypeRef target resolution — unique
+    /// Namespace-aware TypeRef target resolution — unique
     /// definers connect, self-references are skipped, over-generic names (>
     /// fallback cap of 5 with no namespace match) are dropped, a definer in the
     /// consumer's visible namespace is linked even past the cap while its
-    /// homonyms are discarded, and output is sorted + deduped (determinism #498).
+    /// homonyms are discarded, and output is sorted + deduped (deterministic).
     #[test]
     fn type_ref_targets_resolution_rules() {
         let mut def_index = DefIndex::new();
@@ -446,7 +443,7 @@ mod tests {
         );
     }
 
-    /// Go (GH #398 bug class): an unqualified type name declared in many
+    /// Go (bug class): an unqualified type name declared in many
     /// packages must resolve **only** to the same-directory definer — even when
     /// the global definer count is far past the fallback cap — and must never
     /// link across directories. This is the case a namespace-free fallback gets

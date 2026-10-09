@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::core::bm25_index::BM25Index;
-use crate::core::graph_index::{self, ProjectIndex};
+use crate::core::graph_index;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum State {
@@ -51,7 +51,7 @@ struct ProjectBuild {
     graph_run_done: bool,
     /// Cleared on worker claim; set when the BM25 phase of this run finishes.
     bm25_run_done: bool,
-    /// Set the first time a heavy-index tool lazily pre-warms this root (#152).
+    /// Set the first time a heavy-index tool lazily pre-warms this root.
     /// Prevents re-triggering a full rebuild on every subsequent dispatch — the
     /// tools' own `load_or_build` paths handle staleness from then on.
     warm_triggered: bool,
@@ -59,7 +59,7 @@ struct ProjectBuild {
     bm25: Component,
     /// Dense embedding index (semantic search). Built after BM25 as Phase 3.
     /// Tracked separately so the orchestrator does not block on a missing ONNX
-    /// model — the status lets users see why semantic stays cold (#249).
+    /// model — the status lets users see why semantic stays cold.
     semantic: Component,
 }
 
@@ -142,14 +142,14 @@ fn finish_err(c: &mut Component, e: String) {
 }
 
 /// The index warmth a tool benefits from. Drives lazy, demand-driven warming
-/// (issue #152) so the server no longer scans the whole project eagerly on every
-/// `initialize` — a session that only uses `ctx_read`/`ctx_shell`/`ctx_tree`
+/// so the server no longer scans the whole project eagerly on every
+/// `initialize` — a session that only uses `sobre_read`/`sobre_shell`/`sobre_tree`
 /// pays zero indexing cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WarmNeed {
     /// No prebuilt index needed.
     None,
-    /// Only the resident line-search (trigram) index — cheap, used by `ctx_search`.
+    /// Only the resident line-search (trigram) index — cheap, used by `sobre_search`.
     Search,
     /// Full project indices (graph + BM25; this also warms the search index).
     Heavy,
@@ -161,11 +161,9 @@ pub enum WarmNeed {
 #[must_use]
 pub fn warm_need_for_tool(tool: &str) -> WarmNeed {
     match tool {
-        "ctx_search" => WarmNeed::Search,
+        "sobre_search" => WarmNeed::Search,
         // Tools that build/consume the graph, call-graph, BM25 or artifact index.
-        "ctx_graph" | "ctx_callgraph" | "ctx_impact" | "ctx_compose" | "ctx_review" => {
-            WarmNeed::Heavy
-        }
+        "sobre_graph" | "sobre_compose" | "sobre_review" => WarmNeed::Heavy,
         _ => WarmNeed::None,
     }
 }
@@ -184,8 +182,8 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
         WarmNeed::None => false,
         WarmNeed::Search => {
             // The search index has its own TTL + background-rebuild dedup, so it
-            // is safe (and cheap) to nudge on every `ctx_search`.
-            crate::core::search_index::ensure_background(project_root, true, false);
+            // is safe (and cheap) to nudge on every `sobre_search`.
+            crate::core::search_index::ensure_background(project_root, true);
             false
         }
         WarmNeed::Heavy => {
@@ -210,7 +208,7 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
 }
 
 /// Stack size for background index workers. Large enough that deep ASTs and
-/// graph traversals cannot overflow it (the #378 SIGABRT class). The AST walks
+/// graph traversals cannot overflow it (the SIGABRT class). The AST walks
 /// are iterative now too, so this is defense-in-depth.
 const INDEXER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
@@ -243,9 +241,9 @@ pub fn ensure_all_background(project_root: &str) {
 
     // Indexing parses large ASTs and traverses graphs; give the worker a
     // generous stack as defense-in-depth against deep-recursion overflow (the
-    // #378 SIGABRT class) and a name so it is identifiable in crash dumps.
+    // SIGABRT class) and a name so it is identifiable in crash dumps.
     let spawned = std::thread::Builder::new()
-        .name("leanctx-index".to_string())
+        .name("sobre-index".to_string())
         .stack_size(INDEXER_STACK_BYTES)
         .spawn(indexer);
     if spawned.is_err() {
@@ -263,7 +261,7 @@ pub fn ensure_all_background(project_root: &str) {
 /// own the threading. Requires the caller to have claimed the worker slot via
 /// [`try_claim_worker`]; releases it on exit.
 fn run_build_worker(root: &str) {
-    // #790: start the memory guardian for background builds. Previously only
+    // Start the memory guardian for background builds. Previously only
     // the CLI path (index_cmd.rs) started it, leaving background builds (MCP
     // `ensure_all_background`, watcher, graph_coordinator) to run without RSS
     // pressure checks — the guardian's abort/pressure flags never fired.
@@ -281,7 +279,7 @@ fn run_build_worker(root: &str) {
     // Graph, BM25, and the resident search index each retain substantial live
     // state. Running them concurrently defeats cache eviction because active
     // builders still own their allocations. Keep phases strictly ordered and
-    // reclaim between them (#918); intra-phase Rayon parallelism remains intact.
+    // reclaim between them; intra-phase Rayon parallelism remains intact.
 
     let graph_state = entry_for(root);
     let graph_root = root.to_string();
@@ -299,10 +297,8 @@ fn run_build_worker(root: &str) {
         );
         guard.report(0, 0);
         let graph_result = std::panic::catch_unwind(|| {
+            // The scan writes the graph itself.
             let (idx, _cache) = graph_index::scan_with_content_cache(&graph_root);
-            if let Err(e) = idx.save() {
-                tracing::warn!("[index_orchestrator: graph save failed: {e}]");
-            }
             crate::core::code_health::persist::refresh_if_stale(&graph_root, &idx);
         });
         drop(guard);
@@ -373,7 +369,7 @@ fn run_build_worker(root: &str) {
     run_memory_bounded_phases(
         build_graph,
         build_bm25,
-        || crate::core::search_index::ensure_background(root, true, false),
+        || crate::core::search_index::ensure_background(root, true),
         || {
             crate::core::content_cache::clear();
             crate::core::memory_guard::force_purge();
@@ -385,7 +381,7 @@ fn run_build_worker(root: &str) {
     // After merge+save these are freed, but jemalloc retains dirty pages in
     // its arena — inflating RSS far past the logical working set. Purging
     // immediately returns those pages to the OS, keeping the serve process
-    // close to the configured max_ram_percent target.
+    // close to the built-in MAX_RAM_PERCENT target.
     crate::core::content_cache::trim_oldest_percent(75);
     crate::core::memory_guard::force_purge();
 
@@ -416,6 +412,7 @@ where
 /// The BM25 index must already exist on disk — this function loads it and runs
 /// `embedding_index::build_or_update`. Updates the in-memory semantic component
 /// state on completion.
+#[cfg(feature = "dense")]
 pub fn build_semantic(project_root: &str) {
     let state = entry_for(project_root);
     let root = Path::new(project_root);
@@ -444,18 +441,11 @@ pub fn build_semantic(project_root: &str) {
                 crate::core::embedding_index::EmbeddingBuildOutcome::Ready => {
                     finish_ok(&mut s.semantic);
                 }
-                crate::core::embedding_index::EmbeddingBuildOutcome::Skipped => {
-                    finish_ok(&mut s.semantic);
-                    s.semantic.note = Some(
-                        "embeddings disabled by feature flag or config (search.dense_enabled / memory_profile)"
-                            .to_string(),
-                    );
-                }
                 crate::core::embedding_index::EmbeddingBuildOutcome::ModelNotAvailable(
                     ref reason,
                 ) => {
                     // Not a hard failure — semantic is optional. Surface the reason
-                    // so users know why dense search is cold (#249).
+                    // so users know why dense search is cold.
                     s.semantic.state = State::Idle;
                     s.semantic.note = Some(format!("embedding model not available: {reason}"));
                 }
@@ -509,7 +499,7 @@ pub fn ensure_extra_roots_background(primary_root: &str, extra_roots: &[String])
         return;
     }
 
-    // #685: build extra roots *sequentially* on one supervisor thread. The old
+    // Build extra roots *sequentially* on one supervisor thread. The old
     // per-root `ensure_all_background` fan-out ran up to MAX_EXTRA_ROOT_BUILDS
     // graph+BM25 pairs concurrently (each with rayon pools inside) — on the
     // reported multi-root setup (1M+ files across 6+ roots) the combined
@@ -518,7 +508,7 @@ pub fn ensure_extra_roots_background(primary_root: &str, extra_roots: &[String])
     // every root; the guardian check between roots stops the queue as soon as
     // pressure appears.
     let spawned = std::thread::Builder::new()
-        .name("leanctx-extra-roots".to_string())
+        .name("sobre-extra-roots".to_string())
         .stack_size(INDEXER_STACK_BYTES)
         .spawn(move || {
             for root in queue {
@@ -544,7 +534,7 @@ pub fn ensure_extra_roots_background(primary_root: &str, extra_roots: &[String])
 /// Build a human-readable outcome note for a finished BM25 build, including the
 /// indexed chunk count and whether the index was persisted to disk. A
 /// "too large" refusal carries the exact remedy so the operator (or agent) is
-/// never left guessing why search/ranking stays cold (issue #249).
+/// never left guessing why search/ranking stays cold.
 fn bm25_build_note(
     doc_count: usize,
     save: &std::io::Result<crate::core::bm25_index::SaveOutcome>,
@@ -560,8 +550,8 @@ fn bm25_build_note(
             limit_bytes,
         }) => format!(
             "indexed {doc_count} chunks but NOT persisted to disk: compressed {:.1} MB exceeds the {:.0} MB cap. \
-             Add the large paths to extra_ignore_patterns, \
-             then run `lean-ctx reindex`. Until then the index is rebuilt from scratch on every cold start.",
+             Add the large paths to `ignore` in config.toml, \
+             then run `sobre index build`. Until then the index is rebuilt from scratch on every cold start.",
             *compressed_bytes as f64 / 1_048_576.0,
             *limit_bytes as f64 / 1_048_576.0
         ),
@@ -581,10 +571,10 @@ pub struct Bm25Summary {
 }
 
 /// Lightweight snapshot of the semantic (dense embedding) component.
+#[cfg(feature = "dense")]
 #[derive(Debug, Clone)]
 pub struct SemanticSummary {
     pub state: &'static str,
-    pub elapsed_ms: Option<u64>,
     pub note: Option<String>,
     pub last_error: Option<String>,
 }
@@ -607,16 +597,16 @@ fn component_elapsed_and_state(c: &Component) -> (&'static str, Option<u64>) {
     (state, elapsed_ms)
 }
 
+#[cfg(feature = "dense")]
 pub fn semantic_summary(project_root: &str) -> SemanticSummary {
     let entry = entry_for(project_root);
     let s = entry
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let c = &s.semantic;
-    let (state, elapsed_ms) = component_elapsed_and_state(c);
+    let (state, _) = component_elapsed_and_state(c);
     SemanticSummary {
         state,
-        elapsed_ms,
         note: c.note.clone(),
         last_error: c.last_error.clone(),
     }
@@ -635,12 +625,6 @@ pub fn bm25_summary(project_root: &str) -> Bm25Summary {
         note: c.note.clone(),
         last_error: c.last_error.clone(),
     }
-}
-
-pub fn try_load_graph_index(project_root: &str) -> Option<ProjectIndex> {
-    // Resident cache: avoids re-materializing the index from the property graph
-    // (SQLite query) on every graph-touching query. Returns an in-memory clone.
-    crate::core::graph_cache::get_cached(project_root).map(|arc| (*arc).clone())
 }
 
 pub fn try_load_bm25_index(project_root: &str) -> Option<BM25Index> {
@@ -791,11 +775,11 @@ struct StatusResponse<'a> {
     graph_index: ComponentStatus<'a>,
     bm25_index: ComponentStatus<'a>,
     /// Dense embedding index built after BM25.  "idle" means the ONNX model
-    /// has not been downloaded yet or the embeddings feature was not compiled
+    /// has not been downloaded yet or the dense feature was not compiled
     /// in; "ready" means embeddings are persisted and search will use them.
     semantic_index: ComponentStatus<'a>,
     disk: DiskStatusAll,
-    /// Active corpus filter summary (#735). Omitted for the unfiltered
+    /// Active corpus filter summary. Omitted for the unfiltered
     /// default, keeping default output byte-identical.
     #[serde(skip_serializing_if = "Option::is_none")]
     index_filters: Option<String>,
@@ -821,7 +805,7 @@ pub struct DiskStatusAll {
 }
 
 fn disk_status_for_graph(project_root: &str) -> DiskStatus {
-    // #696 C4: the property graph is the sole store. The logical graph-index
+    // C4: the property graph is the sole store. The logical graph-index
     // view (file count) is sized/timed by `graph.meta.json`, which the mirror
     // stamps on every build; `disk_status_for_code_graph` reports the raw
     // SQLite store (nodes, graph.db) as a distinct facet.
@@ -845,10 +829,9 @@ fn disk_status_for_graph(project_root: &str) -> DiskStatus {
 
 fn disk_status_for_bm25(project_root: &str) -> DiskStatus {
     let root = Path::new(project_root);
-    let path = BM25Index::index_file_path(root);
-    if !path.exists() {
+    let Some(path) = BM25Index::index_file_path(root).filter(|p| p.exists()) else {
         return DiskStatus::default();
-    }
+    };
     let meta = std::fs::metadata(&path).ok();
     DiskStatus {
         exists: true,
@@ -859,7 +842,9 @@ fn disk_status_for_bm25(project_root: &str) -> DiskStatus {
 }
 
 fn disk_status_for_code_graph(project_root: &str) -> DiskStatus {
-    let dir = crate::core::property_graph::graph_dir(project_root);
+    let Some(dir) = crate::core::property_graph::graph_dir(project_root) else {
+        return DiskStatus::default();
+    };
     let db_path = dir.join("graph.db");
     if !db_path.exists() {
         return DiskStatus::default();
@@ -892,7 +877,9 @@ fn format_time(t: SystemTime) -> String {
 
 pub fn disk_status_for_semantic(project_root: &str) -> DiskStatus {
     let root = Path::new(project_root);
-    let dir = crate::core::index_namespace::vectors_dir(root);
+    let Some(dir) = crate::core::index_namespace::vectors_dir(root) else {
+        return DiskStatus::default();
+    };
     let bin_path = dir.join("embeddings.bin");
     if !bin_path.exists() {
         return DiskStatus::default();
@@ -1001,36 +988,30 @@ mod tests {
 
     #[test]
     fn warm_need_classifies_tools() {
-        // Lightweight tools must never trigger a project scan (#152).
+        // Lightweight tools must never trigger a project scan.
         for light in [
-            "ctx_read",
-            "ctx_shell",
-            "ctx_tree",
-            "ctx_knowledge",
+            "sobre_read",
+            "sobre_shell",
+            "sobre_tree",
+            "sobre_knowledge",
             "unknown_tool",
         ] {
             assert_eq!(warm_need_for_tool(light), WarmNeed::None, "{light}");
         }
-        // ctx_search only needs the cheap trigram index.
-        assert_eq!(warm_need_for_tool("ctx_search"), WarmNeed::Search);
-        for heavy in [
-            "ctx_graph",
-            "ctx_callgraph",
-            "ctx_impact",
-            "ctx_compose",
-            "ctx_review",
-        ] {
+        // sobre_search only needs the cheap trigram index.
+        assert_eq!(warm_need_for_tool("sobre_search"), WarmNeed::Search);
+        for heavy in ["sobre_graph", "sobre_compose", "sobre_review"] {
             assert_eq!(warm_need_for_tool(heavy), WarmNeed::Heavy, "{heavy}");
         }
     }
 
     #[test]
     fn ensure_warm_lightweight_and_search_never_signal_first_warm() {
-        assert!(!ensure_warm_for_tool("", "ctx_graph"));
+        assert!(!ensure_warm_for_tool("", "sobre_graph"));
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
-        assert!(!ensure_warm_for_tool(&root, "ctx_read"));
-        assert!(!ensure_warm_for_tool(&root, "ctx_search"));
+        assert!(!ensure_warm_for_tool(&root, "sobre_read"));
+        assert!(!ensure_warm_for_tool(&root, "sobre_search"));
     }
 
     #[test]
@@ -1041,15 +1022,15 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
         assert!(
-            ensure_warm_for_tool(&root, "ctx_callgraph"),
+            ensure_warm_for_tool(&root, "sobre_graph"),
             "first heavy warm must signal true"
         );
         assert!(
-            !ensure_warm_for_tool(&root, "ctx_callgraph"),
+            !ensure_warm_for_tool(&root, "sobre_graph"),
             "second heavy warm must be deduped to false"
         );
         assert!(
-            !ensure_warm_for_tool(&root, "ctx_semantic_search"),
+            !ensure_warm_for_tool(&root, "sobre_review"),
             "any later heavy tool on the same root is also deduped"
         );
     }
@@ -1086,7 +1067,7 @@ mod tests {
             "must flag non-persistence: {note}"
         );
         assert!(
-            note.contains("extra_ignore_patterns") && note.contains("reindex"),
+            note.contains("`ignore`") && note.contains("sobre index build"),
             "too-large note must carry an actionable remedy: {note}"
         );
     }

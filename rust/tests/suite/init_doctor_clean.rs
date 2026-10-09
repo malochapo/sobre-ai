@@ -1,10 +1,10 @@
 //! Golden-path contract (zero-config excellence): `sobre init --repair` on a
 //! fresh machine with detected-but-unconfigured agents must leave `doctor` fully
-//! green — no "run: lean-ctx setup" follow-ups, no dead loops.
+//! green — no "run: sobre setup" follow-ups, no dead loops.
 //!
 //! This is the Rust twin of the manual fresh-install E2E journey: it caught
 //! three real bugs (SKILL.md never installed on the golden path, pipe-guard
-//! false positive under LEAN_CTX_CONFIG_DIR, Claude state-dir detection
+//! false positive under SOBRE_CONFIG_DIR, Claude state-dir detection
 //! mismatch between doctor and setup).
 
 use std::process::Command;
@@ -15,7 +15,7 @@ use std::process::Command;
     ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
 )]
 fn init_repair_leaves_doctor_fully_green() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -24,7 +24,7 @@ fn init_repair_leaves_doctor_fully_green() {
     std::fs::create_dir_all(&proj).unwrap();
     std::fs::create_dir_all(proj.join(".git")).unwrap();
 
-    // Agents that exist but were never wired to lean-ctx. A bare state dir is
+    // Agents that exist but were never wired to sobre. A bare state dir is
     // exactly what doctor/rules/skills treat as "installed" — setup must agree.
     std::fs::create_dir_all(home.join(".cursor")).unwrap();
     std::fs::create_dir_all(home.join(".claude")).unwrap();
@@ -38,11 +38,11 @@ fn init_repair_leaves_doctor_fully_green() {
             format!("{}:/usr/bin:/bin", bin_dir.to_string_lossy()),
         ),
         (
-            "LEAN_CTX_CONFIG_DIR".into(),
+            "SOBRE_CONFIG_DIR".into(),
             home.join("cfg").to_string_lossy().into_owned(),
         ),
         (
-            "LEAN_CTX_DATA_DIR".into(),
+            "SOBRE_DATA_DIR".into(),
             home.join("data").to_string_lossy().into_owned(),
         ),
         (
@@ -76,18 +76,14 @@ fn init_repair_leaves_doctor_fully_green() {
         .expect("doctor spawn");
     let stdout = String::from_utf8_lossy(&doctor.stdout);
 
-    // The two checks that historically dead-looped ("run: lean-ctx setup"
-    // right after init already ran): Claude plan mode + CLAUDE.md block.
+    // The check that historically dead-looped ("run: sobre setup" right
+    // after init already ran): the sobre skill.
     assert!(
-        stdout.contains("permissions present"),
-        "Claude plan-mode permissions must be wired by init; doctor said:\n{stdout}"
-    );
-    assert!(
-        !stdout.contains("run: lean-ctx setup"),
+        !stdout.contains("run: sobre setup"),
         "doctor must never point back to setup right after onboard ran; doctor said:\n{stdout}"
     );
 
-    // doctor is a health gate (#1046): exit 0 == every counted check green.
+    // doctor is a health gate: exit 0 == every counted check green.
     assert!(
         doctor.status.success(),
         "doctor must be fully green right after onboard --yes; output:\n{stdout}"

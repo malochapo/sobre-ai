@@ -5,38 +5,8 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Flags a quarantined `stats.json.corrupt` (#706): the stats loader moves an
-/// unparseable display cache aside instead of silently overwriting history.
-/// Doctor surfaces the quarantine so the loss is visible and recoverable
-/// (the savings ledger remains the source of truth for a rebuild).
-pub(crate) fn stats_quarantine_outcome() -> Outcome {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}Stats store{RST}  {DIM}skipped (no data dir){RST}"),
-        };
-    };
-    let quarantine = data_dir.join("stats.json.corrupt");
-    if quarantine.exists() {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Stats store{RST}  {YELLOW}corrupt stats.json was quarantined at {} — \
-                 history before the corruption is inside; inspect/merge it, then delete the \
-                 file to clear this warning{RST}",
-                quarantine.display()
-            ),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!("{BOLD}Stats store{RST}  {GREEN}no quarantined corruption{RST}"),
-        }
-    }
-}
-
 pub(crate) fn bm25_cache_health_outcome() -> Outcome {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return Outcome {
             ok: true,
             line: format!("{BOLD}BM25 cache{RST}  {DIM}skipped (no data dir){RST}"),
@@ -95,7 +65,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         return Outcome {
             ok: false,
             line: format!(
-                "{BOLD}BM25 cache{RST}  {RED}{} index(es) exceed limit ({:.0} MB){RST}: {}  {DIM}(run: lean-ctx cache prune){RST}",
+                "{BOLD}BM25 cache{RST}  {RED}{} index(es) exceed limit ({:.0} MB){RST}: {}  {DIM}(run: sobre doctor --fix){RST}",
                 oversized.len(),
                 max_bytes / (1024 * 1024),
                 details.join(", ")
@@ -111,7 +81,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         return Outcome {
             ok: true,
             line: format!(
-                "{BOLD}BM25 cache{RST}  {YELLOW}{} index(es) >80% of {effective_mb} MB limit{RST}: {}  {DIM}(consider extra_ignore_patterns){RST}",
+                "{BOLD}BM25 cache{RST}  {YELLOW}{} index(es) >80% of {effective_mb} MB limit{RST}: {}  {DIM}(consider adding paths to `ignore`){RST}",
                 warnings.len(),
                 details.join(", ")
             ),
@@ -119,7 +89,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
     }
 
     let quarantine_note = if quarantined_count > 0 {
-        format!("  {YELLOW}{quarantined_count} quarantined (run: lean-ctx cache prune){RST}")
+        format!("  {YELLOW}{quarantined_count} quarantined (run: sobre doctor --fix){RST}")
     } else {
         String::new()
     };
@@ -136,7 +106,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
 /// it is idle/building/ready/failed, how long the last build took, and — crucially
 /// — *why* it might be stuck (e.g. "indexed but NOT persisted: too large").
 ///
-/// This answers issue #249: users had no way to tell whether the semantic index
+/// Users otherwise had no way to tell whether the semantic index
 /// was working, how fast it was, or why it kept "warming up" forever.
 pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     let session = crate::core::session::SessionState::load_latest()?;
@@ -163,7 +133,7 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
         "failed" => Outcome {
             ok: false,
             line: format!(
-                "{BOLD}Semantic index{RST}  {RED}FAILED{RST}: {}  {DIM}(run: lean-ctx index build-semantic){RST}",
+                "{BOLD}Semantic index{RST}  {RED}FAILED{RST}: {}  {DIM}(run: sobre index build){RST}",
                 summary
                     .last_error
                     .or(summary.note)
@@ -209,84 +179,10 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     };
     Some(outcome)
 }
-pub(crate) fn archive_footprint_outcome() -> Outcome {
-    let bytes = crate::core::archive_fts::db_size_bytes();
-    let cap_mb = crate::core::archive_fts::DEFAULT_MAX_DB_MB;
-    let cap_bytes = cap_mb * 1024 * 1024;
-    let mb = bytes as f64 / 1_048_576.0;
-    if bytes > cap_bytes {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}Archive FTS{RST}  {RED}{mb:.0} MB exceeds {cap_mb} MB cap{RST}  {DIM}(run: lean-ctx cache prune; auto-enforced on next session){RST}"
-            ),
-        }
-    } else if bytes > cap_bytes * 80 / 100 {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}Archive FTS{RST}  {YELLOW}{mb:.0} MB (>80% of {cap_mb} MB cap){RST}"
-            ),
-        }
-    } else {
-        Outcome {
-            ok: true,
-            line: format!("{BOLD}Archive FTS{RST}  {GREEN}{mb:.1} MB / {cap_mb} MB cap{RST}"),
-        }
-    }
-}
-pub(crate) fn memory_outcome() -> Outcome {
-    let bm25_mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
-    let ttl_min = crate::core::config::IDLE_CACHE_TTL_SECS / 60;
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Memory{RST}  {GREEN}full caches{RST}  {DIM}(BM25 disk {bm25_mb} MB, cache kept {ttl_min} min idle){RST}"
-        ),
-    }
-}
-pub(crate) fn ram_guardian_outcome() -> Outcome {
-    // This process: sobre has no long-lived daemon whose RSS to measure instead.
-    let snap = crate::core::memory_guard::MemorySnapshot::capture();
-    let Some(snap) = snap else {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}RAM Guardian{RST}  {YELLOW}not available{RST}  {DIM}(platform unsupported){RST}"
-            ),
-        };
-    };
-    let allocator = if cfg!(all(feature = "jemalloc", not(windows))) {
-        "jemalloc"
-    } else {
-        "system"
-    };
-    let source = "self";
-    let ok = snap.pressure_level == crate::core::memory_guard::PressureLevel::Normal;
-    let color = if ok { GREEN } else { RED };
-    let pressure_hint = match snap.pressure_level {
-        crate::core::memory_guard::PressureLevel::Normal => String::new(),
-        level => {
-            format!(
-                "  {YELLOW}pressure={level:?} — reduce memory_profile, provision RAM, or enforce an OS cgroup/container limit{RST}"
-            )
-        }
-    };
-    Outcome {
-        ok,
-        line: format!(
-            "{BOLD}RAM Guardian{RST}  {color}{:.0} MB{RST} / {:.1} GB system ({:.1}%)  {DIM}limit: {:.0} MB ({allocator}, {source}){RST}{pressure_hint}",
-            snap.rss_bytes as f64 / 1_048_576.0,
-            snap.system_ram_bytes as f64 / 1_073_741_824.0,
-            snap.rss_percent,
-            snap.rss_limit_bytes as f64 / 1_048_576.0,
-        ),
-    }
-}
 /// Reports knowledge stores whose `project_root` was deleted (removed git
 /// worktrees, thrown-away projects). Such a store can never be written again, so
 /// its eviction cap can never self-heal — it is pure accumulated bloat. This is
-/// informational (never a hard failure); `lean-ctx doctor --fix` reclaims it (#615).
+/// informational (never a hard failure); `sobre doctor --fix` reclaims it.
 pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     let orphans = crate::core::knowledge::maintenance::find_orphaned_stores();
     if orphans.is_empty() {
@@ -299,7 +195,7 @@ pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Knowledge stores{RST}  {YELLOW}{} orphaned ({} reclaimable){RST}  {DIM}(deleted projects — reclaim: lean-ctx cache prune){RST}",
+            "{BOLD}Knowledge stores{RST}  {YELLOW}{} orphaned ({} reclaimable){RST}  {DIM}(deleted projects — reclaim: sobre doctor --fix){RST}",
             orphans.len(),
             human_bytes(bytes)
         ),
@@ -326,7 +222,7 @@ pub(crate) fn capacity_level(name: &str, current: usize, limit: usize) -> Option
 }
 
 pub(crate) fn capacity_warnings() -> Vec<Outcome> {
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return vec![];
     };
 
@@ -355,20 +251,17 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
         let short_hash = &hash[..hash.len().min(8)];
 
         let mut checks: Vec<(String, usize, usize)> = Vec::new();
+        let mut project_root = None;
 
         if let Ok(content) = std::fs::read_to_string(hash_dir.join("knowledge.json"))
             && let Ok(k) =
                 serde_json::from_str::<crate::core::knowledge::ProjectKnowledge>(&content)
         {
+            project_root = Some(k.project_root.clone());
             checks.push((
                 "facts".to_string(),
                 k.facts.len(),
                 policy.knowledge.max_facts,
-            ));
-            checks.push((
-                "patterns".to_string(),
-                k.patterns.len(),
-                policy.knowledge.max_patterns,
             ));
             checks.push((
                 "history".to_string(),
@@ -396,37 +289,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
             checks.push((
                 "gotchas".to_string(),
                 g.gotchas.len(),
-                policy.gotcha.max_gotchas_per_project,
-            ));
-        }
-
-        let episodes_path = data_dir
-            .join("memory")
-            .join("episodes")
-            .join(format!("{hash}.json"));
-        if let Ok(content) = std::fs::read_to_string(&episodes_path)
-            && let Ok(e) =
-                serde_json::from_str::<crate::core::episodic_memory::EpisodicStore>(&content)
-        {
-            checks.push((
-                "episodes".to_string(),
-                e.episodes.len(),
-                policy.episodic.max_episodes,
-            ));
-        }
-
-        let procedures_path = data_dir
-            .join("memory")
-            .join("procedures")
-            .join(format!("{hash}.json"));
-        if let Ok(content) = std::fs::read_to_string(&procedures_path)
-            && let Ok(p) =
-                serde_json::from_str::<crate::core::procedural_memory::ProceduralStore>(&content)
-        {
-            checks.push((
-                "procedures".to_string(),
-                p.procedures.len(),
-                policy.procedural.max_procedures,
+                crate::core::gotcha_tracker::MAX_GOTCHAS,
             ));
         }
 
@@ -450,43 +313,20 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
                     warnings.join(", ")
                 ),
             });
-            // Actionable guidance (#972). A store *at* its cap is healthy by
+            // Actionable guidance. A store *at* its cap is healthy by
             // design — eviction keeps it there; only *over* cap means curation is
             // falling behind. Point the operator at the right lever either way.
             results.push(Outcome {
                 ok: true,
-                line: format!("  {DIM}→ {}{RST}", capacity_hint(critical)),
+                line: format!(
+                    "  {DIM}→ {}{RST}",
+                    capacity_hint(critical, project_root.as_deref())
+                ),
             });
         }
     }
 
     // Global checks (not per project hash)
-
-    // Archive disk usage vs limit
-    let archive_limit_bytes = crate::core::config::ARCHIVE_MAX_DISK_MB * 1_048_576;
-    if archive_limit_bytes > 0 {
-        let archive_used = crate::core::archive::disk_usage_bytes();
-        let pct = (archive_used as f64 / archive_limit_bytes as f64 * 100.0) as u32;
-        if pct >= 95 {
-            results.push(Outcome {
-                ok: false,
-                line: format!(
-                    "{BOLD}Capacity [archive]{RST} {RED}CRIT: disk {}/{}MB ({pct}%){RST}",
-                    archive_used / 1_048_576,
-                    archive_limit_bytes / 1_048_576
-                ),
-            });
-        } else if pct >= 80 {
-            results.push(Outcome {
-                ok: true,
-                line: format!(
-                    "{BOLD}Capacity [archive]{RST} {YELLOW}WARN: disk {}/{}MB ({pct}%){RST}",
-                    archive_used / 1_048_576,
-                    archive_limit_bytes / 1_048_576
-                ),
-            });
-        }
-    }
 
     // Graph index file count vs limit
     let graph_max_files = crate::core::config::GRAPH_INDEX_MAX_FILES;
@@ -524,14 +364,16 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
 
     results
 }
-/// Actionable next-step for a memory capacity warning (#972). Separated from the
+/// Actionable next-step for a memory capacity warning. Separated from the
 /// on-disk capacity scan so the messaging is unit-tested directly: a store *at*
 /// its cap is healthy (eviction holds it there), while *over* cap means curation
-/// is behind and the operator should compact or raise the limit.
-pub(crate) fn capacity_hint(critical: bool) -> &'static str {
-    if critical {
-        "over cap — eviction is behind. Run `lean-ctx knowledge consolidate --all` to compact project memory now, or raise the relevant memory.* cap"
-    } else {
-        "at/near cap is healthy by design — lean-ctx self-curates (write-time dedup #970, hourly cluster-compaction #971, 90-day prune #972). Raise a cap only if recall quality drops (memory.*)"
+/// is behind and the operator should compact it.
+pub(crate) fn capacity_hint(critical: bool, project_root: Option<&str>) -> String {
+    if !critical {
+        return "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup, 90-day prune)".to_string();
     }
+    let root = project_root.unwrap_or("<project>");
+    format!(
+        "over cap — eviction is behind. Compact it now: sobre call sobre_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
+    )
 }

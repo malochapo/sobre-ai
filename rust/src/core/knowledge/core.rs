@@ -3,9 +3,8 @@ use chrono::Utc;
 use super::ranking::{fact_version_id_v1, hash_project_root, string_similarity};
 use super::types::{
     AdmissionResult, Contradiction, ContradictionSeverity, KnowledgeArchetype, KnowledgeFact,
-    ProjectKnowledge, ProjectPattern,
+    ProjectKnowledge,
 };
-use crate::core::memory_boundary::FactPrivacy;
 use crate::core::memory_policy::MemoryPolicy;
 
 impl ProjectKnowledge {
@@ -17,38 +16,13 @@ impl ProjectKnowledge {
         crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &cfg)
     }
 
-    /// Cluster compaction (#971): collapse piles of low-value, mutually-similar
-    /// facts into recoverable digests, returning the number of clusters
-    /// collapsed. Heavier than [`Self::run_memory_lifecycle`], so it runs only
-    /// from the background cognition loop (hourly), never on every write. The
-    /// originals are archived and rehydrate on recall — nothing is lost.
-    pub fn compact_low_value_clusters(&mut self, policy: &MemoryPolicy) -> u32 {
-        if !policy.compaction.enabled {
-            return 0;
-        }
-        let cfg = crate::core::memory_lifecycle::ClusterCompactionConfig {
-            min_cluster: policy.compaction.min_cluster,
-            similarity: policy.compaction.similarity,
-            max_confidence: policy.compaction.max_confidence,
-            max_confirmations: policy.compaction.max_confirmations,
-        };
-        let (collapsed, archived) =
-            crate::core::memory_lifecycle::compact_clusters(&mut self.facts, &cfg);
-        if !archived.is_empty() {
-            let _ = crate::core::memory_lifecycle::archive_facts(&archived);
-        }
-        collapsed as u32
-    }
-
     pub fn new(project_root: &str) -> Self {
         Self {
             project_root: project_root.to_string(),
             project_hash: hash_project_root(project_root),
             facts: Vec::new(),
-            patterns: Vec::new(),
             history: Vec::new(),
             updated_at: Utc::now(),
-            judged_pairs: Vec::new(),
         }
     }
 
@@ -141,7 +115,6 @@ impl ProjectKnowledge {
                 let superseded = fact_version_id_v1(existing);
                 let next_revision = existing.revision_count + 1;
                 existing.valid_until = Some(now);
-                existing.valid_from = existing.valid_from.or(Some(existing.created_at));
 
                 self.facts.push(KnowledgeFact {
                     category: category.to_string(),
@@ -160,11 +133,9 @@ impl ProjectKnowledge {
                     feedback_up: 0,
                     feedback_down: 0,
                     last_feedback: None,
-                    privacy: FactPrivacy::default(),
                     sensitivity: crate::core::sensitivity::classify_content(value),
                     imported_from: None,
                     archetype: KnowledgeArchetype::infer_from_category(category),
-                    fidelity: None,
                     revision_count: next_revision,
                 });
             }
@@ -187,11 +158,9 @@ impl ProjectKnowledge {
                 feedback_up: 0,
                 feedback_down: 0,
                 last_feedback: None,
-                privacy: FactPrivacy::default(),
                 sensitivity: crate::core::sensitivity::classify_content(value),
                 imported_from: None,
                 archetype: KnowledgeArchetype::infer_from_category(category),
-                fidelity: None,
                 revision_count: 1,
             });
         }
@@ -211,13 +180,12 @@ impl ProjectKnowledge {
         contradiction
     }
 
-    /// Write-time admission gate for the agent-facing `ctx_knowledge remember`
-    /// path (#970). Unlike [`Self::remember`] (which every internal restorer also
+    /// Write-time admission gate for the agent-facing `sobre_knowledge remember`
+    /// path. Unlike [`Self::remember`] (which every internal restorer also
     /// calls), this enforces the [`crate::core::memory_policy::AdmissionPolicy`]:
-    /// near-duplicates are merged instead of inserted, and low-salience noise is
-    /// kept out of the capped store — so eviction never has to drop a good fact to
-    /// make room for a paraphrase. Internal callers (archive rehydrate, cognition
-    /// auto-promotion) keep using [`Self::remember`] and are never gated.
+    /// near-duplicates are merged instead of inserted, so eviction never has to
+    /// drop a good fact to make room for a paraphrase. Internal callers (archive
+    /// rehydrate) keep using [`Self::remember`] and are never gated.
     pub fn remember_admitted(
         &mut self,
         category: &str,
@@ -235,21 +203,10 @@ impl ProjectKnowledge {
             .facts
             .iter()
             .any(|f| f.category == category && f.key == key && f.is_current());
-        if !adm.enabled || has_exact {
+        if has_exact {
             return AdmissionResult::Stored(
                 self.remember(category, key, value, session_id, confidence, policy),
             );
-        }
-
-        // Salience floor: keep low-signal noise out of a capped store.
-        if adm.min_salience > 0 {
-            let salience = crate::core::memory_salience::text_salience(value);
-            if salience < adm.min_salience {
-                return AdmissionResult::RejectedLowSalience {
-                    salience,
-                    floor: adm.min_salience,
-                };
-            }
         }
 
         // Cross-key near-duplicate auto-merge within the same category.
@@ -308,57 +265,6 @@ impl ProjectKnowledge {
             confirmations: f.confirmation_count,
             value: f.value.clone(),
         })
-    }
-
-    pub fn add_pattern(
-        &mut self,
-        pattern_type: &str,
-        description: &str,
-        examples: Vec<String>,
-        session_id: &str,
-        policy: &MemoryPolicy,
-    ) {
-        if let Some(existing) = self
-            .patterns
-            .iter_mut()
-            .find(|p| p.pattern_type == pattern_type && p.description == description)
-        {
-            for ex in &examples {
-                if !existing.examples.contains(ex) {
-                    existing.examples.push(ex.clone());
-                }
-            }
-            return;
-        }
-
-        self.patterns.push(ProjectPattern {
-            pattern_type: pattern_type.to_string(),
-            description: description.to_string(),
-            examples,
-            source_session: session_id.to_string(),
-            created_at: Utc::now(),
-        });
-
-        // Lossless capacity reclaim (#995): keep the newest patterns and archive
-        // the rest. The previous `truncate` kept the *oldest* patterns (it dropped
-        // the just-pushed one once at the cap) and lost them permanently.
-        if let Err(error) = crate::core::memory_capacity::reclaim_store(
-            crate::core::memory_archive::MemoryStore::Patterns,
-            Some(&self.project_hash),
-            &mut self.patterns,
-            policy.knowledge.max_patterns,
-            policy.lifecycle.reclaim_headroom_pct,
-            policy.lifecycle.reclaim_enabled,
-            |a, b| {
-                b.created_at
-                    .cmp(&a.created_at)
-                    .then_with(|| a.pattern_type.cmp(&b.pattern_type))
-                    .then_with(|| a.description.cmp(&b.description))
-            },
-        ) {
-            tracing::warn!(%error, "pattern capacity reclaim failed");
-        }
-        self.updated_at = Utc::now();
     }
 
     pub fn remove_fact(&mut self, category: &str, key: &str) -> bool {

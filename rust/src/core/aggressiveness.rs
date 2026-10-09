@@ -1,10 +1,10 @@
 //! Single 0.0–1.0 compression-intensity knob.
 //!
-//! TTC-style UX parity: callers (the `ctx_read` tool, the proxy, the CLI) can
+//! Callers (the `sobre_read` tool, the proxy, the CLI) can
 //! express "how hard should I compress?" as one number instead of picking among
 //! the ten read modes. The number is *mapped* onto the existing density /
 //! entropy / information-bottleneck stages — it never introduces a model, so the
-//! #498 determinism contract (output = pure function of inputs) is preserved.
+//! determinism contract (output = pure function of inputs) is preserved.
 //! Resolution order (see [`effective`]): explicit per-call arg >
 //! `compression_level` in config > `None`. `None` means "use each mode's
 //! adaptive default", the behaviour when `compression_level` is not set.
@@ -39,21 +39,18 @@ impl AggressivenessProfile {
     }
 }
 
-/// Resolves the effective aggressiveness from (in priority order) an explicit
-/// per-call value and the config field.
-/// Returns `None` when nothing is set so callers keep their current defaults.
+/// The effective read aggressiveness: the per-call value, clamped, or `None`
+/// so the read keeps its automatic per-file mode. `compression_level` in the
+/// config does not force read modes; it picks the prose style.
 #[must_use]
 pub fn effective(explicit: Option<f64>) -> Option<f64> {
-    if let Some(a) = explicit {
-        return Some(a.clamp(0.0, 1.0));
-    }
-    crate::core::config::Config::load().compression_level
+    explicit.map(|a| a.clamp(0.0, 1.0))
 }
 
 /// Stable cache-key fragment for an aggressiveness setting.
 ///
 /// Buckets to 1/20 (0.05 steps) so float jitter does not fragment the cache,
-/// while distinct settings still get distinct keys (#498). `None` → empty
+/// while distinct settings still get distinct keys. `None` → empty
 /// string so today's keys are unchanged when the knob is unset.
 #[must_use]
 pub fn cache_fragment(a: Option<f64>) -> String {

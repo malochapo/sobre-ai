@@ -1,27 +1,20 @@
-//! #990 e2e — machine-readable purity *and* once-per-session flag survival.
+//! E2e — machine-readable purity, and no unrequested text.
 //!
-//! `ctx_outline format=json` must return byte-exact, parseable JSON with no
-//! prose decoration. Critically, a json *first* call must not consume the
-//! once-per-session auto-context briefing slot: skipping the dispatch pre-hook
-//! for machine-readable calls keeps the wake-up briefing intact so it still
-//! fires on the next human-facing call.
+//! `sobre_outline format=json` must return byte-exact, parseable JSON with no
+//! prose decoration, and no call — first or later — carries text the agent
+//! did not ask for.
 //!
-//! Determinism: the project root is pinned via `LEAN_CTX_PROJECT_ROOT` (no
-//! async client-roots race) and the test polls `ctx_compose` (no task) — which returns
-//! the project overview *without* consuming the briefing flag — until the graph
-//! is loaded in-process. Only then does it run the discriminating sequence
-//! (json call, then two text calls), so the graph-build race cannot make this
-//! test flaky and the root is live exactly when the json call runs.
+//! The project root is pinned via `CLAUDE_PROJECT_DIR`, so there is no async
+//! client-roots race.
 #![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::time::Duration;
 
 use serde_json::{Value, json};
 
-const SAMPLE_RS: &str = r"//! Sample module for ctx_outline e2e.
+const SAMPLE_RS: &str = r"//! Sample module for sobre_outline e2e.
 
 pub struct Engine {
     pub name: String,
@@ -55,7 +48,7 @@ pub fn accelerate(engine: &mut Engine, delta: u32) -> u32 {
 }
 ";
 
-/// Fully isolated lean-ctx environment with a one-file project tree.
+/// Fully isolated sobre environment with a one-file project tree.
 struct McpSandbox {
     _root: tempfile::TempDir,
     home: PathBuf,
@@ -79,7 +72,7 @@ impl McpSandbox {
             std::fs::create_dir_all(d).unwrap();
         }
         std::fs::write(project.join("sample.rs"), SAMPLE_RS).unwrap();
-        // Canonicalize so `index build --root`, `LEAN_CTX_PROJECT_ROOT` and the
+        // Canonicalize so `index build --root`, `CLAUDE_PROJECT_DIR` and the
         // server's cwd resolve to the exact same path (macOS /tmp -> /private/tmp).
         let project = project.canonicalize().unwrap();
         Self {
@@ -94,22 +87,19 @@ impl McpSandbox {
     }
 
     fn base_command(&self) -> Command {
-        let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
         cmd.env("HOME", &self.home)
-            .env("LEAN_CTX_CONFIG_DIR", &self.config)
-            .env("LEAN_CTX_DATA_DIR", &self.data)
-            .env("LEAN_CTX_STATE_DIR", &self.state)
-            .env("LEAN_CTX_CACHE_DIR", &self.cache)
-            // Never talk to (or start) the developer's daemon.
-            .env("LEAN_CTX_HOOK_CHILD", "1")
-            // Resolve the project root synchronously from the env (no async
+            .env("SOBRE_CONFIG_DIR", &self.config)
+            .env("SOBRE_DATA_DIR", &self.data)
+            .env("SOBRE_STATE_DIR", &self.state)
+            .env("SOBRE_CACHE_DIR", &self.cache)
+            // Resolve the project root synchronously from the host env, as
+            // Claude Code sets it (no async
             // client-roots / cwd race) so the auto-context overview is live on
             // the very FIRST tool call. This makes the briefing-survival check
             // discriminating: the root is ready when the json call runs, so the
             // unfixed dispatch would burn the once-per-session flag right there.
-            // `LEAN_CTX_QUIET` is intentionally NOT set — it suppresses the
-            // autonomy briefing this test asserts on.
-            .env("LEAN_CTX_PROJECT_ROOT", &self.project);
+            .env("CLAUDE_PROJECT_DIR", &self.project);
         cmd
     }
 
@@ -120,7 +110,7 @@ impl McpSandbox {
             .args(["index", "build", "--root"])
             .arg(&self.project)
             .output()
-            .expect("spawn lean-ctx index build");
+            .expect("spawn sobre index build");
         assert!(
             out.status.success(),
             "index build failed: {}\nstdout:\n{}\nstderr:\n{}",
@@ -149,7 +139,7 @@ impl McpSession {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("spawn lean-ctx mcp");
+            .expect("spawn sobre mcp");
         let stdin = child.stdin.take().expect("mcp stdin");
         let stdout = child.stdout.take().expect("mcp stdout");
         let mut session = Self {
@@ -218,22 +208,9 @@ impl McpSession {
         text_content(&resp).unwrap_or_default()
     }
 
-    /// Poll `ctx_compose` without a task (the session-start overview) until the
+    /// Poll `sobre_compose` without a task (the session-start overview) until the
     /// project graph is ready. That call counts as the session briefing, so a
     /// session warmed this way gets no further auto-context.
-    fn warm_overview(&mut self) {
-        for i in 0..50 {
-            let overview = self.call(1000 + i, "ctx_compose", &json!({}));
-            // The partial overview (graph still indexing) carries the same
-            // header; only the graph-backed one counts as ready.
-            if overview.contains("PROJECT OVERVIEW") && !overview.contains("(partial") {
-                return;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        panic!("ctx_compose never reported a ready project graph");
-    }
-
     fn shutdown(mut self) {
         self.stdin.take();
         let _ = self.child.wait();
@@ -251,38 +228,27 @@ fn text_content(resp: &Value) -> Option<String> {
 }
 
 #[test]
-fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
+fn json_call_is_pure_and_no_call_carries_a_briefing() {
     let sandbox = McpSandbox::new();
     sandbox.build_index();
 
-    // Warm the project graph in a throwaway session so the briefing content is
-    // ready deterministically: the overview call closes that session's
-    // briefing slot, so the assertions run in a fresh session.
-    let mut warmup = McpSession::start(&sandbox);
-    warmup.warm_overview();
-    warmup.shutdown();
-
     let mut session = McpSession::start(&sandbox);
 
-    // Call A is json (machine-readable) and is the first *flag-eligible* tool
-    // call; B and C are plain-text outlines.
+    // Call A is json (machine-readable) and the session's first tool call; B
+    // and C are the same plain-text outline.
     let call_a = session.call(
         2,
-        "ctx_outline",
+        "sobre_outline",
         &json!({ "path": "sample.rs", "format": "json" }),
     );
-    let call_b = session.call(3, "ctx_outline", &json!({ "path": "sample.rs" }));
-    let call_c = session.call(4, "ctx_outline", &json!({ "path": "sample.rs" }));
+    let call_b = session.call(3, "sobre_outline", &json!({ "path": "sample.rs" }));
+    let call_c = session.call(4, "sobre_outline", &json!({ "path": "sample.rs" }));
     session.shutdown();
 
     // (1) Machine-readable purity: A is byte-exact JSON, no prose decoration.
     assert!(
         call_a.trim_start().starts_with('{'),
         "json call must start with '{{', got:\n{call_a}"
-    );
-    assert!(
-        !call_a.contains("AUTO CONTEXT"),
-        "json call must NOT carry the auto-context briefing:\n{call_a}"
     );
     let parsed: Value = serde_json::from_str(&call_a)
         .unwrap_or_else(|e| panic!("json call must parse ({e}):\n{call_a}"));
@@ -295,37 +261,10 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
         "outline must list symbols:\n{call_a}"
     );
 
-    // (2) Flag survival: because the json call skipped the once-per-session
-    // pre-hook, the wake-up briefing must still fire on the next text call.
-    // (Without the #990 fix the json call would burn the flag here and B would
-    // be briefing-less — that is exactly what this asserts against.)
-    assert!(
-        call_b.contains("AUTO CONTEXT"),
-        "wake-up briefing must survive a json-first call and fire on the next \
-         human-facing call (#990); got:\n{call_b}"
-    );
-
-    // (3) Once-per-session semantics intact: the briefing fires exactly once.
-    assert!(
-        !call_c.contains("AUTO CONTEXT"),
-        "briefing must fire only once per session; the third call must be clean:\n{call_c}"
-    );
-}
-
-#[test]
-fn session_overview_call_is_the_only_project_summary() {
-    let sandbox = McpSandbox::new();
-    sandbox.build_index();
-
-    let mut session = McpSession::start(&sandbox);
-    // The ready overview is the session's project summary.
-    session.warm_overview();
-    let next = session.call(2, "ctx_outline", &json!({ "path": "sample.rs" }));
-    session.shutdown();
-
-    assert!(
-        !next.contains("AUTO CONTEXT"),
-        "the overview already summarized the project; the next call must not \
-         repeat it as a briefing:\n{next}"
+    // (2) No call carries text the agent did not ask for: the first text call
+    // is the tool's output alone, the same as the next identical call.
+    assert_eq!(
+        call_b, call_c,
+        "the first text call must not carry a once-per-session prefix"
     );
 }

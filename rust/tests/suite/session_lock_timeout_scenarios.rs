@@ -1,8 +1,8 @@
-//! Tests verifying that `ctx_read` never hangs indefinitely due to session lock contention.
+//! Tests verifying that `sobre_read` never hangs indefinitely due to session lock contention.
 //! Covers the Windows deadlock scenario: shell-hook holds session write-lock while
-//! `ctx_read` waits on session read-lock, causing circular dependency.
+//! `sobre_read` waits on session read-lock, causing circular dependency.
 
-use lean_ctx::core::pathutil::safe_canonicalize_bounded;
+use sobre::core::pathutil::safe_canonicalize_bounded;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -64,7 +64,7 @@ fn canonicalize_bounded_respects_timeout() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod read_file_safety {
-    use lean_ctx::tools::ctx_read::read_file_lossy;
+    use sobre::tools::sobre_read::read_file_lossy;
     use std::time::{Duration, Instant};
 
     #[test]

@@ -9,7 +9,7 @@
 //!   object (documented as `unknown`; see github/copilot-cli#3349). It may also
 //!   be a plain object, so both shapes must be accepted.
 //!
-//! Before #551 the handlers only read the snake_case fields, so Copilot CLI tool
+//! The handlers once read only the snake_case fields, so Copilot CLI tool
 //! calls never matched and the hooks silently no-opped. These resolvers give all
 //! handlers one contract regardless of host.
 

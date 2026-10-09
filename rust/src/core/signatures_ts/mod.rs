@@ -695,7 +695,7 @@ class Inventory:
 
     #[test]
     fn test_gdscript_member_signatures() {
-        // #316: `@export`/`@onready`/`const`/`var` members must surface as symbols,
+        // `@export`/`@onready`/`const`/`var` members must surface as symbols,
         // while function-local `var`s must NOT (they are not part of the API).
         let src = r"
 extends Node
@@ -1043,7 +1043,7 @@ function Get-CargoBinDir {
     return $Path
 }
 
-function Stop-RunningLeanCtx() {
+function Stop-RunningSobre() {
     Write-Host 'stopping'
 }
 
@@ -1061,7 +1061,7 @@ enum BuildKind {
         let sigs = extract_signatures_ts(src, "ps1").unwrap();
         let names: Vec<&str> = sigs.iter().map(|s| s.name.as_str()).collect();
         assert!(names.contains(&"Get-CargoBinDir"), "got {names:?}");
-        assert!(names.contains(&"Stop-RunningLeanCtx"), "got {names:?}");
+        assert!(names.contains(&"Stop-RunningSobre"), "got {names:?}");
         assert!(names.contains(&"BuildResult"), "got {names:?}");
         assert!(names.contains(&"BuildKind"), "got {names:?}");
         assert!(names.contains(&"Publish"), "got {names:?}");

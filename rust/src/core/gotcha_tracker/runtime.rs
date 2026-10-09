@@ -3,7 +3,7 @@
 //! `detect_error` / `try_resolve_pending` were fully implemented and unit-tested
 //! but never called on a live path — the engine that learns "error X was fixed
 //! by Y" sat dormant. This module hooks them into the shell layer at the exact
-//! point the #499 diagnostics store uses (`shell::exec`), so a failing
+//! point the diagnostics store uses (`shell::exec`), so a failing
 //! build/test pushes a pending error and the next green run of the same command
 //! base correlates the fix into a persisted [`Gotcha`] — automatic, no agent
 //! action required.
@@ -11,7 +11,7 @@
 //! ## State model
 //! Pending errors are in-memory by design (`GotchaStore.pending_errors` is
 //! `#[serde(skip)]`). A process-global active store keeps them alive across
-//! calls, so in the long-lived daemon a fail→fix spanning two `ctx_shell` calls
+//! calls, so in the long-lived MCP server a fail→fix spanning two `sobre_shell` calls
 //! correlates. Durable gotchas / error logs / stats are persisted to
 //! `gotchas.json`, so the injection block and CLI see them across processes.
 //!
@@ -46,7 +46,7 @@ impl GotchaStore {
 }
 
 /// Active per-project store, kept in memory so pending errors survive across
-/// shell calls within a process (the daemon's whole lifetime).
+/// shell calls within a process (the MCP server's whole lifetime).
 struct Active {
     project_hash: String,
     store: GotchaStore,
@@ -58,7 +58,7 @@ fn active() -> &'static Mutex<Option<Active>> {
     ACTIVE.get_or_init(|| Mutex::new(None))
 }
 
-/// Stable per-process session id. Each daemon run / CLI invocation counts as one
+/// Stable per-process session id. Each MCP server run / CLI invocation counts as one
 /// "session" for cross-session correlation — semantically correct without
 /// coupling the shell layer to the MCP session store.
 fn process_session_id() -> &'static str {
@@ -68,9 +68,8 @@ fn process_session_id() -> &'static str {
 
 /// Shell-layer hook: learn from a finished command's outcome.
 ///
-/// Gated to build/test/run command families via
-/// [`is_correlatable_command`](super::detect::is_correlatable_command) so
-/// ordinary commands never touch disk. Resolves the project root and a stable
+/// Gated to build/test/run command families via `is_correlatable_command`
+/// so ordinary commands never touch disk. Resolves the project root and a stable
 /// session id internally, keeping the call site (a single line in `shell::exec`)
 /// minimal. Never panics and never blocks the shell on lock contention.
 pub fn record_shell_outcome(command: &str, output: &str, exit_code: i32) {

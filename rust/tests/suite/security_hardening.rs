@@ -1,7 +1,7 @@
 //! Security hardening tests — validates all Critical and High fixes from the
 //! bank-readiness audit (2026-05-08).
 
-/// Reads the full `LeanCtxServer` dispatch source across its split submodules
+/// Reads the full `SobreServer` dispatch source across its split submodules
 /// (`mod.rs`, `call_tool.rs`, `server_handler.rs`, plus the extracted
 /// `post_process.rs` / `post_dispatch.rs` stages) so that the security-invariant
 /// checks below stay robust to internal module structure.
@@ -17,85 +17,23 @@ fn server_dispatch_src() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// H1 — Shell CWD jail enforcement
+// M2 — ReDoS guard in sobre_search
 // ---------------------------------------------------------------------------
 #[test]
-fn effective_cwd_calls_jail() {
-    let src = include_str!("../../src/core/session/state.rs");
-
-    // `effective_cwd` must not bypass the jail: it delegates to the checked
-    // variant, which is the single enforcement point (#629/#633 refactor).
-    let ecwd_fn = src
-        .find("fn effective_cwd(")
-        .expect("effective_cwd missing");
-    let ecwd_body = &src[ecwd_fn..ecwd_fn + 500];
-    assert!(
-        ecwd_body.contains("effective_cwd_checked("),
-        "H1: effective_cwd must delegate to effective_cwd_checked"
-    );
-
-    // The checked variant enforces the project-root jail for an explicit cwd.
-    let checked_fn = src
-        .find("fn effective_cwd_checked(")
-        .expect("effective_cwd_checked missing");
-    let checked_body = &src[checked_fn..checked_fn + 500];
-    assert!(
-        checked_body.contains("jail_cwd(cwd, root)"),
-        "H1: effective_cwd_checked must call jail_cwd for explicit cwd"
-    );
-}
-
-#[test]
-fn update_shell_cwd_calls_jail_path() {
-    let src = include_str!("../../src/core/session/state.rs");
-
-    let uscwd_fn = src
-        .find("fn update_shell_cwd(")
-        .expect("update_shell_cwd missing");
-    let uscwd_body = &src[uscwd_fn..uscwd_fn + 600];
-    assert!(
-        uscwd_body.contains("jail_path("),
-        "H1: update_shell_cwd must jail_path check before storing"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// H2 — MCP ctx_read path has secret check
-// ---------------------------------------------------------------------------
-#[test]
-fn resolve_path_includes_secret_check() {
-    let src = include_str!("../../src/tools/server_paths.rs");
-
-    let resolve_fn = src.find("fn resolve_path(").expect("resolve_path missing");
-    let resolve_body = &src[resolve_fn..];
-    let end = resolve_body
-        .find("fn resolve_path_or_passthrough")
-        .unwrap_or(resolve_body.len());
-    let resolve_body = &resolve_body[..end];
-    assert!(
-        resolve_body.contains("check_secret_path"),
-        "H2: resolve_path must call check_secret_path"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// M2 — ReDoS guard in ctx_search
-// ---------------------------------------------------------------------------
-#[test]
-fn ctx_search_has_pattern_length_limit() {
-    let src = include_str!("../../src/tools/ctx_search.rs");
+fn sobre_search_has_pattern_length_limit() {
+    let src = include_str!("../../src/tools/sobre_search.rs");
 
     assert!(
         src.contains("MAX_PATTERN_LEN"),
-        "M2: ctx_search must limit pattern length"
+        "M2: sobre_search must limit pattern length"
     );
     assert!(
         src.contains(".size_limit("),
-        "M2: ctx_search must set regex size_limit"
+        "M2: sobre_search must set regex size_limit"
     );
     assert!(
         src.contains("RegexBuilder::new("),
-        "M2: ctx_search must use RegexBuilder (not Regex::new) for size limits"
+        "M2: sobre_search must use RegexBuilder (not Regex::new) for size limits"
     );
 }
 
@@ -122,22 +60,36 @@ fn mcp_stdio_has_bounded_max_length() {
 #[test]
 fn raw_shell_skips_all_postprocessing() {
     let src = crate::suite::security_hardening::server_dispatch_src().replace("\r\n", "\n");
+    // The dispatch-level terse stage never sees shell output: sobre_shell
+    // condenses its own, and only outside the raw branch.
     assert!(
-        src.contains("let is_raw_shell = name == \"ctx_shell\""),
-        "call_tool must compute is_raw_shell flag"
+        src.contains("const TERSE_TOOLS: [&str; 2] = [\"sobre_knowledge\", \"sobre_session\"];"),
+        "the dispatch terse stage must not reach sobre_shell"
+    );
+    let shell = include_str!("../../src/tools/registered/sobre_shell.rs").replace("\r\n", "\n");
+    let raw_branch = shell
+        .find("if raw {")
+        .expect("sobre_shell must branch on raw");
+    let condense = shell
+        .find("condense_shell_output(")
+        .expect("sobre_shell must condense its own output");
+    let else_branch = shell[raw_branch..]
+        .find("} else {")
+        .map(|i| raw_branch + i)
+        .expect("the raw branch must have an else");
+    assert!(
+        condense > else_branch,
+        "condensing must happen outside the raw branch"
     );
     assert!(
-        src.contains("is_raw_shell")
-            && src.contains("result_text.len() != pre_terse_len && output_tokens > 0")
+        src.contains("post_process::final_token_count(&result_text, pre_terse_len, output_tokens)")
             && src.contains("skip_terse"),
-        "skip_terse must include is_raw_shell; post-terse stats must guard on terse delta"
+        "the sent count must be taken after terse"
     );
-    // The verify_output guard may AND extra predicates after !is_raw_shell
-    // (e.g. !firewalled), so accept both the bare guard and the extended form
-    // rather than pinning a brittle exact literal.
+    // Verification only runs on text terse changed, and terse never touches
+    // raw shell output.
     assert!(
-        (src.contains("if !is_raw_shell {") || src.contains("if !is_raw_shell &&"))
-            && src.contains("verify_output"),
-        "output verification must be skipped for raw shell"
+        src.contains("result_text != pre_compression") && src.contains("verify_output"),
+        "output verification must only run on condensed text"
     );
 }

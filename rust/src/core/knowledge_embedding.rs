@@ -1,4 +1,4 @@
-//! Embedding-based Knowledge Retrieval for `ctx_knowledge`.
+//! Embedding-based Knowledge Retrieval for `sobre_knowledge`.
 //!
 //! Wraps `ProjectKnowledge` with a vector index for semantic recall.
 //! Facts are automatically embedded on `remember` and searched via
@@ -12,27 +12,20 @@ use super::knowledge::{KnowledgeFact, ProjectKnowledge};
 use crate::core::embedding_quant::{self, QuantizedVector};
 use crate::core::memory_policy::MemoryPolicy;
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::embeddings::EmbeddingEngine;
 
 const ALPHA_SEMANTIC: f32 = 0.6;
 const BETA_CONFIDENCE: f32 = 0.25;
 const GAMMA_RECENCY: f32 = 0.15;
-/// Observation tier (#802): additive boost for a synthesized entity-summary in the
-/// semantic recall paths, mirroring the lexical `recall_for_output` boost so the
-/// tier is honoured regardless of whether embeddings are active. Calibrated for the
-/// [0,1] semantic score — a balanced nudge that lifts a relevant summary above
-/// incidental matches yet stays below an exact match (which scores 1.0), so a stale
-/// summary can never bury a precise raw fact.
-const OBSERVATION_TIER_BOOST: f32 = 0.15;
 const MAX_RECENCY_DAYS: f32 = 90.0;
 
 /// Cosine threshold above which a freshly-remembered fact is treated as a
 /// semantic near-duplicate of an existing one. Deliberately conservative — only
 /// genuine paraphrases ("DB is Postgres" / "we persist to PostgreSQL") clear it,
 /// so the advisory stays signal, not noise. Non-destructive: it nudges the agent
-/// to `judge`, never auto-merges (distinct facts can be near in embedding space,
-/// e.g. "Postgres 14" vs "Postgres 15").
+/// to resolve the pair, never auto-merges (distinct facts can be near in embedding
+/// space, e.g. "Postgres 14" vs "Postgres 15").
 pub const SEMANTIC_DUP_THRESHOLD: f32 = 0.86;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,7 +85,7 @@ impl KnowledgeEmbeddingIndex {
             .retain(|e| !(e.category == category && e.key == key));
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     pub fn semantic_search(
         &self,
         query_embedding: &[f32],
@@ -120,7 +113,7 @@ impl KnowledgeEmbeddingIndex {
     }
 
     fn index_path(project_hash: &str) -> Option<PathBuf> {
-        let dir = crate::core::data_dir::lean_ctx_data_dir()
+        let dir = crate::core::data_dir::sobre_data_dir()
             .ok()?
             .join("knowledge")
             .join(project_hash);
@@ -140,18 +133,9 @@ impl KnowledgeEmbeddingIndex {
         // Atomic write (temp + rename) so a concurrent, lock-free reader in
         // `recall` (which loads the index without taking the per-project lock)
         // never observes a half-written file — it sees either the old or the new
-        // complete index, never trailing garbage (issue #412).
+        // complete index, never trailing garbage.
         crate::config_io::write_atomic(&path, &json)
     }
-}
-
-pub fn reset(project_hash: &str) -> Result<(), String> {
-    let path = KnowledgeEmbeddingIndex::index_path(project_hash)
-        .ok_or_else(|| "Cannot determine data directory".to_string())?;
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("{e}"))?;
-    }
-    Ok(())
 }
 
 #[derive(Debug)]
@@ -163,7 +147,7 @@ pub struct ScoredFact<'a> {
     pub recency_score: f32,
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn semantic_recall<'a>(
     knowledge: &'a ProjectKnowledge,
     index: &KnowledgeEmbeddingIndex,
@@ -187,14 +171,9 @@ pub fn semantic_recall<'a>(
         {
             let confidence_score = fact.quality_score();
             let recency_score = recency_decay(fact);
-            // Observation tier (#802): honour synthesized entity-summaries in the
-            // semantic path too, not just lexical recall_for_output. Balanced nudge.
-            let score = apply_observation_tier(
-                ALPHA_SEMANTIC * sim
-                    + BETA_CONFIDENCE * confidence_score
-                    + GAMMA_RECENCY * recency_score,
-                fact,
-            );
+            let score = ALPHA_SEMANTIC * sim
+                + BETA_CONFIDENCE * confidence_score
+                + GAMMA_RECENCY * recency_score;
 
             results.push(ScoredFact {
                 fact,
@@ -244,7 +223,7 @@ pub fn semantic_recall<'a>(
     results
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn semantic_recall_semantic_only<'a>(
     knowledge: &'a ProjectKnowledge,
     index: &KnowledgeEmbeddingIndex,
@@ -267,14 +246,9 @@ pub fn semantic_recall_semantic_only<'a>(
         {
             let confidence_score = fact.quality_score();
             let recency_score = recency_decay(fact);
-            // Observation tier (#802): honour synthesized entity-summaries in the
-            // semantic path too, not just lexical recall_for_output. Balanced nudge.
-            let score = apply_observation_tier(
-                ALPHA_SEMANTIC * sim
-                    + BETA_CONFIDENCE * confidence_score
-                    + GAMMA_RECENCY * recency_score,
-                fact,
-            );
+            let score = ALPHA_SEMANTIC * sim
+                + BETA_CONFIDENCE * confidence_score
+                + GAMMA_RECENCY * recency_score;
 
             results.push(ScoredFact {
                 fact,
@@ -376,18 +350,7 @@ fn recency_decay(fact: &KnowledgeFact) -> f32 {
     (1.0 - days_old / MAX_RECENCY_DAYS).max(0.0)
 }
 
-/// Add the observation-tier boost (#802) to a base recall score iff `fact` is a
-/// synthesized entity-summary. Pure + deterministic so the tier policy can be
-/// unit-tested without spinning up the embedding engine.
-fn apply_observation_tier(base: f32, fact: &KnowledgeFact) -> f32 {
-    if fact.is_synthesized_observation() {
-        base + OBSERVATION_TIER_BOOST
-    } else {
-        base
-    }
-}
-
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn embed_and_store(
     index: &mut KnowledgeEmbeddingIndex,
     engine: &EmbeddingEngine,
@@ -407,7 +370,7 @@ pub fn embed_and_store(
 pub const BACKFILL_PER_REMEMBER: usize = 32;
 
 /// Current facts that have no vector in the side-car index, most valuable
-/// first (same ordering as `embeddings_reindex`: confidence, then recency).
+/// first: confidence, then recency.
 /// Engine-free so the selection is unit-testable with raw indices.
 pub fn missing_current_facts<'a>(
     index: &KnowledgeEmbeddingIndex,
@@ -443,11 +406,11 @@ pub fn missing_current_facts<'a>(
 /// from the side-car index. Facts land without vectors on two paths — the
 /// consolidation/ETL writers never embed at all, and a non-blocking `remember`
 /// skips its side-car while the engine is still warming up. Without a healer
-/// those facts stay invisible to `mode=semantic` recall until a *manual*
-/// `embeddings_reindex`. Called from `remember` under the per-project lock
-/// once the engine is warm, so active projects self-heal incrementally.
+/// those facts would stay invisible to `mode=semantic` recall. Called from
+/// `remember` and `recall` under the per-project lock once the engine is warm,
+/// so active projects self-heal incrementally.
 /// Returns the number of facts embedded.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn backfill_missing(
     index: &mut KnowledgeEmbeddingIndex,
     engine: &EmbeddingEngine,
@@ -483,10 +446,10 @@ pub fn backfill_missing(
 /// [`find_cross_key_similar`] but scores cosine similarity, so paraphrases that
 /// share few tokens are still caught. Read-only against the *pre-upsert* index,
 /// so the incoming fact never matches itself. Returns advisory hits for the
-/// agent to resolve via `judge` — it never mutates or merges facts.
+/// agent to resolve — it never mutates or merges facts.
 ///
 /// [`find_cross_key_similar`]: crate::core::knowledge::find_cross_key_similar
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn find_semantic_duplicates(
     index: &KnowledgeEmbeddingIndex,
     engine: &EmbeddingEngine,
@@ -517,7 +480,7 @@ pub fn find_semantic_duplicates(
 /// Engine-free core of [`find_semantic_duplicates`]: scans an in-memory index
 /// for entries whose cosine similarity to a precomputed query embedding clears
 /// `threshold`, maps them back to current facts, and excludes the incoming
-/// fact's own key, non-current facts, and pairs the agent already judged. Pure
+/// fact's own key and non-current facts. Pure
 /// and deterministic so the dedup logic is unit-testable with raw vectors.
 fn semantic_duplicates_from_query(
     index: &KnowledgeEmbeddingIndex,
@@ -529,8 +492,6 @@ fn semantic_duplicates_from_query(
     limit: usize,
 ) -> Vec<crate::core::knowledge::SimilarFact> {
     use crate::core::knowledge::SimilarFact;
-
-    let composite_key = format!("{new_category}/{new_key}");
 
     let mut scored: Vec<(&FactEmbedding, f32)> = index
         .entries
@@ -549,14 +510,6 @@ fn semantic_duplicates_from_query(
 
     let mut out: Vec<SimilarFact> = Vec::new();
     for (entry, sim) in scored {
-        let other_key = format!("{}/{}", entry.category, entry.key);
-        let already_judged = knowledge.judged_pairs.iter().any(|jp| {
-            (jp.key_a == composite_key && jp.key_b == other_key)
-                || (jp.key_a == other_key && jp.key_b == composite_key)
-        });
-        if already_judged {
-            continue;
-        }
         let Some(fact) = knowledge
             .facts
             .iter()
@@ -606,67 +559,16 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::infer_from_category(category),
-            fidelity: None,
             revision_count: 0,
         }
     }
 
     #[test]
-    fn observation_tier_boosts_only_synthesized_summaries() {
-        use crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE;
-        // A synthesized observation (cognition-synthesis source) earns the tier boost.
-        let obs = fact_with(
-            "observation",
-            "src/auth/session.rs",
-            COGNITION_SYNTHESIS_SOURCE,
-        );
-        // A user finding (also Observation archetype) is NOT synthesized → no boost.
-        let user_finding = fact_with("observation", "src/auth/session.rs:1", "session-7");
-        // A raw evidence fact → no boost.
-        let raw = fact_with("gotcha", "src/auth/session.rs:2", "session-7");
-
-        assert!((apply_observation_tier(0.5, &raw) - 0.5).abs() < 1e-6);
-        assert!((apply_observation_tier(0.5, &user_finding) - 0.5).abs() < 1e-6);
-        assert!((apply_observation_tier(0.5, &obs) - (0.5 + OBSERVATION_TIER_BOOST)).abs() < 1e-6);
-        // The boost lifts a synthesized summary above an equal-base raw fact, yet is
-        // bounded so a boosted summary stays below an exact match (which scores 1.0).
-        assert!(apply_observation_tier(0.5, &obs) > apply_observation_tier(0.5, &raw));
-        assert!(apply_observation_tier(0.8, &obs) < 1.0);
-    }
-
-    #[test]
-    fn reset_removes_index_file() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = tempfile::tempdir().expect("tempdir");
-        crate::test_env::set_var(
-            "LEAN_CTX_DATA_DIR",
-            tmp.path().to_string_lossy().to_string(),
-        );
-
-        let idx = KnowledgeEmbeddingIndex {
-            project_hash: "projhash".to_string(),
-            entries: vec![FactEmbedding {
-                category: "arch".to_string(),
-                key: "db".to_string(),
-                quant: embedding_quant::quantize(&[1.0, 0.0, 0.0]),
-            }],
-        };
-        idx.save().expect("save");
-        assert!(KnowledgeEmbeddingIndex::load("projhash").is_some());
-
-        reset("projhash").expect("reset");
-        assert!(KnowledgeEmbeddingIndex::load("projhash").is_none());
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-
-    #[test]
     fn concurrent_remember_keeps_all_embeddings() {
-        // #412: the embedding-index read-modify-write must be serialized under
+        // The embedding-index read-modify-write must be serialized under
         // the per-project lock and compacted against fresh on-disk knowledge.
         // The old lock-free + stale-snapshot path let parallel writers clobber
         // each other's vectors and prune just-stored ones. This mirrors
@@ -674,10 +576,7 @@ mod tests {
         // is needed) and asserts every concurrently-stored embedding survives.
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
-        crate::test_env::set_var(
-            "LEAN_CTX_DATA_DIR",
-            tmp.path().to_string_lossy().to_string(),
-        );
+        crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path().to_string_lossy().to_string());
 
         let project = tmp.path().join("proj");
         std::fs::create_dir_all(&project).expect("mkdir");
@@ -725,7 +624,7 @@ mod tests {
             idx.entries.len()
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -749,11 +648,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         });
         knowledge.facts.push(KnowledgeFact {
@@ -773,11 +670,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         });
 
@@ -864,11 +759,9 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         };
         let decay = recency_decay(&fact);
@@ -898,18 +791,16 @@ mod tests {
             feedback_up: 0,
             feedback_down: 0,
             last_feedback: None,
-            privacy: crate::core::memory_boundary::FactPrivacy::default(),
             sensitivity: crate::core::sensitivity::SensitivityLevel::default(),
             imported_from: None,
             archetype: KnowledgeArchetype::default(),
-            fidelity: None,
             revision_count: 0,
         };
         let decay = recency_decay(&fact);
         assert_eq!(decay, 0.0, "100-day-old fact should have 0 recency");
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     #[test]
     fn semantic_search_skips_other_widths() {
         let mut idx = KnowledgeEmbeddingIndex::new("test");
@@ -920,7 +811,7 @@ mod tests {
         assert_eq!(results[0].0.key, "db");
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     #[test]
     fn semantic_search_ranking() {
         let mut idx = KnowledgeEmbeddingIndex::new("test");
@@ -992,17 +883,8 @@ mod tests {
         let self_hits = semantic_duplicates_from_query(&idx, &kn, "arch", "db", &query, 0.86, 3);
         assert!(self_hits.is_empty(), "a fact is never its own duplicate");
 
-        // A different key matches — until the pair has been judged.
+        // A different key matches.
         let other = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
         assert_eq!(other.len(), 1);
-
-        kn.judged_pairs.push(crate::core::knowledge::JudgedPair {
-            key_a: "arch/database".to_string(),
-            key_b: "arch/db".to_string(),
-            verdict: "unrelated".to_string(),
-            judged_at: chrono::Utc::now(),
-        });
-        let judged = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
-        assert!(judged.is_empty(), "already-judged pairs are not re-flagged");
     }
 }

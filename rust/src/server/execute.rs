@@ -13,10 +13,10 @@ const TIMEOUT_MARKER: &str = "ERROR: command timed out after ";
 /// produced nothing recoverable.
 ///
 /// Single source of truth for "was anything captured before the timeout?":
-/// `call_tool` decides `isError` with it (#1086) and `ctx_shell` decides
-/// whether the notice is worth archiving (#995). It lives beside the code that
+/// `call_tool` decides `isError` with it and `sobre_shell` decides
+/// whether the notice is worth archiving. It lives beside the code that
 /// writes the marker because both callers previously re-derived it by matching
-/// the whole output, so enriching the notice broke them silently (#1173).
+/// the whole output, so enriching the notice broke them silently.
 pub(crate) fn output_before_timeout_marker(output: &str) -> Option<&str> {
     output.find(TIMEOUT_MARKER).map(|idx| output[..idx].trim())
 }
@@ -41,7 +41,7 @@ pub(crate) fn execute_command_with_env(
 /// complete Unix process group rather than only the shell leader.
 ///
 /// `idle_keyed` turns `timeout_ms` into an *idle* budget instead of a wall-clock
-/// one: the clock resets whenever the child produces new bytes (#1113/#1173). A
+/// one: the clock resets whenever the child produces new bytes. A
 /// poll loop emitting a few hundred bytes over ten minutes is not the runaway
 /// this watchdog protects against.
 ///
@@ -59,14 +59,13 @@ pub(crate) fn execute_command_with_env_cancellable(
     idle_keyed: bool,
 ) -> (String, i32) {
     let (shell, flag) = crate::shell::shell_and_flag();
-    let normalized_cmd = crate::tools::ctx_shell::normalize_command_for_shell(command);
     let dir = std::path::Path::new(cwd);
     let mut cmd = std::process::Command::new(&shell);
     if cfg!(windows) && crate::shell::platform::is_powershell(&shell) {
-        cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass"]);
+        cmd.arg("-NoProfile");
     }
     cmd.arg(&flag)
-        .arg(&normalized_cmd)
+        .arg(command)
         .env("GIT_TERMINAL_PROMPT", "0")
         .stdin(Stdio::null());
     crate::shell::reentry::mark_child(&mut cmd);
@@ -82,12 +81,12 @@ pub(crate) fn execute_command_with_env_cancellable(
     crate::shell::platform::apply_profile_free_env(&mut cmd);
 
     // Auto-forward agent runtime env vars (CODEX_THREAD_ID, CLAUDE_*, …) so
-    // session-aware commands run through ctx_shell can see the active session.
+    // session-aware commands run through sobre_shell can see the active session.
     //   1. From this process's own env — covers agents that pass the vars to the
     //      MCP server process.
     //   2. From the captured agent-env store — covers agents like Codex where the
-    //      vars live only in the native agent shell, not the MCP server process
-    //      (#370). Hooks / `lean-ctx -c` capture them; the process env wins on
+    //      vars live only in the native agent shell, not the MCP server process.
+    // Hooks / `sobre -c` capture them; the process env wins on
     //      conflict, and explicit `extra_env` (below) wins over both.
     let mut forwarded: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (key, val) in std::env::vars() {
@@ -118,7 +117,7 @@ pub(crate) fn execute_command_with_env_cancellable(
 
     // Isolate the shell in its own process group on Unix. A timeout must kill
     // descendants too; otherwise a child can retain a pipe write-end and make
-    // the caller report an empty result despite bytes already captured (#995).
+    // the caller report an empty result despite bytes already captured.
     #[cfg(unix)]
     {
         use std::os::unix::process::CommandExt;
@@ -131,7 +130,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     };
     // Stream each pipe into a shared, cap-bounded buffer that the main thread can
     // read at any time. Crucially this lets a timed-out wait recover the bytes
-    // captured so far instead of discarding all output (#945).
+    // captured so far instead of discarding all output.
     let (out_buf, out_done) = spawn_capture(child.stdout.take(), cap);
     let (err_buf, err_done) = spawn_capture(child.stderr.take(), cap);
 
@@ -140,7 +139,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     let hard_deadline = idle_keyed.then(|| start + streaming_max_lifetime());
     let mut last_len = 0usize;
     let mut last_output_at = start;
-    // Named on timeout so a multi-segment pipeline says *which* part hung (#1086).
+    // Named on timeout so a multi-segment pipeline says *which* part hung.
     let mut still_running: Vec<String> = Vec::new();
     let (code, timed_out, cancelled) = loop {
         match child.try_wait() {
@@ -162,7 +161,7 @@ pub(crate) fn execute_command_with_env_cancellable(
                     start.elapsed()
                 };
                 if idle_for >= timeout || hard_deadline.is_some_and(|d| Instant::now() >= d) {
-                    still_running = running_segments(&child, &normalized_cmd);
+                    still_running = running_segments(&child, command);
                     kill_timed_out_child(&mut child);
                     let _ = child.wait();
                     break (124, true, false);
@@ -174,7 +173,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     };
 
     // Bounded grace period for the readers to reach EOF, but always read the
-    // shared buffers afterwards so output is never silently lost (#945). A reader
+    // shared buffers afterwards so output is never silently lost. A reader
     // that misses the deadline means something still holds the pipe open; we then
     // surface the partial capture plus an explicit note rather than nothing.
     let reader_deadline = Instant::now() + READER_RESULT_TIMEOUT;
@@ -187,7 +186,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     let stdout = crate::shell::resolve_carriage_returns(&crate::shell::decode_output(&out_bytes));
     let stderr = crate::shell::resolve_carriage_returns(&crate::shell::decode_output(&err_bytes));
     // On failure both streams are labeled so the agent can attribute the error
-    // (#812); success keeps the plain join.
+    //; success keeps the plain join.
     let mut text = crate::shell::combine_streams(&stdout, &stderr, code);
 
     if out_trunc || err_trunc {
@@ -200,14 +199,14 @@ pub(crate) fn execute_command_with_env_cancellable(
     }
     // The command finished but a reader never hit EOF: a leftover process is
     // holding the pipe open. We still return what was captured; flag it so the
-    // agent knows the tail may be missing instead of seeing a bare exit code
-    // (#945). Suppressed on timeout, which carries its own message below.
+    // agent knows the tail may be missing instead of seeing a bare exit code.
+    // Suppressed on timeout, which carries its own message below.
     if reader_incomplete && !timed_out {
         if !text.is_empty() && !text.ends_with('\n') {
             text.push('\n');
         }
         text.push_str(&format!(
-            "[lean-ctx: output reader still draining after {}s — a background process is likely \
+            "[sobre: output reader still draining after {}s — a background process is likely \
              holding the pipe open; output above may be partial]",
             READER_RESULT_TIMEOUT.as_secs()
         ));
@@ -225,7 +224,7 @@ pub(crate) fn execute_command_with_env_cancellable(
                 ""
             }
         ));
-        // #1086: for a compound command the captured output is often complete
+        // For a compound command the captured output is often complete
         // for every segment but one. Name the segment(s) still alive in the
         // child's process group so the caller can fix that part instead of
         // re-running the whole pipeline.
@@ -248,7 +247,7 @@ pub(crate) fn execute_command_with_env_cancellable(
 
 /// Kill a timed-out command and every descendant that inherited its pipes.
 /// The child is a process-group leader on Unix, so killing only the shell would
-/// otherwise leave grandchildren alive and readers unable to reach EOF (#995).
+/// otherwise leave grandchildren alive and readers unable to reach EOF.
 fn kill_timed_out_child(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
@@ -265,7 +264,7 @@ fn kill_timed_out_child(child: &mut std::process::Child) {
 /// appends here as bytes arrive — not only at EOF — so the caller can recover
 /// whatever was read so far even if the reader never reaches EOF, e.g. when a
 /// backgrounded or otherwise-inherited process keeps the pipe's write-end open
-/// after the direct child exits (#945).
+/// after the direct child exits.
 #[derive(Default)]
 struct CaptureBuf {
     bytes: Vec<u8>,
@@ -331,13 +330,13 @@ fn captured_len(buf: &Arc<Mutex<CaptureBuf>>) -> usize {
 }
 
 /// Absolute ceiling on an idle-keyed (background) job, so a command that keeps
-/// emitting output forever still cannot outlive the daemon's patience (#1173).
+/// emitting output forever still cannot outlive the MCP server's patience.
 fn streaming_max_lifetime() -> Duration {
     Duration::from_hours(1)
 }
 
 /// Command lines still alive in the timed-out child's process group, i.e. the
-/// pipeline segment(s) that did not finish (#1086). Rows still carrying the
+/// pipeline segment(s) that did not finish. Rows still carrying the
 /// *whole* command are the un-exec'd shell wrapper and say nothing specific, so
 /// they are dropped — note the leader is not simply skipped by pid, because
 /// `sh -c 'a; b'` execs into its final segment and so *is* the leader.
@@ -402,9 +401,10 @@ fn ensure_utf8_locale(
 }
 
 fn command_timeout(command: &str, timeout_ms: Option<u64>) -> Duration {
-    // Single source of truth: operator env pin > per-call `timeout_ms` >
-    // per-tier env/config > built-in heavy/normal ceilings. Keeps this path
-    // identical to the interactive hook (`shell::exec::shell_timeout`).
+    // Single source of truth: per-call `timeout_ms` > `shell_timeout_secs`
+    // (at least the heavy ceiling for heavy commands) > built-in heavy/normal
+    // ceilings. Keeps this path identical to the interactive hook
+    // (`shell::exec::shell_timeout`).
     crate::shell::shell_timeout_with_override(command, timeout_ms)
 }
 
@@ -433,11 +433,11 @@ mod tests {
         );
     }
 
-    /// #1113/#1173: a poll loop that emits a short line every so often must
+    /// A poll loop that emits a short line every so often must
     /// outlive the wall-clock budget — the cap protects against runaway output,
     /// not against a long-lived monitor. Wall-clock mode still kills it.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn idle_keyed_timeout_survives_a_trickling_loop() {
         let _lock = crate::core::data_dir::test_env_lock();
         let env = std::collections::HashMap::new();
@@ -458,10 +458,10 @@ mod tests {
         assert!(wall_out.contains("timed out"));
     }
 
-    /// #1086: a timed-out pipeline names the segment that was still running,
+    /// A timed-out pipeline names the segment that was still running,
     /// so the caller fixes that part instead of re-running everything.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn timeout_names_the_still_running_segment() {
         let _lock = crate::core::data_dir::test_env_lock();
         let env = std::collections::HashMap::new();
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn utf8_bytes_survive_shell_roundtrip() {
         let (output, code) = execute_command_in(
             "printf '\\xD0\\x9F\\xD1\\x80\\xD0\\xB8\\xD0\\xB2\\xD0\\xB5\\xD1\\x82'",
@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)] // ReadToEnd() blocks indefinitely on Windows CI
+    #[cfg_attr(windows, ignore = "ReadToEnd() blocks indefinitely on Windows")]
     fn execute_command_closes_stdin() {
         let command = "sh -c 'if read -t 1 line; then echo 67890; else echo 12345; fi'";
         let (output, code) = execute_command_in(command, ".");
@@ -530,13 +530,13 @@ mod tests {
         );
     }
 
-    /// #945: a command that finishes but leaves a process holding the stdout
+    /// A command that finishes but leaves a process holding the stdout
     /// pipe open (here a backgrounded `sleep`) must NOT lose the foreground
     /// output. The old `recv_timeout(...).unwrap_or_default()` discarded
     /// everything on the reader timeout; now the captured prefix survives and
     /// the still-draining reader is flagged instead of returning a bare exit.
     #[test]
-    #[cfg_attr(windows, ignore)] // POSIX backgrounding (`&`) + sleep
+    #[cfg_attr(windows, ignore = "POSIX backgrounding (`&`) and sleep")]
     fn background_pipe_holder_keeps_foreground_output() {
         let (output, code) = execute_command_in("echo REPRO_CANARY_945; sleep 4 &", ".");
         assert_eq!(code, 0, "command should succeed: {output:?}");
@@ -551,15 +551,15 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn forwards_captured_agent_runtime_env() {
-        // #370: the MCP server process lacks CODEX_THREAD_ID; a hook captured it
-        // from the agent shell. ctx_shell must still forward it to the child.
+        // The MCP server process lacks CODEX_THREAD_ID; a hook captured it
+        // from the agent shell. sobre_shell must still forward it to the child.
         let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join("lean_ctx_exec_runtime_env");
+        let dir = std::env::temp_dir().join("sobre_exec_runtime_env");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", &dir);
+        crate::test_env::set_var("SOBRE_DATA_DIR", &dir);
 
         // Simulate a hook capturing the var from the native agent environment.
         crate::test_env::remove_var("CODEX_THREAD_ID");
@@ -570,7 +570,7 @@ mod tests {
 
         let (output, code) = execute_command_in("printf 'TID=%s' \"$CODEX_THREAD_ID\"", ".");
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&dir);
 
         assert_eq!(code, 0, "command failed: {output}");
@@ -580,10 +580,10 @@ mod tests {
         );
     }
 
-    /// #995: bytes emitted before a timeout remain visible; a timeout notice is
+    /// Bytes emitted before a timeout remain visible; a timeout notice is
     /// additive rather than a replacement for useful subprocess output.
     #[test]
-    #[cfg_attr(windows, ignore)] // POSIX sleep
+    #[cfg_attr(windows, ignore = "POSIX sleep")]
     fn per_call_timeout_preserves_partial_output() {
         let (output, code) = super::execute_command_with_env(
             "printf TIMEOUT_PARTIAL_995; sleep 3",

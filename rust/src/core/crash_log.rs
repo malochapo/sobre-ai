@@ -1,12 +1,12 @@
 //! Persistent crash log for panic diagnosability.
 //!
-//! Motivated by upstream issue #378: 38 SIGABRT coredumps from a stripped
+//! Motivated by an upstream report: 38 SIGABRT coredumps from a stripped
 //! release binary left users (and us) with zero actionable data, because the
 //! panic hook only printed to stderr — which is lost for daemon, LaunchAgent
 //! and MCP-child processes.
 //!
 //! Every panic now also appends a structured entry (timestamp, version, thread,
-//! location, payload, backtrace) to `~/.lean-ctx/logs/crash.log` so the *first*
+//! location, payload, backtrace) to `<data dir>/logs/crash.log` so the *first*
 //! panic of a panic→abort cascade is always recoverable after the fact.
 //!
 //! Constraints: the hook must never panic itself, never block meaningfully,
@@ -19,9 +19,7 @@ use std::path::{Path, PathBuf};
 const MAX_LOG_BYTES: u64 = 1024 * 1024;
 
 fn crash_log_dir() -> Option<PathBuf> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir()
-        .ok()?
-        .join("logs");
+    let dir = crate::core::data_dir::sobre_data_dir().ok()?.join("logs");
     std::fs::create_dir_all(&dir).ok()?;
     Some(dir)
 }
@@ -51,7 +49,7 @@ fn write_entry_to(dir: &Path, location: &str, thread: &str, payload: &str) -> Op
 
     let backtrace = std::backtrace::Backtrace::force_capture();
     let entry = format!(
-        "=== panic at {} (lean-ctx v{}) ===\nthread: {thread}\nlocation: {location}\npayload: {payload}\nbacktrace:\n{backtrace}\n\n",
+        "=== panic at {} (sobre v{}) ===\nthread: {thread}\nlocation: {location}\npayload: {payload}\nbacktrace:\n{backtrace}\n\n",
         chrono::Utc::now().to_rfc3339(),
         env!("CARGO_PKG_VERSION"),
     );
@@ -83,20 +81,20 @@ pub fn write_crash_entry(info: &std::panic::PanicHookInfo<'_>) -> Option<PathBuf
 }
 
 /// Installs the process-wide panic hook: persistent crash log + the friendly
-/// stderr message. Used by the binary entry point (CLI, MCP server, proxy and
-/// daemon all run through it).
+/// stderr message. Used by the binary entry point (CLI, MCP server and proxy
+/// all run through it).
 ///
 /// The hook itself must be panic-free: a panic inside the panic hook is a
 /// double panic and the runtime `abort()`s the whole process. `eprintln!`
 /// panics on I/O errors — background workers whose stderr is gone (terminal
 /// closed, parent recycled the pipe → EPIPE) turned every ordinary panic into
-/// a SIGABRT coredump (GitHub #378: 38 cores, all `abort` in the panic path).
+/// a SIGABRT coredump (38 cores, all `abort` in the panic path).
 /// Everything here is therefore best-effort writes + catch_unwind.
 pub fn install_panic_hook() {
     std::panic::set_hook(Box::new(|info| {
         use std::io::Write;
 
-        // #826: stderr BrokenPipe panics are harmless — they happen when
+        // Stderr BrokenPipe panics are harmless — they happen when
         // the MCP client (Codex CLI) closes the pipe while tracing/eprintln!
         // is still writing. Don't log these as crashes.
         let is_broken_pipe = info
@@ -116,9 +114,9 @@ pub fn install_panic_hook() {
                 .unwrap_or_default();
 
         let mut msg = String::from(
-            "lean-ctx: unexpected error (your command was not affected)\n\
-             \x20 Disable temporarily: lean-ctx-off\n\
-             \x20 Full uninstall:      lean-ctx uninstall\n",
+            "sobre: unexpected error (your command was not affected)\n\
+             \x20 Diagnose and repair: sobre doctor --fix\n\
+             \x20 Full uninstall:      sobre uninstall\n",
         );
         if let Some(m) = info.payload().downcast_ref::<&str>() {
             let _ = std::fmt::Write::write_fmt(&mut msg, format_args!("  Details: {m}\n"));

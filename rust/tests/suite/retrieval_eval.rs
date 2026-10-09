@@ -21,7 +21,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use lean_ctx::core::spreading_activation;
+use sobre::core::spreading_activation;
 
 /// One labelled benchmark query.
 struct EvalQuery {

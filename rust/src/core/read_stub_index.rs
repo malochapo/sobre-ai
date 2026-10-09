@@ -1,18 +1,18 @@
-//! Persistent, conversation-scoped index of fully-delivered file reads (#955).
+//! Persistent, conversation-scoped index of fully-delivered file reads.
 //!
 //! The in-memory [`SessionCache`](crate::core::cache::SessionCache) is wiped on
-//! every daemon restart (and emptied by the idle-TTL clear), so a re-read of an
+//! every MCP restart (and emptied by the idle-TTL clear), so a re-read of an
 //! unchanged file afterwards re-delivers the whole body. This index persists the
 //! *minimal bookkeeping* needed to serve the `[unchanged]` stub — **never the
 //! content** — so a re-read in the SAME conversation collapses to the cheap stub
 //! even across a restart. Content is always re-read from disk; only delivery
-//! bookkeeping persists, so tool-output determinism (#498) is untouched.
+//! bookkeeping persists, so tool-output determinism is untouched.
 //!
 //! ## Correctness
 //! A cold stub (served when the live cache has no entry) is gated harder than a
 //! warm one: it requires a *known, matching* conversation
 //! ([`crate::core::conversation::conversation_allows_cold_stub`]) plus an
-//! mtime+md5 match against the current file. A new chat after a restart cannot
+//! mtime+hash match against the current file. A new chat after a restart cannot
 //! prove the content is in its context, so it gets a cold full read — never a
 //! misleading stub. A host compaction drops the whole index (the conversation's
 //! context was summarised away), mirroring `SessionCache::reset_delivery_flags`.
@@ -55,7 +55,7 @@ impl SerMtime {
 pub struct StubRecord {
     /// Canonical (normalized) path key.
     pub path: String,
-    /// md5 of the delivered content (lossy-UTF-8 view, matching `SessionCache`).
+    /// Hash of the delivered content (lossy-UTF-8 view, matching `SessionCache`).
     pub hash: String,
     mtime: Option<SerMtime>,
     pub line_count: usize,
@@ -85,7 +85,7 @@ impl StubRecord {
             line_count,
             file_ref,
             delivered_conversation,
-            updated_at: now_unix(),
+            updated_at: crate::core::clock::now_unix(),
         }
     }
 
@@ -95,22 +95,20 @@ impl StubRecord {
     }
 }
 
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 /// On-disk shape: a sorted record list (sorted for a stable file, though the
 /// file is internal state and not a cacheable tool output).
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct IndexFile {
     records: Vec<StubRecord>,
+    /// The host compaction marker the index was last emptied for, so a new
+    /// process does not empty it again for the same compaction.
+    compaction_ts: u64,
 }
 
 #[derive(Debug, Default)]
 struct ReadStubIndex {
     records: HashMap<String, StubRecord>,
+    compaction_ts: u64,
 }
 
 impl ReadStubIndex {
@@ -138,7 +136,10 @@ impl ReadStubIndex {
     fn to_file(&self) -> IndexFile {
         let mut records: Vec<StubRecord> = self.records.values().cloned().collect();
         records.sort_by(|a, b| a.path.cmp(&b.path));
-        IndexFile { records }
+        IndexFile {
+            records,
+            compaction_ts: self.compaction_ts,
+        }
     }
 
     fn from_file(file: IndexFile) -> Self {
@@ -148,6 +149,7 @@ impl ReadStubIndex {
                 .into_iter()
                 .map(|r| (r.path.clone(), r))
                 .collect(),
+            compaction_ts: file.compaction_ts,
         };
         idx.enforce_cap();
         idx
@@ -170,7 +172,7 @@ fn index_path_in(data_dir: &Path) -> Option<PathBuf> {
 }
 
 fn data_dir() -> Option<PathBuf> {
-    crate::core::data_dir::lean_ctx_data_dir().ok()
+    crate::core::data_dir::sobre_data_dir().ok()
 }
 
 // --- Pure file helpers (explicit path → unit-testable without globals) -------
@@ -257,12 +259,23 @@ pub fn lookup(path: &str) -> Option<StubRecord> {
     global().read().ok()?.records.get(&key).cloned()
 }
 
-/// Drop all records (host compaction: the conversation's context was summarised)
-/// and persist the emptied index to the given base dir so a restart can't resurrect
-/// pre-compaction stubs.
-pub fn reset_in_dir(data_dir: &Path) {
+/// The compaction marker the index saved under `data_dir` was last emptied
+/// for; 0 when it never was.
+pub fn compaction_seen_in_dir(data_dir: &Path) -> u64 {
+    let path = data_dir.join("read_cache").join("stub_index.json");
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|c| serde_json::from_str::<IndexFile>(&c).ok())
+        .map_or(0, |f| f.compaction_ts)
+}
+
+/// Drop all records (host compaction `compaction_ts`: the conversation's
+/// context was summarised) and persist the emptied index to the given base dir
+/// so a restart can't resurrect pre-compaction stubs, nor empty it again.
+pub fn reset_in_dir(data_dir: &Path, compaction_ts: u64) {
     if let Ok(mut g) = global().write() {
         g.records.clear();
+        g.compaction_ts = compaction_ts;
     }
     if enabled() {
         persist_to_dir(data_dir);

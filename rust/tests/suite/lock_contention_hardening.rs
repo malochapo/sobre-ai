@@ -12,7 +12,7 @@ use tokio::sync::RwLock;
 
 #[test]
 fn adaptive_timeout_fast_returns_base() {
-    use lean_ctx::core::io_health;
+    use sobre::core::io_health;
     let base = Duration::from_secs(10);
     let adapted = io_health::adaptive_timeout(base);
     assert!(
@@ -23,7 +23,7 @@ fn adaptive_timeout_fast_returns_base() {
 
 #[test]
 fn adaptive_timeout_degraded_returns_longer_than_base() {
-    use lean_ctx::core::io_health;
+    use sobre::core::io_health;
 
     for _ in 0..10 {
         io_health::record_freeze();
@@ -60,7 +60,7 @@ async fn writer_blocks_readers_but_they_recover() {
     // Writer holds lock for 1s
     let lock_w = lock.clone();
     let writer = tokio::task::spawn_blocking(move || {
-        if let Some(mut guard) = lean_ctx::server::bounded_lock::write(&lock_w, "blocking_writer") {
+        if let Some(mut guard) = sobre::server::bounded_lock::write(&lock_w, "blocking_writer") {
             *guard = 42;
             std::thread::sleep(Duration::from_secs(1));
         }
@@ -73,8 +73,7 @@ async fn writer_blocks_readers_but_they_recover() {
     for i in 0..4 {
         let lock_r = lock.clone();
         readers.push(tokio::task::spawn_blocking(move || {
-            lean_ctx::server::bounded_lock::read(&lock_r, &format!("waiting_reader:{i}"))
-                .map(|g| *g)
+            sobre::server::bounded_lock::read(&lock_r, &format!("waiting_reader:{i}")).map(|g| *g)
         }));
     }
 
@@ -120,7 +119,7 @@ async fn writer_blocks_readers_but_they_recover() {
 
 #[tokio::test]
 async fn bounded_lock_respects_adaptive_timeout_in_degraded() {
-    use lean_ctx::core::io_health;
+    use sobre::core::io_health;
 
     // Push into degraded mode
     for _ in 0..10 {
@@ -133,7 +132,7 @@ async fn bounded_lock_respects_adaptive_timeout_in_degraded() {
     let start = Instant::now();
     let result = tokio::task::spawn_blocking({
         let lock = lock.clone();
-        move || lean_ctx::server::bounded_lock::write_within(&lock, "degraded_test", TEST_BASE)
+        move || sobre::server::bounded_lock::write_within(&lock, "degraded_test", TEST_BASE)
     })
     .await
     .unwrap();

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -6,14 +6,14 @@ use super::ranking::hash_project_root;
 use super::types::ProjectKnowledge;
 
 fn knowledge_dir(project_hash: &str) -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::lean_ctx_data_dir()?
+    Ok(crate::core::data_dir::sobre_data_dir()?
         .join("knowledge")
         .join(project_hash))
 }
 
 /// Per-project-hash mutex registry. Serializes the read-modify-write cycle of
 /// `mutate_locked` so concurrent `remember` calls within a single process (e.g.
-/// parallel MCP tool calls) cannot clobber each other (issue #326). The outer
+/// parallel MCP tool calls) cannot clobber each other. The outer
 /// map lock is held only briefly to clone the inner `Arc`; the inner lock is
 /// held across the load → mutate → save cycle.
 fn knowledge_lock(project_hash: &str) -> Arc<Mutex<()>> {
@@ -32,8 +32,8 @@ fn knowledge_lock(project_hash: &str) -> Arc<Mutex<()>> {
 /// knowledge store. The returned file handle holds the lock until it is
 /// dropped; the OS releases it automatically if the process exits (even on
 /// crash), so there are no stale locks. This serializes the read-modify-write
-/// cycle across *separate processes* (parallel CLI invocations, CLI + daemon +
-/// MCP server), complementing the in-process mutex (issue #326).
+/// cycle across *separate processes* (parallel CLI invocations, CLI + MCP
+/// server), complementing the in-process mutex.
 fn acquire_file_lock(dir: &Path) -> Option<std::fs::File> {
     use fs2::FileExt;
     let lock_path = dir.join(".knowledge.lock");
@@ -58,7 +58,7 @@ fn acquire_file_lock(dir: &Path) -> Option<std::fs::File> {
 /// same directory and renaming it into place. `rename` is atomic on every
 /// supported platform (and replaces the target on Windows), so readers and
 /// concurrent writers never observe a half-written file — preventing the
-/// trailing-garbage JSON corruption reported in issue #326.
+/// trailing-garbage JSON corruption.
 fn write_json_atomic(dir: &Path, path: &Path, json: &str) -> Result<(), String> {
     let unique = format!(
         "knowledge.json.tmp.{}.{}",
@@ -82,35 +82,6 @@ fn write_json_atomic(dir: &Path, path: &Path, json: &str) -> Result<(), String> 
 }
 
 impl ProjectKnowledge {
-    pub fn list_project_roots() -> Result<Vec<String>, String> {
-        let base = crate::core::data_dir::lean_ctx_data_dir()?.join("knowledge");
-        if !base.exists() {
-            return Ok(Vec::new());
-        }
-
-        let mut roots = Vec::new();
-        let mut seen = HashSet::new();
-        let entries = std::fs::read_dir(&base).map_err(|e| e.to_string())?;
-        for entry in entries.flatten() {
-            let path = entry.path().join("knowledge.json");
-            if !path.is_file() {
-                continue;
-            }
-            let Ok(content) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let Ok(knowledge) = serde_json::from_str::<Self>(&content) else {
-                continue;
-            };
-            if seen.insert(knowledge.project_root.clone()) {
-                roots.push(knowledge.project_root);
-            }
-        }
-
-        roots.sort();
-        Ok(roots)
-    }
-
     pub fn save(&self) -> Result<(), String> {
         let dir = knowledge_dir(&self.project_hash)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -134,8 +105,7 @@ impl ProjectKnowledge {
     /// read-modify-write is serialized against parallel
     /// `remember`/`remove`/`reindex`. That side-car write used to run lock-free,
     /// so concurrent callers clobbered each other's embeddings and pruned
-    /// just-stored vectors, degrading semantic recall (issue #412, a #326
-    /// follow-up).
+    /// just-stored vectors, degrading semantic recall.
     pub(crate) fn with_project_lock<T>(project_root: &str, f: impl FnOnce() -> T) -> T {
         let hash = hash_project_root(project_root);
         let lock = knowledge_lock(&hash);
@@ -162,8 +132,8 @@ impl ProjectKnowledge {
     /// the closure always operates on the latest on-disk state; this is what
     /// prevents lost updates when several `remember` calls run in parallel —
     /// whether as threads in one process (parallel MCP calls) or as separate
-    /// processes (parallel CLI invocations, CLI + daemon + MCP server) — see
-    /// issue #326. Returns the persisted knowledge plus the closure's return
+    /// processes (parallel CLI invocations, CLI + MCP server).
+    /// Returns the persisted knowledge plus the closure's return
     /// value so the caller can build a response from the committed state.
     pub fn mutate_locked<T>(
         project_root: &str,
@@ -187,7 +157,7 @@ impl ProjectKnowledge {
             if size > 1_000_000 {
                 tracing::warn!(
                     "knowledge.json is large ({:.1} MB) — recall may be slow. \
-                     Consider running ctx_knowledge(action=\"consolidate\") to compact it.",
+                     Consider running sobre_knowledge(action=\"consolidate\") to compact it.",
                     size as f64 / 1_048_576.0,
                 );
             }
@@ -215,7 +185,7 @@ mod tests {
         // independent `open()`s in the same process behave like two separate
         // processes: while the first holds the exclusive lock, the second must
         // fail to acquire it. This validates the cross-process guarantee that
-        // protects parallel CLI writes (issue #326).
+        // protects parallel CLI writes.
         let dir = tempfile::tempdir().unwrap();
         let held = acquire_file_lock(dir.path()).expect("first lock must succeed");
 

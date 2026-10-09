@@ -1,22 +1,19 @@
 pub(crate) mod batch_read;
-pub mod ctx_callgraph;
-pub mod ctx_checkpoint;
-pub mod ctx_compose;
-pub mod ctx_expand;
-pub mod ctx_glob;
-pub mod ctx_graph;
-pub mod ctx_impact;
-pub mod ctx_knowledge;
-pub mod ctx_outline;
-pub mod ctx_patch;
-pub mod ctx_read;
-pub mod ctx_refactor;
-pub mod ctx_review;
-pub mod ctx_search;
-pub mod ctx_session;
-pub mod ctx_shell;
-pub mod ctx_tree;
-pub(crate) mod impl_edit;
+pub mod sobre_checkpoint;
+pub mod sobre_compose;
+pub mod sobre_expand;
+pub mod sobre_glob;
+pub mod sobre_graph;
+pub mod sobre_knowledge;
+pub mod sobre_outline;
+pub mod sobre_patch;
+pub mod sobre_read;
+pub mod sobre_refactor;
+pub mod sobre_review;
+pub mod sobre_search;
+pub mod sobre_session;
+pub mod sobre_shell;
+pub mod sobre_tree;
 
 #[cfg(test)]
 mod schema_qa_tests;
@@ -27,13 +24,12 @@ pub(crate) fn resolve_path_sync(
     session: &crate::core::session::SessionState,
     raw: &str,
 ) -> Result<String, String> {
-    crate::core::path_resolve::resolve_tool_path_with_roots(
+    crate::core::path_resolve::resolve_tool_path(
         session.project_root.as_deref(),
         session.shell_cwd.as_deref(),
         raw,
-        &session.extra_roots,
     )
 }
 
-// #168 removed: tool descriptions no longer steer toward ctx_* over native.
-// Replacement guidance lives in AGENTS.md / CLAUDE.md rules files.
+// Tool descriptions do not steer toward sobre_* over native tools; that guidance
+// lives in one place, the MCP server instructions (`crate::instructions`).

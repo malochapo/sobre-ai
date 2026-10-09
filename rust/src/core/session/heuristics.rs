@@ -15,28 +15,12 @@ pub(crate) fn normalize_loaded_session(mut session: SessionState) -> SessionStat
 
         // String check first: only an agent/temp root is ever repaired, so a
         // real project root is never stat-ed here. Probing persisted paths on
-        // every session load tripped the macOS TCC prompt from the launchd
-        // daemon (#356) — has_project_marker is additionally TCC-guarded.
+        // every session load tripped the macOS TCC prompt from a launchd-owned
+        // process — has_project_marker is additionally TCC-guarded.
         if is_agent_or_temp_dir(root_p) && !has_project_marker(root_p) && has_project_marker(cwd_p)
         {
             session.project_root = Some(cwd.clone());
         }
-    }
-
-    if session.compression_level.is_empty() {
-        if session.terse_mode {
-            session.compression_level = "lite".to_string();
-        } else {
-            // Do NOT call Config::load() here — this function is called during
-            // Config::load() → find_project_root() → SessionState::load_latest(),
-            // so it would re-enter Config::load() and deadlock on its OnceLock (#301).
-            session.compression_level = "off".to_string();
-        }
-    } else if !session.terse_mode {
-        let level =
-            crate::core::config::CompressionLevel::from_str_label(&session.compression_level)
-                .unwrap_or_default();
-        session.terse_mode = level.is_active();
     }
 
     session
@@ -68,7 +52,7 @@ pub(crate) fn session_matches_project_root(
 /// the common case (identical strings); `canonicalize` only matters when the
 /// stored path reaches the same directory through a symlink. A launchd-owned
 /// process must not canonicalize paths under `~/Documents` & co. — the stat
-/// pops the macOS TCC prompt (#356) — so it falls back to the lexical path.
+/// pops the macOS TCC prompt — so it falls back to the lexical path.
 fn resolve_for_match(path: &std::path::Path) -> std::path::PathBuf {
     if crate::core::pathutil::may_probe_path(path) {
         crate::core::pathutil::safe_canonicalize_or_self(path)

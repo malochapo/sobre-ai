@@ -17,7 +17,7 @@
 //! handle keeps resolving after the symbol drifts to a new line — strictly more
 //! robust than a brittle line-only reference.
 //!
-//! Determinism (#498): emitting a handle is a pure function of `(path, name,
+//! Determinism: emitting a handle is a pure function of `(path, name,
 //! line)`, so any output carrying handles stays byte-stable across identical
 //! re-reads and provider prompt caching still applies.
 
@@ -95,14 +95,14 @@ pub fn emit(path: &str, name: &str, line: usize) -> String {
     SymbolHandle::new(path, name, line).emit()
 }
 
-/// One-line, self-describing usage hint (GL#580) for outputs that list located
+/// One-line, self-describing usage hint for outputs that list located
 /// symbols (outline, signatures/map, call-graph). Rather than repeat a full
 /// handle on every line — the file/name/line are already shown — these outputs
 /// carry this single hint telling the agent that each `name @Lstart` is
 /// addressable as a stable handle. Matches the codebase's `↳ …` hint style and
-/// is a constant, so it stays deterministic (#498).
+/// is a constant, so it stays deterministic.
 pub const USAGE_HINT: &str =
-    "↳ re-target any symbol: ctx_search(action=\"symbol\", handle=\"path#name@Lstart\")";
+    "↳ re-target any symbol: sobre_search(action=\"symbol\", handle=\"path#name@Lstart\")";
 
 #[cfg(test)]
 mod tests {

@@ -23,30 +23,25 @@ pub enum ImportKind {
 pub struct CallSite {
     pub callee: String,
     pub line: usize,
-    pub col: usize,
-    pub receiver: Option<String>,
     pub is_method: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct TypeDef {
     pub name: String,
-    pub kind: TypeDefKind,
     pub line: usize,
     pub end_line: usize,
-    pub is_exported: bool,
-    pub generics: Vec<String>,
     /// Declaring namespace, when the language makes it cheaply derivable from
     /// the AST. Currently only filled for C# (block- and file-scoped); other
     /// languages leave it `None`. Drives namespace-aware type resolution in
-    /// `ctx_impact` so homonyms across namespaces are not conflated (GH #398).
+    /// `sobre_graph action=impact` so homonyms across namespaces are not conflated.
     pub namespace: Option<String>,
 }
 
 /// A C# extension method (`static T Foo(this X x, …)`). Captured so that a call
 /// `value.Foo()` can be linked to the file that *defines* the extension, even
 /// though the receiver is an instance and the definer's type name is never
-/// written at the call site (GH #398 follow-up). Kept deliberately small —
+/// written at the call site (follow-up). Kept deliberately small —
 /// only what the host-resolution needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtMethodDef {
@@ -55,25 +50,11 @@ pub struct ExtMethodDef {
     pub end_line: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TypeDefKind {
-    Class,
-    Interface,
-    TypeAlias,
-    Enum,
-    Struct,
-    Trait,
-    Protocol,
-    Record,
-    Annotation,
-    Union,
-}
-
 /// A *usage* of a named type (field/parameter/property/return type, base
 /// class, generic argument, cast, `typeof`). Languages with implicit
 /// same-namespace/package visibility (C#, Java) consume types without any
 /// import statement, so type usages are the only reliable file-dependency
-/// signal there (GH #398).
+/// signal there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeUse {
     pub name: String,

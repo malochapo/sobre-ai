@@ -1,14 +1,14 @@
-//! Recovery context for failed `ctx_edit` calls (issue #331).
+//! Recovery context for failed `sobre_patch` text replacements.
 //!
 //! When an edit cannot be applied, these helpers turn the failure into
 //! actionable guidance so the agent does not have to spend a turn re-reading
 //! or guessing which file it meant:
 //!
 //! - [`moved_or_deleted_hint`]: the target file does not exist — was it moved,
-//!   or is the name/path wrong? (#331 point 3)
-//! - [`cross_file_hint`]: `old_string` is not in the target file — does a
+//!   or is the name/path wrong? (point 3)
+//! - [`cross_file_hint`]: `old_text` is not in the target file — does a
 //!   matching line live in a *different* file the agent should have targeted?
-//!   (#331 point 2)
+//!   (point 2)
 //!
 //! Both run only on the (rare) edit-failure path and replace a file read the
 //! agent would otherwise do anyway, so a bounded directory walk is an
@@ -27,13 +27,13 @@ const MAX_WALK_DEPTH: usize = 12;
 const MAX_FILES_SCANNED: usize = 5_000;
 /// Stop after this many candidate files — more than enough to disambiguate.
 const MAX_HITS: usize = 5;
-/// Skip files larger than this when scanning content (matches `ctx_search`).
+/// Skip files larger than this when scanning content (matches `sobre_search`).
 const MAX_FILE_SIZE: u64 = 512_000;
 /// Minimum length for a line to be a distinctive cross-file search needle,
 /// so trivial lines like `}` or `{` never trigger noisy matches.
 const MIN_NEEDLE_LEN: usize = 12;
 
-/// #331 point 3: the target file does not exist. Search the enclosing repo for
+/// Point 3: the target file does not exist. Search the enclosing repo for
 /// a file with the same name so the agent learns whether it moved or the
 /// path/name is simply wrong. Returns a leading-newline hint, or empty if the
 /// path has no usable file name.
@@ -89,8 +89,8 @@ pub(crate) fn moved_or_deleted_hint(target: &Path) -> String {
     }
 }
 
-/// #331 point 2: `old_string` is not in the target file. Search sibling files
-/// for the most distinctive line of `old_string` so the agent can re-target
+/// Point 2: `old_text` is not in the target file. Search sibling files
+/// for the most distinctive line of `old_text` so the agent can re-target
 /// the right file instead of assuming it picked the correct one. Returns a
 /// leading-newline hint, or empty if nothing distinctive matches elsewhere.
 pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
@@ -106,7 +106,7 @@ pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
     let mut scanned = 0usize;
     for entry in walk(&root) {
         // Only ever read regular files. A FIFO/socket/device would make the
-        // `read_to_string` below block forever (the #331 CI hang); a symlink
+        // `read_to_string` below block forever (the CI hang); a symlink
         // could redirect the read outside the repo. Skip anything non-regular.
         if entry.file_type().is_none_or(|ft| !ft.is_file()) {
             continue;
@@ -141,7 +141,7 @@ pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
     if hits.is_empty() {
         return String::new();
     }
-    let mut out = String::from("\nold_string was not found here, but a matching line exists in:");
+    let mut out = String::from("\nold_text was not found here, but a matching line exists in:");
     for p in &hits {
         let _ = write!(out, "\n  - {}", p.display());
     }
@@ -301,7 +301,7 @@ mod tests {
         assert!(hint.contains("No file at"), "got: {hint}");
     }
 
-    /// Regression for the #331 CI hang: a FIFO (or any non-regular file) in the
+    /// Regression for the CI hang: a FIFO (or any non-regular file) in the
     /// repo must be skipped, never `read_to_string`-d, or the walk blocks
     /// forever. Runs the search on a worker thread with a hard timeout so a
     /// regression fails fast instead of re-introducing a 90-minute hang.
@@ -338,7 +338,7 @@ mod tests {
             ));
         });
         let hint = rx.recv_timeout(Duration::from_secs(10)).expect(
-            "cross_file_hint hung on a FIFO — non-regular files must be skipped (#331 regression)",
+            "cross_file_hint hung on a FIFO — non-regular files must be skipped (regression)",
         );
         assert!(hint.contains("b.rs"), "got: {hint}");
         assert!(

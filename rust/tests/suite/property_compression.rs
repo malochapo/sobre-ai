@@ -1,19 +1,7 @@
-use lean_ctx::core::compressor::safeguard_ratio;
-// Property/fuzz tests MUST use the deterministic entry point. The default
-// `entropy_compress` runs the #544 semantic-redundancy filter, which self-
-// activates the shared neural embedding engine on first use (#551). The
-// `cfg!(test)` guard that suppresses that background load only covers *unit*
-// tests — this is an *integration* test, so the lib is linked without
-// `cfg(test)` and the engine would load and run real per-line GEMM inference
-// for every generated case, turning the proptest run into an effective hang on
-// any machine that has the embedding model present. The deterministic path is
-// purpose-built for run-to-run / machine-to-machine reproducibility and never
-// touches the engine, so it exercises the same compression invariants without
-// the nondeterministic, model-dependent cost.
-use lean_ctx::core::entropy::entropy_compress_deterministic;
-use lean_ctx::core::patterns::compress_output;
-use lean_ctx::core::tokens::count_tokens;
 use proptest::prelude::*;
+use sobre::core::compressor::safeguard_ratio;
+use sobre::core::patterns::compress_output;
+use sobre::core::tokens::count_tokens;
 
 proptest! {
     #[test]
@@ -42,35 +30,6 @@ proptest! {
         prop_assert!(
             result == original || result == compressed,
             "safeguard_ratio must return either original or compressed"
-        );
-    }
-
-    #[test]
-    fn entropy_compress_output_is_subset_of_lines(
-        content in "[a-zA-Z0-9(){};= \n]{10,800}"
-    ) {
-        let result = entropy_compress_deterministic(&content);
-        for line in result.output.lines() {
-            if line.trim().is_empty() {
-                continue;
-            }
-            prop_assert!(
-                content.contains(line.trim()),
-                "entropy output line not found in original: {:?}",
-                line
-            );
-        }
-    }
-
-    #[test]
-    fn entropy_compress_tokens_not_greater(
-        content in "[a-zA-Z0-9(){};= \n]{10,600}"
-    ) {
-        let result = entropy_compress_deterministic(&content);
-        prop_assert!(
-            result.compressed_tokens <= result.original_tokens,
-            "compressed {} > original {}",
-            result.compressed_tokens, result.original_tokens
         );
     }
 
@@ -110,13 +69,6 @@ mod fuzz_no_panic {
         ) {
             let _ = safeguard_ratio("", &text);
             let _ = safeguard_ratio(&text, "");
-        }
-
-        #[test]
-        fn entropy_compress_no_panic(
-            content in "\\PC{0,1000}"
-        ) {
-            let _ = entropy_compress_deterministic(&content);
         }
     }
 }

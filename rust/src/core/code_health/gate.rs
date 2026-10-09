@@ -1,55 +1,23 @@
-//! Edit-time code-health gate — shared by `ctx_edit`, `ctx_patch`, and the
-//! native-edit hook.
+//! Edit-time code-health gate, run on every `sobre_patch` write.
 //!
-//! Drift prevention is the lever lean-ctx has that a post-hoc scanner does not:
-//! it sits *in the edit path*, so it can catch a complexity regression at the
-//! moment it is introduced. The gate is pure except for reading `[code_health]`
-//! config, and its notice text is deterministic (#498-safe).
+//! Drift prevention is the lever sobre has that a post-hoc scanner does not:
+//! it sits *in the edit path*, so it can flag a complexity regression at the
+//! moment it is introduced. The gate is advisory: it never blocks a write. Its
+//! notice text is deterministic.
 
-use super::{GateMode, cognitive_delta, format_gate_notice, worst_regression};
+use super::{cognitive_delta, format_gate_notice, worst_regression};
 
-/// Decision of the edit-gate for one edit.
-pub enum GateOutcome {
-    /// Allow the write; if `Some`, append this advisory notice to the output.
-    Allow(Option<String>),
-    /// Block the write with this reason (only in `gate="block"` mode).
-    Block(String),
+/// The advisory `[CODE HEALTH]` notice for an edit from `old`→`new` source in a
+/// file with `ext`, or `None` when no function regressed past the threshold.
+pub fn evaluate(old: &str, new: &str, ext: &str) -> Option<String> {
+    evaluate_with(old, new, ext, crate::core::code_health::COGNITIVE_THRESHOLD)
 }
 
-/// Evaluate the gate for an edit from `old`→`new` source in a file with `ext`,
-/// using the active `[code_health]` config (threshold + mode).
-pub fn evaluate(old: &str, new: &str, ext: &str) -> GateOutcome {
-    evaluate_with(
-        old,
-        new,
-        ext,
-        GateMode::Warn,
-        crate::core::code_health::COGNITIVE_THRESHOLD,
-    )
-}
-
-/// Pure gate evaluation with explicit `mode`/`threshold` — the unit-tested core.
-pub fn evaluate_with(
-    old: &str,
-    new: &str,
-    ext: &str,
-    mode: GateMode,
-    threshold: u32,
-) -> GateOutcome {
-    if matches!(mode, GateMode::Off) {
-        return GateOutcome::Allow(None);
-    }
+/// [`evaluate`] with an explicit `threshold` — the unit-tested core.
+pub fn evaluate_with(old: &str, new: &str, ext: &str, threshold: u32) -> Option<String> {
     let deltas = cognitive_delta(old, new, ext);
-    let Some(worst) = worst_regression(&deltas, threshold) else {
-        return GateOutcome::Allow(None);
-    };
-    let notice = format_gate_notice(worst, threshold);
-    // Block only a genuine clean→over-threshold regression; otherwise advise.
-    if matches!(mode, GateMode::Block) && worst.crosses_threshold(threshold) {
-        GateOutcome::Block(notice.clone())
-    } else {
-        GateOutcome::Allow(Some(notice))
-    }
+    let worst = worst_regression(&deltas, threshold)?;
+    Some(format_gate_notice(worst, threshold))
 }
 
 #[cfg(all(test, feature = "tree-sitter"))]
@@ -61,34 +29,13 @@ mod tests {
     const DEEP: &str = "fn f(a: bool) { if a { if a { if a { if a { if a { if a {} } } } } } }";
 
     #[test]
-    fn off_mode_allows_silently() {
-        match evaluate_with(FLAT, DEEP, "rs", GateMode::Off, 15) {
-            GateOutcome::Allow(None) => {}
-            _ => panic!("off mode must allow with no notice"),
-        }
+    fn regression_yields_a_notice() {
+        let notice = evaluate_with(FLAT, DEEP, "rs", 15).expect("a regression must notice");
+        assert!(notice.contains("[CODE HEALTH]"));
     }
 
     #[test]
-    fn warn_mode_allows_with_notice() {
-        match evaluate_with(FLAT, DEEP, "rs", GateMode::Warn, 15) {
-            GateOutcome::Allow(Some(notice)) => assert!(notice.contains("[CODE HEALTH]")),
-            _ => panic!("warn mode must allow with a notice"),
-        }
-    }
-
-    #[test]
-    fn block_mode_blocks_threshold_crossing() {
-        match evaluate_with(FLAT, DEEP, "rs", GateMode::Block, 15) {
-            GateOutcome::Block(reason) => assert!(reason.contains("[CODE HEALTH]")),
-            GateOutcome::Allow(_) => panic!("block mode must block a clean→over edit"),
-        }
-    }
-
-    #[test]
-    fn no_regression_allows_silently() {
-        match evaluate_with(FLAT, FLAT, "rs", GateMode::Block, 15) {
-            GateOutcome::Allow(None) => {}
-            _ => panic!("unchanged complexity must allow silently"),
-        }
+    fn no_regression_is_silent() {
+        assert!(evaluate_with(FLAT, FLAT, "rs", 15).is_none());
     }
 }

@@ -1,9 +1,9 @@
 //! Resident, bounded file-content cache shared across the search-index build and
-//! `ctx_search` (issue #148).
+//! `sobre_search`.
 //!
 //! Before this module the trigram [`search_index`](crate::core::search_index)
 //! build read *every* file in the corpus to extract trigrams and then threw the
-//! content away, after which `ctx_search` read the narrowed candidate files
+//! content away, after which `sobre_search` read the narrowed candidate files
 //! **again** to run the regex line-by-line — the corpus was read from disk
 //! twice. This cache lets the first reader (whichever it is) populate file
 //! contents once, keyed by absolute path and validated by `(mtime, size)`, and
@@ -53,11 +53,6 @@ impl FileState {
             mtime_ms,
             size_bytes: meta.len(),
         })
-    }
-
-    /// Convenience: `stat` the path then build the state. Costs one syscall.
-    pub fn from_path(path: &Path) -> Option<Self> {
-        Self::from_metadata(&path.metadata().ok()?)
     }
 }
 
@@ -255,7 +250,7 @@ mod tests {
         fresh_cache(1024 * 1024);
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "fn main() {}\n");
-        let state = FileState::from_path(&p).unwrap();
+        let state = FileState::from_metadata(&std::fs::metadata(&p).unwrap()).unwrap();
         assert!(get(&p, state).is_none(), "cold cache must miss");
         insert(&p, state, Arc::from("fn main() {}\n"));
         let got = get(&p, state).expect("warm cache must hit");
@@ -270,7 +265,7 @@ mod tests {
         fresh_cache(1024 * 1024);
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "v1\n");
-        let s1 = FileState::from_path(&p).unwrap();
+        let s1 = FileState::from_metadata(&std::fs::metadata(&p).unwrap()).unwrap();
         insert(&p, s1, Arc::from("v1\n"));
         assert!(get(&p, s1).is_some());
 

@@ -4,8 +4,8 @@
 //! Each test simulates a realistic user interaction pattern.
 #![allow(clippy::needless_raw_string_hashes)]
 
-use lean_ctx::core::cache::SessionCache;
-use lean_ctx::core::protocol::CrpMode;
+use sobre::core::cache::SessionCache;
+use sobre::core::protocol::CrpMode;
 use std::io::Write;
 
 /// Writes `contents`, then sets the mtime at least 2 s past both the previous
@@ -24,7 +24,7 @@ fn write_newer(path: &std::path::Path, contents: &str) {
 }
 
 // =============================================================================
-// Fix 1 + 2: ctx_read Fast-Path + mtime guard
+// Fix 1 + 2: sobre_read Fast-Path + mtime guard
 // =============================================================================
 
 mod read_cache_hits {
@@ -38,7 +38,7 @@ mod read_cache_hits {
         std::fs::write(&file, "fn v1() {}\n").unwrap();
         let path = file.to_str().unwrap();
 
-        lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -47,7 +47,7 @@ mod read_cache_hits {
         );
         super::write_newer(&file, "fn v2() { updated(); }\n");
 
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -84,7 +84,7 @@ mod zstd_bypass {
         let path = file.to_str().unwrap();
 
         // First read with full mode to populate cache
-        lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -93,7 +93,7 @@ mod zstd_bypass {
         );
 
         // First map read — processes and caches compressed output
-        let out1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out1 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "map",
@@ -103,7 +103,7 @@ mod zstd_bypass {
         assert!(!out1.content.is_empty());
 
         // Second map read — should hit compressed cache (no zstd decompression needed)
-        let out2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out2 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "map",
@@ -116,7 +116,7 @@ mod zstd_bypass {
 }
 
 // =============================================================================
-// Fix 4: ctx_shell exit code in response
+// Fix 4: sobre_shell exit code in response
 // =============================================================================
 
 mod exit_code {}
@@ -131,7 +131,7 @@ mod error_data {
     #[test]
     fn scenario_nonexistent_file_returns_error_mode() {
         let mut cache = SessionCache::new();
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             "/nonexistent/path/does_not_exist.rs",
             "full",
@@ -144,7 +144,7 @@ mod error_data {
 
     #[test]
     fn scenario_search_nonexistent_dir_returns_error() {
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = sobre::tools::sobre_search::handle_filtered(
             "pattern",
             "/nonexistent_dir_xyz",
             None,
@@ -152,7 +152,8 @@ mod error_data {
             CrpMode::Off,
             true,
             false,
-            false,
+            None,
+            None,
         )
         .text;
         assert!(
@@ -163,7 +164,7 @@ mod error_data {
 
     #[test]
     fn scenario_tree_nonexistent_dir_returns_error() {
-        let (result, _) = lean_ctx::tools::ctx_tree::handle("/nonexistent_xyz", 3, false, true);
+        let (result, _) = sobre::tools::sobre_tree::handle("/nonexistent_xyz", 3, false, true);
         assert!(
             result.starts_with("ERROR:"),
             "Expected ERROR prefix, got: {result}"
@@ -176,7 +177,7 @@ mod error_data {
         let file = dir.path().join("file.txt");
         std::fs::write(&file, "data").unwrap();
 
-        let (result, _) = lean_ctx::tools::ctx_tree::handle(file.to_str().unwrap(), 3, false, true);
+        let (result, _) = sobre::tools::sobre_tree::handle(file.to_str().unwrap(), 3, false, true);
         assert!(
             result.starts_with("ERROR:"),
             "Expected ERROR prefix, got: {result}"
@@ -199,7 +200,7 @@ mod diff_guard {
         std::fs::write(&file, "fn brand_new() {}\n").unwrap();
         let path = file.to_str().unwrap();
 
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "diff",
@@ -228,7 +229,7 @@ mod diff_guard {
         let path = file.to_str().unwrap();
 
         // Read full first
-        lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -240,7 +241,7 @@ mod diff_guard {
         super::write_newer(&file, "fn version_two() { changed(); }\n");
 
         // Now diff should work
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "diff",
@@ -256,7 +257,7 @@ mod diff_guard {
 }
 
 // =============================================================================
-// Fix 7: ctx_search early abort
+// Fix 7: sobre_search early abort
 // =============================================================================
 
 mod search_early_abort {
@@ -270,7 +271,7 @@ mod search_early_abort {
             std::fs::write(&file, format!("fn search_target_{i}() {{}}\n")).unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = sobre::tools::sobre_search::handle_filtered(
             "search_target",
             dir.path().to_str().unwrap(),
             None,
@@ -278,7 +279,8 @@ mod search_early_abort {
             CrpMode::Off,
             false,
             false,
-            false,
+            None,
+            None,
         )
         .text;
         let match_lines: Vec<&str> = result
@@ -300,7 +302,7 @@ mod search_early_abort {
             std::fs::write(&file, format!("fn unique_pattern_{i}() {{}}\n")).unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = sobre::tools::sobre_search::handle_filtered(
             "unique_pattern",
             dir.path().to_str().unwrap(),
             None,
@@ -308,7 +310,8 @@ mod search_early_abort {
             CrpMode::Off,
             false,
             false,
-            false,
+            None,
+            None,
         )
         .text;
         assert!(result.contains("3 matches"));
@@ -339,7 +342,7 @@ mod cold_read_hints {
         ).unwrap();
         let path = file.to_str().unwrap();
 
-        let out = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -355,7 +358,7 @@ mod cold_read_hints {
 }
 
 // =============================================================================
-// Fix 10: ctx_tree UX — file input / empty directory
+// Fix 10: sobre_tree UX — file input / empty directory
 // =============================================================================
 
 mod tree_ux {
@@ -365,7 +368,7 @@ mod tree_ux {
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "content").unwrap();
 
-        let (result, _) = lean_ctx::tools::ctx_tree::handle(file.to_str().unwrap(), 3, false, true);
+        let (result, _) = sobre::tools::sobre_tree::handle(file.to_str().unwrap(), 3, false, true);
         assert!(result.contains("is a file, not a directory"));
         assert!(result.contains("Use path="));
     }
@@ -375,7 +378,7 @@ mod tree_ux {
         let dir = tempfile::tempdir().unwrap();
 
         let (result, _) =
-            lean_ctx::tools::ctx_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
+            sobre::tools::sobre_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
         assert!(
             result.contains("empty directory"),
             "Expected 'empty directory' message, got: {result}"
@@ -388,7 +391,7 @@ mod tree_ux {
 // =============================================================================
 
 mod compression_error_guard {
-    use lean_ctx::shell::compress::compress_if_beneficial_pub;
+    use sobre::shell::compress::compress_if_beneficial_pub;
 
     #[test]
     fn scenario_cargo_check_error_fully_preserved() {
@@ -441,9 +444,9 @@ warning: `mylib` (lib) generated 1 warning
 
     #[test]
     fn scenario_cargo_build_multiple_errors_preserved() {
-        let error_output = r#"   Compiling lean-ctx v3.6.8
+        let error_output = r#"   Compiling sobre v3.6.8
 error[E0502]: cannot borrow `*cache` as mutable because it is also borrowed as immutable
-   --> src/tools/ctx_read.rs:320:9
+   --> src/tools/sobre_read.rs:320:9
     |
 318 |     if let Some(existing) = cache.get(path) {
     |                             -------------- immutable borrow occurs here
@@ -456,11 +459,11 @@ error[E0063]: missing field `last_flush` in initializer of `ContextLedger`
 101 |         Self {
     |         ^^^^ missing `last_flush`
 
-error: could not compile `lean-ctx` (lib) due to 2 previous errors
+error: could not compile `sobre` (lib) due to 2 previous errors
 "#;
         let result = compress_if_beneficial_pub("cargo check 2>&1", error_output);
         assert!(
-            result.contains("src/tools/ctx_read.rs:320:9"),
+            result.contains("src/tools/sobre_read.rs:320:9"),
             "First error location lost! Got: {result}"
         );
         assert!(
@@ -656,7 +659,7 @@ mod integration_workflow {
         let path = file.to_str().unwrap();
 
         // 1. Agent reads file for the first time
-        let out1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out1 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -667,7 +670,7 @@ mod integration_workflow {
         assert_ne!(out1.resolved_mode, "error");
 
         // 2. Agent reads same file again (cache hit, no disk I/O)
-        let out2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out2 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -680,7 +683,7 @@ mod integration_workflow {
         super::write_newer(&file, "fn edited_version() { new_logic(); }\n");
 
         // 4. Agent reads again — detects change
-        let out3 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let out3 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -708,7 +711,7 @@ mod integration_workflow {
             writeln!(f, "pub fn helper_{i}() {{}}").unwrap();
         }
 
-        let result = lean_ctx::tools::ctx_search::handle(
+        let result = sobre::tools::sobre_search::handle_filtered(
             "handler_",
             dir.path().to_str().unwrap(),
             Some("*.rs"),
@@ -716,7 +719,8 @@ mod integration_workflow {
             CrpMode::Off,
             false,
             false,
-            false,
+            None,
+            None,
         )
         .text;
         assert!(result.contains("handler_"));
@@ -739,7 +743,7 @@ mod integration_workflow {
         std::fs::write(tests.join("integration.rs"), "#[test] fn it_works() {}").unwrap();
 
         let (result, _) =
-            lean_ctx::tools::ctx_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
+            sobre::tools::sobre_tree::handle(dir.path().to_str().unwrap(), 3, false, true);
         assert!(result.contains("src"));
         assert!(result.contains("tests"));
         assert!(!result.starts_with("ERROR:"));
@@ -757,7 +761,7 @@ mod integration_workflow {
         let path = file.to_str().unwrap();
 
         // 1. Read with full mode
-        let full = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let full = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "full",
@@ -767,7 +771,7 @@ mod integration_workflow {
         assert!(full.content.contains("Config"));
 
         // 2. Read with signatures mode (should use compressed cache on 2nd call)
-        let sig1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let sig1 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "signatures",
@@ -776,7 +780,7 @@ mod integration_workflow {
         );
         assert!(!sig1.content.is_empty());
 
-        let sig2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let sig2 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "signatures",
@@ -787,7 +791,7 @@ mod integration_workflow {
         assert_eq!(sig1.content, sig2.content);
 
         // 3. Read with map mode
-        let map1 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
+        let map1 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
             "map",

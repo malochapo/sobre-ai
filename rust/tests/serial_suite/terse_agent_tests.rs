@@ -1,8 +1,7 @@
-use lean_ctx::core::config::{CompressionLevel, Config};
-use lean_ctx::instructions;
-use lean_ctx::tools::CrpMode;
+use sobre::core::config::{CompressionLevel, Config};
+use sobre::instructions;
 
-/// Points every lean-ctx dir at a fresh temp dir holding `config.toml` with the
+/// Points every sobre dir at a fresh temp dir holding `config.toml` with the
 /// given contents, restoring the previous env on drop. The serial harness runs
 /// one test at a time, so mutating the process env here is race-free.
 struct ConfigGuard {
@@ -10,7 +9,7 @@ struct ConfigGuard {
     prev: Vec<(&'static str, Option<std::ffi::OsString>)>,
 }
 
-const ISOLATED_ENV_VARS: [&str; 2] = ["LEAN_CTX_DATA_DIR", "LEAN_CTX_CONFIG_DIR"];
+const ISOLATED_ENV_VARS: [&str; 2] = ["SOBRE_DATA_DIR", "SOBRE_CONFIG_DIR"];
 
 fn with_config(toml: &str) -> ConfigGuard {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -38,10 +37,7 @@ impl Drop for ConfigGuard {
     }
 }
 
-fn set_compression(compression: &str) -> ConfigGuard {
-    let value = CompressionLevel::from_str_label(compression)
-        .expect("known level name")
-        .value();
+fn set_compression(value: f64) -> ConfigGuard {
     with_config(&format!("compression_level = {value}\n"))
 }
 
@@ -49,8 +45,8 @@ fn set_compression(compression: &str) -> ConfigGuard {
 
 #[test]
 fn compression_level_lite_injects_concise() {
-    let _g = set_compression("lite");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let _g = set_compression(0.3);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: concise"),
         "compression lite should inject concise prompt"
@@ -59,8 +55,8 @@ fn compression_level_lite_injects_concise() {
 
 #[test]
 fn compression_level_standard_injects_dense() {
-    let _g = set_compression("standard");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let _g = set_compression(0.5);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: dense"),
         "compression standard should inject dense prompt"
@@ -73,8 +69,8 @@ fn compression_level_standard_injects_dense() {
 
 #[test]
 fn compression_level_max_injects_expert_terse() {
-    let _g = set_compression("max");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let _g = set_compression(0.7);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: expert-terse"),
         "compression max should inject expert-terse prompt"
@@ -83,8 +79,8 @@ fn compression_level_max_injects_expert_terse() {
 
 #[test]
 fn compression_level_off_no_output_style() {
-    let _g = set_compression("off");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let _g = set_compression(0.0);
+    let text = instructions::build_instructions();
     assert!(
         !text.contains("OUTPUT STYLE"),
         "compression off should not inject any OUTPUT STYLE block"
@@ -96,7 +92,7 @@ fn compression_level_off_no_output_style() {
 #[test]
 fn compression_level_reads_as_band() {
     let config: Config = toml::from_str("compression_level = 0.5").expect("number parses");
-    assert_eq!(config.compression_level, Some(0.5));
+    assert_eq!(config.compression_level, 0.5);
     assert_eq!(
         CompressionLevel::effective(&config),
         CompressionLevel::Standard
@@ -106,7 +102,7 @@ fn compression_level_reads_as_band() {
 #[test]
 fn compression_level_number_is_clamped() {
     let config: Config = toml::from_str("compression_level = 1.7").expect("number parses");
-    assert_eq!(config.compression_level, Some(1.0));
+    assert_eq!(config.compression_level, 1.0);
 }
 
 #[test]
@@ -115,9 +111,9 @@ fn compression_level_name_is_a_parse_error() {
 }
 
 #[test]
-fn compression_level_absent_means_adaptive_lite() {
+fn compression_level_absent_means_the_default_lite() {
     let config: Config = toml::from_str("").expect("empty toml should use defaults");
-    assert_eq!(config.compression_level, None);
+    assert_eq!(config.compression_level, 0.3);
     assert_eq!(CompressionLevel::effective(&config), CompressionLevel::Lite);
 }
 
@@ -133,14 +129,13 @@ fn compression_level_bands() {
         (1.0, CompressionLevel::Raw),
     ] {
         assert_eq!(CompressionLevel::from_value(value), level, "{value}");
-        assert_eq!(CompressionLevel::from_value(level.value()), level);
     }
 }
 
 #[test]
 fn compression_level_number_selects_prose_band() {
     let _g = with_config("compression_level = 0.65\n");
-    let text = instructions::build_instructions_for_test(CrpMode::Off);
+    let text = instructions::build_instructions();
     assert!(
         text.contains("OUTPUT STYLE: expert-terse"),
         "0.65 falls in the max band"

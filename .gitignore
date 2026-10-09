@@ -37,4 +37,4 @@ _scratch/
 %SystemDrive%/
 
 # Repertoire d'etat que sobre cree dans le projet courant.
-.lean-ctx/
+.sobre/

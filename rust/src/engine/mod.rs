@@ -13,17 +13,17 @@ use rmcp::{
 };
 use serde_json::{Map, Value};
 
-use crate::tools::LeanCtxServer;
+use crate::tools::SobreServer;
 
 pub struct ContextEngine {
-    server: LeanCtxServer,
+    server: SobreServer,
     next_id: AtomicI64,
 }
 
 impl ContextEngine {
     pub fn new() -> Self {
         Self {
-            server: LeanCtxServer::new(),
+            server: SobreServer::new(),
             next_id: AtomicI64::new(1),
         }
     }
@@ -31,12 +31,12 @@ impl ContextEngine {
     pub fn with_project_root(project_root: impl Into<PathBuf>) -> Self {
         let root = project_root.into().to_string_lossy().to_string();
         Self {
-            server: LeanCtxServer::new_with_project_root(Some(&root)),
+            server: SobreServer::new_with_project_root(Some(&root)),
             next_id: AtomicI64::new(1),
         }
     }
 
-    pub fn server(&self) -> &LeanCtxServer {
+    pub fn server(&self) -> &SobreServer {
         &self.server
     }
 

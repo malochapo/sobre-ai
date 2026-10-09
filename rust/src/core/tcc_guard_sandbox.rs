@@ -1,11 +1,11 @@
-//! macOS Seatbelt self-sandbox for launchd-owned lean-ctx processes (#356).
+//! macOS Seatbelt self-sandbox for launchd-owned sobre processes.
 //!
-//! The daemon, proxy and auto-updater run as LaunchAgents — i.e. under
-//! `launchd` (`ppid 1`) with their own TCC identity. Any `stat`/`read_dir`/
-//! `realpath` they perform under `~/Documents`, `~/Desktop` or `~/Downloads`
-//! pops the macOS privacy prompt *in lean-ctx's own name*, and because every
-//! release re-signs the binary (new cdhash) the grant is invalidated on each
-//! update, so it re-prompts forever.
+//! The proxy runs as a LaunchAgent — i.e. under `launchd` (`ppid 1`) with its
+//! own TCC identity. Any `stat`/`read_dir`/`realpath` it performs under
+//! `~/Documents`, `~/Desktop` or `~/Downloads` pops the macOS privacy prompt
+//! *in sobre's own name*, and because every release re-signs the binary
+//! (new cdhash) the grant is invalidated on each update, so it re-prompts
+//! forever.
 //!
 //! The opt-out path guards in [`crate::core::pathutil`] avoid those accesses
 //! per call site, but that is fragile: one forgotten probe — or a dependency
@@ -18,9 +18,7 @@
 //! (`allow default`), so the processes keep full functionality.
 //!
 //! The deny is silent (no `(with send-signal SIGKILL)`): a production process
-//! must survive a stray access, losing only that one read. The SIGKILL variant
-//! lives solely in `tests/tcc_sandbox.sh`, where dying is how the regression
-//! test *detects* an access.
+//! must survive a stray access, losing only that one read.
 
 use std::path::Path;
 use std::process::Command;
@@ -30,7 +28,7 @@ use std::process::Command;
 const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
 
 /// The macOS "magic" home subdirectories whose mere enumeration trips the TCC
-/// privacy prompt (#356).
+/// privacy prompt.
 const TCC_PROTECTED_SUBDIRS: [&str; 3] = ["Documents", "Desktop", "Downloads"];
 
 /// Env sentinel marking that this process is already running under (or is
@@ -38,7 +36,7 @@ const TCC_PROTECTED_SUBDIRS: [&str; 3] = ["Documents", "Desktop", "Downloads"];
 /// plist `EnvironmentVariables` (see [`pinned_layout_env_xml`]) and by the
 /// self re-exec ([`reexec_under_seatbelt_if_needed`]), so a current-code plist
 /// never re-wraps and the re-exec can never loop.
-pub const SEATBELT_SENTINEL: &str = "LEAN_CTX_SEATBELT";
+pub const SEATBELT_SENTINEL: &str = "SOBRE_SEATBELT";
 
 /// Build the inline Seatbelt (SBPL) profile that denies all file access under
 /// the three TCC-protected home directories while allowing everything else.
@@ -76,7 +74,7 @@ fn sbpl_escape(s: &str) -> String {
 }
 
 /// Wrap launchd `ProgramArguments` so the spawned process runs under the
-/// deny-`~/Documents` Seatbelt sandbox (#356).
+/// deny-`~/Documents` Seatbelt sandbox.
 ///
 /// Returns `[SANDBOX_EXEC, "-p", <profile>, binary, args…]` when `sandbox-exec`
 /// is present and accepts the generated profile (smoke-tested against
@@ -114,19 +112,19 @@ fn should_reexec_under_seatbelt(standalone: bool, sentinel_present: bool) -> boo
     standalone && !sentinel_present
 }
 
-/// Belt-and-suspenders (#356): if this is a launchd-standalone process
-/// (daemon / proxy / auto-updater — `ppid 1`, its own TCC identity) that is not
-/// already running under the seatbelt, re-exec self wrapped in `sandbox-exec`
-/// with the deny-`~/Documents` profile. This closes the one gap the plist
-/// rewrite cannot: an install whose LaunchAgent plists predate the seatbelt and
-/// is only ever upgraded via `brew upgrade` (which bypasses lean-ctx's updater,
-/// so the plists are never regenerated). Without this such a process boots
-/// unwrapped and can still trip the TCC prompt.
+/// Belt-and-suspenders: if this is a launchd-standalone process
+/// (`ppid 1`, its own TCC identity) that is not already running under the
+/// seatbelt, re-exec self wrapped in `sandbox-exec` with the deny-`~/Documents`
+/// profile. This covers any standalone process the LaunchAgent wrapper did not
+/// start — e.g. a proxy spawned detached by `sobre proxy start` whose parent
+/// CLI exited before it reached `main`, leaving it re-parented to launchd
+/// without the sentinel. Without this such a process runs unwrapped and can
+/// still trip the TCC prompt.
 ///
 /// No-op unless macOS + standalone + sentinel-absent + `sandbox-exec` accepts
 /// the profile. On `exec` failure it returns and the caller continues unwrapped
 /// (the [`crate::core::pathutil`] path guards remain the safety net) rather than
-/// aborting a `KeepAlive` daemon into a crash loop.
+/// aborting a `KeepAlive` LaunchAgent into a crash loop.
 #[cfg(target_os = "macos")]
 pub fn reexec_under_seatbelt_if_needed() {
     use std::os::unix::process::CommandExt;
@@ -154,7 +152,7 @@ pub fn reexec_under_seatbelt_if_needed() {
         .args(&args)
         .env(SEATBELT_SENTINEL, "1")
         .exec();
-    tracing::warn!("#356 seatbelt re-exec failed, continuing unwrapped: {err}");
+    tracing::warn!("seatbelt re-exec failed, continuing unwrapped: {err}");
 }
 
 /// `true` if `sandbox-exec` exists and successfully runs a no-op under
@@ -172,10 +170,10 @@ fn sandbox_exec_usable(profile: &str) -> bool {
 }
 
 /// Build the `EnvironmentVariables` plist block that pins a launchd-spawned
-/// lean-ctx process to the directory layout the *installing CLI* resolves (#449).
+/// sobre process to the directory layout the *installing CLI* resolves.
 ///
 /// A LaunchAgent inherits only launchd's minimal environment (no `HOME`, no XDG
-/// vars), so the proxy/daemon would otherwise resolve a *different* config/data
+/// vars), so the proxy would otherwise resolve a *different* config/data
 /// dir than the CLI that installed it: it never sees the user's `config.toml`
 /// edits (the live-upstream reload reads an empty/foreign config) and derives a
 /// mismatched session token. Baking the exact resolved dirs into the plist makes
@@ -185,19 +183,19 @@ fn sandbox_exec_usable(profile: &str) -> bool {
 /// (4-space indented, trailing newline) or an empty string when nothing resolves.
 pub fn pinned_layout_env_xml() -> String {
     let mut entries: Vec<(&str, String)> = Vec::new();
-    // #356 sentinel: marks the spawned process as managed by current-code
+    // Sentinel: marks the spawned process as launched by the LaunchAgent
     // (it carries the seatbelt wrapper, or wrapping is impossible on this host).
-    // Its presence makes `reexec_under_seatbelt_if_needed` a no-op, so a current
-    // plist never double-wraps — only stale, pre-sentinel plists re-exec.
+    // Its presence makes `reexec_under_seatbelt_if_needed` a no-op, so a
+    // plist-launched process never double-wraps.
     entries.push((SEATBELT_SENTINEL, "1".to_string()));
     if let Some(home) = dirs::home_dir() {
         entries.push(("HOME", home.display().to_string()));
     }
     for (key, dir) in [
-        ("LEAN_CTX_CONFIG_DIR", crate::core::paths::config_dir()),
-        ("LEAN_CTX_DATA_DIR", crate::core::paths::data_dir()),
-        ("LEAN_CTX_STATE_DIR", crate::core::paths::state_dir()),
-        ("LEAN_CTX_CACHE_DIR", crate::core::paths::cache_dir()),
+        ("SOBRE_CONFIG_DIR", crate::core::paths::config_dir()),
+        ("SOBRE_DATA_DIR", crate::core::paths::data_dir()),
+        ("SOBRE_STATE_DIR", crate::core::paths::state_dir()),
+        ("SOBRE_CACHE_DIR", crate::core::paths::cache_dir()),
     ] {
         if let Ok(p) = dir {
             entries.push((key, p.display().to_string()));
@@ -281,8 +279,8 @@ mod tests {
 
     #[test]
     fn unwrapped_args_prepend_binary() {
-        let got = unwrapped_args("/bin/lean-ctx", &["serve", "--_foreground-daemon"]);
-        assert_eq!(got, vec!["/bin/lean-ctx", "serve", "--_foreground-daemon"]);
+        let got = unwrapped_args("/bin/sobre", &["proxy", "start"]);
+        assert_eq!(got, vec!["/bin/sobre", "proxy", "start"]);
     }
 
     #[test]
@@ -308,10 +306,10 @@ mod tests {
         assert!(xml.contains("<dict>"));
         assert!(xml.trim_end().ends_with("</dict>"));
         for key in [
-            "LEAN_CTX_CONFIG_DIR",
-            "LEAN_CTX_DATA_DIR",
-            "LEAN_CTX_STATE_DIR",
-            "LEAN_CTX_CACHE_DIR",
+            "SOBRE_CONFIG_DIR",
+            "SOBRE_DATA_DIR",
+            "SOBRE_STATE_DIR",
+            "SOBRE_CACHE_DIR",
         ] {
             assert!(xml.contains(&format!("<key>{key}</key>")), "missing {key}");
         }
@@ -319,8 +317,8 @@ mod tests {
 
     #[test]
     fn pinned_layout_env_carries_seatbelt_sentinel() {
-        // The plist must mark current-code processes so the boot-time re-exec
-        // guard (#356) treats them as already-wrapped and never double-wraps.
+        // The plist must mark the processes it launches so the boot-time re-exec
+        // guard treats them as already-wrapped and never double-wraps.
         let xml = pinned_layout_env_xml();
         assert!(xml.contains(&format!("<key>{SEATBELT_SENTINEL}</key>")));
     }
@@ -328,9 +326,9 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn reexec_policy_only_fires_for_unmarked_standalone() {
-        // Standalone + no sentinel = stale plist → must re-exec under seatbelt.
+        // Standalone + no sentinel (not plist-launched) → must re-exec under seatbelt.
         assert!(should_reexec_under_seatbelt(true, false));
-        // Already marked (current plist or prior re-exec) → never loop.
+        // Already marked (plist-launched or prior re-exec) → never loop.
         assert!(!should_reexec_under_seatbelt(true, true));
         // Terminal/editor child (host TCC grant) → never re-exec.
         assert!(!should_reexec_under_seatbelt(false, false));
@@ -341,14 +339,14 @@ mod tests {
     fn wrap_includes_sandbox_exec_and_binary_when_usable() {
         // Assert the real wrapping only when sandbox-exec works on this host
         // (CI macOS runners have it); otherwise verify the safe fallback.
-        let wrapped = wrap_launchd_args("/bin/lean-ctx", &["proxy", "start"]);
+        let wrapped = wrap_launchd_args("/bin/sobre", &["proxy", "start"]);
         if wrapped.first().map(String::as_str) == Some(SANDBOX_EXEC) {
             assert_eq!(wrapped[1], "-p");
             assert!(wrapped[2].contains("(deny file-read*"));
-            assert_eq!(wrapped[3], "/bin/lean-ctx");
+            assert_eq!(wrapped[3], "/bin/sobre");
             assert_eq!(&wrapped[4..], &["proxy", "start"]);
         } else {
-            assert_eq!(wrapped, vec!["/bin/lean-ctx", "proxy", "start"]);
+            assert_eq!(wrapped, vec!["/bin/sobre", "proxy", "start"]);
         }
     }
 }

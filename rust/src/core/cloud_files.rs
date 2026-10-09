@@ -3,7 +3,7 @@
 //!
 //! Such files keep their *contents* in the cloud; merely opening or reading one
 //! forces the OS to download ("hydrate") it — slow, bandwidth-/quota-hungry, and
-//! on Windows it triggers OneDrive sync warnings (#363). lean-ctx must never
+//! on Windows it triggers OneDrive sync warnings. sobre must never
 //! hydrate files just to index them in the background, so every directory scan
 //! prunes placeholders via [`keep_entry`]. Detection is metadata-only (file
 //! attributes / stat flags) and therefore never triggers a download.
@@ -20,9 +20,7 @@ pub fn is_cloud_placeholder(path: &Path) -> bool {
     use std::os::windows::fs::MetadataExt;
     // `symlink_metadata` maps to GetFileAttributes, which reports the placeholder
     // attributes without recalling (downloading) the content.
-    std::fs::symlink_metadata(path)
-        .map(|m| attrs_indicate_placeholder(m.file_attributes()))
-        .unwrap_or(false)
+    std::fs::symlink_metadata(path).is_ok_and(|m| attrs_indicate_placeholder(m.file_attributes()))
 }
 
 /// macOS variant: evicted iCloud Drive files carry `SF_DATALESS` in `st_flags`.
@@ -98,7 +96,7 @@ mod tests {
     #[test]
     fn missing_path_is_not_a_placeholder() {
         assert!(!is_cloud_placeholder(Path::new(
-            "/nonexistent/lean-ctx/cloud/xyz"
+            "/nonexistent/sobre/cloud/xyz"
         )));
     }
 }

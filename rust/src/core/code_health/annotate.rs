@@ -4,7 +4,7 @@
 //! over-threshold functions in a file, so an agent reading signatures or the map
 //! sees complexity hotspots inline and can decide *not* to read a giant function
 //! in full. Only functions above the threshold are annotated, keeping output
-//! byte-stable and cheap (#498-safe).
+//! byte-stable and cheap (deterministic).
 
 use super::cognitive::cognitive_per_function;
 use std::collections::HashMap;
@@ -50,7 +50,7 @@ pub fn by_name(annotations: &[ReadAnnotation]) -> HashMap<String, String> {
 
 /// Cognitive complexity of the function named `name` defined nearest `start_line`
 /// in `source` (file extension `ext`). Unlike [`annotations_for_file`] this is
-/// *not* threshold-gated, so a targeted `ctx_symbol` query can show the exact cc
+/// *not* threshold-gated, so a symbol lookup (`sobre_search action=symbol`) can show the exact cc
 /// of any function. `None` when tree-sitter is off, the extension is
 /// unsupported, or no function with that name is present (e.g. a struct symbol).
 pub fn cognitive_for_symbol(source: &str, ext: &str, name: &str, start_line: usize) -> Option<u32> {

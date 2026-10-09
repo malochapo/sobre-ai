@@ -4,7 +4,7 @@
 
 use super::counter;
 use super::dictionaries::{self, DictLevel};
-use super::quality::{self, QualityConfig, QualityReport};
+use super::quality::{self, QualityConfig};
 use super::scoring;
 use crate::core::config::CompressionLevel;
 
@@ -20,9 +20,7 @@ pub struct EngineResult {
     pub output: String,
     pub tokens_before: u32,
     pub tokens_after: u32,
-    pub quality: QualityReport,
-    pub lines_removed: usize,
-    pub lines_total: usize,
+    pub quality_passed: bool,
 }
 
 const MIN_LINES_FOR_COMPRESSION: usize = 5;
@@ -37,27 +35,19 @@ pub fn compress(text: &str, level: &CompressionLevel) -> EngineResult {
             output: text.to_string(),
             tokens_before,
             tokens_after: tokens_before,
-            quality: quality::check(
-                text,
-                text,
-                tokens_before,
-                tokens_before,
-                &QualityConfig::default(),
-            ),
-            lines_removed: 0,
-            lines_total,
+            quality_passed: true,
         };
     }
 
     let result = compress_at_level(text, tokens_before, level);
 
-    if result.quality.passed {
+    if result.quality_passed {
         return result;
     }
 
     if matches!(level, CompressionLevel::Max | CompressionLevel::Raw) {
         let fallback = compress_at_level(text, tokens_before, &CompressionLevel::Standard);
-        if fallback.quality.passed {
+        if fallback.quality_passed {
             return fallback;
         }
     }
@@ -66,16 +56,13 @@ pub fn compress(text: &str, level: &CompressionLevel) -> EngineResult {
         output: text.to_string(),
         tokens_before,
         tokens_after: tokens_before,
-        quality: result.quality,
-        lines_removed: 0,
-        lines_total: text.lines().count(),
+        quality_passed: result.quality_passed,
     }
 }
 
 fn compress_at_level(text: &str, tokens_before: u32, level: &CompressionLevel) -> EngineResult {
     let scores = scoring::score_lines(text);
     let lines: Vec<&str> = text.lines().collect();
-    let lines_total = lines.len();
 
     let threshold = match level {
         CompressionLevel::Max | CompressionLevel::Raw => MAX_SCORE_THRESHOLD,
@@ -84,28 +71,22 @@ fn compress_at_level(text: &str, tokens_before: u32, level: &CompressionLevel) -
     };
 
     let mut kept_lines = Vec::new();
-    let mut lines_removed = 0;
-
     for (score, line) in scores.iter().zip(lines.iter()) {
         let trimmed = line.trim();
 
         if trimmed.is_empty() {
-            lines_removed += 1;
             continue;
         }
 
         if is_pure_decoration(trimmed) {
-            lines_removed += 1;
             continue;
         }
 
         if is_filler_line(trimmed) && !score.has_structural_marker {
-            lines_removed += 1;
             continue;
         }
 
         if score.combined < threshold && !score.has_structural_marker {
-            lines_removed += 1;
             continue;
         }
 
@@ -122,23 +103,14 @@ fn compress_at_level(text: &str, tokens_before: u32, level: &CompressionLevel) -
         _ => QualityConfig::default(),
     };
 
-    let filtered_tokens = counter::count(&filtered);
-    let quality_report = quality::check(
-        text,
-        &filtered,
-        tokens_before,
-        filtered_tokens,
-        &quality_config,
-    );
+    let quality_passed = quality::check(text, &filtered, &quality_config);
 
-    if !quality_report.passed {
+    if !quality_passed {
         return EngineResult {
             output: text.to_string(),
             tokens_before,
             tokens_after: tokens_before,
-            quality: quality_report,
-            lines_removed: 0,
-            lines_total,
+            quality_passed,
         };
     }
 
@@ -159,9 +131,7 @@ fn compress_at_level(text: &str, tokens_before: u32, level: &CompressionLevel) -
         output: compressed,
         tokens_before,
         tokens_after,
-        quality: quality_report,
-        lines_removed,
-        lines_total,
+        quality_passed,
     }
 }
 
@@ -246,7 +216,6 @@ mod tests {
         let text = "hello world\n\nsome blank lines\n\n";
         let result = compress(text, &CompressionLevel::Off);
         assert_eq!(result.output, text);
-        assert_eq!(result.lines_removed, 0);
     }
 
     #[test]

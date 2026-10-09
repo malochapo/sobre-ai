@@ -5,19 +5,20 @@ use rmcp::ErrorData;
 use serde_json::Value;
 
 use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext, ToolOutput};
-use crate::tools::LeanCtxServer;
+use crate::tools::SobreServer;
 use rmcp::model::ContentBlock;
 
-impl LeanCtxServer {
+impl SobreServer {
     /// Returns (output_text, saved_tokens, shell_outcome, content_blocks).
     /// saved_tokens > 0 indicates the tool already applied internal compression
     /// (shell engine, cache deltas, etc.). shell_outcome is `Some` for
-    /// shell-executing tools so the caller can populate MCP error metadata
-    /// (#389). content_blocks carries image/binary MCP blocks when present.
+    /// shell-executing tools so the caller can populate MCP error metadata.
+    /// content_blocks carries image/binary MCP blocks when present.
     pub(super) async fn dispatch_tool(
         &self,
         name: &str,
         args: Option<&serde_json::Map<String, Value>>,
+        progress: Option<crate::server::progress::ProgressSender>,
     ) -> Result<
         (
             String,
@@ -27,36 +28,29 @@ impl LeanCtxServer {
         ),
         ErrorData,
     > {
-        // Invariant 3 has no universal invoker: there are no hidden tools for
-        // one to reach. `ctx_call` used to sit here — dispatchable, never in
-        // `tools/list`, unwrapping an inner tool name and calling it.
-        self.dispatch_inner(name, args).await
-    }
-
-    /// Dispatches a single tool via the trait-based registry.
-    /// Returns (output_text, saved_tokens, shell_outcome).
-    async fn dispatch_inner(
-        &self,
-        name: &str,
-        args: Option<&serde_json::Map<String, Value>>,
-    ) -> Result<
-        (
-            String,
-            usize,
-            Option<ShellOutcome>,
-            Option<Vec<ContentBlock>>,
-        ),
-        ErrorData,
-    > {
-        if let Some(tool) = self.registry.as_ref().and_then(|r| r.get_arc(name)) {
+        if let Some(tool) = self.registry.get_arc(name) {
             let empty = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty);
-            let project_root = {
+            let root_before = self.session.read().await.project_root.clone();
+            let (resolved_paths, path_errors) = self.resolve_path_args(args_map).await;
+            let (project_root, shell_cwd) = {
                 let session = self.session.read().await;
-                session.project_root.clone().unwrap_or_default()
+                (
+                    session.project_root.clone().unwrap_or_default(),
+                    session.shell_cwd.clone(),
+                )
             };
+            // An absolute path can re-root the session (`resolve_path`): say so.
+            let reroot_note = (root_before.as_deref() != Some(project_root.as_str())
+                && !project_root.is_empty()
+                && !tool.produces_machine_readable(Some(args_map)))
+            .then(|| {
+                format!(
+                    "[sobre: project root is now {project_root}; relative paths resolve there]\n"
+                )
+            });
 
-            // Lazy, demand-driven index warming (#152): only tools that actually
+            // Lazy, demand-driven index warming: only tools that actually
             // need a prebuilt index trigger a (background, once-per-root) scan.
             // The first heavy pre-warm also warms any configured extra roots once.
             if !project_root.is_empty()
@@ -74,87 +68,41 @@ impl LeanCtxServer {
                 }
             }
 
-            let mut resolved_paths = std::collections::HashMap::new();
-            let mut path_errors: std::collections::HashMap<String, String> =
-                std::collections::HashMap::new();
-            for key in PATH_LIKE_KEYS {
-                if let Some(val) = args_map.get(*key) {
-                    if let Some(raw) = val.as_str() {
-                        match self.resolve_path(raw).await {
-                            Ok(resolved) => {
-                                if !["path", "project_root", "root"].contains(key) {
-                                    tracing::trace!(
-                                        "[pathjail] resolved non-standard path key '{key}': {raw} -> {resolved}"
-                                    );
-                                }
-                                resolved_paths.insert(key.to_string(), resolved);
-                            }
-                            Err(e) => {
-                                tracing::debug!(
-                                    "[dispatch] path resolution failed for '{key}' = '{raw}': {e}"
-                                );
-                                path_errors.insert(key.to_string(), e);
-                            }
-                        }
-                    } else {
-                        let type_name = match val {
-                            serde_json::Value::Number(_) => "number",
-                            serde_json::Value::Bool(_) => "boolean",
-                            serde_json::Value::Array(_) => "array",
-                            serde_json::Value::Object(_) => "object",
-                            serde_json::Value::Null => "null",
-                            serde_json::Value::String(_) => unreachable!(),
-                        };
-                        path_errors.insert(
-                            key.to_string(),
-                            format!("{key} must be a string, got {type_name}"),
-                        );
-                    }
-                }
-            }
-
             let crp_mode = crate::tools::CrpMode::effective();
-            let extra_roots = self.session.read().await.extra_roots.clone();
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
-                extra_roots,
+                shell_cwd,
                 resolved_paths,
                 crp_mode,
                 cache: Some(self.cache.clone()),
                 session: Some(self.session.clone()),
-                tool_calls: Some(self.tool_calls.clone()),
                 path_errors,
                 bm25_cache: Some(self.bm25_cache.clone()),
-                progress_sender: Some(self.progress_sender.clone()),
+                progress_sender: progress,
             };
             // Run the (synchronous) handler on the dedicated blocking pool under
-            // a watchdog deadline (#271). `block_in_place` would pin one of the
+            // a watchdog deadline. `block_in_place` would pin one of the
             // few core workers and — being synchronous — cannot be interrupted
             // by `tokio::time::timeout` from the same task, so a hung handler
             // would silently swallow the JSON-RPC response and the MCP client
             // would crash with "Cannot read properties of undefined (reading
             // 'invoke')". `spawn_blocking` keeps the core workers free and lets
             // the watchdog always return a response.
-            let handler_started = std::time::Instant::now();
-            let output = self.run_tool_handler(name, tool, args_map, ctx).await?;
-            let handler_ms = handler_started.elapsed().as_millis() as u64;
+            let reports_failures = tool.text_reports_failures();
+            let mut output = self.run_tool_handler(name, tool, args_map, ctx).await?;
+            if let Some(note) = reroot_note {
+                output.text.insert_str(0, &note);
+            }
+            if output.shell_outcome.is_none()
+                && reports_failures
+                && crate::server::tool_trait::reports_failure(&output.text)
+            {
+                output.shell_outcome = Some(crate::server::tool_trait::ShellOutcome::Failed);
+            }
 
             // Image/binary content blocks bypass all text processing.
             if output.content_blocks.is_some() {
-                if let Some(ref path) = output.path {
-                    self.record_call_with_path(
-                        name,
-                        0,
-                        0,
-                        Some("image".to_string()),
-                        Some(path),
-                        handler_ms,
-                    )
-                    .await;
-                } else {
-                    self.record_call_with_timing(name, 0, 0, Some("image".to_string()), handler_ms)
-                        .await;
-                }
+                self.record_call(name, 0).await;
                 return Ok((
                     String::new(),
                     0,
@@ -163,106 +111,16 @@ impl LeanCtxServer {
                 ));
             }
 
-            let headers_only =
-                crate::core::config::ResponseVerbosity::effective().is_headers_only();
-            let header_line = if headers_only {
-                Some(output.to_header_line(name))
-            } else {
-                None
-            };
-
-            let output_token_estimate = crate::core::tokens::count_tokens(&output.text) as u32;
-
-            if let Some(ref path) = output.path {
-                {
-                    // Skip ledger record for ctx_read — it's recorded in post_dispatch
-                    // with correct final token counts after terse compression.
-                    if name != "ctx_read" {
-                        let sent_tokens = if output.original_tokens > 0 {
-                            output.original_tokens.saturating_sub(output.saved_tokens)
-                        } else {
-                            crate::core::tokens::count_tokens(&output.text)
-                        };
-                        let orig = if output.original_tokens > 0 {
-                            output.original_tokens
-                        } else {
-                            sent_tokens
-                        };
-                        let mode_str = output.mode.as_deref().unwrap_or("full");
-                        let mut ledger = self.ledger.write().await;
-                        ledger.record(path, mode_str, orig, sent_tokens);
-                        ledger.save_debounced();
-                    }
-                }
-                self.record_call_with_path(
-                    name,
-                    output.original_tokens,
-                    output.saved_tokens,
-                    output.mode,
-                    Some(path),
-                    handler_ms,
-                )
-                .await;
-            } else {
-                self.record_call_with_timing(
-                    name,
-                    output.original_tokens,
-                    output.saved_tokens,
-                    output.mode,
-                    handler_ms,
-                )
-                .await;
-            }
-
-            let agent_id = self
-                .agent_id
-                .read()
-                .await
-                .clone()
-                .unwrap_or_else(|| "unknown".into());
-            {
-                let input_hash = crate::core::audit_trail::hash_input(args_map);
-                crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-                    agent_id: agent_id.clone(),
-                    tool: name.to_string(),
-                    action: None,
-                    input_hash,
-                    output_tokens: output_token_estimate,
-                    event_type: crate::core::audit_trail::AuditEventType::ToolCall,
-                });
-            }
+            self.record_call(name, output.saved_tokens).await;
 
             let saved = output.saved_tokens;
-            let raw_text = header_line.unwrap_or(output.text);
-            let final_text = sanitized_tool_text(name, raw_text);
-
-            // Context immune system: scan for prompt-injection patterns in tool output.
-            let injection_signals = crate::core::output_sanitizer::detect_injection(&final_text);
-            if !injection_signals.is_empty() {
-                tracing::warn!(
-                    tool = name,
-                    signals = injection_signals.len(),
-                    "prompt-injection patterns detected in tool output"
-                );
-                crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
-                    agent_id: agent_id.clone(),
-                    tool: name.to_string(),
-                    action: None,
-                    input_hash: String::new(),
-                    output_tokens: 0,
-                    event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
-                });
-            }
-
-            return Ok((final_text, saved, output.shell_outcome, None));
+            let raw_text = output.text;
+            return Ok((raw_text, saved, output.shell_outcome, None));
         }
 
-        // Unknown tool (#712): suggest the closest registered name so a typo
-        // (`ctx_raed`) costs the agent a hint instead of a blind retry.
-        let suggestion = self
-            .registry
-            .as_ref()
-            .and_then(|r| crate::core::levenshtein::closest(name, r.names()))
+        // Unknown tool: suggest the closest registered name so a typo
+        // (`sobre_raed`) costs the agent a hint instead of a blind retry.
+        let suggestion = crate::core::levenshtein::closest(name, self.registry.names())
             .map(|s| format!(" — did you mean '{s}'?"))
             .unwrap_or_default();
         Err(ErrorData::invalid_params(
@@ -271,8 +129,59 @@ impl LeanCtxServer {
         ))
     }
 
+    /// Resolve every path-like argument through [`Self::resolve_path`]:
+    /// the resolved paths by key, and the errors by key.
+    async fn resolve_path_args(
+        &self,
+        args_map: &serde_json::Map<String, Value>,
+    ) -> (
+        std::collections::HashMap<String, String>,
+        std::collections::HashMap<String, String>,
+    ) {
+        let mut resolved_paths = std::collections::HashMap::new();
+        let mut path_errors: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        for key in PATH_LIKE_KEYS {
+            if let Some(val) = args_map.get(*key) {
+                if let Some(raw) = val.as_str() {
+                    match self.resolve_path(raw).await {
+                        Ok(resolved) => {
+                            if !["path", "project_root"].contains(key) {
+                                tracing::trace!(
+                                    "[paths] resolved non-standard path key '{key}': {raw} -> {resolved}"
+                                );
+                            }
+                            resolved_paths.insert(key.to_string(), resolved);
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                "[dispatch] path resolution failed for '{key}' = '{raw}': {e}"
+                            );
+                            path_errors.insert(key.to_string(), e);
+                        }
+                    }
+                } else {
+                    let type_name = match val {
+                        serde_json::Value::Number(_) => "number",
+                        serde_json::Value::Bool(_) => "boolean",
+                        serde_json::Value::Array(_) => "array",
+                        serde_json::Value::Object(_) => "object",
+                        serde_json::Value::Null => "null",
+                        serde_json::Value::String(_) => unreachable!(),
+                    };
+                    path_errors.insert(
+                        key.to_string(),
+                        format!("{key} must be a string, got {type_name}"),
+                    );
+                }
+            }
+        }
+
+        (resolved_paths, path_errors)
+    }
+
     /// Execute a (synchronous) tool handler on the blocking pool under a
-    /// watchdog deadline (#271).
+    /// watchdog deadline.
     ///
     /// The handler is `Send + 'static` (it owns an `Arc<dyn McpTool>`, a cloned
     /// arg map and the `ToolContext`), so it runs via `spawn_blocking` on the
@@ -297,7 +206,7 @@ impl LeanCtxServer {
     ///
     /// On timeout the join handle is **aborted** — the blocking-pool thread
     /// receives a cancellation signal so it does not permanently leak a pool
-    /// slot (#1018). A clean error is always returned so the MCP client gets a
+    /// slot. A clean error is always returned so the MCP client gets a
     /// JSON-RPC reply. A handler panic is isolated and surfaced as an error too.
     async fn watchdog_join(
         name: &str,
@@ -313,12 +222,12 @@ impl LeanCtxServer {
                 // The JoinHandle was moved into `select!` — when this branch
                 // wins, Tokio drops the handle which sets the task's cancelled
                 // flag. For `spawn_blocking` this means the thread will be
-                // reclaimed once it returns (#1018).
+                // reclaimed once it returns.
                 crate::core::io_health::record_freeze();
                 tracing::error!(
                     tool = name,
                     timeout_secs = limit.as_secs(),
-                    "tool watchdog fired — handler cancelled to reclaim pool slot (#1018)"
+                    "tool watchdog fired — handler cancelled to reclaim pool slot"
                 );
                 Err(ErrorData::internal_error(
                     format!(
@@ -360,7 +269,7 @@ impl LeanCtxServer {
 
     /// Watchdog deadline for a single tool handler, or `None` to disable it.
     ///
-    /// `ctx_shell` runs arbitrary user commands (builds, long
+    /// `sobre_shell` runs arbitrary user commands (builds, long
     /// test suites) and already enforces its own command timeout, so a generic
     /// watchdog would wrongly abort a legitimate long-running command. Every
     /// other tool is bounded so a hang can never swallow the JSON-RPC response.
@@ -370,19 +279,6 @@ impl LeanCtxServer {
         }
         watchdog_from_secs(read_watchdog_secs())
     }
-}
-
-/// Last-pass degenerate-output filter — EXCEPT for protected read tools (#709):
-/// their contract is byte-fidelity. File content is never a model artifact, so
-/// a file that legitimately contains flood-like lines (`!!!!!!!!!!` in test
-/// fixtures, ASCII art) must survive a `mode=raw`/`full` read byte-for-byte.
-/// Every other tool keeps the #257 degenerate-CJK/flood cleanup, whose target
-/// is compressed/summarized output.
-fn sanitized_tool_text(name: &str, raw_text: String) -> String {
-    if crate::core::firewall::is_protected_read(name) {
-        return raw_text;
-    }
-    crate::core::output_sanitizer::sanitize(&raw_text)
 }
 
 /// The watchdog budget in seconds. Kept separate from the policy so the pure
@@ -396,64 +292,66 @@ fn watchdog_from_secs(secs: u64) -> Option<Duration> {
     (secs > 0).then(|| Duration::from_secs(secs))
 }
 
-/// Default per-tool watchdog budget (#271). Long enough that no legitimate
+/// Default per-tool watchdog budget. Long enough that no legitimate
 /// read/search/graph call ever hits it, short enough that a hang degrades to a
 /// clean error instead of a dropped request.
 const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 120;
 
-const PATH_LIKE_KEYS: &[&str] = &[
-    "path",
-    "project_root",
-    "root",
-    "file",
-    "directory",
-    "dir",
-    "target",
-    "source",
-    "destination",
-    "old_path",
-    "new_path",
-    "file_path",
-    "from",
-    "to",
-    "base_path",
-    "config_path",
-    "output",
-];
+/// The arguments a tool's schema declares as a filesystem path, resolved
+/// against the session's roots before the handler runs.
+pub(crate) const PATH_LIKE_KEYS: &[&str] = &["path", "to", "project_root"];
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn protected_reads_bypass_the_degenerate_output_sanitizer() {
-        // #709 follow-up: an explicit read is byte-exact even for content that
-        // *looks* like degenerate model output (fixtures full of `!!!!!!!!!!`).
-        let fixture = "ok line\n!!!!!!!!!!!!\ntail\n".to_string();
-        assert_eq!(
-            sanitized_tool_text("ctx_read", fixture.clone()),
-            fixture,
-            "ctx_read must never lose file bytes to the flood filter"
-        );
-        // Batch reads (`paths`, ex-`ctx_multi_read`) and the `ctx` fan-out's
-        // `tool=read` both reach dispatch under the name `ctx_read`, so the
-        // assertion above covers every live explicit read.
+    /// L5: a call whose absolute path re-roots the session says so.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_reroot_is_said_in_the_output() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let agent = tmp.path().join(".copilot");
+        let real = tmp.path().join("repo");
+        std::fs::create_dir_all(&agent).unwrap();
+        std::fs::create_dir_all(real.join(".git")).unwrap();
+        std::fs::write(real.join("a.txt"), "ok\n").unwrap();
 
-        // Non-read tools keep the #257 degenerate-output cleanup.
-        let cleaned = sanitized_tool_text("ctx_shell", fixture);
-        assert!(
-            !cleaned.contains("!!!!!!!!!!"),
-            "flood line must be removed"
-        );
-        assert!(cleaned.contains("ok line") && cleaned.contains("tail"));
+        let server = SobreServer::new_with_startup(None, None);
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(agent.to_string_lossy().to_string());
+            session.shell_cwd = Some(agent.to_string_lossy().to_string());
+        }
+        let args = serde_json::json!({ "path": real.join("a.txt").to_string_lossy() });
+        let (text, ..) = server
+            .dispatch_tool("sobre_read", args.as_object(), None)
+            .await
+            .unwrap();
+        assert!(text.starts_with("[sobre: project root is now "), "{text}");
+
+        let (again, ..) = server
+            .dispatch_tool("sobre_read", args.as_object(), None)
+            .await
+            .unwrap();
+        assert!(!again.contains("project root is now"), "{again}");
     }
 
+    /// Every path key the dispatcher resolves is one some tool declares.
     #[test]
-    fn path_like_keys_includes_primary_keys() {
-        for primary in &["path", "project_root", "root"] {
+    fn path_like_keys_are_declared_by_some_tool() {
+        let registry = crate::server::registry::build_registry();
+        for key in PATH_LIKE_KEYS {
             assert!(
-                PATH_LIKE_KEYS.contains(primary),
-                "primary key '{primary}' missing from PATH_LIKE_KEYS"
+                registry.names().iter().any(|name| registry
+                    .get_arc(name)
+                    .and_then(|t| t
+                        .tool_def()
+                        .input_schema
+                        .get("properties")
+                        .and_then(serde_json::Value::as_object)
+                        .map(|p| p.contains_key(*key)))
+                    .unwrap_or(false)),
+                "{key} is declared by no tool"
             );
         }
     }
@@ -461,8 +359,8 @@ mod tests {
     #[test]
     fn watchdog_disabled_for_long_running_shell_tools() {
         assert!(
-            LeanCtxServer::handler_watchdog("ctx_shell").is_none(),
-            "ctx_shell runs arbitrary user commands and must not be watchdog-bounded"
+            SobreServer::handler_watchdog("sobre_shell").is_none(),
+            "sobre_shell runs arbitrary user commands and must not be watchdog-bounded"
         );
     }
 
@@ -486,7 +384,7 @@ mod tests {
     async fn watchdog_returns_error_on_hung_handler() {
         use std::sync::atomic::{AtomicBool, Ordering};
         // A hung handler must surface as a clean error (not a dropped request),
-        // which is the core #271 guarantee. The stop flag lets the simulated
+        // which is the core guarantee. The stop flag lets the simulated
         // hang exit promptly after the assertion so the runtime shuts down fast.
         let stop = std::sync::Arc::new(AtomicBool::new(false));
         let stop_in = stop.clone();
@@ -501,7 +399,7 @@ mod tests {
         });
         let start = std::time::Instant::now();
         let result =
-            LeanCtxServer::watchdog_join("mock", join, Some(Duration::from_millis(200))).await;
+            SobreServer::watchdog_join("mock", join, Some(Duration::from_millis(200))).await;
         let elapsed = start.elapsed();
         stop.store(true, Ordering::Relaxed);
         assert!(result.is_err(), "hung handler must surface as an error");
@@ -514,14 +412,14 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watchdog_passes_through_fast_handler() {
         let join = tokio::task::spawn_blocking(|| Ok(ToolOutput::simple("ok".to_string())));
-        let result = LeanCtxServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
+        let result = SobreServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
         assert_eq!(result.unwrap().text, "ok");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watchdog_none_awaits_handler_to_completion() {
         let join = tokio::task::spawn_blocking(|| Ok(ToolOutput::simple("ok".to_string())));
-        let result = LeanCtxServer::watchdog_join("ctx_shell", join, None).await;
+        let result = SobreServer::watchdog_join("sobre_shell", join, None).await;
         assert_eq!(result.unwrap().text, "ok");
     }
 
@@ -529,14 +427,14 @@ mod tests {
     async fn handler_panic_becomes_error_not_crash() {
         let join: tokio::task::JoinHandle<Result<ToolOutput, ErrorData>> =
             tokio::task::spawn_blocking(|| panic!("simulated handler panic"));
-        let result = LeanCtxServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
+        let result = SobreServer::watchdog_join("mock", join, Some(Duration::from_secs(5))).await;
         assert!(
             result.is_err(),
             "a handler panic must surface as an error; the server process survives"
         );
     }
 
-    /// #712: a typo'd tool name must return a "did you mean" hint from the
+    /// A typo'd tool name must return a "did you mean" hint from the
     /// live registry instead of a bare unknown-tool error; a name nowhere
     /// near any registered tool must stay suggestion-free.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -544,22 +442,22 @@ mod tests {
         let server = crate::tools::create_server();
 
         let err = server
-            .dispatch_tool("ctx_raed", None)
+            .dispatch_tool("sobre_raed", None, None)
             .await
             .expect_err("typo'd tool must error");
         assert!(
-            err.message.contains("Unknown tool: ctx_raed"),
+            err.message.contains("Unknown tool: sobre_raed"),
             "unexpected message: {}",
             err.message
         );
         assert!(
-            err.message.contains("did you mean 'ctx_read'"),
+            err.message.contains("did you mean 'sobre_read'"),
             "missing suggestion: {}",
             err.message
         );
 
         let err = server
-            .dispatch_tool("zzz_qqq_www", None)
+            .dispatch_tool("zzz_qqq_www", None, None)
             .await
             .expect_err("unrelated name must error");
         assert!(
@@ -567,5 +465,31 @@ mod tests {
             "no confident suggestion for garbage: {}",
             err.message
         );
+    }
+
+    /// B29: a tool whose text reports a failure comes back as a failure, so
+    /// the client sets `isError` instead of reading an error as a success.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failure_text_marks_the_call_failed() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let server = crate::tools::create_server();
+        let mut args = serde_json::Map::new();
+        args.insert("action".into(), serde_json::json!("bogus"));
+        let (text, _, outcome, _) = server
+            .dispatch_tool("sobre_graph", Some(&args), None)
+            .await
+            .expect("dispatch");
+        assert!(text.starts_with("Unknown action"), "{text}");
+        assert_eq!(
+            outcome,
+            Some(crate::server::tool_trait::ShellOutcome::Failed)
+        );
+
+        args.insert("action".into(), serde_json::json!("status"));
+        let (_, _, outcome, _) = server
+            .dispatch_tool("sobre_graph", Some(&args), None)
+            .await
+            .expect("dispatch");
+        assert_eq!(outcome, None, "a normal answer is not a failure");
     }
 }

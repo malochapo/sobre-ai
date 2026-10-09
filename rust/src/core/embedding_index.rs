@@ -4,13 +4,12 @@
 //! On re-index, only files whose hash has changed get re-embedded,
 //! avoiding expensive model inference for unchanged code.
 //!
-//! Storage format: `~/.lean-ctx/vectors/<project_hash>/embeddings.bin` (postcard)
+//! Storage: `<data_dir>/vectors/<project_hash>/embeddings.bin` (postcard).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
 use super::bm25_index::CodeChunk;
@@ -23,8 +22,7 @@ pub struct EmbeddingIndex {
     pub dimensions: usize,
     /// Model identifier that generated these embeddings.
     /// Used for mismatch detection when the user switches models.
-    #[serde(default)]
-    pub model_id: Option<String>,
+    pub model_id: String,
     pub entries: Vec<EmbeddingEntry>,
     pub file_hashes: HashMap<String, String>,
 }
@@ -57,12 +55,11 @@ impl EmbeddingEntry {
 }
 
 /// Outcome of a `build_or_update` call from the index orchestrator.
+#[cfg(feature = "dense")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmbeddingBuildOutcome {
     /// Embeddings were built or already up-to-date.
     Ready,
-    /// Skipped because the embeddings feature is not enabled or disabled by config.
-    Skipped,
     /// The embedding engine (ONNX model) is not available.
     /// Carries the reason so the orchestrator can show a helpful message.
     ModelNotAvailable(String),
@@ -70,79 +67,33 @@ pub enum EmbeddingBuildOutcome {
     Failed,
 }
 
-impl EmbeddingBuildOutcome {
-    pub fn label(&self) -> &'static str {
-        match self {
-            Self::Ready => "ready",
-            Self::Skipped => "skipped",
-            Self::ModelNotAvailable(_) => "model-not-available",
-            Self::Failed => "failed",
-        }
-    }
-
-    pub fn reason(&self) -> Option<&str> {
-        match self {
-            Self::ModelNotAvailable(r) => Some(r.as_str()),
-            _ => None,
-        }
-    }
-}
-
 /// Build or update the persistent embedding index for a project.
 ///
-/// Called by the index orchestrator during `build-full` / `build` after the BM25
-/// index is ready.  This is a *background-friendly* operation: it runs the ONNX
+/// Called by `sobre index build` after the BM25 index is ready. This is a
+/// *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
-/// `embeddings.bin` (postcard) so subsequent `ctx_semantic_search` calls find a warm cache.
+/// `embeddings.bin` (postcard) so later `sobre_search` dense/hybrid calls find a warm cache.
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.
-///
-/// Feature-gated: when `embeddings` is not compiled in, this is a no-op that
-/// returns `Skipped`.
+#[cfg(feature = "dense")]
 pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
-    #[cfg(feature = "embeddings")]
     {
-        // Respect the config gates so the orchestrator does not force-embed when
-        // the user explicitly opted out.
-        if !crate::core::hybrid_search::HybridConfig::default().dense_enabled {
-            tracing::info!("[embedding_index] build_or_update skipped: search.dense_enabled=false");
-            return EmbeddingBuildOutcome::Skipped;
-        }
-
-        // Bootstrap the model if it isn't on disk yet. `build_or_update` only
-        // runs for an explicit build request (`index build` / `build-full` /
-        // `build-semantic`), so a cold machine should download the model now
-        // rather than dead-end. `is_available()` is just a file check, so the
-        // earlier short-circuit on it meant the auto-download never started
-        // (#545). `ensure_downloaded()` is pure network/file IO and never
-        // initializes ORT, so the teardown-safety rationale for deferring the
-        // `shared_engine()` load still holds: on download failure we return
-        // without ever having touched the ONNX Runtime.
+        // Never download here: `index build` also runs in the background
+        // after `init`. The model arrives through `sobre embeddings
+        // provision` (or init's prompt), with the user's consent.
         let root_key = root.to_string_lossy().to_string();
         if !crate::core::embeddings::EmbeddingEngine::is_available() {
-            tracing::info!(
-                "[embedding_index] embedding model absent — downloading from HuggingFace"
+            return EmbeddingBuildOutcome::ModelNotAvailable(
+                "not installed — run `sobre embeddings provision`".to_string(),
             );
-            // Download has no reliable total → indeterminate progress.
-            crate::core::index_progress::report(
-                &root_key,
-                crate::core::index_progress::IndexComponent::Semantic,
-                0,
-                0,
-            );
-            if let Err(e) = crate::core::embeddings::EmbeddingEngine::ensure_downloaded() {
-                let reason = format!("embedding model auto-download from HuggingFace failed: {e}");
-                tracing::warn!("[embedding_index] build_or_update failed: {reason}");
-                return EmbeddingBuildOutcome::ModelNotAvailable(reason);
-            }
         }
 
         let engine = match crate::core::embeddings::shared_engine_result() {
             Ok(engine) => engine,
             Err(e) => {
                 let reason = format!(
-                    "embedding model files found but engine failed to load: {e}. Fix: run `lean-ctx embeddings provision` to install the managed ONNX Runtime"
+                    "embedding model files found but engine failed to load: {e}. Fix: run `sobre embeddings provision` to install the managed ONNX Runtime"
                 );
                 tracing::warn!("[embedding_index] build_or_update failed: {reason}");
                 return EmbeddingBuildOutcome::ModelNotAvailable(reason);
@@ -245,34 +196,18 @@ pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> Embe
         );
         EmbeddingBuildOutcome::Ready
     }
-
-    #[cfg(not(feature = "embeddings"))]
-    {
-        let _ = (root, bm25);
-        EmbeddingBuildOutcome::Skipped
-    }
 }
 
 /// Current on-disk format version. Used for forward-compatibility checks.
 const CURRENT_VERSION: u32 = 3;
 
 impl EmbeddingIndex {
-    pub fn new(dimensions: usize) -> Self {
-        Self {
-            version: CURRENT_VERSION,
-            dimensions,
-            model_id: None,
-            entries: Vec::new(),
-            file_hashes: HashMap::new(),
-        }
-    }
-
     /// Create a new index tagged with a specific model identity.
     pub fn new_with_model(dimensions: usize, model_id: &str) -> Self {
         Self {
             version: CURRENT_VERSION,
             dimensions,
-            model_id: Some(model_id.to_string()),
+            model_id: model_id.to_string(),
             entries: Vec::new(),
             file_hashes: HashMap::new(),
         }
@@ -281,48 +216,12 @@ impl EmbeddingIndex {
     /// Check if the index was built with a different model than currently selected.
     /// Returns `Some((stored_model, current_model))` on mismatch, `None` if compatible.
     pub fn model_mismatch<'a>(&'a self, current_model: &'a str) -> Option<(&'a str, &'a str)> {
-        match &self.model_id {
-            Some(stored) if stored != current_model => Some((stored, current_model)),
-            _ => None,
-        }
+        (self.model_id != current_model).then_some((self.model_id.as_str(), current_model))
     }
 
     /// Check if index dimensions are incompatible with the current engine.
     pub fn dimension_mismatch(&self, engine_dimensions: usize) -> bool {
         self.dimensions != engine_dimensions && !self.entries.is_empty()
-    }
-
-    /// Approximate heap memory used by this index in bytes.
-    pub fn memory_usage_bytes(&self) -> usize {
-        let entries_size: usize = self
-            .entries
-            .iter()
-            .map(|e| {
-                e.file_path.len()
-                    + e.symbol_name.len()
-                    + e.content_hash.len()
-                    + e.quant.code.len()
-                    + 4
-                    + 48
-            })
-            .sum();
-        let hashes_size: usize = self
-            .file_hashes
-            .iter()
-            .map(|(k, v)| k.len() + v.len() + 32)
-            .sum();
-        entries_size + hashes_size
-    }
-
-    /// Drops all in-memory data to free heap. Index can be re-loaded from disk.
-    pub fn unload(&mut self) {
-        let usage = self.memory_usage_bytes();
-        self.entries = Vec::new();
-        self.file_hashes = HashMap::new();
-        tracing::info!(
-            "[embeddings] unloaded index, freed ~{:.1}MB",
-            usage as f64 / 1_048_576.0
-        );
     }
 
     /// Determine which files need re-embedding based on content hashes.
@@ -360,7 +259,7 @@ impl EmbeddingIndex {
     /// Number of `chunks` a re-embed pass would have to embed right now — i.e.
     /// the chunks belonging to files flagged by [`Self::files_needing_update`].
     ///
-    /// Used by the hybrid/dense cold-start guard (#512): on a server that came
+    /// Used by the hybrid/dense cold-start guard: on a server that came
     /// up before the on-disk index existed, the first query would otherwise embed
     /// the *entire* corpus inline under the request watchdog, producing a runaway
     /// the watchdog abandons but cannot cancel. Counting the pending chunks up
@@ -454,7 +353,7 @@ impl EmbeddingIndex {
     }
 
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
-        let dir = index_dir(root);
+        let dir = index_dir(root).ok_or_else(|| std::io::Error::other("no data dir"))?;
         std::fs::create_dir_all(&dir)?;
         // Binary (postcard) — compact, fast, deterministic.
         let data = postcard::to_allocvec(self).map_err(std::io::Error::other)?;
@@ -463,7 +362,7 @@ impl EmbeddingIndex {
     }
 
     pub fn load(root: &Path) -> Option<Self> {
-        let bin_path = index_dir(root).join("embeddings.bin");
+        let bin_path = index_dir(root)?.join("embeddings.bin");
         let data = std::fs::read(&bin_path).ok()?;
         match postcard::from_bytes::<Self>(&data) {
             // Only accept an index whose on-disk schema matches the current one.
@@ -491,14 +390,12 @@ impl EmbeddingIndex {
     }
 }
 
-fn index_dir(root: &Path) -> PathBuf {
+fn index_dir(root: &Path) -> Option<PathBuf> {
     crate::core::index_namespace::vectors_dir(root)
 }
 
 fn hash_content(content: &str) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(content.as_bytes());
-    crate::core::agent_identity::hex_encode(&hasher.finalize())
+    crate::core::hasher::hash_str(content)
 }
 
 fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
@@ -520,19 +417,16 @@ fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
             ))
         });
 
-        let mut hasher = Md5::new();
+        let mut hasher = blake3::Hasher::new();
         hasher.update(file.as_bytes());
         for c in file_chunks {
-            hasher.update(c.start_line.to_le_bytes());
-            hasher.update(c.end_line.to_le_bytes());
+            hasher.update(&c.start_line.to_le_bytes());
+            hasher.update(&c.end_line.to_le_bytes());
             hasher.update(c.symbol_name.as_bytes());
-            hasher.update([kind_tag(&c.kind)]);
+            hasher.update(&[kind_tag(&c.kind)]);
             hasher.update(c.content.as_bytes());
         }
-        out.insert(
-            file.to_string(),
-            crate::core::agent_identity::hex_encode(&hasher.finalize()),
-        );
+        out.insert(file.to_string(), hasher.finalize().to_hex().to_string());
     }
     out
 }
@@ -581,7 +475,7 @@ mod tests {
 
     #[test]
     fn new_index_is_empty() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         assert!(idx.entries.is_empty());
         assert!(idx.file_hashes.is_empty());
         assert_eq!(idx.dimensions, 384);
@@ -589,7 +483,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_all_new() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -600,7 +494,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_unchanged() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
 
         idx.update(
@@ -616,7 +510,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_changed_content() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks_v1 = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
         idx.update(
             &chunks_v1,
@@ -635,7 +529,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_detects_change_in_later_chunk() {
-        let mut idx = EmbeddingIndex::new(3);
+        let mut idx = EmbeddingIndex::new_with_model(3, "test-model");
         let chunks_v1 = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
@@ -660,7 +554,7 @@ mod tests {
 
     #[test]
     fn files_needing_update_deleted_file() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -682,7 +576,7 @@ mod tests {
 
     #[test]
     fn pending_chunk_count_cold_start_counts_every_chunk() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
@@ -697,7 +591,7 @@ mod tests {
 
     #[test]
     fn pending_chunk_count_zero_when_fully_embedded() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -717,7 +611,7 @@ mod tests {
 
     #[test]
     fn pending_chunk_count_only_counts_changed_files_chunks() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks_v1 = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("a.rs", "fn_b", "fn b() {}", 10, 12),
@@ -749,7 +643,7 @@ mod tests {
 
     #[test]
     fn update_preserves_unchanged() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -775,7 +669,7 @@ mod tests {
 
     #[test]
     fn get_aligned_flat_ok() {
-        let mut idx = EmbeddingIndex::new(2);
+        let mut idx = EmbeddingIndex::new_with_model(2, "test-model");
         let chunks = vec![
             make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3),
             make_chunk("b.rs", "fn_b", "fn b() {}", 1, 3),
@@ -796,14 +690,14 @@ mod tests {
 
     #[test]
     fn get_aligned_flat_missing() {
-        let idx = EmbeddingIndex::new(384);
+        let idx = EmbeddingIndex::new_with_model(384, "test-model");
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
         assert!(idx.get_aligned_flat(&chunks).is_none());
     }
 
     #[test]
     fn coverage_calculation() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         assert!((idx.coverage(10) - 0.0).abs() < 1e-6);
 
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
@@ -821,11 +715,11 @@ mod tests {
     fn save_and_load_roundtrip() {
         let _lock = crate::core::data_dir::test_env_lock();
         let data_dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.path());
 
         let project_dir = tempfile::tempdir().unwrap();
 
-        let mut idx = EmbeddingIndex::new(3);
+        let mut idx = EmbeddingIndex::new_with_model(3, "test-model");
         let chunks = vec![make_chunk("a.rs", "fn_a", "fn a() {}", 1, 3)];
         idx.update(
             &chunks,
@@ -844,13 +738,13 @@ mod tests {
         assert!((recon[1] - 2.0).abs() < 0.02);
         assert!((recon[2] - 3.0).abs() < 0.02);
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
     fn new_with_model_sets_model_id() {
         let idx = EmbeddingIndex::new_with_model(768, "jina-code-v2");
-        assert_eq!(idx.model_id, Some("jina-code-v2".to_string()));
+        assert_eq!(idx.model_id, "jina-code-v2");
         assert_eq!(idx.dimensions, 768);
     }
 
@@ -866,14 +760,8 @@ mod tests {
     }
 
     #[test]
-    fn model_mismatch_none_when_no_model_id() {
-        let idx = EmbeddingIndex::new(384);
-        assert!(idx.model_mismatch("anything").is_none());
-    }
-
-    #[test]
     fn dimension_mismatch_detection() {
-        let mut idx = EmbeddingIndex::new(384);
+        let mut idx = EmbeddingIndex::new_with_model(384, "test-model");
         assert!(!idx.dimension_mismatch(384));
         assert!(!idx.dimension_mismatch(768)); // no entries = no mismatch
 

@@ -1,12 +1,12 @@
-//! PostToolUse re-read dedup for guard hosts (GL #1140, follow-up to GH #637).
+//! PostToolUse re-read dedup for Claude Code's native Read.
 //!
-//! On Claude Code the PreToolUse Read redirect is disabled
-//! (`read_redirect = auto`) so the native read-before-write guard stays intact —
-//! which also forfeits the redirect's re-read dedup. This handler wins those
-//! savings back **after** the native Read ran on the real path:
+//! sobre never redirects a native Read before it runs (that would break Claude
+//! Code's read-before-write guard, and change what the host's Read
+//! does). This handler saves on re-reads **after** the native Read ran on the
+//! real path:
 //!
 //! - First read of a file: no output → the host keeps the byte-identical native
-//!   result (edit safety: `old_string` always comes from real content, and the
+//!   result (edit safety: the native Edit's `old_string` always comes from real content, and the
 //!   guard has already recorded the real path).
 //! - Re-read of the same file, unchanged on disk, same session: the result the
 //!   model sees is replaced with a compact `[unchanged]` stub via the documented
@@ -28,7 +28,7 @@
 //!   claim content this conversation has never seen).
 //! - Compaction wipes the session's records (see [`purge_session`], wired to the
 //!   PreCompact-aware observe handler) so post-compaction re-reads deliver full
-//!   content again, mirroring the MCP-side compaction sync (GL #555).
+//!   content again, mirroring the MCP-side compaction sync.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -55,10 +55,6 @@ pub fn handle_read_dedup() {
 /// Decide the read-dedup hook's stdout. `None` = emit nothing (passthrough, the
 /// documented PostToolUse no-op). Split from [`handle_read_dedup`] for tests.
 fn compute_read_dedup(input: &str) -> Option<String> {
-    if !crate::core::config::ReadDedup::read_dedup_enabled() {
-        return None;
-    }
-
     let v: serde_json::Value = serde_json::from_str(input).ok()?;
 
     // Only successful native Read results are dedupable; other tools have
@@ -107,7 +103,7 @@ fn compute_read_dedup(input: &str) -> Option<String> {
 
     let (prev_hash, prev_tool_use) = parse_record(&prev)?;
     // Same tool_use_id = a duplicate fire of the SAME event (Cursor
-    // double-fires hooks, #1032). The first fire passed the content
+    // double-fires hooks). The first fire passed the content
     // through, so its twin must too.
     if prev_hash != disk_hash || (!tool_use_id.is_empty() && prev_tool_use == tool_use_id) {
         write_record(&store, &disk_hash, &tool_use_id);
@@ -122,17 +118,16 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     }
     let updated = replace_slot(tool_response, &slot, &stub)?;
 
-    // Track dedup savings in stats.json so CEP/dashboard can report them.
-    // The hook subprocess is short-lived, so flush immediately.
-    let original_tokens = crate::core::tokens::count_tokens(original);
-    let stub_tokens = crate::core::tokens::count_tokens(&stub);
-    crate::core::stats::record("cli_read_dedup", original_tokens, stub_tokens);
-    crate::core::stats::flush();
+    crate::core::usage::record_compression(
+        crate::core::usage::Surface::Hook,
+        "read_dedup",
+        crate::core::tokens::count_tokens(original),
+        crate::core::tokens::count_tokens(&stub),
+    );
 
     debug_log::log_hook_decision(
         "read-dedup",
         "Read",
-        Route::LeanCtx,
         &path,
         "re-read of unchanged file → dedup stub",
     );
@@ -250,13 +245,13 @@ fn replace_slot(
 }
 
 /// The replacement body. Deterministic function of (path, line_count) — no
-/// timestamps or counters (#498), so identical re-reads stay byte-stable and
-/// provider prompt caching applies. Wording mirrors ctx_read's `[unchanged]`
+/// timestamps or counters, so identical re-reads stay byte-stable and
+/// provider prompt caching applies. Wording mirrors sobre_read's `[unchanged]`
 /// stub, adapted for a host whose Read has no `fresh=true` escape: touching the
 /// file or editing it changes the hash and the next Read delivers full content.
 fn render_dedup_stub(path: &str, line_count: usize) -> String {
     format!(
-        "{path} [unchanged {line_count}L · lean-ctx read-dedup]\nUnchanged since your last Read in this session — the full line-numbered content is already in this conversation above. It will be re-delivered automatically once the file changes on disk."
+        "{path} [unchanged {line_count}L · sobre read-dedup]\nUnchanged since your last Read in this session — the full line-numbered content is already in this conversation above. It will be re-delivered automatically once the file changes on disk."
     )
 }
 
@@ -269,7 +264,7 @@ fn hash_file(path: &str) -> Option<String> {
     Some(blake3::hash(&bytes).to_hex().to_string())
 }
 
-/// `<tmp>/lean-ctx-hook/rd/<session-hash>/<read-key>.rdx`, creating the session
+/// `<state>/hooks/read/<session-hash>/<read-key>.rdx`, creating the session
 /// dir. Session-scoped so [`purge_session`] and the TTL sweep stay O(1) dirs.
 fn record_path(
     session_id: &str,
@@ -288,14 +283,7 @@ fn record_path(
 }
 
 fn read_dedup_root() -> Option<std::path::PathBuf> {
-    let dir = std::env::temp_dir().join("lean-ctx-hook").join("rd");
-    std::fs::create_dir_all(&dir).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
-    }
-    Some(dir)
+    super::shared_dir("read")
 }
 
 /// Record format: `<blake3-hex> <tool_use_id>` on a single line.
@@ -312,7 +300,7 @@ fn write_record(store: &std::path::Path, hash: &str, tool_use_id: &str) {
 
 /// Drop every read record of `session_id` — called when the host compacts its
 /// context (PreCompact): the conversation the stub would point into is gone, so
-/// the next Read of each file must deliver full content again (GL #555 parity).
+/// the next Read of each file must deliver full content again (parity).
 pub(super) fn purge_session(session_id: &str) {
     let Some(root) = read_dedup_root() else {
         return;
@@ -344,39 +332,9 @@ fn sweep_stale_sessions(root: &std::path::Path) {
 mod tests {
     use super::*;
 
-    /// RAII guard that makes this process look like a Claude Code guard host
-    /// (where `read_dedup = auto` dedups) for deterministic tests regardless of
-    /// host: the Cursor markers a Cursor agent shell exports itself would make
-    /// Auto resolve to disabled, so they are cleared. Holds the global test env
-    /// lock via `isolated_data_dir`; restores the environment on drop.
-    struct GuardHost {
-        _iso: crate::core::data_dir::IsolatedDataDir,
-    }
-    impl GuardHost {
-        fn claude() -> Self {
-            let iso = crate::core::data_dir::isolated_data_dir();
-            for var in [
-                "CURSOR_VERSION",
-                "CURSOR_PROJECT_DIR",
-                "CURSOR_TRANSCRIPT_PATH",
-                "CURSOR_EXTENSION_HOST_ROLE",
-                "CURSOR_AGENT",
-                "CURSOR_TRACE_ID",
-            ] {
-                crate::test_env::remove_var(var);
-            }
-            crate::test_env::set_var("CLAUDE_PROJECT_DIR", "/repo");
-            GuardHost { _iso: iso }
-        }
-    }
-    impl Drop for GuardHost {
-        fn drop(&mut self) {
-            crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-        }
-    }
-
-    fn guard_env() -> GuardHost {
-        GuardHost::claude()
+    /// Isolated data dir (holds the global test env lock) for each test.
+    fn guard_env() -> crate::core::data_dir::IsolatedDataDir {
+        crate::core::data_dir::isolated_data_dir()
     }
 
     fn payload(
@@ -490,7 +448,7 @@ mod tests {
 
     #[test]
     fn duplicate_fire_of_same_tool_use_never_stubs() {
-        // Cursor double-fires hooks (#1032): the twin of a first read must not
+        // Cursor double-fires hooks: the twin of a first read must not
         // be mistaken for a re-read.
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
@@ -635,31 +593,6 @@ mod tests {
     }
 
     #[test]
-    fn disabled_off_guard_host_stays_passive() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        // No guard-host marker → auto keeps the hook passive.
-        crate::test_env::remove_var("CLAUDE_PROJECT_DIR");
-        crate::test_env::remove_var("CLAUDECODE");
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("lib.rs");
-        std::fs::write(&file, big_body()).unwrap();
-        let session = unique_session("s8");
-
-        for id in ["t1", "t2"] {
-            assert!(
-                compute_read_dedup(&payload(
-                    &session,
-                    id,
-                    &file,
-                    &serde_json::json!(big_body())
-                ))
-                .is_none(),
-                "off guard hosts the PreToolUse redirect owns dedup"
-            );
-        }
-    }
-
-    #[test]
     fn purge_session_resets_reread_state() {
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
@@ -713,7 +646,7 @@ mod tests {
 
     #[test]
     fn stub_is_deterministic() {
-        // #498: byte-stable output for identical inputs.
+        // Byte-stable output for identical inputs.
         assert_eq!(
             render_dedup_stub("/a/b.rs", 42),
             render_dedup_stub("/a/b.rs", 42)

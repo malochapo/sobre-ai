@@ -1,7 +1,7 @@
 //! Hybrid search combining BM25 (lexical) with dense vector search.
 //!
-//! Uses Reciprocal Rank Fusion (RRF) to merge BM25, dense embeddings, and optional
-//! property-graph proximity (session neighborhood) into one ranked list.
+//! Uses Reciprocal Rank Fusion (RRF) to merge BM25 and dense embeddings into
+//! one ranked list.
 //!
 //! Formula: score(d) = Σ 1/(k + rank_i(d))
 //! where k=60 (standard constant), and i ranges over retrieval methods.
@@ -9,23 +9,29 @@
 //! Reference: Cormack, Clarke & Buettcher (2009), "Reciprocal Rank Fusion
 //! outperforms Condorcet and individual Rank Learning Methods"
 
+#[cfg(any(test, feature = "dense"))]
 use std::collections::HashMap;
 
-use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
+#[cfg(feature = "dense")]
+use super::bm25_index::BM25Index;
+use super::bm25_index::{ChunkKind, SearchResult};
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::embeddings::EmbeddingEngine;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::hnsw::FlatEmbeddings;
 
+#[cfg(any(test, feature = "dense"))]
 const RRF_K: f64 = 60.0;
 
 /// Default weights for standard RRF: equal contribution per ranking (`Σ weight/(k+r)` with weight=1).
+#[cfg(any(test, feature = "dense"))]
 const DEFAULT_BM25_WEIGHT: f64 = 1.0;
+#[cfg(any(test, feature = "dense"))]
 const DEFAULT_DENSE_WEIGHT: f64 = 1.0;
 
-/// Configuration for hybrid search behavior.
-/// Configurable via `[search]` in `config.toml`.
+/// Hybrid search weights and candidate counts (built-in, not configurable).
+#[cfg(any(test, feature = "dense"))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct HybridConfig {
@@ -36,26 +42,14 @@ pub struct HybridConfig {
     /// Weight for SPLADE expansion signal. 0.0 disables SPLADE.
     #[serde(default = "default_splade_weight")]
     pub splade_weight: f64,
-    /// Master switch for the dense (embedding) retrieval path (#686). When
-    /// `false`, the default `hybrid` semantic search skips loading the embedding
-    /// engine and building/persisting `embeddings.json` entirely, and ranks with
-    /// BM25 + graph proximity + reranking (+ SPLADE) only. This is the same
-    /// ranking the pipeline already falls back to when no embeddings are present,
-    /// so results stay coherent while the on-disk vector footprint and per-query
-    /// embed latency disappear. `true` by default (unchanged behavior); an
-    /// explicit `mode=dense` query still forces dense regardless.
-    #[serde(default = "default_dense_enabled")]
-    pub dense_enabled: bool,
 }
 
+#[cfg(any(test, feature = "dense"))]
 fn default_splade_weight() -> f64 {
     0.5
 }
 
-fn default_dense_enabled() -> bool {
-    true
-}
-
+#[cfg(any(test, feature = "dense"))]
 impl Default for HybridConfig {
     fn default() -> Self {
         Self {
@@ -64,28 +58,17 @@ impl Default for HybridConfig {
             bm25_candidates: 75,
             dense_candidates: 75,
             splade_weight: 0.5,
-            dense_enabled: true,
         }
     }
 }
 
-impl HybridConfig {
-    /// Load from the global config, falling back to defaults.
-    pub fn from_config() -> Self {
-        crate::core::hybrid_search::HybridConfig::default()
-    }
-}
-
 /// Fuse two ranked result lists using Reciprocal Rank Fusion.
-///
-/// `graph_file_ranks`: optional repo-relative file path → rank (0-based) for neighbors of
-/// recently touched session files; each matching result gets an extra `1/(k+r)` term.
+#[cfg(any(test, feature = "dense"))]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[SearchResult],
     dense_results: &[DenseSearchResult],
     config: &HybridConfig,
     top_k: usize,
-    graph_file_ranks: Option<&HashMap<String, usize>>,
 ) -> Vec<HybridResult> {
     let mut scores: HashMap<String, HybridResult> = HashMap::new();
 
@@ -101,7 +84,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            bm25_score: Some(result.score),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -122,7 +104,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -130,16 +111,6 @@ pub fn reciprocal_rank_fusion(
         entry.rrf_score += rrf_score;
         entry.dense_score = Some(result.similarity);
         entry.dense_rank = Some(rank + 1);
-    }
-
-    if let Some(gr) = graph_file_ranks
-        && !gr.is_empty()
-    {
-        for entry in scores.values_mut() {
-            if let Some(&rank) = gr.get(&entry.file_path) {
-                entry.rrf_score += 1.0 / (RRF_K + rank as f64 + 1.0);
-            }
-        }
     }
 
     let mut results: Vec<HybridResult> = scores.into_values().collect();
@@ -154,7 +125,7 @@ pub fn reciprocal_rank_fusion(
 
 /// Run hybrid search: BM25 + dense retrieval with RRF fusion + post-RRF reranking.
 /// Falls back to BM25-only if embedding engine is not available.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn hybrid_search(
     query: &str,
     index: &BM25Index,
@@ -162,7 +133,6 @@ pub fn hybrid_search(
     chunk_embeddings: Option<&FlatEmbeddings>,
     top_k: usize,
     config: &HybridConfig,
-    graph_file_ranks: Option<&HashMap<String, usize>>,
 ) -> Vec<HybridResult> {
     let bm25_results = index.search(query, config.bm25_candidates);
 
@@ -177,56 +147,26 @@ pub fn hybrid_search(
         _ => Vec::new(),
     };
 
-    let graph_enhances = graph_file_ranks.is_some_and(|m| !m.is_empty());
-
     // Over-fetch candidates for reranking (5x top_k, capped at available)
     let candidate_count = (top_k * 5).min(config.bm25_candidates);
 
     let mut results = if dense_results.is_empty() {
-        if graph_enhances {
-            reciprocal_rank_fusion(
-                &bm25_results,
-                &[],
-                config,
-                candidate_count,
-                graph_file_ranks,
-            )
-        } else {
-            bm25_results
-                .into_iter()
-                .take(candidate_count)
-                .map(HybridResult::from_bm25)
-                .collect()
-        }
+        bm25_results
+            .into_iter()
+            .take(candidate_count)
+            .map(HybridResult::from_bm25)
+            .collect()
     } else {
-        reciprocal_rank_fusion(
-            &bm25_results,
-            &dense_results,
-            config,
-            candidate_count,
-            graph_file_ranks,
-        )
+        reciprocal_rank_fusion(&bm25_results, &dense_results, config, candidate_count)
     };
 
     super::search_reranking::rerank_pipeline(&mut results, query, top_k);
     results
 }
 
-#[cfg(not(feature = "embeddings"))]
-pub fn hybrid_search(query: &str, index: &BM25Index, top_k: usize) -> Vec<HybridResult> {
-    let candidate_count = (top_k * 5).min(50);
-    let mut results: Vec<HybridResult> = index
-        .search(query, candidate_count)
-        .into_iter()
-        .map(HybridResult::from_bm25)
-        .collect();
-    super::search_reranking::rerank_pipeline(&mut results, query, top_k);
-    results
-}
-
 /// Dense vector search over pre-computed chunk embeddings.
 /// Uses O(n log k) binary-heap top-k selection for small indices, HNSW for large ones.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn dense_search(
     query: &str,
     engine: &EmbeddingEngine,
@@ -248,7 +188,6 @@ fn dense_search(
             let chunk = chunks.get(idx)?;
             let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
             Some(DenseSearchResult {
-                chunk_idx: idx,
                 similarity: sim,
                 file_path: chunk.file_path.clone(),
                 symbol_name: chunk.symbol_name.clone(),
@@ -261,14 +200,15 @@ fn dense_search(
         .collect()
 }
 
+#[cfg(any(test, feature = "dense"))]
 fn result_key(file_path: &str, start_line: usize) -> String {
     format!("{file_path}:{start_line}")
 }
 
 /// Result from dense (embedding-based) search.
+#[cfg(any(test, feature = "dense"))]
 #[derive(Debug, Clone)]
 pub struct DenseSearchResult {
-    pub chunk_idx: usize,
     pub similarity: f32,
     pub file_path: String,
     pub symbol_name: String,
@@ -288,7 +228,6 @@ pub struct HybridResult {
     pub end_line: usize,
     pub snippet: String,
     pub rrf_score: f64,
-    pub bm25_score: Option<f64>,
     pub dense_score: Option<f32>,
     pub bm25_rank: Option<usize>,
     pub dense_rank: Option<usize>,
@@ -308,7 +247,6 @@ impl HybridResult {
             end_line: result.end_line,
             snippet: result.snippet,
             rrf_score: result.score,
-            bm25_score: Some(result.score),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -347,8 +285,9 @@ pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String 
             ));
         } else {
             // Prefix the separator inside each arm so an absent rank-source
-            // (e.g. BM25-only fallback when embeddings are off) renders a clean
-            // "(rrf: X)" instead of a dangling "(rrf: X, )" (#509).
+            // (BM25-only or dense-only ranking) renders a clean "(score: X)".
+            // The score is RRF only for hybrid results; otherwise it is the
+            // BM25 score or the cosine similarity.
             let source_info = match (r.bm25_rank, r.dense_rank) {
                 (Some(bm), Some(dn)) => format!(", bm25:#{bm} + dense:#{dn}"),
                 (Some(bm), None) => format!(", bm25:#{bm}"),
@@ -356,7 +295,7 @@ pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String 
                 _ => String::new(),
             };
             out.push_str(&format!(
-                "\n--- Result {} (rrf: {:.4}{}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
+                "\n--- Result {} (score: {:.4}{}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
                 i + 1,
                 r.rrf_score,
                 source_info,
@@ -391,7 +330,6 @@ mod tests {
 
     fn make_dense_result(file: &str, name: &str, line: usize, sim: f32) -> DenseSearchResult {
         DenseSearchResult {
-            chunk_idx: 0,
             similarity: sim,
             file_path: file.to_string(),
             symbol_name: name.to_string(),
@@ -416,7 +354,7 @@ mod tests {
         ];
 
         let config = HybridConfig::default();
-        let results = reciprocal_rank_fusion(&bm25, &dense, &config, 10, None);
+        let results = reciprocal_rank_fusion(&bm25, &dense, &config, 10);
 
         assert!(!results.is_empty());
 
@@ -447,7 +385,7 @@ mod tests {
             dense_weight: 0.5,
             ..Default::default()
         };
-        let results = reciprocal_rank_fusion(&bm25, &dense, &config, 10, None);
+        let results = reciprocal_rank_fusion(&bm25, &dense, &config, 10);
 
         let both = results.iter().find(|r| r.symbol_name == "both").unwrap();
         let only_bm25 = results
@@ -475,20 +413,20 @@ mod tests {
             .map(|i| make_bm25_result("a.rs", &format!("fn_{i}"), i * 10 + 1, 10.0 - i as f64))
             .collect();
 
-        let results = reciprocal_rank_fusion(&bm25, &[], &HybridConfig::default(), 5, None);
+        let results = reciprocal_rank_fusion(&bm25, &[], &HybridConfig::default(), 5);
         assert_eq!(results.len(), 5);
     }
 
     #[test]
     fn rrf_empty_inputs() {
-        let results = reciprocal_rank_fusion(&[], &[], &HybridConfig::default(), 10, None);
+        let results = reciprocal_rank_fusion(&[], &[], &HybridConfig::default(), 10);
         assert!(results.is_empty());
     }
 
     #[test]
     fn rrf_bm25_only() {
         let bm25 = vec![make_bm25_result("a.rs", "alpha", 1, 5.0)];
-        let results = reciprocal_rank_fusion(&bm25, &[], &HybridConfig::default(), 10, None);
+        let results = reciprocal_rank_fusion(&bm25, &[], &HybridConfig::default(), 10);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].source_label(), "bm25");
     }
@@ -496,7 +434,7 @@ mod tests {
     #[test]
     fn rrf_dense_only() {
         let dense = vec![make_dense_result("a.rs", "alpha", 1, 0.95)];
-        let results = reciprocal_rank_fusion(&[], &dense, &HybridConfig::default(), 10, None);
+        let results = reciprocal_rank_fusion(&[], &dense, &HybridConfig::default(), 10);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].source_label(), "dense");
     }
@@ -511,7 +449,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            bm25_score: Some(4.2),
             dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
@@ -532,7 +469,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            bm25_score: Some(4.2),
             dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
@@ -544,7 +480,7 @@ mod tests {
     #[test]
     fn format_verbose_no_dangling_comma_when_source_absent() {
         // BM25-only fallback (embeddings off) leaves both ranks None; the header
-        // must read "(rrf: X)" with no trailing ", )" waste (#509).
+        // must read "(score: X)" with no dangling separator.
         let results = vec![HybridResult {
             file_path: "auth.rs".into(),
             symbol_name: "validate".into(),
@@ -553,20 +489,16 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.5898,
-            bm25_score: Some(4.2),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         }];
         let output = format_hybrid_results(&results, false);
         assert!(
-            output.contains("(rrf: 0.5898)"),
+            output.contains("(score: 0.5898)"),
             "absent rank-source must render a clean header, got: {output}"
         );
-        assert!(
-            !output.contains(", )"),
-            "must not emit a dangling ', )' (#509)"
-        );
+        assert!(!output.contains(", )"), "must not emit a dangling ', )'");
     }
 
     #[test]
@@ -579,7 +511,6 @@ mod tests {
             end_line: 0,
             snippet: String::new(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -595,32 +526,5 @@ mod tests {
         r.bm25_rank = None;
         r.dense_rank = Some(1);
         assert_eq!(r.source_label(), "dense");
-    }
-
-    #[test]
-    fn rrf_graph_proximity_boost() {
-        let bm25 = vec![
-            make_bm25_result("neighbor.rs", "n", 1, 5.0),
-            make_bm25_result("weak.rs", "low", 1, 1.0),
-        ];
-        let dense = vec![
-            make_dense_result("weak.rs", "low", 1, 0.99),
-            make_dense_result("other.rs", "o", 1, 0.50),
-        ];
-        let mut graph = HashMap::new();
-        graph.insert("neighbor.rs".to_string(), 0usize);
-
-        let results =
-            reciprocal_rank_fusion(&bm25, &dense, &HybridConfig::default(), 10, Some(&graph));
-
-        let neighbor = results
-            .iter()
-            .find(|r| r.file_path == "neighbor.rs")
-            .unwrap();
-        let weak = results.iter().find(|r| r.file_path == "weak.rs").unwrap();
-        assert!(
-            neighbor.rrf_score > weak.rrf_score,
-            "graph neighbor should outrank when it gets a third RRF signal"
-        );
     }
 }

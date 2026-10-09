@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::forward;
 use super::tool_kind::{self, ToolResultKind};
+use super::usage::Provider;
 
 pub(crate) async fn handler(
     State(state): State<ProxyState>,
@@ -21,8 +22,7 @@ pub(crate) async fn handler(
         &upstream,
         "/v1/chat/completions",
         compress_request_body,
-        "OpenAI",
-        &[],
+        Provider::OpenAi,
     )
     .await
 }
@@ -43,7 +43,7 @@ pub(super) fn compress_request_body(
         // so history is pruned at the same frozen, cache-aware boundary.
         let boundary = super::history_prune::prune_boundary(messages.len());
         // Mirror the Anthropic guard: never rewrite content behind a client
-        // `cache_control` breakpoint (#448). OpenAI requests carry none, so this
+        // `cache_control` breakpoint. OpenAI requests carry none, so this
         // resolves to 0 and pruning is byte-for-byte unchanged — but the code
         // path stays uniform across providers.
         let cached = super::history_prune::cached_prefix_len(messages);
@@ -63,7 +63,7 @@ pub(super) fn compress_request_body(
                 .map(String::as_str);
             let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
 
-            // #481: skip live compression when the tool is excluded.
+            // Skip live compression when the tool is excluded.
             if name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
                 continue;
             }
@@ -78,33 +78,9 @@ pub(super) fn compress_request_body(
         }
     }
 
-    // Ask OpenAI to append a final usage chunk so the proxy can meter real
-    // spend. Not counted as compression (it slightly grows the body), so it
-    // never inflates the savings figure.
-    inject_usage_reporting(&mut doc);
-
     let out = serde_json::to_vec(&doc).unwrap_or_default();
     let compressed_size = if modified { out.len() } else { original_size };
     (out, original_size, compressed_size)
-}
-
-/// Injects `stream_options.include_usage = true` into a streamed Chat
-/// Completions request so the final SSE chunk carries `usage` (OpenAI omits it
-/// otherwise). No-op for non-streamed requests or when the client already
-/// configured `stream_options.include_usage`.
-fn inject_usage_reporting(doc: &mut Value) {
-    if doc.get("stream").and_then(Value::as_bool) != Some(true) {
-        return;
-    }
-    let Some(obj) = doc.as_object_mut() else {
-        return;
-    };
-    let opts = obj
-        .entry("stream_options")
-        .or_insert_with(|| Value::Object(serde_json::Map::new()));
-    if let Some(opts_obj) = opts.as_object_mut() {
-        opts_obj.entry("include_usage").or_insert(Value::Bool(true));
-    }
 }
 
 #[cfg(test)]
@@ -168,10 +144,15 @@ mod tests {
     }
 
     #[test]
-    fn injects_include_usage_for_streaming() {
-        let mut doc = serde_json::json!({"model": "gpt-5.4", "stream": true, "messages": []});
-        inject_usage_reporting(&mut doc);
-        assert_eq!(doc["stream_options"]["include_usage"], Value::Bool(true));
+    fn streamed_request_is_not_given_stream_options() {
+        // The proxy never changes the protocol the client asked for: a
+        // streamed request without `stream_options` leaves without one.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let body = serde_json::json!({"model": "gpt-5.4", "stream": true, "messages": []});
+        let bytes = serde_json::to_vec(&body).unwrap();
+        let (out, o, c) = compress_request_body(body, bytes.len());
+        assert_eq!(c, o);
+        assert_eq!(out, bytes, "the request must stay byte-identical");
     }
 
     fn long_git_status() -> String {
@@ -185,32 +166,6 @@ mod tests {
         s
     }
 
-    #[test]
-    fn no_injection_for_non_streaming() {
-        let mut doc = serde_json::json!({"model": "gpt-5.4", "messages": []});
-        inject_usage_reporting(&mut doc);
-        assert!(
-            doc.get("stream_options").is_none(),
-            "non-streamed requests get usage in the body, no injection needed"
-        );
-    }
-
-    #[test]
-    fn respects_client_set_include_usage() {
-        let mut doc = serde_json::json!({
-            "model": "gpt-5.4",
-            "stream": true,
-            "stream_options": {"include_usage": false},
-            "messages": []
-        });
-        inject_usage_reporting(&mut doc);
-        assert_eq!(
-            doc["stream_options"]["include_usage"],
-            Value::Bool(false),
-            "an explicit client value must be preserved"
-        );
-    }
-
     fn big_prose() -> String {
         let p = "You are a careful, senior software engineer. You always explain your \
                  reasoning before making changes, you prefer small reviewable diffs, and \
@@ -220,7 +175,7 @@ mod tests {
 
     #[test]
     fn system_and_assistant_prose_pass_through_verbatim() {
-        // #710: role aggressiveness is off, so prose is never rewritten.
+        // Role aggressiveness is off, so prose is never rewritten.
         let _iso = crate::core::data_dir::isolated_data_dir();
 
         let prose = big_prose();
@@ -244,7 +199,7 @@ mod tests {
         assert_eq!(
             parsed["messages"][2]["content"].as_str().unwrap(),
             prose,
-            "assistant turns must pass through verbatim (#710)"
+            "assistant turns must pass through verbatim"
         );
     }
 
@@ -264,13 +219,13 @@ mod tests {
         assert_eq!(
             compress_request_body(a, la).0,
             compress_request_body(b, lb).0,
-            "identical input must yield byte-identical output (#498)"
+            "identical input must yield byte-identical output"
         );
     }
 
     #[test]
     fn effort_control_is_off_and_a_noop() {
-        // #834 end-to-end through the Chat Completions request path.
+        // End-to-end through the Chat Completions request path.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let body = serde_json::json!({
             "model": "gpt-5.5", "messages": [{"role": "user", "content": "hi"}]

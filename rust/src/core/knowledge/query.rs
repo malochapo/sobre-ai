@@ -37,6 +37,7 @@ impl ProjectKnowledge {
         results.into_iter().map(|(f, _)| f).collect()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn recall_by_category(&self, category: &str) -> Vec<&KnowledgeFact> {
         self.facts
             .iter()
@@ -74,16 +75,6 @@ impl ProjectKnowledge {
 
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.into_iter().map(|(f, _)| f).collect()
-    }
-
-    pub fn timeline(&self, category: &str) -> Vec<&KnowledgeFact> {
-        let mut facts: Vec<&KnowledgeFact> = self
-            .facts
-            .iter()
-            .filter(|f| f.category == category)
-            .collect();
-        facts.sort_by_key(|x| x.created_at);
-        facts
     }
 
     pub fn list_rooms(&self) -> Vec<(String, usize)> {
@@ -128,20 +119,13 @@ impl ProjectKnowledge {
                 let f = &self.facts[idx];
                 let mut relevance = (count as f32 / terms.len() as f32) * f.confidence;
                 // Exact-match boost: an exact hit on the fact key (or category)
-                // should rank above incidental lexical matches (#2363). The +1.0
+                // should rank above incidental lexical matches. The +1.0
                 // dominates the [0,1] coverage*confidence base.
                 let key_lower = f.key.to_lowercase();
                 if key_lower == q {
                     relevance += 1.0;
                 } else if f.category.to_lowercase() == q {
                     relevance += 0.5;
-                }
-                // Observation tier (#802): a relevant synthesized entity-summary is
-                // orientation — lift it above incidental matches, but keep it below an
-                // exact key hit (+1.0) so a stale summary never buries a precise raw
-                // fact. Balanced, not absolute.
-                if f.is_synthesized_observation() {
-                    relevance += 0.4;
                 }
                 Scored { idx, relevance }
             })
@@ -173,24 +157,26 @@ impl ProjectKnowledge {
     pub fn recall_by_category_for_output(
         &mut self,
         category: &str,
+        query: Option<&str>,
         limit: usize,
     ) -> (Vec<KnowledgeFact>, usize) {
+        // With a query, a fact must contain every one of its words.
+        let terms: Vec<String> = query
+            .map(|q| q.split_whitespace().map(str::to_lowercase).collect())
+            .unwrap_or_default();
+        let matches = |f: &KnowledgeFact| {
+            let text = format!("{} {}", f.key, f.value).to_lowercase();
+            terms.iter().all(|t| text.contains(t.as_str()))
+        };
         let mut idxs: Vec<usize> = self
             .facts
             .iter()
             .enumerate()
-            .filter(|(_, f)| f.is_current() && f.category == category)
+            .filter(|(_, f)| f.is_current() && f.category == category && matches(f))
             .map(|(i, _)| i)
             .collect();
 
-        // Within a category, synthesized observation summaries lead (#802) — a
-        // balanced tier ahead of the usual salience sort, never an absolute override.
-        idxs.sort_by(|a, b| {
-            let (fa, fb) = (&self.facts[*a], &self.facts[*b]);
-            fb.is_synthesized_observation()
-                .cmp(&fa.is_synthesized_observation())
-                .then_with(|| sort_fact_for_output(fa, fb))
-        });
+        idxs.sort_by(|a, b| sort_fact_for_output(&self.facts[*a], &self.facts[*b]));
 
         let total = idxs.len();
         idxs.truncate(limit);

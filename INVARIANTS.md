@@ -1,4 +1,4 @@
-# The six invariants
+# The five invariants
 
 These are not guidelines. They are the definition of the project. A change that
 breaks one of them is out of scope no matter how good it is — and if we ever
@@ -17,7 +17,7 @@ The MCP tool surface is capped at **20 tools**. There is no exception, no
 "internal" tool that doesn't count, no meta-tool that fans out to a hidden
 registry.
 
-The surface currently stands at 17, leaving three slots. That margin is
+The surface currently stands at 15, leaving five slots. That margin is
 deliberate: a cap you are already touching is a cap you will break.
 
 Adding a tool requires naming the tool it replaces, in the same PR. If nothing
@@ -28,19 +28,32 @@ is being replaced, the answer is no.
 
 ## 2. One configuration file, one level, no cascade
 
-- **One** config file. One location. No per-repository init, no per-agent init.
+- **One** config file. One location. No per-repository install, and no
+  per-agent settings: `init <agent>` only picks which agents to connect.
 - **No layering.** No defaults → profile → file → env → flag resolution chain.
   If a value can come from two places, it comes from one place.
-- **No environment variables that change behaviour.** `SOBRE_*` may exist for
-  paths and secrets. Never for what the tool does.
+- **No environment variables that change behaviour.** Variables may exist for
+  paths and secrets — `SOBRE_CONFIG_DIR`, `SOBRE_DATA_DIR`,
+  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does.
 - **No profiles**, no presets, no modes.
+- **No settings outside the file.** No per-project files, no settings kept in
+  session state, nothing a previous run persisted that later acts as a value.
 - Hard cap: **15 configuration keys.** Adding one requires removing one.
 
-The file currently has 14 keys, leaving one slot: `allow_paths`,
-`read_only_roots`, `ignore`, `passthrough_commands`, `shell_timeout_secs`,
-`shell_hook`, `hook_binary`, `compression_level`, `debug_log`,
-`embedding_model`, and the `[proxy]` table's `enabled`, `port`, `upstreams` and `routing`. Choices made
-once at setup are `init` options, recorded by what `init` installs, not keys.
+How keys are counted: a top-level field is one key, a field of `[proxy]` is
+one key, and a table that a key holds (`proxy.upstreams`) counts once
+whatever it contains. A test (`config::schema::key_cap`) pins the
+list, so adding a key is always a visible change.
+
+The file currently has 11 keys, leaving four slots: `search_roots`, `ignore`,
+`passthrough_commands`, `shell_timeout_secs`, `hook_binary`,
+`compression_level`, `debug_log`, `embedding_model`, and the `[proxy]` table's
+`enabled`, `port` and `upstreams`. Every key has one value even when
+the file is silent: `compression_level` defaults to 0.3, never to "unset".
+`init` sets nothing of its own: besides which agents to connect, its flags
+only preview (`--check`), skip its questions (`--repair`) or report in JSON
+(`--json`). Its two questions write `proxy.enabled` and, in a build with
+embeddings, download the model.
 The generated list is `docs/reference/generated/config-keys.md`.
 
 If a setting can be decided correctly by the tool, it is not a setting.
@@ -53,6 +66,12 @@ If a setting can be decided correctly by the tool, it is not a setting.
 There is exactly one answer to `tools/list`. It does not depend on an
 environment variable, a config key, a pinned profile, the identity of the
 calling client, a role, or a workflow state.
+
+Two deliberate exceptions. On wording: `compression_level` condenses the prose
+of tool descriptions, as it condenses the rest of sobre's prose. On builds:
+the build with local embeddings adds one parameter, `sobre_search`'s `mode`,
+which a build without them could not honour. Within a build, the set of
+tools, their names and their parameters never change.
 
 Corollary: no "universal invoker" tool, because there are no hidden tools for it
 to reach.
@@ -86,101 +105,44 @@ it might be monetisable later, or whether some organisation might want it. It is
 load-bearing, and it is the sharpest tool we have against re-growing into what
 we forked away from.
 
-## 5. Subtraction is the default; the line budget is a hard ceiling
+## 5. The agent host is in control
 
-Every release must be **smaller than or equal to** the previous one in lines of
-Rust, unless the PR states the exception explicitly and it is accepted.
+**`sobre` never decides what may run, be read or be written: no allow list, no
+deny list, no block. What the agent host already governs is neither reproduced
+nor bypassed by `sobre`.**
 
-- Ceiling: **380,000 lines of Rust** under `rust/src`, excluding vendored code
-  **and tests** — `#[cfg(test)]` blocks and `rust/tests/`.
-- A PR that adds net lines must say so in its description and justify it.
-- "We might need it later" is not a justification. `git revert` exists.
-
-### Why tests are outside the ceiling
-
-They were inside it until the count was measured: **112,160 lines across 933
-`#[cfg(test)]` blocks**, a quarter of `rust/src`, all of it pushing against a
-budget the production code has to fit in. That is a standing incentive to
-delete tests, and this project has already been burned twice by not running the
-ones it has — a warning cleanup left `--features dense` broken at 62 errors for
-days, and `CORE_TOOL_NAMES references 'shell' which is not registered` sat red
-from the commit that caused it until an audit went looking. The suite is the
-only reliable oracle here. A budget that taxes it is aimed at the wrong thing.
-
-### Where we actually stand
-
-`rust/src` is about 261,400 lines, of which about 77,600 are test code.
-**Production code: about 183,800 — some 196,000 below the ceiling.** (It was
-343,328 when this section was first written.)
-
-So the ceiling is met, and has been for a while without anyone knowing: the
-figure quoted above (491,554, "about 111,000 lines below where we stand") was
-counting tests on both sides. That does not make the remaining removals
-optional. `addons`, `context_package`, `plugins`, the dashboard and the
-config cascade go because invariants 1, 2 and 4 say so — not to hit a number.
-What it changes is that subtraction no longer needs to be argued from a budget
-it was already inside.
-
-### Where 380,000 comes from
-
-The figure is measured, not chosen. At 491,554 lines in `rust/src`, executing
-**every** removal currently on the table — the tool surface (47,736), `cli/` (~27,100), `proxy/` (26,683),
-`context_kernel` (16,759), `ocla` (10,297), plus `doctor`, `dashboard`,
-`addons` and `lsp` (29,002) — lands at roughly **334,000**. Reaching 180,000
-would mean cutting a further 154,000 out of `core/`, `server/`, `shell/` and
-`hooks/`: the engine itself. A ceiling nobody can reach is a ceiling everybody
-ignores.
-
-380,000 is the target for the scope we chose: the MCP context layer **plus**
-the local compressing proxy.
-
-### Scope decision behind the number
-
-`proxy/` stays. It is the only part of the system that acts on *all* traffic
-rather than on the tools an agent chooses to call, and it is what makes the
-token claim true rather than aspirational. It runs entirely on the user's
-machine and nobody else connects to it, so it sits inside invariant 4. It also
-carries `shape-xlat`, which is what lets a Claude-shaped client talk to a local
-Ollama — squarely the local-first use case.
-
-If the proxy is ever dropped, this ceiling drops with it, to 330,000.
-
----
-
-## 6. Permissive by default; the developer decides what to forbid
-
-**`sobre` allows every shell command by default. Restrictions are an explicit
-deny list the user writes, never an allow list they must maintain.**
-
-The tool it forks from ships a curated allow list of 242 executables, plus a
-second list of cloud CLIs held back because "a coding agent that can run
-`terraform apply` by default is an incident waiting to happen". That design
-assumes the user needs protecting from their own agent. `sobre` assumes the
-opposite: it is for developers who know what they are running.
-
-The reasoning is not bravado, it is accounting. **An agent without `sobre` runs
-those commands anyway** — the shell is right there. Gating them here buys no
-safety; it only moves where the friction lands, and costs a data table someone
-has to review forever. And the cloud CLIs specifically are *useful* to an agent
-doing diagnosis: reading a cluster's state is most of the work.
-
-A developer working against production is responsible for blocking what must
-not run there, in that project. That is their call, not a default we make for
-everyone.
+Agent hosts — Claude Code, Copilot, Cursor, Codex, Gemini CLI — ship their own
+control: permission rules, approval prompts, auto modes, classifiers. They are
+better placed to decide than a context tool sitting beside them, and a second
+gate can only disagree with the first. The tool `sobre` forks from shipped such a
+gate: a curated allow list of shell commands, a path jail, refusals of
+secret-looking files, a throttle on repeated calls, and approval settings written
+into the host's configuration. Each one either duplicated the host's decision or
+overrode it. `sobre` keeps none of them.
 
 What follows from this:
 
-- No default allow list. Shipping one recreates the maintenance we forked away
-  from, and the "empty list" path already exists in the engine.
-- Blocks are opt-in, explicit, and few. What remains unconditional is what a
-  deny list cannot express — inline interpreter evaluation and the shell
-  builtins that hide a command from inspection.
-- **No hidden behaviour.** `sobre` does not silently refuse, silently rewrite,
-  or silently substitute. If it declines something, it says so and says why.
+- **No gate of its own.** No command filter, no path confinement, no read-only
+  roots, no refusal of files by name, no throttling of repeated calls. A command
+  runs as the agent wrote it; a path is read or written where the agent pointed.
+- **Nothing written into the host's permissions.** No allow rules, no
+  `autoApprove`, no `trust`, no plan-mode settings. A hook never returns an
+  approval or a denial: it either says nothing or, where the host allows it,
+  replaces a result or rewrites a command.
+- **No transformation that escapes the host's rules.** Output is compressed
+  after the host ran the command wherever the host supports it. Where only a
+  rewrite is possible, a command is wrapped only when every host rule `sobre`
+  can read treats the original and the wrapped form alike; otherwise it runs as
+  written.
+- **Nothing hidden.** When `sobre` changes something — compresses or condenses
+  output, lowers compression for a session, skips files in a search — it says so
+  in the output, and the full original stays reachable.
 
-`sobre` is therefore more dangerous than a tool that says no by default — and
-exactly as dangerous as the terminal the developer already has open. That is
-the intended position.
+Masking secrets in `sobre`'s own output (`[REDACTED:…]`) stays: it governs what
+`sobre` shows, not what the agent may do.
+
+`sobre` is therefore exactly as permissive, and exactly as strict, as the host
+it runs in. That is the intended position.
 
 ## Process rules (not invariants, but not optional either)
 
@@ -193,8 +155,10 @@ exist so that shipping often and shipping safely are not in tension.
 - Branch protection on `main` and `develop`: no direct pushes, review required.
 - **Two maintainers with equal rights, from day one.** A project whose bus
   factor is 1 has already reproduced the problem it was forking away from.
-- No generated artefacts, marketing material, or private notes in the
-  repository. The repo contains source, tests, docs and CI. Nothing else.
+- No marketing material or private notes in the repository, and no generated
+  artefacts except the reference pages in `docs/reference/generated/`, which
+  CI regenerates and compares with the code. The repo contains source, tests,
+  docs and CI. Nothing else.
 - **Commit messages and comments describe what `sobre` does and why.** They do
   not narrate what the upstream project got wrong. The fork is justified by
   what it is. Technical observations about inherited code belong in the

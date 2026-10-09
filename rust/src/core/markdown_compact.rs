@@ -2,7 +2,7 @@
 //!
 //! Keeps heading topology intact, treats fenced code blocks as atomic units, and
 //! selects high-signal body units with a small IDF-style scorer. Intentionally
-//! std-only and byte-stable (#498): per-line token sets are ordered
+//! std-only and byte-stable: per-line token sets are ordered
 //! (`BTreeSet`), so the f64 score summation order — and therefore the selected
 //! lines and omission markers — are a pure function of the input bytes.
 
@@ -244,7 +244,7 @@ fn flush_omission(out: &mut String, omitted: &mut usize) {
     if *omitted == 0 {
         return;
     }
-    let _ = writeln!(out, "... [lean-ctx: omitted {omitted} lines]");
+    let _ = writeln!(out, "... [sobre: omitted {omitted} lines]");
     *omitted = 0;
 }
 
@@ -266,7 +266,7 @@ fn is_heading(line: &str) -> bool {
 
 /// Per-line token sets. `BTreeSet` (not `HashSet`) is load-bearing: the score
 /// is an f64 sum over these tokens, and f64 addition is not associative, so the
-/// iteration order must be fixed for the output to be byte-stable (#498).
+/// iteration order must be fixed for the output to be byte-stable.
 fn token_sets(lines: &[&str]) -> Vec<BTreeSet<String>> {
     lines
         .iter()
@@ -329,8 +329,8 @@ fn score_line(
         || line.contains("SHOULD")
         || line.contains("BLOCKING")
         || line.contains("WARNING")
-        || line.contains("ctx_")
-        || line.contains("lean-ctx")
+        || line.contains("sobre_")
+        || line.contains("sobre")
     {
         score += 10.0;
     }
@@ -387,7 +387,7 @@ mod tests {
     #[test]
     fn keeps_all_headings_and_shrinks() {
         let input = "# Title\n\nIntro paragraph with ordinary words.\n\n## Setup\n\n";
-        let body = "- `ctx_read` keeps important details for agents.\n";
+        let body = "- `sobre_read` keeps important details for agents.\n";
         let repeated = "This sentence is useful once but repeated many times for filler.\n";
         let mut doc = input.to_string();
         for _ in 0..20 {
@@ -404,9 +404,9 @@ mod tests {
         assert!(compacted.contains("# Title"));
         assert!(compacted.contains("## Setup"));
         assert!(compacted.contains("## Safety"));
-        assert!(compacted.contains("ctx_read"));
+        assert!(compacted.contains("sobre_read"));
         assert!(compacted.contains("MUST preserve"));
-        assert!(compacted.contains("[lean-ctx: omitted"));
+        assert!(compacted.contains("[sobre: omitted"));
     }
 
     #[test]
@@ -421,7 +421,7 @@ mod tests {
                 ));
             }
             doc.push_str(&format!(
-                "BLOCKING section {section} exact requirement with `ctx_read`.\n"
+                "BLOCKING section {section} exact requirement with `sobre_read`.\n"
             ));
         }
 
@@ -432,7 +432,7 @@ mod tests {
             assert!(compacted.contains(&format!("Section {section} overview line.")));
             assert!(compacted.contains(&format!("BLOCKING section {section}")));
         }
-        assert!(compacted.contains("[lean-ctx: omitted"));
+        assert!(compacted.contains("[sobre: omitted"));
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn output_is_deterministic_across_calls() {
-        // #498 regression guard: the score is an f64 sum over per-line token
+        // Regression guard: the score is an f64 sum over per-line token
         // sets. With unordered sets, near-tied lines could flip across calls
         // (each std HashSet instance iterates in its own random order), moving
         // omission markers and changing bytes. Mixed token frequencies below
@@ -473,10 +473,8 @@ mod tests {
         for _ in 0..30 {
             doc.push_str(filler);
         }
-        doc.push_str("Run the exact `ctx_read` command below:\n\n");
-        doc.push_str(
-            "```bash\nlean-ctx read src/lib.rs\n\nlean-ctx search \"ctx_read\" src/\n```\n",
-        );
+        doc.push_str("Run the exact `sobre_read` command below:\n\n");
+        doc.push_str("```bash\nsobre read src/lib.rs\n\nsobre search \"sobre_read\" src/\n```\n");
         for _ in 0..30 {
             doc.push_str(filler);
         }
@@ -491,7 +489,7 @@ mod tests {
                 in_fence = !in_fence;
             } else if in_fence {
                 assert!(
-                    !line.starts_with("... [lean-ctx:"),
+                    !line.starts_with("... [sobre:"),
                     "omission marker inside a fenced block:\n{compacted}"
                 );
             }
@@ -500,10 +498,12 @@ mod tests {
 
         // This block is high-signal, so it must survive whole — including its
         // blank interior line (kept fences are verbatim).
-        assert!(compacted.contains(
-            "```bash\nlean-ctx read src/lib.rs\n\nlean-ctx search \"ctx_read\" src/\n```"
-        ));
-        assert!(compacted.contains("[lean-ctx: omitted"));
+        assert!(
+            compacted.contains(
+                "```bash\nsobre read src/lib.rs\n\nsobre search \"sobre_read\" src/\n```"
+            )
+        );
+        assert!(compacted.contains("[sobre: omitted"));
     }
 
     #[test]

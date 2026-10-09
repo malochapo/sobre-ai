@@ -4,13 +4,11 @@ fn parts_for(uri: &str) -> Parts {
 }
 
 fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u8>, usize, usize) {
-    value["lean_ctx_touched"] = serde_json::Value::Bool(true);
+    value["sobre_touched"] = serde_json::Value::Bool(true);
     let out = serde_json::to_vec(&value).unwrap();
     let compressed_size = out.len();
     (out, original_size, compressed_size)
 }
-
-// --- wire context (project tag + baseline inputs) ---
 
 #[test]
 fn upstream_is_local_detects_loopback_hosts() {
@@ -37,72 +35,6 @@ fn upstream_is_local_detects_loopback_hosts() {
     }
 }
 
-#[test]
-fn wire_context_carries_project_tag_and_baseline() {
-    let mut parts = parts_for("/v1/messages");
-    parts
-        .extensions
-        .insert(super::super::request_tags::RequestTags {
-            project: Some("billing".into()),
-        });
-    let wire = wire_context(&parts, "Anthropic", "https://api.anthropic.com", 750, 4000);
-    assert_eq!(wire.provider, "Anthropic");
-    assert_eq!(wire.project.as_deref(), Some("billing"));
-    assert_eq!(wire.saved_tokens, 750);
-    // bytes/4 estimate, same basis as the proxy stats (enterprise#18).
-    assert_eq!(wire.uncompressed_input_tokens, 1000);
-    assert!(!wire.is_local);
-    assert_eq!(wire.routed_from, None);
-}
-
-#[test]
-fn wire_context_prefers_registry_provider_id_over_shape_label() {
-    // /providers/local/... speaks the OpenAI shape but must meter as
-    // "local" — the admin breakdown groups by provider identity (#20).
-    let mut parts = parts_for("/v1/chat/completions");
-    parts
-        .extensions
-        .insert(super::super::providers::RegistryProviderId {
-            id: "local".into(),
-            local: false,
-        });
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
-    assert_eq!(wire.provider, "local");
-}
-
-#[test]
-fn wire_context_registry_local_flag_beats_url_heuristic() {
-    // The containerized gateway reaches host Ollama via
-    // host.docker.internal — not loopback, but declared local = true must
-    // book the shadow rate (enterprise#15/#18). And the inverse: a
-    // loopback-tunneled cloud endpoint declared local = false must not.
-    let mut parts = parts_for("/v1/chat/completions");
-    parts
-        .extensions
-        .insert(super::super::providers::RegistryProviderId {
-            id: "local".into(),
-            local: true,
-        });
-    let wire = wire_context(
-        &parts,
-        "OpenAI",
-        "http://host.docker.internal:11434",
-        0,
-        400,
-    );
-    assert!(wire.is_local, "declared local flag must win");
-
-    let mut parts = parts_for("/v1/chat/completions");
-    parts
-        .extensions
-        .insert(super::super::providers::RegistryProviderId {
-            id: "tunnel".into(),
-            local: false,
-        });
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400);
-    assert!(!wire.is_local, "declared non-local flag must win");
-}
-
 // --- enterprise#51: fail-open single retry ---
 
 #[test]
@@ -124,16 +56,6 @@ fn retry_covers_exactly_not_processed_statuses() {
 }
 
 #[test]
-fn wire_context_without_tags_still_carries_baseline() {
-    // No project tag, but savings + baseline are still real.
-    let parts = parts_for("/v1/chat/completions");
-    let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400);
-    assert_eq!(wire.project, None);
-    assert_eq!(wire.uncompressed_input_tokens, 100);
-    assert!(wire.is_local);
-}
-
-#[test]
 fn zstd_request_bodies_are_rewritten_and_reencoded() {
     let body = serde_json::json!({"model": "gpt-5", "input": []});
     let json = serde_json::to_vec(&body).unwrap();
@@ -146,25 +68,16 @@ fn zstd_request_bodies_are_rewritten_and_reencoded() {
         .into_parts()
         .0;
 
-    let prepared = prepare_request_body(
-        &parts,
-        &encoded,
-        add_test_marker,
-        |_| None,
-        "https://api.openai.com",
-        false,
-    )
-    .unwrap();
+    let prepared = prepare_request_body(&parts, &encoded, add_test_marker).unwrap();
     assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Zstd);
-    assert_eq!(prepared.original_size, json.len());
-    assert!(prepared.compression_candidate);
+    assert_eq!(prepared.request_model.as_deref(), Some("gpt-5"));
     assert!(prepared.preserve_content_encoding);
     assert!(should_forward_request_header("content-encoding", true));
     assert!(!should_forward_request_header("content-encoding", false));
 
     let decoded = zstd::decode_all(prepared.body.as_slice()).unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
-    assert_eq!(parsed["lean_ctx_touched"], true);
+    assert_eq!(parsed["sobre_touched"], true);
     assert_eq!(parsed["model"], "gpt-5");
 }
 
@@ -181,93 +94,30 @@ fn gzip_request_bodies_are_rewritten_and_reencoded() {
         .into_parts()
         .0;
 
-    let prepared = prepare_request_body(
-        &parts,
-        &encoded,
-        add_test_marker,
-        |_| None,
-        "https://api.openai.com",
-        false,
-    )
-    .unwrap();
+    let prepared = prepare_request_body(&parts, &encoded, add_test_marker).unwrap();
     assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Gzip);
-    assert_eq!(prepared.original_size, json.len());
-    assert!(prepared.compression_candidate);
     assert!(prepared.preserve_content_encoding);
 
     let decoded = decode_gzip_bounded(&prepared.body, max_body_bytes()).unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
-    assert_eq!(parsed["lean_ctx_touched"], true);
+    assert_eq!(parsed["sobre_touched"], true);
     assert_eq!(parsed["model"], "gpt-5");
 }
 
 #[test]
-fn openrouter_chat_requests_opt_into_billed_cost() {
+fn chat_requests_leave_with_only_what_compression_changed() {
+    // No usage opt-in or other field is added on the way upstream.
     let _iso = crate::core::data_dir::isolated_data_dir();
-    let body = serde_json::json!({"model": "deepseek/deepseek-v4-flash", "messages": []});
+    let body = serde_json::json!({"model": "gpt-5.5", "stream": true, "messages": []});
     let json = serde_json::to_vec(&body).unwrap();
     let parts = parts_for("/v1/chat/completions");
 
-    let prepared = prepare_request_body(
-        &parts,
-        &json,
-        add_test_marker,
-        |_| None,
-        "https://openrouter.ai/api",
-        true,
-    )
+    let prepared = prepare_request_body(&parts, &json, |v, n| {
+        (serde_json::to_vec(&v).unwrap(), n, n)
+    })
     .unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
-    assert_eq!(
-        parsed["usage"]["include"], true,
-        "OpenRouter chat requests must ask for the billed cost (#1179)"
-    );
-}
-
-#[test]
-fn non_openrouter_upstreams_never_carry_the_usage_opt_in() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let body = serde_json::json!({"model": "gpt-5.5", "messages": []});
-    let json = serde_json::to_vec(&body).unwrap();
-    let parts = parts_for("/v1/chat/completions");
-
-    let prepared = prepare_request_body(
-        &parts,
-        &json,
-        add_test_marker,
-        |_| None,
-        "https://api.openai.com",
-        true,
-    )
-    .unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
-    assert!(
-        parsed.get("usage").is_none(),
-        "api.openai.com rejects unknown top-level params — no injection"
-    );
-}
-
-#[test]
-fn responses_api_bodies_never_carry_the_usage_opt_in() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let body = serde_json::json!({"model": "gpt-5.5", "input": []});
-    let json = serde_json::to_vec(&body).unwrap();
-    let parts = parts_for("/v1/responses");
-
-    let prepared = prepare_request_body(
-        &parts,
-        &json,
-        add_test_marker,
-        |_| None,
-        "https://openrouter.ai/api",
-        true,
-    )
-    .unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&prepared.body).unwrap();
-    assert!(
-        parsed.get("usage").is_none(),
-        "`usage.include` is Chat-Completions-only — Responses bodies stay clean"
-    );
+    assert_eq!(parsed, body);
 }
 
 #[test]
@@ -294,14 +144,9 @@ fn unknown_encoded_request_bodies_stay_passthrough() {
         .0;
     let body = b"not-json";
 
-    let prepared = prepare_request_body(
-        &parts,
-        body,
-        |_, _| panic!("unknown encodings must not be JSON-rewritten"),
-        |_| None,
-        "https://api.openai.com",
-        false,
-    )
+    let prepared = prepare_request_body(&parts, body, |_, _| {
+        panic!("unknown encodings must not be JSON-rewritten")
+    })
     .unwrap();
 
     assert_eq!(
@@ -309,8 +154,7 @@ fn unknown_encoded_request_bodies_stay_passthrough() {
         RequestBodyEncoding::Passthrough
     );
     assert_eq!(prepared.body, body);
-    assert!(prepared.parsed.is_none());
-    assert!(!prepared.compression_candidate);
+    assert!(prepared.request_model.is_none());
     assert!(prepared.preserve_content_encoding);
 }
 
@@ -324,20 +168,14 @@ fn invalid_json_request_bodies_are_not_compression_candidates() {
         .0;
     let body = b"not-json";
 
-    let prepared = prepare_request_body(
-        &parts,
-        body,
-        |_, _| panic!("invalid JSON must not enter the compression pipeline"),
-        |_| None,
-        "https://api.openai.com",
-        false,
-    )
+    let prepared = prepare_request_body(&parts, body, |_, _| {
+        panic!("invalid JSON must not enter the compression pipeline")
+    })
     .unwrap();
 
     assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Identity);
     assert_eq!(prepared.body, body);
-    assert!(prepared.parsed.is_none());
-    assert!(!prepared.compression_candidate);
+    assert!(prepared.request_model.is_none());
     assert!(!prepared.preserve_content_encoding);
 }
 
@@ -383,7 +221,7 @@ fn upstream_url_preserves_query_params() {
 
 #[test]
 fn forwards_openai_project_and_auth_headers() {
-    // #366: project-scoped OpenAI keys carry the scope via `OpenAI-Project`.
+    // Project-scoped OpenAI keys carry the scope via `OpenAI-Project`.
     // It must be forwarded upstream, otherwise the Responses API rejects the
     // call with `Missing scopes: api.responses.write`.
     for required in ["authorization", "openai-project", "openai-organization"] {
@@ -418,20 +256,6 @@ fn forwards_chatgpt_codex_oauth_headers() {
 }
 
 #[test]
-fn forwards_streamable_http_mcp_headers() {
-    for required in ["mcp-session-id", "last-event-id"] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be forwarded upstream"
-        );
-    }
-    assert!(
-        is_forwarded_response_header("mcp-session-id"),
-        "MCP session id response header must be forwarded downstream"
-    );
-}
-
-#[test]
 fn forwards_codex_state_response_headers() {
     for required in [
         "x-codex-turn-state",
@@ -453,5 +277,5 @@ fn forwards_codex_state_response_headers() {
 
 #[test]
 fn internal_project_tag_is_not_forwarded() {
-    assert!(!is_allowed_request_header("x-leanctx-project"));
+    assert!(!is_allowed_request_header("x-sobre-project"));
 }

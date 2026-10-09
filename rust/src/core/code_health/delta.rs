@@ -2,8 +2,8 @@
 //!
 //! Computes how an edit changes per-function cognitive complexity **without
 //! touching the index** — pure and deterministic, so it can run inside the
-//! edit path (`ctx_edit`, `ctx_patch`) and the native-edit hook to prevent
-//! complexity drift at the moment it is introduced. Functions are matched by
+//! edit path (`sobre_patch`) to flag complexity drift at the moment it is
+//! introduced. Functions are matched by
 //! name (their stable identity across an in-place edit).
 
 use super::cognitive::cognitive_per_function;
@@ -18,11 +18,7 @@ pub struct CognitiveDelta {
 }
 
 impl CognitiveDelta {
-    /// Signed change (positive = got more complex).
-    pub fn increase(&self) -> i64 {
-        i64::from(self.after) - i64::from(self.before)
-    }
-
+    #[cfg(test)]
     /// True when the edit pushed a previously-acceptable function over
     /// `threshold` (the case `gate="block"` refuses).
     pub fn crosses_threshold(&self, threshold: u32) -> bool {
@@ -70,7 +66,7 @@ pub fn worst_regression(deltas: &[CognitiveDelta], threshold: u32) -> Option<&Co
         })
 }
 
-/// Deterministic one-line edit-gate notice. No timestamps/counters → #498-safe.
+/// Deterministic one-line edit-gate notice. No timestamps/counters
 pub fn format_gate_notice(delta: &CognitiveDelta, threshold: u32) -> String {
     format!(
         "[CODE HEALTH] fn {}: cognitive {}->{} (+{}, >{}) — consider extracting helpers",
@@ -106,7 +102,6 @@ mod tests {
         assert_eq!(deltas[0].name, "f");
         assert_eq!(deltas[0].before, 1);
         assert_eq!(deltas[0].after, 3);
-        assert_eq!(deltas[0].increase(), 2);
     }
 
     #[test]

@@ -1,7 +1,6 @@
 use std::process::Command;
 
-use lean_ctx::core::setup_report::SetupReport;
-use lean_ctx::status::StatusReport;
+use sobre::core::setup_report::SetupReport;
 
 fn run_json(bin: &str, args: &[&str], envs: &[(&str, &str)]) -> (i32, String) {
     let mut cmd = Command::new(bin);
@@ -53,8 +52,8 @@ fn write_exe(path: &std::path::Path, content: &str) {
     windows,
     ignore = "Windows handle inheritance causes subprocess hangs in CI"
 )]
-fn setup_bootstrap_doctor_status_json_smoke() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+fn setup_bootstrap_doctor_json_smoke() {
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -64,8 +63,8 @@ fn setup_bootstrap_doctor_status_json_smoke() {
 
     let home_str = home.to_string_lossy().to_string();
 
-    // Fake claude binary so we can verify `claude mcp add-json` integration.
-    // It writes stdin JSON to $HOME/claude-mcp.json and exits 0.
+    // A `claude` CLI on PATH that leaves a trace if it is ever run: sobre
+    // writes its entry into `.claude.json` itself and never calls the CLI.
     let claude_path = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
     } else {
@@ -85,7 +84,7 @@ fn setup_bootstrap_doctor_status_json_smoke() {
 
     let dirs = SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    let mut envs = vec![("HOME", home_str.as_str())];
     envs.extend(dirs.to_env_pairs());
 
     #[cfg(not(windows))]
@@ -103,6 +102,29 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let new_path = format!("{}{sep}{}", bin_dir.to_string_lossy(), old_path);
     envs.push(("PATH", new_path.as_str()));
 
+    // init --check --json says it is a preview, and writes nothing.
+    let (code, out) = run_json(
+        bin,
+        &["init", "--check", "--json", "--agent", "claude"],
+        &envs,
+    );
+    assert_eq!(code, 0, "init --check exit code");
+    let preview: SetupReport = serde_json::from_str(&out).expect("init --check JSON parse");
+    assert!(preview.dry_run, "a preview is marked as one: {out}");
+    let claude = &preview.steps[0].items[0];
+    assert_eq!(claude.status, "would_connect", "{out}");
+    assert!(
+        claude
+            .note
+            .as_deref()
+            .is_some_and(|n| n.contains("would create ~/.claude.json")),
+        "{out}"
+    );
+    assert!(
+        !home.join(".claude.json").exists(),
+        "init --check must write nothing"
+    );
+
     // bootstrap --json returns clean JSON (SetupReport)
     let (code, out) = run_json(bin, &["init", "--repair", "--json"], &envs);
     assert_eq!(code, 0, "bootstrap exit code");
@@ -114,30 +136,32 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     });
     assert_eq!(setup.schema_version, 1);
 
-    // bootstrap should create env.sh in the config dir for Docker/CI shells.
-    // env.sh is Unix-only (shell script); skip assertion on Windows.
-    #[cfg(not(windows))]
-    {
-        let env_sh = std::path::Path::new(&dirs.config).join("env.sh");
-        let env_sh_content = std::fs::read_to_string(&env_sh).expect("env.sh exists");
+    // init never writes shell files: no env.sh, no shell-hook scripts.
+    for f in ["env.sh", "shell-hook.zsh", "shell-hook.bash"] {
         assert!(
-            env_sh_content.contains("lean-ctx docker self-heal"),
-            "env.sh missing docker self-heal snippet"
+            !std::path::Path::new(&dirs.config).join(f).exists(),
+            "init must not write {f}"
         );
     }
 
-    // init --agent claude --mode mcp should prefer `claude mcp add-json` when available.
+    // init --agent claude writes the entry into `.claude.json` itself, with
+    // the Claude CLI on PATH too: one writer.
+    let _ = std::fs::remove_file(home.join(".claude.json"));
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global", "--mode", "mcp"])
+        .args(["init", "--agent", "claude"])
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude --mode mcp");
-    assert!(out.status.success(), "init --agent claude --mode mcp exit");
-    let saved = std::fs::read_to_string(home.join("claude-mcp.json")).expect("claude-mcp.json");
+        .expect("init --agent claude");
+    assert!(out.status.success(), "init --agent claude exit");
+    let saved = std::fs::read_to_string(home.join(".claude.json")).expect(".claude.json");
     let v: serde_json::Value = serde_json::from_str(&saved).expect("claude json parse");
     assert!(
-        v.get("command").is_some(),
-        "claude input should be server entry json"
+        v["mcpServers"]["sobre"].get("command").is_some(),
+        "the entry is in .claude.json: {saved}"
+    );
+    assert!(
+        !home.join("claude-mcp.json").exists(),
+        "the claude CLI must not be run"
     );
 
     // doctor --fix --json returns clean JSON (SetupReport shape)
@@ -146,16 +170,26 @@ fn setup_bootstrap_doctor_status_json_smoke() {
     let doctor_report: SetupReport = serde_json::from_str(&out).expect("doctor JSON parse");
     assert_eq!(doctor_report.schema_version, 1);
 
-    // status --json returns clean JSON
-    let (code, out) = run_json(bin, &["status", "--json"], &envs);
-    assert_eq!(code, 0, "status exit code");
-    let status: StatusReport = serde_json::from_str(&out).expect("status JSON parse");
-    assert_eq!(status.schema_version, 1);
+    // doctor opens with the install summary: version and connected agents.
+    let out = Command::new(bin)
+        .arg("doctor")
+        .envs(envs.iter().copied())
+        .output()
+        .expect("doctor");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&format!("sobre {}", env!("CARGO_PKG_VERSION"))),
+        "doctor must show the version: {stdout}"
+    );
+    assert!(
+        stdout.contains("agents connected:"),
+        "doctor must show the connected agents: {stdout}"
+    );
 }
 
 #[test]
 fn claude_config_dir_fallback_writes_dot_claude_json() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -169,7 +203,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     let home_str = home.to_string_lossy().to_string();
     let claude_cfg_str = claude_cfg.to_string_lossy().to_string();
 
-    // Fake claude that fails (forces lean-ctx to fallback to file merge/write).
+    // A `claude` CLI on PATH that fails if run.
     let claude_path = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
     } else {
@@ -185,7 +219,6 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
 
     let mut envs = vec![
         ("HOME", home_str.as_str()),
-        ("LEAN_CTX_ACTIVE", "1"),
         ("CLAUDE_CONFIG_DIR", claude_cfg_str.as_str()),
     ];
     envs.extend(dirs.to_env_pairs());
@@ -205,11 +238,11 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     envs.push(("PATH", new_path.as_str()));
 
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global", "--mode", "mcp"])
+        .args(["init", "--agent", "claude"])
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude --mode mcp");
-    assert!(out.status.success(), "init --agent claude --mode mcp exit");
+        .expect("init --agent claude");
+    assert!(out.status.success(), "init --agent claude exit");
 
     let cfg_path = claude_cfg.join(".claude.json");
     let content = std::fs::read_to_string(&cfg_path).expect(".claude.json exists");
@@ -217,11 +250,11 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
         content.contains("\"mcpServers\""),
         "must contain mcpServers"
     );
-    assert!(content.contains("lean-ctx"), "must contain lean-ctx entry");
+    assert!(content.contains("sobre"), "must contain sobre entry");
 
-    // `doctor` is a health gate (#1046): it exits non-zero whenever *any* check
+    // `doctor` is a health gate: it exits non-zero whenever *any* check
     // needs attention, and this sandbox legitimately fails several unrelated
-    // ones (no lean-ctx on PATH, no shell profile, a fake `claude` that exits 1)
+    // ones (no sobre on PATH, no shell profile, a fake `claude` that exits 1)
     // — the same reason the bootstrap smoke test tolerates a non-zero code. The
     // contract under test is the `.claude.json` fallback *detection*, which is
     // printed to stdout regardless of the gate, so assert on the report and only
@@ -238,14 +271,14 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("MCP config") && stdout.contains("lean-ctx found"),
-        "doctor should report lean-ctx found in MCP config; got:\n{stdout}"
+        stdout.contains("MCP config") && stdout.contains("sobre found"),
+        "doctor should report sobre found in MCP config; got:\n{stdout}"
     );
 }
 
 #[test]
-fn init_agent_preserves_agents_md_and_is_idempotent() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+fn init_agent_leaves_agent_instruction_files_untouched() {
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -264,7 +297,7 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
 
     let home_str = home.to_string_lossy().to_string();
 
-    // Fake claude (success) so init --agent claude prefers `claude mcp add-json`.
+    // A `claude` CLI on PATH.
     let claude_path = bin_dir.join(if cfg!(windows) {
         "claude.cmd"
     } else {
@@ -278,7 +311,7 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
 
     let dirs = SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    let mut envs = vec![("HOME", home_str.as_str())];
     envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {
@@ -304,47 +337,25 @@ fn init_agent_preserves_agents_md_and_is_idempotent() {
         assert!(out.status.success(), "init --agent claude exit");
     }
 
-    let agents = std::fs::read_to_string(&agents_path).unwrap();
-    assert!(agents.contains("# My Agents"), "must preserve user header");
-    assert!(
-        agents.contains("Do not overwrite."),
-        "must preserve user content"
-    );
-    // v3 (GL #555): the injected block is a compact pointer. It references
-    // LEAN-CTX.md *without* an `@` prefix on purpose — agents expand `@`
-    // imports inline at session start, which would defeat the footprint cut
-    // ("open on demand — do not auto-load").
-    assert!(
-        agents.contains("<!-- lean-ctx -->") && agents.contains("LEAN-CTX.md"),
-        "must add compact lean-ctx pointer block"
-    );
-    assert!(
-        !agents.contains("@LEAN-CTX.md"),
-        "pointer must not use @-import (inline expansion defeats #555)"
-    );
+    // sobre's only rules channel is the MCP instructions: init writes nothing
+    // into the project's own agent files, and creates none.
     assert_eq!(
-        agents.matches("<!-- lean-ctx -->").count(),
-        1,
-        "must not duplicate marker block"
+        std::fs::read_to_string(&agents_path).unwrap(),
+        "# My Agents\n\nDo not overwrite.\n",
+        "AGENTS.md must be byte-identical"
     );
-
-    let lean_ctx_md = project.join("LEAN-CTX.md");
-    let lean_ctx_content = std::fs::read_to_string(&lean_ctx_md).expect("LEAN-CTX.md exists");
-    assert!(
-        lean_ctx_content.contains("<!-- lean-ctx-rules -->")
-            && (lean_ctx_content.contains("Tool selection by intent")
-                || lean_ctx_content.contains("auto-route")),
-        "LEAN-CTX.md must contain the canonical lean-ctx ruleset"
-    );
+    for name in ["SOBRE.md", "CLAUDE.md", ".cursorrules", ".windsurfrules"] {
+        assert!(!project.join(name).exists(), "init must not create {name}");
+    }
 }
 
 /// On Windows, `dirs::home_dir()` uses the Win32 API (`SHGetKnownFolderPath`)
 /// rather than `USERPROFILE`, so env-var overrides in the subprocess don't
 /// control where files land. We can only verify file creation on Unix.
 #[test]
-#[cfg_attr(windows, ignore)]
-fn init_claude_installs_dedicated_rules_file_without_claude_md() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+#[cfg_attr(windows, ignore = "dirs::home_dir ignores a HOME override on Windows")]
+fn init_claude_installs_the_skill_and_no_rules_file() {
+    let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
@@ -356,7 +367,7 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
 
     let dirs = SeparateDirs::new(tmp.path());
 
-    let mut envs = vec![("HOME", home_str.as_str()), ("LEAN_CTX_ACTIVE", "1")];
+    let mut envs = vec![("HOME", home_str.as_str())];
     envs.extend(dirs.to_env_pairs());
     #[cfg(not(windows))]
     {
@@ -368,67 +379,34 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     }
 
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude", "--global", "--mode", "mcp"])
+        .args(["init", "--agent", "claude"])
         .current_dir(&project)
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude --global --mode mcp");
-    assert!(
-        out.status.success(),
-        "init --agent claude --global --mode mcp exit"
-    );
+        .expect("init --agent claude");
+    assert!(out.status.success(), "init --agent claude exit");
 
-    let claude_md_path = home.join(".claude/CLAUDE.md");
-    assert!(
-        claude_md_path.exists(),
-        "must create ~/.claude/CLAUDE.md with lean-ctx block"
-    );
-    let claude_md = std::fs::read_to_string(&claude_md_path).expect("CLAUDE.md readable");
-    assert!(
-        claude_md.contains("<!-- lean-ctx -->"),
-        "CLAUDE.md must contain lean-ctx marker block"
-    );
+    let skill = std::fs::read_to_string(home.join(".claude/skills/sobre/SKILL.md"))
+        .expect("init installs the sobre skill");
+    assert!(skill.starts_with("---\nname: sobre\n"), "skill frontmatter");
 
-    // v3 (GL #555): the block is self-contained — Claude Code expands `@`
-    // imports inline at launch, so the old `@rules/lean-ctx.md` pointer
-    // silently multiplied the per-session footprint. The block itself must
-    // stay compact.
-    // v4 (GH #637 / GL #1138): MCP-aware — ctx_* guidance is conditional on
-    // the tools actually existing in the session, and native Read → Edit is
-    // documented as a guard-safe editing path (read-before-write gate).
-    // v5 (#1008 / GL #1144): edits route through anchored ctx_patch, ctx_edit
-    // is a legacy power-profile mention; v4's guard semantics stay documented.
-    // v6: block content updated; version bump propagated here.
-    // v7 (#1091): Replace-mode write guidance corrected; shared tag bumped.
     assert!(
-        claude_md.contains("lean-ctx-claude-v7"),
-        "CLAUDE.md must carry the v7 block version"
+        !home.join(".claude/CLAUDE.md").exists(),
+        "sobre writes no rules into CLAUDE.md"
     );
-    assert!(
-        claude_md.contains("ctx_patch"),
-        "v6 block must route edits to the anchored editor (#1008)"
-    );
-    assert!(
-        claude_md.contains("prior native Read"),
-        "v6 block must document Claude Code's path-keyed read-before-write gate"
-    );
-    assert!(
-        !claude_md.contains("@rules/"),
-        "v6 block must not @-import rules (inline expansion defeats #555)"
-    );
-    assert!(
-        claude_md.len() < 2048,
-        "compact block contract: CLAUDE.md footprint must stay <2 KB, got {}",
-        claude_md.len()
-    );
-
     assert!(
         !project.join("CLAUDE.md").exists(),
         "must not create project CLAUDE.md"
     );
+    // Native tools are never denied.
+    let settings = std::fs::read_to_string(home.join(".claude/settings.json")).unwrap_or_default();
+    assert!(
+        !settings.contains("\"deny\""),
+        "settings.json denies nothing: {settings}"
+    );
 }
 
-/// One directory per LEAN_CTX_<CATEGORY>_DIR, so a file written to the wrong
+/// One directory per SOBRE_<CATEGORY>_DIR, so a file written to the wrong
 /// category is caught.
 struct SeparateDirs {
     config: String,
@@ -456,10 +434,10 @@ impl SeparateDirs {
 
     fn to_env_pairs(&self) -> Vec<(&str, &str)> {
         vec![
-            ("LEAN_CTX_CONFIG_DIR", self.config.as_str()),
-            ("LEAN_CTX_DATA_DIR", self.data.as_str()),
-            ("LEAN_CTX_STATE_DIR", self.state.as_str()),
-            ("LEAN_CTX_CACHE_DIR", self.cache.as_str()),
+            ("SOBRE_CONFIG_DIR", self.config.as_str()),
+            ("SOBRE_DATA_DIR", self.data.as_str()),
+            ("SOBRE_STATE_DIR", self.state.as_str()),
+            ("SOBRE_CACHE_DIR", self.cache.as_str()),
         ]
     }
 }

@@ -13,56 +13,42 @@ mod node;
 mod path_id;
 mod queries;
 mod schema;
-pub mod snapshot;
 mod sync;
 
 pub use edge::{Edge, EdgeKind};
 pub use file_catalog::FileCatalogEntry;
-pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
+pub use meta::{PropertyGraphMetaV1, load_meta, write_meta};
 pub use node::{Node, NodeKind};
-pub use queries::{DependencyChain, ImpactResult, edge_weight, related_files};
-pub use sync::{mirror_index, parse_symbol_metadata, populate_from_project_index};
+pub use queries::ImpactResult;
+#[cfg(test)]
+pub(crate) use sync::populate_from_project_index;
+pub use sync::{mirror_index, parse_symbol_metadata};
 
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
 
-/// Resolve the directory for graph.db and graph.meta.json.
-///
-/// Uses `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/` (consistent with
-/// `ProjectIndex::index_dir`).  Falls back to `<project>/.lean-ctx/`
-/// only when the global data directory cannot be resolved.
-pub fn graph_dir(project_root: &str) -> PathBuf {
-    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-        let normalized = crate::core::graph_index::normalize_project_root(project_root);
-        let hash = crate::core::project_hash::hash_project_root(&normalized);
-        data_dir.join("graphs").join(hash)
-    } else {
-        Path::new(project_root).join(".lean-ctx")
-    }
+/// Resolve the directory for graph.db and graph.meta.json:
+/// `$SOBRE_DATA_DIR/graphs/<project_hash>/` (consistent with
+/// `ProjectIndex::index_dir`). `None` when the data directory cannot be
+/// resolved: the graph is never written into the user's project.
+pub fn graph_dir(project_root: &str) -> Option<PathBuf> {
+    let data_dir = crate::core::data_dir::sobre_data_dir().ok()?;
+    let normalized = crate::core::index_paths::normalize_project_root(project_root);
+    let hash = crate::core::project_hash::hash_project_root(&normalized);
+    Some(data_dir.join("graphs").join(hash))
 }
 
-/// Property-graph engine generation. Bump whenever edge extraction changes
-/// (e.g. the `type_ref` edges that connect C#/Java same-namespace consumers to
-/// their definers, GH #398) so an existing graph built by an older engine is
-/// transparently rebuilt on the next query instead of being served without the
-/// new edges. Graphs whose `graph.meta.json` predates this stamp deserialize to
-/// engine version `0`, so the first query after an upgrade rebuilds once.
-///
-/// History:
-/// - `2`: `type_ref` edges added to the `ctx_impact` builder (v3.8.3).
-/// - `3`: `type_ref` edges moved into the durable `graph_index` mirror so a
-///   background reindex can no longer wipe the C# blast radius (GH #398); every
-///   graph stamped by an engine that predates the mirror fix must rebuild.
-/// - `4`: same-package `type_ref` edges extended to Go (directory-scoped) and
-///   Kotlin (GH #398 bug class); graphs built before they existed must rebuild.
-/// - `5`: PropertyGraph file paths use interned IDs; pre-ID databases rebuild.
+/// Property-graph engine generation, stamped into `graph.meta.json` on every
+/// build. Bump whenever edge extraction or the storage layout changes: a graph
+/// stamped with an older engine version is rebuilt on the next query instead
+/// of being served without the new edges.
 pub const GRAPH_ENGINE_VERSION: u32 = 5;
 
 /// `true` when the persisted graph was built by an engine older than
-/// [`GRAPH_ENGINE_VERSION`] — or predates the version stamp entirely (missing or
-/// unreadable meta) — and must therefore be rebuilt before its edges can be
-/// trusted. Callers pair this with a node-count check: an empty graph is rebuilt
-/// regardless; a non-empty-but-outdated graph is rebuilt by this gate.
+/// [`GRAPH_ENGINE_VERSION`] — or has no readable meta (never built) — and must
+/// therefore be rebuilt before its edges can be trusted. Callers pair this with
+/// a node-count check: an empty graph is rebuilt regardless; a
+/// non-empty-but-outdated graph is rebuilt by this gate.
 pub fn engine_outdated(project_root: &str) -> bool {
     load_meta(project_root).is_none_or(|m| m.engine_version < GRAPH_ENGINE_VERSION)
 }
@@ -91,16 +77,15 @@ pub struct CodeGraph {
 
 impl CodeGraph {
     pub fn open(project_root: &str) -> anyhow::Result<Self> {
-        let db_dir = graph_dir(project_root);
+        let db_dir = graph_dir(project_root)
+            .ok_or_else(|| anyhow::anyhow!("cannot resolve sobre's data directory"))?;
         std::fs::create_dir_all(&db_dir)?;
         let db_path = db_dir.join("graph.db");
 
         // Concurrent opens race on `PRAGMA journal_mode=WAL` and the initial DDL,
         // which SQLite reports as SQLITE_BUSY without invoking the busy handler
-        // (`busy_timeout` therefore does not apply). Deeper addon integration can
-        // have a gateway ingest thread and the main session's graph build open
-        // the same db at once (#1102); retry briefly so neither silently loses
-        // its writes. Once WAL is recorded in the file header, opens stop racing.
+        // (`busy_timeout` therefore does not apply). Two sessions can open the
+        // same db at once; retry briefly so neither silently loses its writes. Once WAL is recorded in the file header, opens stop racing.
         const MAX_ATTEMPTS: u32 = 12;
         let mut attempt = 0;
         loop {
@@ -126,6 +111,7 @@ impl CodeGraph {
         })
     }
 
+    #[cfg(test)]
     pub fn open_in_memory() -> anyhow::Result<Self> {
         let conn = Connection::open_in_memory()?;
         schema::initialize(&conn)?;
@@ -159,14 +145,12 @@ impl CodeGraph {
         node::get_by_symbol(&self.conn, name, file_path)
     }
 
-    pub fn remove_file_nodes(&self, file_path: &str) -> anyhow::Result<()> {
-        node::remove_by_file(&self.conn, file_path)
-    }
-
+    #[cfg(test)]
     pub fn edges_from(&self, node_id: i64) -> anyhow::Result<Vec<Edge>> {
         edge::from_node(&self.conn, node_id)
     }
 
+    #[cfg(test)]
     pub fn edges_to(&self, node_id: i64) -> anyhow::Result<Vec<Edge>> {
         edge::to_node(&self.conn, node_id)
     }
@@ -175,24 +159,12 @@ impl CodeGraph {
         queries::dependents(&self.conn, file_path)
     }
 
-    pub fn dependencies(&self, file_path: &str) -> anyhow::Result<Vec<String>> {
-        queries::dependencies(&self.conn, file_path)
-    }
-
     pub fn impact_analysis(
         &self,
         file_path: &str,
         max_depth: usize,
     ) -> anyhow::Result<ImpactResult> {
         queries::impact_analysis(&self.conn, file_path, max_depth)
-    }
-
-    pub fn dependency_chain(
-        &self,
-        from: &str,
-        to: &str,
-    ) -> anyhow::Result<Option<DependencyChain>> {
-        queries::dependency_chain(&self.conn, from, to)
     }
 
     pub fn related_files(
@@ -213,7 +185,7 @@ impl CodeGraph {
 
     /// Persist a cross-source edge (code file ↔ external source URI) into the
     /// dedicated `cross_source_edges` table. Keeps the higher weight on conflict
-    /// so repeated provider ingests don't downgrade an established link (#682).
+    /// so repeated provider ingests don't downgrade an established link.
     pub fn upsert_cross_source_edge(
         &self,
         from: &str,
@@ -241,16 +213,8 @@ impl CodeGraph {
         cross_source::delete_by_kind(&self.conn, kind)
     }
 
-    pub fn clear(&self) -> anyhow::Result<()> {
-        self.conn.execute_batch(
-            "DELETE FROM edges; DELETE FROM nodes; DELETE FROM file_catalog; DELETE FROM paths; \
-             DELETE FROM cross_source_edges;",
-        )?;
-        Ok(())
-    }
-
     /// Clear only the code graph (nodes, edges, file catalog), preserving
-    /// provider `cross_source_edges`. Used by the graph_index→PG mirror (#682.1)
+    /// provider `cross_source_edges`. Used by the graph_index→PG mirror
     /// so rebuilding the code graph never drops lateral provider hints, which
     /// live in their own table and are repopulated on a separate ingest cycle.
     pub fn clear_code_graph(&self) -> anyhow::Result<()> {
@@ -285,8 +249,8 @@ impl CodeGraph {
         node::find_symbols(&self.conn, name, file_filter, kind_filter)
     }
 
-    /// Files that define a symbol named exactly `name` (GH #398 symbol-name
-    /// `ctx_impact analyze` fallback). Backed by `node::resolve_symbol_def_files`.
+    /// Files that define a symbol named exactly `name` (symbol-name
+    /// `sobre_graph action=impact` fallback). Backed by `node::resolve_symbol_def_files`.
     pub fn resolve_symbol_def_files(&self, name: &str) -> anyhow::Result<Vec<String>> {
         node::resolve_symbol_def_files(&self.conn, name)
     }
@@ -302,7 +266,7 @@ impl CodeGraph {
     }
 
     /// Every symbol node with its line span (unfiltered). Backend for the
-    /// call-graph symbol table after the `graph_index` teardown (#696).
+    /// call-graph symbol table after the `graph_index` teardown.
     pub fn all_symbols(&self) -> anyhow::Result<Vec<Node>> {
         node::all_symbols(&self.conn)
     }
@@ -371,23 +335,6 @@ mod tests {
     }
 
     #[test]
-    fn dependencies_query() {
-        let g = test_graph();
-
-        let main = g.upsert_node(&Node::file("src/main.rs")).unwrap();
-        let lib = g.upsert_node(&Node::file("src/lib.rs")).unwrap();
-        let config = g.upsert_node(&Node::file("src/config.rs")).unwrap();
-
-        g.upsert_edge(&Edge::new(main, lib, EdgeKind::Imports))
-            .unwrap();
-        g.upsert_edge(&Edge::new(main, config, EdgeKind::Imports))
-            .unwrap();
-
-        let deps = g.dependencies("src/main.rs").unwrap();
-        assert_eq!(deps.len(), 2);
-    }
-
-    #[test]
     #[allow(clippy::many_single_char_names)] // graph test nodes: a, b, c, d, e
     fn impact_analysis_depth() {
         let g = test_graph();
@@ -421,42 +368,6 @@ mod tests {
     }
 
     #[test]
-    fn remove_file_cascades() {
-        let g = test_graph();
-
-        let a = g.upsert_node(&Node::file("src/a.rs")).unwrap();
-        let b = g.upsert_node(&Node::file("src/b.rs")).unwrap();
-        let sym = g
-            .upsert_node(&Node::symbol("MyStruct", "src/a.rs", NodeKind::Symbol))
-            .unwrap();
-
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(sym, b, EdgeKind::Calls)).unwrap();
-
-        g.remove_file_nodes("src/a.rs").unwrap();
-
-        assert!(g.get_node_by_path("src/a.rs").unwrap().is_none());
-        assert_eq!(g.edge_count().unwrap(), 0);
-    }
-
-    #[test]
-    fn dependency_chain_found() {
-        let g = test_graph();
-
-        let a = g.upsert_node(&Node::file("a.rs")).unwrap();
-        let b = g.upsert_node(&Node::file("b.rs")).unwrap();
-        let c = g.upsert_node(&Node::file("c.rs")).unwrap();
-
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(b, c, EdgeKind::Imports)).unwrap();
-
-        let chain = g.dependency_chain("a.rs", "c.rs").unwrap();
-        assert!(chain.is_some());
-        let chain = chain.unwrap();
-        assert_eq!(chain.path, vec!["a.rs", "b.rs", "c.rs"]);
-    }
-
-    #[test]
     fn counts() {
         let g = test_graph();
         assert_eq!(g.node_count().unwrap(), 0);
@@ -471,58 +382,63 @@ mod tests {
     }
 
     #[test]
-    fn multi_edge_dependents() {
+    fn dependents_follow_references_not_heuristics() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("src/a.rs")).unwrap();
         let b = g.upsert_node(&Node::file("src/b.rs")).unwrap();
         let c = g.upsert_node(&Node::file("src/c.rs")).unwrap();
+        let peer = g.upsert_node(&Node::file("src/d.rs")).unwrap();
 
         g.upsert_edge(&Edge::new(b, a, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(c, a, EdgeKind::Calls)).unwrap();
+        g.upsert_edge(&Edge::new(c, a, EdgeKind::TypeRef)).unwrap();
+        g.upsert_edge(&Edge::new(peer, a, EdgeKind::Cochange))
+            .unwrap();
+        g.upsert_edge(&Edge::new(a, peer, EdgeKind::Sibling))
+            .unwrap();
 
-        let deps = g.dependents("src/a.rs").unwrap();
-        assert_eq!(deps.len(), 2);
-        assert!(deps.contains(&"src/b.rs".to_string()));
-        assert!(deps.contains(&"src/c.rs".to_string()));
+        assert_eq!(
+            g.dependents("src/a.rs").unwrap(),
+            vec!["src/b.rs".to_string(), "src/c.rs".to_string()]
+        );
     }
 
     #[test]
-    fn multi_edge_impact_analysis() {
+    fn impact_follows_references_transitively() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("a.rs")).unwrap();
         let b = g.upsert_node(&Node::file("b.rs")).unwrap();
         let c = g.upsert_node(&Node::file("c.rs")).unwrap();
+        let peer = g.upsert_node(&Node::file("d.rs")).unwrap();
 
         g.upsert_edge(&Edge::new(b, a, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(c, b, EdgeKind::Calls)).unwrap();
+        g.upsert_edge(&Edge::new(c, b, EdgeKind::Module)).unwrap();
+        g.upsert_edge(&Edge::new(peer, a, EdgeKind::Cochange))
+            .unwrap();
 
-        let impact = g.impact_analysis("a.rs", 10).unwrap();
-        assert!(impact.affected_files.contains(&"b.rs".to_string()));
-        assert!(impact.affected_files.contains(&"c.rs".to_string()));
+        let mut affected = g.impact_analysis("a.rs", 10).unwrap().affected_files;
+        affected.sort();
+        assert_eq!(affected, vec!["b.rs".to_string(), "c.rs".to_string()]);
     }
 
     #[test]
-    fn related_files_scored() {
+    fn related_files_adds_heuristics_ranked_by_weight() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("a.rs")).unwrap();
         let b = g.upsert_node(&Node::file("b.rs")).unwrap();
         let c = g.upsert_node(&Node::file("c.rs")).unwrap();
+        let peer = g.upsert_node(&Node::file("d.rs")).unwrap();
 
         g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Calls)).unwrap();
         g.upsert_edge(&Edge::new(a, c, EdgeKind::TypeRef)).unwrap();
+        g.upsert_edge(&Edge::new(peer, a, EdgeKind::Cochange))
+            .unwrap();
 
         let related = g.related_files("a.rs", 10).unwrap();
-        assert_eq!(related.len(), 2);
-        let b_score = related.iter().find(|(p, _)| p == "b.rs").unwrap().1;
-        let c_score = related.iter().find(|(p, _)| p == "c.rs").unwrap().1;
-        assert!(
-            b_score > c_score,
-            "b.rs has imports+calls, should rank higher than c.rs with type_ref"
-        );
+        let order: Vec<&str> = related.iter().map(|(p, _)| p.as_str()).collect();
+        assert_eq!(order, vec!["b.rs", "c.rs", "d.rs"]);
     }
 
     #[test]
@@ -535,13 +451,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
-        let dir = graph_dir(project.to_str().unwrap());
+        let dir = graph_dir(project.to_str().unwrap()).unwrap();
         assert!(dir.starts_with(&data_dir));
         assert!(dir.to_string_lossy().contains("graphs"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -554,14 +470,14 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
-        let dir1 = graph_dir(project.to_str().unwrap());
-        let dir2 = graph_dir(project.to_str().unwrap());
+        let dir1 = graph_dir(project.to_str().unwrap()).unwrap();
+        let dir2 = graph_dir(project.to_str().unwrap()).unwrap();
         assert_eq!(dir1, dir2, "graph_dir should be deterministic");
         assert!(dir1.to_string_lossy().contains("graphs"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -574,13 +490,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
         let g = CodeGraph::open(project.to_str().unwrap()).unwrap();
         assert!(g.db_path().starts_with(&data_dir));
         assert!(g.db_path().to_string_lossy().contains("graph.db"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -593,13 +509,13 @@ mod tests {
         std::fs::create_dir_all(&data_dir).unwrap();
 
         let _guard = test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_str().unwrap());
+        crate::test_env::set_var("SOBRE_DATA_DIR", data_dir.to_str().unwrap());
 
-        let mp = meta::meta_path(project.to_str().unwrap());
+        let mp = meta::meta_path(project.to_str().unwrap()).unwrap();
         assert!(mp.starts_with(&data_dir));
         assert!(mp.to_string_lossy().contains("graph.meta.json"));
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 
     #[test]
@@ -611,7 +527,7 @@ mod tests {
         // No meta on disk yet -> outdated (an unbuilt graph forces a build).
         assert!(engine_outdated(root), "missing meta must read as outdated");
 
-        // Meta from an engine generation before the version stamp -> outdated.
+        // Meta stamped with an older engine version -> outdated.
         let mut meta = PropertyGraphMetaV1 {
             built_at: "2026-01-01T00:00:00Z".to_string(),
             engine_version: 0,

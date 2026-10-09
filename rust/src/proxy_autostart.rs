@@ -1,16 +1,12 @@
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::PathBuf;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
-const PLIST_LABEL: &str = "com.leanctx.proxy";
+const PLIST_LABEL: &str = "com.sobre.proxy";
 #[cfg(target_os = "linux")]
-const SYSTEMD_SERVICE: &str = "lean-ctx-proxy";
+const SYSTEMD_SERVICE: &str = "sobre-proxy";
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn proxy_pid_from_health(body: &str) -> Option<u32> {
     let health: serde_json::Value = serde_json::from_str(body).ok()?;
     if health.get("status").and_then(serde_json::Value::as_str) != Some("ok") {
@@ -20,21 +16,15 @@ fn proxy_pid_from_health(body: &str) -> Option<u32> {
     (pid > 0).then_some(pid)
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
-fn health_identifies_lean_ctx_proxy(body: &str) -> bool {
+fn health_identifies_sobre_proxy(body: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
         .and_then(|health| health.get("service")?.as_str().map(str::to_owned))
-        .is_some_and(|service| service == "lean-ctx-proxy")
+        .is_some_and(|service| service == "sobre-proxy")
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn port_is_open(port: u16) -> bool {
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok()
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+/// The PID of the sobre proxy answering `/health` on `port`, or `None` when
+/// nothing answers there or the answer is not a sobre proxy's.
 fn proxy_pid_on_port(port: u16) -> Option<u32> {
     let health_url = format!("http://127.0.0.1:{port}/health");
     let response = ureq::get(&health_url)
@@ -45,20 +35,38 @@ fn proxy_pid_on_port(port: u16) -> Option<u32> {
         .ok()?;
     let body = response.into_body().read_to_string().ok()?;
     let pid = proxy_pid_from_health(&body)?;
-    (health_identifies_lean_ctx_proxy(&body)
-        || crate::ipc::process::find_pids_by_name("lean-ctx").contains(&pid))
-    .then_some(pid)
+    health_identifies_sobre_proxy(&body).then_some(pid)
+}
+
+/// Stops the sobre proxy answering on `port` (SIGTERM, then SIGKILL after
+/// two seconds) and returns its PID. `None` when no sobre proxy answers there:
+/// a process is only ever signalled after it identified itself as sobre's
+/// proxy, so nothing else on the machine is touched.
+pub(crate) fn stop_proxy_on_port(port: u16) -> Option<u32> {
+    let pid = proxy_pid_on_port(port)?;
+    if pid == std::process::id() {
+        return None;
+    }
+    let _ = crate::ipc::process::terminate_gracefully(pid);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline && crate::ipc::process::is_alive(pid) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    if crate::ipc::process::is_alive(pid) {
+        let _ = crate::ipc::process::force_kill(pid);
+    }
+    Some(pid)
 }
 
 /// Stop a proxy already owning `port` before a managed service is started.
 ///
 /// Returns `false` when the listener cannot be positively identified as a
-/// lean-ctx proxy or when it does not release the port. Managed startup must
+/// sobre proxy or when it does not release the port. Managed startup must
 /// fail closed in either case; otherwise launchd/systemd would enter a restart
 /// loop on `EADDRINUSE`.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn release_proxy_port(port: u16, quiet: bool) -> bool {
-    if !port_is_open(port) {
+    if !crate::proxy_setup::is_proxy_reachable(port) {
         return true;
     }
 
@@ -80,7 +88,7 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     let _ = crate::ipc::process::terminate_gracefully(pid);
     let graceful_deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < graceful_deadline {
-        if !crate::ipc::process::is_alive(pid) && !port_is_open(port) {
+        if !crate::ipc::process::is_alive(pid) && !crate::proxy_setup::is_proxy_reachable(port) {
             if !quiet {
                 eprintln!(
                     "  Handed port {port} from standalone proxy PID {pid} to managed service."
@@ -96,7 +104,7 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     }
     let force_deadline = Instant::now() + Duration::from_secs(1);
     while Instant::now() < force_deadline {
-        if !port_is_open(port) {
+        if !crate::proxy_setup::is_proxy_reachable(port) {
             if !quiet {
                 eprintln!(
                     "  Handed port {port} from standalone proxy PID {pid} to managed service."
@@ -117,7 +125,7 @@ pub fn install(port: u16, quiet: bool) -> bool {
     let binary = find_binary();
     if binary.is_empty() {
         if !quiet {
-            tracing::error!("Cannot find lean-ctx binary for autostart");
+            tracing::error!("Cannot find sobre binary for autostart");
         }
         return false;
     }
@@ -136,8 +144,29 @@ pub fn install(port: u16, quiet: bool) -> bool {
     {
         let _ = (&binary, quiet);
         println!("  Autostart not supported on this platform");
-        println!("  Run manually: lean-ctx proxy start --port={port}");
+        println!("  Run manually: sobre proxy start --port={port}");
         false
+    }
+}
+
+/// Stops sobre's proxy wherever it runs: the autostart service, then the
+/// proxy answering on the configured port and on the port the last one was
+/// started on (`proxy start --port N`, or one an MCP server spawned). Only a
+/// process that identifies itself as sobre's proxy is signalled.
+pub fn stop_everywhere(quiet: bool) {
+    stop();
+    let mut ports = vec![crate::proxy_setup::default_port()];
+    if let Some(port) = crate::proxy_setup::last_started_port()
+        && !ports.contains(&port)
+    {
+        ports.push(port);
+    }
+    for port in ports {
+        if let Some(pid) = stop_proxy_on_port(port)
+            && !quiet
+        {
+            println!("  ✓ Proxy stopped (PID {pid}, port {port})");
+        }
     }
 }
 
@@ -158,12 +187,8 @@ pub fn stop() {
     }
 }
 
-pub fn start() -> bool {
-    start_on_port(crate::proxy_setup::default_port())
-}
-
 /// Start the installed manager after atomically taking ownership of `port`.
-/// This also handles the case where an IDE/dashboard spawned a standalone
+/// This also handles the case where an MCP server spawned a standalone
 /// proxy while the manager was temporarily unloaded.
 pub fn start_on_port(port: u16) -> bool {
     #[cfg(target_os = "macos")]
@@ -211,7 +236,7 @@ pub fn uninstall(_quiet: bool) {
 
 /// Whether this platform has a proxy-autostart backend (LaunchAgent on macOS,
 /// systemd user service on Linux). Windows and other targets have none, so a
-/// missing autostart there must not be treated as a failure by `doctor` (#416).
+/// missing autostart there must not be treated as a failure by `doctor`.
 pub fn is_supported() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux"))
 }
@@ -270,19 +295,24 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
 
     let plist_path = plist_dir.join(format!("{PLIST_LABEL}.plist"));
     // Stop the registered job first, then take over any standalone proxy an
-    // IDE/dashboard may have spawned while launchd was unloaded. Starting the
+    // MCP server may have spawned while launchd was unloaded. Starting the
     // new job with an occupied port causes an unconditional KeepAlive loop.
     crate::core::launchd::bootout(PLIST_LABEL, &plist_path);
     if !release_proxy_port(port, quiet) {
         return false;
     }
-    // GH #439: proxy logs are STATE — $XDG_STATE_HOME/lean-ctx/logs.
-    let log_dir = crate::core::paths::state_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("lean-ctx"))
-        .join("logs");
+    // Proxy logs are STATE — $XDG_STATE_HOME/sobre/logs, never a shared
+    // temporary directory.
+    let Ok(state_dir) = crate::core::paths::state_dir() else {
+        if !quiet {
+            eprintln!("Cannot resolve sobre's state directory for the proxy logs");
+        }
+        return false;
+    };
+    let log_dir = state_dir.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
 
-    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
+    // Wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
     // so the proxy (a TCC-standalone process) can never trip the privacy prompt.
     let port_arg = format!("--port={port}");
     let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
@@ -290,7 +320,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
         "        ",
     );
 
-    // #449: pin the directory layout. A launchd-spawned proxy inherits only
+    // Pin the directory layout. A launchd-spawned proxy inherits only
     // launchd's minimal environment (no HOME, no XDG vars), so it resolves a
     // *different* config/data dir than the CLI that installed it — it never sees
     // the user's config.toml edits (live-upstream reload reads nothing) and
@@ -365,11 +395,65 @@ fn systemd_path() -> PathBuf {
         .join(format!("{SYSTEMD_SERVICE}.service"))
 }
 
+/// The unit's `Environment=` lines: the directory layout this CLI resolves,
+/// so the proxy systemd starts reads the same config and token (the plist
+/// does the same on macOS).
+#[cfg(target_os = "linux")]
+fn systemd_layout_env() -> String {
+    let mut entries: Vec<(&str, String)> = vec![("RUST_LOG", "info".to_string())];
+    if let Some(home) = dirs::home_dir() {
+        entries.push(("HOME", home.display().to_string()));
+    }
+    for (key, dir) in [
+        ("SOBRE_CONFIG_DIR", crate::core::paths::config_dir()),
+        ("SOBRE_DATA_DIR", crate::core::paths::data_dir()),
+        ("SOBRE_STATE_DIR", crate::core::paths::state_dir()),
+        ("SOBRE_CACHE_DIR", crate::core::paths::cache_dir()),
+    ] {
+        if let Ok(path) = dir {
+            entries.push((key, path.display().to_string()));
+        }
+    }
+    entries.iter().fold(String::new(), |mut out, (key, value)| {
+        out.push_str(&format!(
+            "Environment=\"{key}={}\"\n",
+            systemd_escape(value)
+        ));
+        out
+    })
+}
+
+/// Escapes `"` and `\` inside a double-quoted systemd value.
+#[cfg(target_os = "linux")]
+fn systemd_escape(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Removes the unit file and the `default.target.wants` link `enable` made,
+/// for when the service could not start (no user session bus).
+#[cfg(target_os = "linux")]
+fn remove_systemd_unit(service_path: &std::path::Path) {
+    let _ = std::fs::remove_file(service_path);
+    if let Some(dir) = service_path.parent() {
+        let wants = dir.join("default.target.wants");
+        let _ = std::fs::remove_file(wants.join(format!("{SYSTEMD_SERVICE}.service")));
+        let _ = std::fs::remove_dir(&wants);
+        let _ = std::fs::remove_dir(dir);
+        if let Some(systemd) = dir.parent() {
+            let _ = std::fs::remove_dir(systemd);
+        }
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn install_systemd(binary: &str, port: u16, quiet: bool) -> bool {
-    let service_dir = dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("/tmp"))
-        .join(".config/systemd/user");
+    let Some(home) = dirs::home_dir() else {
+        if !quiet {
+            println!("  Cannot resolve the home directory for the systemd user service");
+        }
+        return false;
+    };
+    let service_dir = home.join(".config/systemd/user");
     let _ = std::fs::create_dir_all(&service_dir);
 
     let service_path = service_dir.join(format!("{SYSTEMD_SERVICE}.service"));
@@ -382,24 +466,25 @@ fn install_systemd(binary: &str, port: u16, quiet: bool) -> bool {
     }
 
     let unit = format!(
-        r"[Unit]
-Description=lean-ctx API Proxy
+        r#"[Unit]
+Description=sobre API Proxy
 After=network.target
 StartLimitIntervalSec=300
 StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart={binary} proxy start --port={port}
+ExecStart="{binary}" proxy start --port={port}
 Restart=on-failure
 RestartSec=5
 StandardOutput=journal
 StandardError=journal
-Environment=RUST_LOG=info
-
+{env}
 [Install]
 WantedBy=default.target
-"
+"#,
+        binary = systemd_escape(binary),
+        env = systemd_layout_env(),
     );
 
     let _ = std::fs::write(&service_path, &unit);
@@ -412,6 +497,11 @@ WantedBy=default.target
         .args(["--user", "enable", "--now", SYSTEMD_SERVICE])
         .output();
 
+    let started = result.as_ref().is_ok_and(|output| output.status.success());
+    if !started {
+        // Nothing half-installed stays behind: no unit, no wants link.
+        remove_systemd_unit(&service_path);
+    }
     if !quiet {
         match &result {
             Ok(o) if o.status.success() => {
@@ -420,15 +510,12 @@ WantedBy=default.target
             }
             Ok(o) => {
                 let err = String::from_utf8_lossy(&o.stderr);
-                println!("  Created service file but enable failed: {err}");
+                println!("  systemd could not start the service: {}", err.trim());
             }
-            Err(e) => {
-                println!("  Created service file at {}", service_path.display());
-                println!("  Could not enable: {e}");
-            }
+            Err(e) => println!("  Could not run systemctl: {e}"),
         }
     }
-    result.is_ok_and(|output| output.status.success())
+    started
 }
 
 #[cfg(target_os = "linux")]
@@ -447,7 +534,7 @@ fn uninstall_systemd(quiet: bool) {
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "disable", SYSTEMD_SERVICE])
         .output();
-    let _ = std::fs::remove_file(&service_path);
+    remove_systemd_unit(&service_path);
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "daemon-reload"])
         .output();
@@ -463,9 +550,11 @@ pub fn find_binary() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{health_identifies_lean_ctx_proxy, proxy_pid_from_health};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    use super::{port_is_open, release_proxy_port};
+    use super::release_proxy_port;
+    use super::{health_identifies_sobre_proxy, proxy_pid_from_health};
+    #[cfg(unix)]
+    use crate::proxy_setup::is_proxy_reachable as port_is_open;
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use std::io::{Read, Write};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -484,10 +573,10 @@ mod tests {
         assert_eq!(proxy_pid_from_health(r#"{"status":"ok","pid":0}"#), None);
         assert_eq!(proxy_pid_from_health(r#"{"status":"ok"}"#), None);
         assert_eq!(proxy_pid_from_health("not json"), None);
-        assert!(health_identifies_lean_ctx_proxy(
-            r#"{"status":"ok","service":"lean-ctx-proxy","pid":4242}"#
+        assert!(health_identifies_sobre_proxy(
+            r#"{"status":"ok","service":"sobre-proxy","pid":4242}"#
         ));
-        assert!(!health_identifies_lean_ctx_proxy(
+        assert!(!health_identifies_sobre_proxy(
             r#"{"status":"ok","pid":4242}"#
         ));
     }
@@ -545,7 +634,7 @@ mod tests {
                 "proxy_autostart::tests::managed_handoff_test_child",
                 "--nocapture",
             ])
-            .env("LEAN_CTX_HANDOFF_TEST_PORT", port.to_string())
+            .env("SOBRE_HANDOFF_TEST_PORT", port.to_string())
             .spawn()
             .unwrap();
         let mut child = ChildGuard(child);
@@ -568,7 +657,7 @@ mod tests {
     #[ignore = "helper process for managed_handoff_stops_identified_proxy_and_releases_port"]
     #[cfg(unix)]
     fn managed_handoff_test_child() {
-        let port: u16 = std::env::var("LEAN_CTX_HANDOFF_TEST_PORT")
+        let port: u16 = std::env::var("SOBRE_HANDOFF_TEST_PORT")
             .unwrap()
             .parse()
             .unwrap();
@@ -581,7 +670,7 @@ mod tests {
             let mut request = [0_u8; 512];
             if stream.read(&mut request).unwrap_or(0) > 0 {
                 let body = format!(
-                    r#"{{"status":"ok","service":"lean-ctx-proxy","pid":{}}}"#,
+                    r#"{{"status":"ok","service":"sobre-proxy","pid":{}}}"#,
                     std::process::id()
                 );
                 write!(

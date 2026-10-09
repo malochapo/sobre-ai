@@ -1,12 +1,9 @@
-//! Risk classification for `config set` governance (#852).
+//! Risk classification for `config set` governance.
 //!
-//! Most config keys are routine (cache sizes, density, theme) and are written
-//! without friction. A small set, however, changes lean-ctx's *security posture*
-//! (containment, secret redaction) or *network routing / data egress* (upstream
-//! redirects). Flipping one of those silently can weaken the user's machine or
+//! Most config keys are routine and are written without friction. The proxy
+//! upstreams change *network routing / data egress*: flipping one silently can
 //! leak credentials to a provider, so `config set` shows a before→after review
-//! and requires confirmation (or `--yes`) before applying — mirroring the
-//! existing `yolo` / `secure` confirmation pattern.
+//! and requires confirmation (or `--yes`) before applying.
 //!
 //! This is a deterministic, local-only lookup: no telemetry, no heuristics.
 
@@ -24,9 +21,6 @@ pub struct ConfigRisk {
 #[must_use]
 pub fn classify(key: &str) -> Option<ConfigRisk> {
     let note = match key {
-        "allow_paths" => {
-            "allow_paths widens the path jail: tools may read and write these paths too, and [\"/\"] opens it entirely."
-        }
         key if key.starts_with("proxy.upstreams.") => {
             "Redirects provider traffic to a custom upstream — every request and API key for this provider will flow through it."
         }
@@ -48,12 +42,7 @@ mod tests {
 
     #[test]
     fn security_keys_are_consequential() {
-        for key in [
-            "allow_paths",
-            "proxy.upstreams.openai",
-            "proxy.upstreams.anthropic",
-            "proxy.upstreams.gemini",
-        ] {
+        for key in ["proxy.upstreams.openai", "proxy.upstreams.anthropic"] {
             assert!(is_consequential(key), "{key} should be consequential");
             assert!(!classify(key).unwrap().note.is_empty());
         }

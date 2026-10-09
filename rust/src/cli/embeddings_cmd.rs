@@ -1,79 +1,94 @@
-//! `lean-ctx embeddings` — semantic-embedding runtime management (GH #732).
+//! `sobre embeddings` — semantic-embedding runtime management.
 //!
 //! The embedding engine loads ONNX Runtime dynamically. `provision` performs
 //! the **explicit, consent-gated** download of the official CPU runtime into
 //! the managed artifact layout; `status` shows what the resolver would use.
-//! Nothing here runs implicitly — the policy decided on #732 is "no silent
+//! Nothing here runs implicitly — the policy is "no silent
 //! download at first tool call, ever".
 
+#[cfg(feature = "dense")]
 use crate::core::artifacts_exec::ort_provision;
 
-/// Download everything local embeddings need: the official ONNX Runtime and,
-/// in an embedding-enabled build, the configured model. The one place either
-/// is fetched outside an explicit `index build-semantic`.
+/// Download everything local embeddings need: the official ONNX Runtime and
+/// the configured model. The one place either is fetched; `index build` uses
+/// what is installed. A build without embeddings downloads nothing.
 pub(crate) fn provision(force: bool) -> Result<(), String> {
-    println!(
-        "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
-        ort_provision::ORT_VERSION
-    );
-    let path = ort_provision::provision(force)?;
-    println!("Installed: {}", path.display());
-    #[cfg(feature = "embeddings")]
+    #[cfg(not(feature = "dense"))]
     {
+        let _ = force;
+        Err(
+            "this build has no local embeddings, so there is nothing to download \
+             (they come with the sobre-dense release build, or a build with --features dense)"
+                .to_string(),
+        )
+    }
+    #[cfg(feature = "dense")]
+    {
+        println!(
+            "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
+            ort_provision::ORT_VERSION
+        );
+        let path = ort_provision::provision(force)?;
+        println!("Installed: {}", path.display());
         println!("Fetching the embedding model from HuggingFace…");
         crate::core::embeddings::EmbeddingEngine::ensure_downloaded()
             .map_err(|e| format!("model download failed: {e}"))?;
         println!("Model installed.");
+        println!(
+            "Embeddings now work — semantic search picks this runtime up automatically \
+             (ORT_DYLIB_PATH still overrides it)."
+        );
+        Ok(())
     }
-    println!(
-        "Embeddings now work — semantic search picks this runtime up automatically \
-         (ORT_DYLIB_PATH still overrides it)."
-    );
-    Ok(())
 }
 
 pub(crate) fn cmd_embeddings(rest: &[String]) {
+    let args = rest.get(1..).unwrap_or_default();
     match rest.first().map(String::as_str) {
         Some("provision") => {
-            if let Err(e) = provision(rest.iter().any(|a| a == "--force")) {
+            crate::cli::spec::check_or_exit("embeddings provision", args);
+            if let Err(e) = provision(args.iter().any(|a| a == "--force")) {
                 eprintln!("Provisioning failed: {e}");
                 std::process::exit(1);
             }
         }
+        Some("--help" | "-h") => print!("{}", crate::cli::spec::group_text("embeddings")),
         Some("status") | None => {
-            println!("{}", ort_provision::status_line());
-            #[cfg(feature = "embeddings")]
+            crate::cli::spec::check_or_exit("embeddings status", args);
+            // Nothing to provision here, so nothing to report but that.
+            #[cfg(not(feature = "dense"))]
             println!(
-                "This build requires ONNX Runtime >= 1.{}.x (ort api level).",
-                ort::MINOR_VERSION
+                "This build has no local embeddings: they come with the sobre-dense \
+                 release build, or a build with --features dense."
             );
-            #[cfg(not(feature = "embeddings"))]
-            println!(
-                "This build was compiled without the `embeddings` feature — the managed \
-                 runtime is only used by embedding-enabled builds."
-            );
-            if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
-                println!("ORT_DYLIB_PATH override active: {p}");
+            #[cfg(feature = "dense")]
+            {
+                println!("{}", ort_provision::status_line());
+                println!(
+                    "This build requires ONNX Runtime >= 1.{}.x (ort api level).",
+                    ort::MINOR_VERSION
+                );
+                if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
+                    println!("ORT_DYLIB_PATH override active: {p}");
+                }
+                println!(
+                    "{}",
+                    crate::core::ort_execution_providers::execution_provider_status()
+                );
+                println!(
+                    "{}",
+                    crate::core::ort_execution_providers::execution_provider_help()
+                );
             }
-            #[cfg(feature = "embeddings")]
-            println!(
-                "{}",
-                crate::core::ort_execution_providers::execution_provider_status()
-            );
-            #[cfg(feature = "embeddings")]
-            println!(
-                "{}",
-                crate::core::ort_execution_providers::execution_provider_help()
-            );
         }
         Some(other) => {
             eprintln!(
                 "Unknown subcommand `{other}`.\n\n\
                  Usage:\n  \
-                 lean-ctx embeddings status              Show the managed ONNX Runtime state\n  \
-                                 lean-ctx embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
+                 sobre embeddings status              Show the managed ONNX Runtime state\n  \
+                                 sobre embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
             );
-            std::process::exit(1);
+            std::process::exit(2);
         }
     }
 }

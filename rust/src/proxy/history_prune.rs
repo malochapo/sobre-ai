@@ -35,7 +35,7 @@ pub(crate) fn prune_boundary(len: usize) -> usize {
 /// `cache_control` breakpoint. On cache-metered rails (Anthropic) this content
 /// must never be rewritten, or the prompt cache is invalidated from the first
 /// changed message — re-billing cheap reads (0.1x) as writes (1.25x) every time
-/// the prune boundary advances a stride (#448). Returns `0` when no
+/// the prune boundary advances a stride. Returns `0` when no
 /// `cache_control` marker is present (e.g. every OpenAI request), so pruning is
 /// unchanged there.
 pub(crate) fn cached_prefix_len(messages: &[Value]) -> usize {
@@ -91,7 +91,7 @@ pub(crate) fn prune_history(
 /// Like [`prune_history`] but only rewrites `messages[prune_start..prune_end]`.
 /// `prune_start` skips the client's provider-cached prefix (see
 /// [`cached_prefix_len`]) so cache-aware pruning never invalidates an
-/// already-cached prompt prefix on metered rails (#448). With `prune_start = 0`
+/// already-cached prompt prefix on metered rails. With `prune_start = 0`
 /// this is identical to the historical `prune_history` behaviour.
 pub(crate) fn prune_history_range(
     messages: &mut [Value],
@@ -129,11 +129,12 @@ pub(crate) fn prune_history_range(
                     .and_then(|v| v.as_str())
                     .and_then(|id| tool_names.get(id))
                     .map_or(ToolResultKind::Other, |n| classify_tool_name(n));
-                if let Some(content) = msg.get("content").and_then(|c| c.as_str())
-                    && content.len() > 200
+                if let Some(pruned) = msg
+                    .get("content")
+                    .and_then(|c| c.as_str())
+                    .and_then(|content| prune_output_text(content, kind))
                 {
-                    let summary = summarize_or_stub(content, kind);
-                    msg["content"] = Value::String(summary);
+                    msg["content"] = Value::String(pruned);
                     modified = true;
                 }
             }
@@ -151,17 +152,19 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
     let mut modified = false;
     if let Some(inner) = block.get_mut("content") {
         match inner {
-            Value::String(s) if s.len() > 200 => {
-                *s = summarize_or_stub(s, kind);
-                modified = true;
+            Value::String(s) => {
+                if let Some(pruned) = prune_output_text(s, kind) {
+                    *s = pruned;
+                    modified = true;
+                }
             }
             Value::Array(arr) => {
                 for item in arr.iter_mut() {
                     if item.get("type").and_then(|t| t.as_str()) == Some("text")
                         && let Some(Value::String(s)) = item.get_mut("text")
-                        && s.len() > 200
+                        && let Some(pruned) = prune_output_text(s, kind)
                     {
-                        *s = summarize_or_stub(s, kind);
+                        *s = pruned;
                         modified = true;
                     }
                 }
@@ -174,75 +177,57 @@ fn summarize_anthropic_tool_result(block: &mut Value, kind: ToolResultKind) -> b
 
 /// Cache-aware prune of a single tool-output *string* for the frozen OLD region.
 ///
-/// Returns `Some(pruned)` only when the text is long enough to be worth pruning
-/// AND the pruned form is actually shorter; otherwise `None` (leave it intact).
-/// The result is content-deterministic — it depends only on `text` and `kind`,
-/// never on position — so a pruned output is byte-identical on every later turn.
+/// Returns `Some(pruned)` only when the original is kept in the tee store
+/// ([`super::ccr::persist`], which skips text below
+/// [`super::ccr::MIN_TEE_BYTES`]) AND the pruned form is actually shorter;
+/// otherwise `None` (leave it intact). Invariant 5: what a prune drops stays
+/// reachable, and the result says where. The result is content-deterministic —
+/// it depends only on `text` and `kind`, never on position — so a pruned
+/// output is byte-identical on every later turn.
 ///
-/// This is the Responses-API analogue of [`prune_history_range`]: that path can
-/// drop nothing because the API rejects a `function_call` whose matching
-/// `function_call_output` is absent, so we prune *in place* (file/source reads
-/// collapse to an honest re-read stub, everything else head/tail summarizes)
-/// without ever touching the conversation structure.
+/// The Responses API cannot drop anything (it rejects a `function_call` whose
+/// matching `function_call_output` is absent), so every path prunes *in place*
+/// (file/source reads collapse to an honest re-read stub, everything else
+/// head/tail summarizes) without ever touching the conversation structure.
 pub(crate) fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
-    if text.len() <= 200 {
-        return None;
-    }
-    let pruned = summarize_or_stub(text, kind);
+    let pruned = summarize_or_stub(text, kind)?;
     (pruned.len() < text.len()).then_some(pruned)
 }
 
 /// For a *protected* (file/source) result, emit an honest, recoverable stub. For
 /// everything else, head/tail summarize so diagnostics stay readable.
 ///
-/// CCR (#482): both paths persist the verbatim original to the content-addressed
+/// CCR: both paths persist the verbatim original to the content-addressed
 /// tee store and embed a retrieval handle, so the model can recover the exact
 /// *historical* bytes instead of re-reading a file that may have changed (or
 /// vanished) since. The handle is a pure function of the content hash, so the
-/// stub stays byte-identical across turns — cache-safe by construction (#448).
-fn summarize_or_stub(text: &str, kind: ToolResultKind) -> String {
+/// stub stays byte-identical across turns — cache-safe by construction.
+/// `None` when the original cannot be kept: nothing is pruned then.
+fn summarize_or_stub(text: &str, kind: ToolResultKind) -> Option<String> {
     if should_protect(kind, text) {
         let lines = text.lines().count();
-        return match super::ccr::persist(text) {
-            Some(handle) => {
-                super::sticky_tools::mark_ccr_active(0);
-                format!(
-                    "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
-                )
-            }
-            None => format!(
-                "[lean-ctx: an earlier file read ({lines} lines) was pruned from older context to save tokens. This was an older version — the file may have changed since. Re-read the file for its current contents.]"
-            ),
-        };
+        let handle = super::ccr::persist(text)?;
+        return Some(format!(
+            "[sobre: an earlier file read ({lines} lines) was pruned from older context to save tokens. This is the version shown that turn — the file may have changed since. Full original at {handle}. Re-read the file for its current contents.]"
+        ));
     }
     summarize_text(text)
 }
 
-fn summarize_text(text: &str) -> String {
+/// Keeps the first three and last two lines, and ends with the `[sobre: …]`
+/// line that says how many were pruned and where the original is.
+fn summarize_text(text: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
     if lines.len() <= 5 {
-        return text.to_string();
+        return None;
     }
-
-    let first_3: Vec<&str> = lines.iter().take(3).copied().collect();
-    let last_2: Vec<&str> = lines.iter().rev().take(2).rev().copied().collect();
-
-    // CCR (#482): a head/tail summary drops the middle; offer a recovery handle
-    // to the verbatim original (content-addressed → cache-safe, MCP-independent).
-    let recover = super::ccr::persist(text)
-        .map(|h| {
-            super::sticky_tools::mark_ccr_active(0);
-            format!(" · full at {h}")
-        })
-        .unwrap_or_default();
-
-    format!(
-        "{}\n[...{} lines pruned by lean-ctx{}...]\n{}",
-        first_3.join("\n"),
-        lines.len() - 5,
-        recover,
-        last_2.join("\n")
-    )
+    let handle = super::ccr::persist(text)?;
+    let pruned = lines.len() - 5;
+    Some(format!(
+        "{}\n[… {pruned} lines …]\n{}\n[sobre: {pruned} lines pruned from older context, full original at {handle}]",
+        lines[..3].join("\n"),
+        lines[lines.len() - 2..].join("\n"),
+    ))
 }
 
 #[cfg(test)]
@@ -266,6 +251,24 @@ mod tests {
         assert!(first.contains("pruned"), "old message should be pruned");
         let last = messages[2]["content"].as_str().unwrap();
         assert!(!last.contains("pruned"), "recent message should be kept");
+    }
+
+    /// Invariant 5: a prune leaves the original reachable. Text too small to
+    /// be kept in the tee store is therefore not pruned at all.
+    #[test]
+    fn text_too_small_to_keep_is_never_pruned() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let small = (0..12)
+            .map(|i| format!("log line {i}: short"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(small.len() > 200 && small.len() < super::super::ccr::MIN_TEE_BYTES);
+        for kind in [ToolResultKind::Other, ToolResultKind::FileRead] {
+            assert_eq!(prune_output_text(&small, kind), None, "{kind:?}");
+        }
+        let mut messages = vec![serde_json::json!({"role": "tool", "content": small.clone()})];
+        assert!(!prune_history(&mut messages, 1, &no_names()));
+        assert_eq!(messages[0]["content"], small);
     }
 
     #[test]
@@ -307,7 +310,7 @@ mod tests {
     #[test]
     fn cache_aware_prefix_is_byte_stable_across_turns() {
         // CCR handles embed the content-addressed tee path (`state_dir()`-derived);
-        // serialize against tests that repoint LEAN_CTX_DATA_DIR so the data dir
+        // serialize against tests that repoint SOBRE_DATA_DIR so the data dir
         // stays fixed across turns — exactly the stable-env reality in production.
         let _lock = crate::core::data_dir::test_env_lock();
         let long = (0..30)
@@ -399,7 +402,7 @@ mod tests {
             block["content"][0]["text"]
                 .as_str()
                 .unwrap()
-                .contains("pruned by lean-ctx")
+                .contains("pruned from older context")
         );
     }
 
@@ -428,7 +431,7 @@ mod tests {
         );
     }
 
-    /// CCR (#482): a pruned file read must (a) be honest that the bytes are a
+    /// CCR: a pruned file read must (a) be honest that the bytes are a
     /// historical version, (b) carry a recovery handle, and (c) let the verbatim
     /// original be read back from that handle — so the model recovers the exact
     /// historical content instead of a stale re-read.
@@ -508,7 +511,10 @@ mod tests {
         prune_history(&mut messages, 1, &names);
         let summary = messages[0]["content"].as_str().unwrap();
         assert!(
-            summary.contains("lines pruned by lean-ctx"),
+            summary
+                .lines()
+                .last()
+                .is_some_and(|l| l.starts_with("[sobre: 35 lines pruned from older context")),
             "logs keep head/tail summary"
         );
     }
@@ -574,7 +580,7 @@ mod tests {
         assert_eq!(cached_prefix_len(&msgs), 0);
     }
 
-    /// Inverted form of the #448 reporter's churn test: with a client
+    /// Inverted form of the reporter's churn test: with a client
     /// `cache_control` breakpoint on the latest `tool_result` (the whole history
     /// is cached), advancing the prune boundary across a `STRIDE` multiple must
     /// NOT rewrite any cached message — otherwise Anthropic's prompt cache is
@@ -596,21 +602,17 @@ mod tests {
         // The breakpoint sits on the last message so `cached == len >= boundary`:
         // the prune window is empty on both turns and nothing is stubbed.
         assert_eq!(stubs(11), 0, "no pruning below the first stride jump");
-        assert_eq!(
-            stubs(12),
-            0,
-            "cached prefix not rewritten after the jump (#448)"
-        );
+        assert_eq!(stubs(12), 0, "cached prefix not rewritten after the jump");
         assert_eq!(stubs(20), 0, "still zero deep into the session");
 
         // Contrast: the unguarded boundary (`prune_start = 0`) DOES stub the
-        // cached prefix at the same length — the exact churn #448 fixes.
+        // cached prefix at the same length — the exact churn this prevents.
         let mut unguarded = anthropic_turns(12, true);
         let boundary = prune_boundary(unguarded.len());
         prune_history(&mut unguarded, boundary, &no_names());
         assert!(
             unguarded.iter().any(|m| m.to_string().contains("pruned")),
-            "guardless pruning rewrites cached content — the bug #448 fixes"
+            "guardless pruning rewrites cached content — the bug this prevents"
         );
     }
 }

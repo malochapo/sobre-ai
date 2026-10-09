@@ -45,7 +45,7 @@ pub fn get_system_ram_bytes() -> Option<u64> {
     }
 }
 
-/// Returns the RSS limit in bytes based on `max_ram_percent` config.
+/// Returns the RSS limit in bytes based on the built-in `MAX_RAM_PERCENT`.
 pub fn rss_limit_bytes() -> Option<u64> {
     let sys_ram = get_system_ram_bytes()?;
     let pct = super::config::MAX_RAM_PERCENT;
@@ -53,7 +53,7 @@ pub fn rss_limit_bytes() -> Option<u64> {
 }
 
 /// Computes a memory-bounded work batch from current RSS and the guardian's
-/// hard threshold (1.5× the configured base limit). Falls back to `max_files`
+/// hard threshold (1.5× the base limit). Falls back to `max_files`
 /// when RSS is unavailable. The lower bound keeps progress deterministic while
 /// allowing callers to reduce in-flight work substantially under low headroom.
 pub(crate) fn adaptive_batch_size(
@@ -165,11 +165,10 @@ impl MemorySnapshot {
 
         let base = f64::from(super::config::MAX_RAM_PERCENT);
 
-        // #790: tightened multipliers so ABORT fires earlier:
-        // - Critical: 2× (was 3×) — e.g. 10% config on 64 GB → 12.8 GB (was 19.2 GB)
-        // - Hard:     1.5× (was 2×) — 9.6 GB (was 12.8 GB)
-        // - Medium:   1.2× (was 1.4×)
-        // Users expect max_ram_percent to be a meaningful cap, not a 3× suggestion.
+        // Thresholds as multiples of the built-in RAM share (MAX_RAM_PERCENT, 5%):
+        // - Critical: 2×   — e.g. 5% on 64 GB → 6.4 GB
+        // - Hard:     1.5× — 4.8 GB
+        // - Medium:   1.2×
         let level = if pct > base * 2.0 {
             PressureLevel::Critical
         } else if pct > base * 1.5 {
@@ -245,7 +244,7 @@ fn publish_pressure(level: PressureLevel) {
 /// and signals background tasks to abort — never exits the process.
 pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) {
     // The guardian is a long-lived background monitor for the running
-    // server/daemon. Under `cargo test` a single OS process executes the entire
+    // server. Under `cargo test` a single OS process executes the entire
     // suite, so its RSS routinely exceeds the per-operation pressure threshold
     // (default 5% of system RAM). A test that constructs a server (e.g. the
     // `http_server` tests via `new_shared_with_context`) would start this thread,
@@ -255,7 +254,7 @@ pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) 
     // under pressure, leaving indexed files with no edges. That manifested as an
     // intermittent, macOS-only flake ("No files depend on Base.gd"). The guardian
     // has no purpose inside the test harness, so never start it there. Production
-    // and the daemon compile without `cfg!(test)` and are unaffected.
+    // and the MCP server compile without `cfg!(test)` and are unaffected.
     if cfg!(test) {
         return;
     }
@@ -270,13 +269,13 @@ pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) 
             // interval to IDLE_POLL_SECS. An idle server allocates nothing, so 3s
             // RSS sampling is just wasted wakeups; any pressure resets the cadence
             // instantly (below), leaving OOM reaction time during real work
-            // unchanged (#453 idle hygiene).
+            // unchanged (idle hygiene).
             const CALM_TICKS_BEFORE_BACKOFF: u64 = 5;
             const IDLE_POLL_SECS: u64 = 15;
             let mut poll_secs = 3u64;
             let mut calm_ticks = 0u64;
 
-            // #790: immediate first sample — close the 3s blind window so
+            // Immediate first sample — close the 3s blind window so
             // builders that start right after start_guard() see real pressure.
             if let Some(snap) = MemorySnapshot::capture() {
                 publish_pressure(snap.pressure_level);

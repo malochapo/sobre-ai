@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use lean_ctx::core::reference_docs;
+use sobre::core::reference_docs;
 
 fn main() {
     let mut out_dir: Option<PathBuf> = None;

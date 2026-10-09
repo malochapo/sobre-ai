@@ -39,12 +39,12 @@ impl Bm25CacheEntry {
 
 /// `(mtime, size)` fingerprint of the persisted BM25 index file for `root`.
 pub(crate) fn index_fingerprint(root: &Path) -> IndexFingerprint {
-    match std::fs::metadata(BM25Index::index_file_path(root)) {
-        Ok(m) => IndexFingerprint {
+    match BM25Index::index_file_path(root).map(std::fs::metadata) {
+        Some(Ok(m)) => IndexFingerprint {
             mtime: m.modified().ok(),
             size: m.len(),
         },
-        Err(_) => IndexFingerprint::default(),
+        _ => IndexFingerprint::default(),
     }
 }
 
@@ -135,6 +135,7 @@ pub fn memory_usage(cache: &SharedBm25Cache) -> usize {
 /// has not yet dropped its clone, or a background refresh is in flight. The next
 /// search call retries against the then-sole-owner cache entry. Returns the bytes
 /// reclaimed (0 if skipped).
+#[cfg(feature = "dense")]
 pub fn shrink_resident_to_snippet(
     cache: &SharedBm25Cache,
     root: &Path,

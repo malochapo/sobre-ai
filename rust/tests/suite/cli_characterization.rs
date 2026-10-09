@@ -2,23 +2,19 @@
 //! assert stable exit codes + output invariants. These freeze the existing
 //! behavior so that future refactors of `cli/dispatch` can't silently regress.
 
-use std::{
-    fs,
-    process::{Command, Output},
-};
+use std::process::{Command, Output};
 
-fn lean_ctx() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
-    cmd.env("LEAN_CTX_ACTIVE", "1");
-    cmd.env("HOME", "/tmp/lean-ctx-cli-test");
+fn sobre() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
+    cmd.env("HOME", "/tmp/sobre-cli-test");
     cmd
 }
 
 fn run(args: &[&str]) -> Output {
-    lean_ctx()
+    sobre()
         .args(args)
         .output()
-        .expect("failed to spawn lean-ctx binary")
+        .expect("failed to spawn sobre binary")
 }
 
 fn stdout(out: &Output) -> String {
@@ -42,14 +38,14 @@ fn version_flag_exits_zero_and_prints_version() {
     let out = run(&["--version"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
     let s = stdout(&out);
-    assert!(s.contains("lean-ctx"), "expected 'lean-ctx' in: {s}");
+    assert!(s.contains("sobre"), "expected 'sobre' in: {s}");
 }
 
 #[test]
 fn version_short_flag() {
     let out = run(&["-V"]);
     assert_eq!(exit_code(&out), 0);
-    assert!(stdout(&out).contains("lean-ctx"));
+    assert!(stdout(&out).contains("sobre"));
 }
 
 #[test]
@@ -58,7 +54,7 @@ fn help_flag_exits_zero_and_lists_commands() {
     assert_eq!(exit_code(&out), 0);
     let s = stdout(&out);
     assert!(
-        s.contains("COMMANDS") || s.contains("Usage") || s.contains("lean-ctx"),
+        s.contains("COMMANDS") || s.contains("Usage") || s.contains("sobre"),
         "help must show usage info; got: {}",
         &s[..s.len().min(200)]
     );
@@ -71,32 +67,32 @@ fn help_short_flag() {
     assert!(!stdout(&out).is_empty());
 }
 
+/// Commands the minimal CLI dropped answer like any unknown command; `exec`
+/// was the alias of `-c`, `status` folded into `doctor`, `stop` and `restart`
+/// into `proxy`.
 #[test]
-fn sessions_delete_removes_saved_session_and_snapshot() {
-    let tmp = tempfile::tempdir().expect("tempdir");
-    let sessions = tmp.path().join("sessions");
-    fs::create_dir_all(&sessions).expect("sessions dir");
-    let mut session = lean_ctx::core::session::SessionState::new();
-    session.id = "cli-delete-me".to_string();
-    fs::write(
-        sessions.join("cli-delete-me.json"),
-        serde_json::to_string_pretty(&session).unwrap(),
-    )
-    .unwrap();
-    fs::write(sessions.join("cli-delete-me_snapshot.txt"), "snapshot").unwrap();
-    fs::write(sessions.join("latest.json"), r#"{"id":"cli-delete-me"}"#).unwrap();
-
-    let out = lean_ctx()
-        .env("LEAN_CTX_DATA_DIR", tmp.path())
-        .args(["sessions", "delete", "cli-delete-me"])
-        .output()
-        .expect("failed to spawn lean-ctx binary");
-
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    assert!(stdout(&out).contains("Deleted session cli-delete-me."));
-    assert!(!sessions.join("cli-delete-me.json").exists());
-    assert!(!sessions.join("cli-delete-me_snapshot.txt").exists());
-    assert!(!sessions.join("latest.json").exists());
+fn removed_commands_are_unknown() {
+    for cmd in [
+        "read",
+        "grep",
+        "ls",
+        "status",
+        "stop",
+        "restart",
+        "exec",
+        "session",
+        "knowledge",
+        "benchmark",
+        "completions",
+    ] {
+        let out = run(&[cmd, "x"]);
+        assert_eq!(exit_code(&out), 2, "{cmd} must be unknown");
+        assert!(
+            stderr(&out).contains("unknown command"),
+            "{cmd}: {}",
+            stderr(&out)
+        );
+    }
 }
 
 #[test]
@@ -133,6 +129,20 @@ fn gain_json_exits_zero() {
 }
 
 #[test]
+fn gain_breakdowns_exit_zero() {
+    for flag in ["--by-tool", "--daily", "--period=7d"] {
+        let out = run(&["gain", flag]);
+        assert_eq!(exit_code(&out), 0, "gain {flag}: {}", stderr(&out));
+    }
+}
+
+#[test]
+fn gain_rejects_an_unknown_period() {
+    let out = run(&["gain", "--period=week"]);
+    assert_eq!(exit_code(&out), 2, "stderr: {}", stderr(&out));
+}
+
+#[test]
 fn gain_reset_exits_zero() {
     let out = run(&["gain", "--reset"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
@@ -151,17 +161,33 @@ fn config_no_args_exits_zero() {
 }
 
 #[test]
-fn cep_exits_zero() {
-    let out = run(&["cep"]);
+fn config_path_prints_the_file() {
+    let out = run(&["config", "path"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
+    assert!(stdout(&out).trim_end().ends_with("config.toml"));
 }
 
 #[test]
-fn wrapped_exits_zero() {
-    // `wrapped` was folded into `gain --wrapped`; the standalone command now
-    // prints a removal hint and exits non-zero. Characterize the replacement.
-    let out = run(&["gain", "--wrapped"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
+fn config_rejects_removed_subcommands() {
+    for sub in ["validate", "schema", "apply", "effective", "which"] {
+        let out = run(&["config", sub]);
+        assert_eq!(exit_code(&out), 2, "config {sub}");
+        assert!(
+            stderr(&out).contains("usage:"),
+            "config {sub}: {}",
+            stderr(&out)
+        );
+    }
+}
+
+#[test]
+fn index_without_subcommand_prints_usage() {
+    let out = run(&["index"]);
+    let err = stderr(&out);
+    assert!(
+        err.contains("index <build|status>"),
+        "index usage must name build and status: {err}"
+    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -181,16 +207,9 @@ fn doctor_runs_without_panic() {
         s.contains('✓') || s.contains('✗'),
         "doctor output should contain check marks"
     );
-}
-
-#[test]
-fn doctor_compact_exits_cleanly() {
-    let out = run(&["doctor", "--compact"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "doctor --compact should exit 0 or 1, got {code}"
-    );
+    // The summary `status` used to print, and where the debug log goes.
+    assert!(s.contains("agents connected"), "doctor summary: {s}");
+    assert!(s.contains("debug log"), "doctor debug-log path: {s}");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -198,42 +217,12 @@ fn doctor_compact_exits_cleanly() {
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
-fn graph_no_subcommand_builds_without_crash() {
-    let out = run(&["graph", "status"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "graph status should not crash, got {code}"
-    );
-}
-
-#[test]
-fn graph_unknown_sub_prints_usage() {
-    let out = run(&["graph", "nonexistent-sub"]);
-    assert_ne!(exit_code(&out), 0);
-    assert!(
-        stderr(&out).contains("Usage") || stderr(&out).contains("lean-ctx graph"),
-        "should print graph usage"
-    );
-}
-
-#[test]
-fn smells_exits_zero() {
-    let out = run(&["smells"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "smells should not crash, got {code}"
-    );
-}
-
-#[test]
 fn hook_no_args_prints_usage() {
     let out = run(&["hook"]);
     assert_ne!(exit_code(&out), 0);
     let err = stderr(&out);
     assert!(
-        err.contains("Usage") || err.contains("lean-ctx hook"),
+        err.contains("Usage") || err.contains("sobre hook"),
         "hook without subcommand should show usage"
     );
 }
@@ -269,92 +258,14 @@ fn exec_false_exits_nonzero() {
 }
 
 #[test]
-fn exec_raw_flag_passes_through() {
-    let out = run(&["-c", "--raw", "echo raw_test"]);
+fn raw_passes_output_through() {
+    let out = run(&["raw", "echo raw_test"]);
     assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
     assert!(stdout(&out).contains("raw_test"));
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Delegator commands (simple dispatch to sub-modules)
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn session_no_args_exits_cleanly() {
-    let out = run(&["session"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "session should not crash, got {code}"
-    );
-}
-
-#[test]
-fn session_new_alias_resets_session() {
-    let out = run(&["session", "new"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-}
-
-#[test]
-fn knowledge_no_args_exits_cleanly() {
-    let out = run(&["knowledge"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "knowledge should not crash, got {code}"
-    );
-}
-
-#[test]
-fn overview_exits_cleanly() {
-    let out = run(&["overview"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "overview should not crash, got {code}"
-    );
-}
-
-#[test]
-fn compress_no_args_exits_cleanly() {
-    let out = run(&["compress"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "compress should not crash, got {code}"
-    );
-}
-
-#[test]
-fn heatmap_exits_cleanly() {
-    let out = run(&["heatmap"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "heatmap should not crash, got {code}"
-    );
-}
-
-#[test]
-fn terse_exits_cleanly() {
-    let out = run(&["terse"]);
-    let code = exit_code(&out);
-    assert!(code == 0 || code == 1, "terse should not crash, got {code}");
-}
-
-#[test]
-fn slow_log_exits_cleanly() {
-    let out = run(&["slow-log"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "slow-log should not crash, got {code}"
-    );
-}
-
 #[test]
 fn raw_no_args_prints_usage() {
-    // `raw` is the primary name for the former `bypass` subcommand (finding 5).
     let out = run(&["raw"]);
     assert_ne!(exit_code(&out), 0);
     let err = stderr(&out);
@@ -364,20 +275,17 @@ fn raw_no_args_prints_usage() {
     );
 }
 
-#[test]
-fn audit_exits_zero() {
-    let out = run(&["audit"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    assert!(!stdout(&out).is_empty(), "audit should produce output");
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Token report
-// ═══════════════════════════════════════════════════════════════════
-
 // ═══════════════════════════════════════════════════════════════════
 // Proxy (read-only status check)
 // ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn proxy_help_lists_stop_and_restart() {
+    let out = run(&["proxy", "--help"]);
+    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
+    let s = stdout(&out);
+    assert!(s.contains("stop") && s.contains("restart") && s.contains("cleanup"));
+}
 
 #[test]
 fn proxy_status_exits_cleanly() {
@@ -390,50 +298,17 @@ fn proxy_status_exits_cleanly() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Daemon (read-only status check)
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn daemon_status_exits_cleanly() {
-    let out = run(&["daemon", "status"]);
-    let code = exit_code(&out);
-    assert!(
-        code == 0 || code == 1,
-        "daemon status should not crash, got {code}"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Uninstall (dry-run only — safe)
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn uninstall_dry_run_exits_zero() {
-    let out = run(&["uninstall", "--dry-run"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    let s = stdout(&out);
-    assert!(
-        s.contains("dry") || s.contains("Would") || s.contains("lean-ctx") || !s.is_empty(),
-        "uninstall --dry-run should describe what it would do"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════
 // Machine-facing entry points
 // ═══════════════════════════════════════════════════════════════════
 
-/// `-c` is the wire form the installed shell shim (`cli/shell_init.rs`) and the
-/// hook rewriter (`hook_handlers/file_rewrite.rs`) emit as
-/// `<binary> -c "<command>"`. It was once removed as if it were a cosmetic
-/// alias of `exec`; every hooked shell command then exited 1, and the shim only
-/// falls back to the real command on 126/127, so a hooked shell simply stopped
-/// working. Assert the dispatcher still knows it.
+/// `-c` is the wire form the hook rewriter (`hook_handlers/rewrite.rs`) emits as
+/// `<binary> -c "<command>"`. Assert the dispatcher still knows it.
 #[test]
 fn dash_c_is_not_an_unknown_command() {
     let out = run(&["-c", "echo hello"]);
     let err = stderr(&out);
     assert!(
         !err.contains("unknown command"),
-        "`-c` must dispatch (shell shim + hook rewriter emit it), got stderr: {err}"
+        "`-c` must dispatch (the hook rewriter emits it), got stderr: {err}"
     );
 }

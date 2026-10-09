@@ -3,7 +3,7 @@
 //! Scientific basis: Malkov & Yashunin, "Efficient and Robust Approximate Nearest Neighbor
 //! using Hierarchical Navigable Small World Graphs" (IEEE TPAMI 2018).
 //!
-//! This is a minimal implementation optimized for lean-ctx's embedding dimensions (384-d).
+//! This is a minimal implementation optimized for sobre's embedding dimensions (384-d).
 //! For indices under BRUTE_FORCE_THRESHOLD chunks, falls back to exact linear scan
 //! with binary-heap top-k selection (O(n log k) instead of O(n log n)).
 //!
@@ -51,6 +51,7 @@ impl FlatEmbeddings {
     }
 
     /// Build from a `Vec<Vec<f32>>` (for tests / migration).
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_vecs(vecs: Vec<Vec<f32>>) -> Self {
         let dim = vecs.first().map_or(0, std::vec::Vec::len);
         let n = vecs.len();
@@ -359,7 +360,7 @@ impl AnnIndex {
     }
 
     /// Approximate resident bytes: the flat f32 corpus plus the graph's
-    /// adjacency lists. Used by the eviction orchestrator (#685) to weigh
+    /// adjacency lists. Used by the eviction orchestrator to weigh
     /// this index against the RSS budget.
     #[must_use]
     pub fn memory_usage_bytes(&self) -> usize {

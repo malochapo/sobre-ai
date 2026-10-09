@@ -1,8 +1,14 @@
-use lean_ctx::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
-use lean_ctx::core::entropy::entropy_compress;
-use lean_ctx::core::signatures::extract_signatures;
-use lean_ctx::core::tokens::count_tokens;
-use lean_ctx::tools::CrpMode;
+use sobre::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
+use sobre::core::config::CompressionLevel;
+use sobre::core::entropy::entropy_compress_adaptive;
+use sobre::core::signatures::extract_signatures;
+use sobre::core::tokens::count_tokens;
+
+/// The instructions with no output style, so budgets do not move with the
+/// developer's own `compression_level`.
+fn instructions_at_off() -> String {
+    sobre::instructions::render(CompressionLevel::Off)
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,7 +23,7 @@ fn compression_ratio(original: usize, compressed: usize) -> f64 {
 
 fn measure_pattern(command: &str, output: &str) -> (usize, usize, f64) {
     let original = count_tokens(output);
-    let compressed = lean_ctx::core::patterns::compress_output(command, output)
+    let compressed = sobre::core::patterns::compress_output(command, output)
         .unwrap_or_else(|| output.to_string());
     let comp_tokens = count_tokens(&compressed);
     (
@@ -39,83 +45,36 @@ fn measure_text(original: &str, compressed: &str) -> (usize, usize, f64) {
 
 #[test]
 fn bench_system_instructions_token_count() {
-    let instructions_off = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
-    let instructions_compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
-    let instructions_tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-
-    let tok_off = count_tokens(&instructions_off);
-    let tok_compact = count_tokens(&instructions_compact);
-    let tok_tdd = count_tokens(&instructions_tdd);
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  SYSTEM INSTRUCTIONS TOKEN COUNT");
-    eprintln!("{}", "=".repeat(70));
+    let instructions = instructions_at_off();
+    let tokens = count_tokens(&instructions);
     eprintln!(
-        "  CRP Off:     {:>6} tokens ({:>5} chars)",
-        tok_off,
-        instructions_off.len()
-    );
-    eprintln!(
-        "  CRP Compact: {:>6} tokens ({:>5} chars)",
-        tok_compact,
-        instructions_compact.len()
-    );
-    eprintln!(
-        "  CRP TDD:     {:>6} tokens ({:>5} chars)",
-        tok_tdd,
-        instructions_tdd.len()
-    );
-    let compact_overhead = (tok_compact as i64) - (tok_off as i64);
-    let tdd_overhead = (tok_tdd as i64) - (tok_off as i64);
-    eprintln!("  Compact overhead: {compact_overhead:+} tokens vs Off");
-    eprintln!("  TDD overhead:     {tdd_overhead:+} tokens vs Off");
-    eprintln!("{}", "=".repeat(70));
-
-    assert!(
-        tok_off < 2300,
-        "Base instructions should be <2300 tokens, got {tok_off}"
+        "\n  SYSTEM INSTRUCTIONS: {tokens} tokens ({} chars)",
+        instructions.len()
     );
     assert!(
-        tok_compact < 2450,
-        "Compact instructions should be <2450 tokens, got {tok_compact}"
+        tokens < 2300,
+        "Base instructions should be <2300 tokens, got {tokens}"
     );
-    assert!(
-        tok_tdd < 2550,
-        "TDD instructions should be <2550 tokens, got {tok_tdd}"
-    );
-
-    // The char budget governs the STATIC cold first-contact handshake
-    // instructions. A live build also appends dynamic session/knowledge/gotcha
-    // payload, but that is capped by INSTRUCTION_CAP_TOKENS (token budget), not
-    // this char budget — and it varies with whatever session is persisted on the
-    // runner. Measuring the static surface keeps the assertion deterministic
-    // (#498) instead of order/state-dependent.
-    //
-    // Budget history: 2048 → 2400 (#609), then the v5 rules diet (#578) folded
-    // the loop/paradox guidance into INTENT and shrank the COMPACT/Bare channel
-    // the cold handshake renders. 2400 stays as the ceiling (upper bound only —
-    // it catches a runaway regression, shrinking is always fine).
-    let claude_code_instr = lean_ctx::server::build_claude_code_static_instructions_for_test();
-    let claude_chars = claude_code_instr.len();
-    let claude_tokens = count_tokens(&claude_code_instr);
-    eprintln!("  Claude Code (static): {claude_tokens:>6} tokens ({claude_chars:>5} chars)");
-    assert!(
-        claude_chars <= 2400,
-        "Claude Code static instructions MUST be <=2400 chars, got {claude_chars}"
-    );
-    assert!(
-        compact_overhead.unsigned_abs() < 300,
-        "Compact mode overhead should be <300 tokens, got {compact_overhead}"
-    );
-    assert!(
-        tdd_overhead.unsigned_abs() < 650,
-        "TDD mode overhead should be <650 tokens, got {tdd_overhead}"
-    );
+    // Claude Code truncates server instructions at 2048 characters; the text
+    // every client gets must arrive whole there.
+    for level in [
+        CompressionLevel::Off,
+        CompressionLevel::Lite,
+        CompressionLevel::Standard,
+        CompressionLevel::Max,
+        CompressionLevel::Raw,
+    ] {
+        let chars = sobre::instructions::render(level).len();
+        assert!(
+            chars <= 2048,
+            "{level:?} instructions are {chars} chars, over Claude Code's 2048"
+        );
+    }
 }
 
 #[test]
 fn bench_tool_descriptions_token_count() {
-    let descriptions = lean_ctx::server::tool_descriptions_for_test();
+    let descriptions = sobre::server::tool_descriptions_for_test();
 
     let mut total = 0usize;
     eprintln!("\n{}", "=".repeat(70));
@@ -134,39 +93,16 @@ fn bench_tool_descriptions_token_count() {
     eprintln!("  {:<25} {:>8}", "TOTAL", total);
     eprintln!("{}", "=".repeat(70));
 
-    // Budget = the real registry tool surface (single source of truth, #141):
-    // every tool with its full `McpTool::tool_def()` description — exactly what
-    // the live server advertises in full mode. Set with deliberate headroom over
-    // the current actual so adding a tool or two never blocks CI; only raise it
-    // again on a material jump in the surface, not on routine additions (#290).
-    // Raised 3000 -> 4000 for the #496 tool-profile reorg: a material jump that
-    // enriches per-tool profile metadata on the full opt-in surface. The default
-    // surface stays small (see `bench_lazy_default_vs_full_overhead`).
-    // Raised 4000 -> 5200 for #505 (@omar-mohamed-khallaf): the power tier now
-    // carries the same first-line-dense, workflow-first treatment as the other
-    // tiers (actual ~4872), with headroom for a tool or two per #290.
-    // Raised 5200 -> 5600 for #510 (@omar-mohamed-khallaf): the optimized tools
-    // schema adds explicit WORKFLOW:/ANTIPATTERN: intent lines across the surface
-    // (actual ~5498). Validated by the output-quality gate (eval A/B: NO
-    // REGRESSION, Δ +0.039) — the richer intents earn their tokens. The per-
-    // request cost is unchanged (core surface stays at ~2272, see
-    // `core_tool_surface_stays_within_budget`); this full-surface total only
-    // applies in opt-in full mode. Cutting it further is #509 (reduce tool
-    // COUNT), not trimming these eval-validated descriptions.
-    // Raised 5600 -> 6000 for #982: registering ctx_compare (78 -> 79 tools)
-    // pushed the actual to ~5630, over the previous 5600 ceiling whose headroom
-    // had shrunk below one tool. Per #290 the ceiling must carry "a tool or two"
-    // of slack over the actual, so 6000 (actual ~5630) restores that buffer.
+    // Budget = the registry's tool surface: every tool's full description,
+    // exactly what `tools/list` sends. Set with headroom over the actual;
+    // raise it only for a material jump, not for a routine edit.
     assert!(
         total < 6000,
         "Total tool description tokens should be <6000, got {total}"
     );
 
     for (name, desc) in &descriptions {
-        // Every tool — including the ctx_call invoker — stays within a tight
-        // per-tool description budget. ctx_call no longer embeds the full
-        // non-core catalog; agents discover callable tools via ctx_discover_tools
-        // (#680), so no tool is exempt from this ceiling.
+        // Every tool stays within a tight per-tool description budget.
         let t = count_tokens(desc);
         assert!(
             t < 160,
@@ -177,9 +113,9 @@ fn bench_tool_descriptions_token_count() {
 
 #[test]
 fn bench_total_input_overhead() {
-    let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
-    let descs = lean_ctx::server::tool_descriptions_for_test();
-    let schemas = lean_ctx::server::tool_schemas_json_for_test();
+    let instructions = instructions_at_off();
+    let descs = sobre::server::tool_descriptions_for_test();
+    let schemas = sobre::server::tool_schemas_json_for_test();
 
     let instr_tokens = count_tokens(&instructions);
     let desc_tokens: usize = descs.iter().map(|(_, d)| count_tokens(d)).sum();
@@ -201,33 +137,8 @@ fn bench_total_input_overhead() {
     );
     eprintln!("{}", "=".repeat(70));
 
-    // Full tool surface (registry SSOT incl. full property schemas) — the
-    // worst-case opt-in overhead. The default lazy surface is far smaller; see
-    // `bench_lazy_default_vs_full_overhead` (#141). Set with deliberate headroom
-    // over the current actual so routine tool additions do not trip CI (#290).
-    // Raised 12000 -> 13000 for the #496 tool-profile reorg (material jump in
-    // the full opt-in surface); the lazy default users actually pay is unaffected.
-    // Raised 13000 -> 14000 for #510 (@omar-mohamed-khallaf): the optimized tools
-    // schema enriches per-parameter descriptions + WORKFLOW/ANTIPATTERN intents
-    // (actual ~13707: instr ~457 + desc ~5498 + schemas ~7752). Output-quality
-    // gate confirms NO REGRESSION (eval A/B Δ +0.039). The lazy default surface
-    // (bench_lazy_default_vs_full_overhead) is unaffected; cutting the full-
-    // surface total is #509 (reduce tool COUNT).
-    // Raised 14000 -> 15000 for #982: registering ctx_compare (78 -> 79 tools)
-    // lifted the actual to ~14205 (instr ~440 + desc ~5630 + schemas ~8135), over
-    // the previous 14000 ceiling whose headroom had shrunk below one tool. Per
-    // #290 the ceiling must carry "a tool or two" of slack over the actual, so
-    // 15000 (actual ~14205) restores that buffer.
-    // Raised 15000 -> 16000 for #1082: registering ctx_quality (80 -> 81 tools)
-    // lifted the actual to ~15116 (instr ~502 + desc ~5905 + schemas ~8709), over
-    // the previous 15000 ceiling. Per #290 the ceiling must carry "a tool or two"
-    // of slack over the actual, so 16000 (actual ~15116, ~2 tools headroom)
-    // restores that buffer.
-    // Raised 16000 -> 18000 for #1020: per-action schema conditionals across 23
-    // tools added ~1300 tok to the full profile (actual ~17293). Default profile
-    // is unaffected (conditionals only on non-default-advertised tools).
-    // The lazy default surface users actually pay is unaffected
-    // (bench_lazy_default_vs_full_overhead).
+    // Everything a session pays before its first call: instructions, tool
+    // descriptions and schemas. Set with headroom over the actual.
     assert!(
         total < 18000,
         "Total input overhead should be <18000 tokens, got {total}"
@@ -250,7 +161,7 @@ fn bench_git_all_commands() {
         (
             "git commit -m 'feat'",
             generate_git_commit_with_hooks(30),
-            0.0, // verbatim: git write-commands are never compressed (daviddatu_ fix)
+            0.0, // verbatim: git write-commands are never compressed
         ),
         ("git push origin main", generate_git_push(), 0.0), // verbatim
     ];
@@ -369,7 +280,7 @@ fn bench_pattern_coverage_comprehensive() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION 3: COMPRESSION MODE BENCHMARKS — ctx_read modes on real-like files
+// SECTION 3: COMPRESSION MODE BENCHMARKS — sobre_read modes on real-like files
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -414,7 +325,7 @@ fn bench_aggressive_mode_typescript() {
 #[test]
 fn bench_entropy_mode_rust() {
     let content = generate_rust_file(200);
-    let result = entropy_compress(&content);
+    let result = entropy_compress_adaptive(&content, "bench.rs", &[]);
     let (orig, comp, pct) = measure_text(&content, &result.output);
 
     eprintln!("\n  [entropy mode, Rust 200L] {orig} → {comp} tokens ({pct:.1}% saved)");
@@ -504,17 +415,10 @@ fn bench_rrf_eviction_handles_single_entry() {
 
     let now = Instant::now();
     let key = "solo.rs".to_string();
-    let entry = lean_ctx::core::cache::CacheEntry::new(
-        "single",
-        "h".to_string(),
-        1,
-        50,
-        "/solo.rs".to_string(),
-        None,
-    );
+    let entry = sobre::core::cache::CacheEntry::new("single", "h".to_string(), 1, 50, None);
 
-    let refs: Vec<(&String, &lean_ctx::core::cache::CacheEntry)> = vec![(&key, &entry)];
-    let scores = lean_ctx::core::cache::eviction_scores_rrf(&refs, now);
+    let refs: Vec<(&String, &sobre::core::cache::CacheEntry)> = vec![(&key, &entry)];
+    let scores = sobre::core::cache::eviction_scores_rrf(&refs, now);
     assert_eq!(scores.len(), 1);
     assert!(
         scores[0].1 > 0.0,
@@ -526,7 +430,7 @@ fn bench_rrf_eviction_handles_single_entry() {
 fn bench_rrf_eviction_empty() {
     use std::time::Instant;
     let now = Instant::now();
-    let scores = lean_ctx::core::cache::eviction_scores_rrf(&[], now);
+    let scores = sobre::core::cache::eviction_scores_rrf(&[], now);
     assert!(scores.is_empty());
 }
 
@@ -534,75 +438,8 @@ fn bench_rrf_eviction_empty() {
 // SECTION 5: THINKING TOKEN BENCHMARKS — CRP/TDD Instruction Effectiveness
 // ═══════════════════════════════════════════════════════════════════════════
 
-#[test]
-fn bench_thinking_reduction_cues_present() {
-    let compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
-    let tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-
-    // #579 condensed the instruction skeleton: efficiency cues now live in the
-    // one-line `CRP MODE:` suffix (lowercase), not a standalone block.
-    let compact_lc = compact.to_lowercase();
-    let tdd_lc = tdd.to_lowercase();
-    assert!(
-        compact_lc.contains("trust tool outputs") || compact_lc.contains("output efficiency"),
-        "Compact mode must contain output efficiency cue"
-    );
-    assert!(
-        compact.contains("<=200 tok")
-            || compact.contains("<=200 tokens")
-            || compact.contains("≤200"),
-        "Compact mode must contain token budget"
-    );
-    assert!(
-        tdd_lc.contains("max density") || tdd_lc.contains("output efficiency"),
-        "TDD mode must contain output efficiency cue"
-    );
-    assert!(
-        tdd.contains("<=150 tok") || tdd.contains("<=150 tokens") || tdd.contains("≤150"),
-        "TDD mode must contain strict token budget"
-    );
-    assert!(
-        tdd_lc.contains("zero narration"),
-        "TDD mode must contain zero-narration rule"
-    );
-
-    eprintln!("\n  [output efficiency] All cues present in CRP Compact and TDD modes ✓");
-}
-
-#[test]
-fn bench_crp_mode_token_budgets() {
-    let compact = lean_ctx::server::build_instructions_for_test(CrpMode::Compact);
-    let tdd = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
-
-    let compact_budget_present = compact.contains("<=200 tok")
-        || compact.contains("TARGET: <=200 tokens")
-        || compact.contains("≤200");
-    let tdd_budget_present = tdd.contains("<=150 tok")
-        || tdd.contains("TOKEN BUDGET: <=150 tokens")
-        || tdd.contains("BUDGET: <=150");
-
-    eprintln!("\n  [token budgets]");
-    eprintln!(
-        "    Compact ≤200 tokens budget: {}",
-        if compact_budget_present { "✓" } else { "✗" }
-    );
-    eprintln!(
-        "    TDD ≤150 tokens budget:     {}",
-        if tdd_budget_present { "✓" } else { "✗" }
-    );
-
-    assert!(
-        compact_budget_present,
-        "Compact mode must specify ≤200 token budget"
-    );
-    assert!(
-        tdd_budget_present,
-        "TDD mode must specify ≤150 token budget"
-    );
-}
-
 // SECTION 6: PERFORMANCE BENCHMARKS removed — machine-dependent timing
-// thresholds are unsuitable for OSS CI. Use `lean-ctx benchmark` CLI instead.
+// thresholds are unsuitable for OSS CI.
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SECTION 7: REGRESSION GUARDS — Ensure no performance degradation
@@ -649,7 +486,7 @@ fn guard_pattern_never_inflates() {
     ];
 
     for (cmd, output) in &commands {
-        if let Some(compressed) = lean_ctx::core::patterns::compress_output(cmd, output) {
+        if let Some(compressed) = sobre::core::patterns::compress_output(cmd, output) {
             let orig = count_tokens(output);
             let comp = count_tokens(&compressed);
             assert!(
@@ -663,7 +500,7 @@ fn guard_pattern_never_inflates() {
 
 #[test]
 fn guard_tool_descriptions_not_empty() {
-    let descs = lean_ctx::server::tool_descriptions_for_test();
+    let descs = sobre::server::tool_descriptions_for_test();
     for (name, desc) in &descs {
         assert!(
             !desc.is_empty(),
@@ -683,23 +520,18 @@ fn guard_tool_descriptions_not_empty() {
 
 #[test]
 fn guard_essential_instructions_present() {
-    let instr = lean_ctx::server::build_instructions_for_test(CrpMode::Off);
+    let instr = instructions_at_off();
 
-    // #579: the static skeleton is capped at ≤400 tokens — workflow tools
-    // (ctx_overview, ctx_compress) moved to the on-demand LEAN-CTX.md doc.
-    // #496: the per-session skeleton (Bare profile) stays lean — it anchors the
-    // mandatory tool mapping + the intent playbook. The CEP protocol, AUTO hints
-    // and the LEAN-CTX.md reference now live in the dedicated rule file /
-    // CLAUDE.md (FULL profile) that the agent loads alongside, keeping the
-    // worst-case per-session MCP instructions under the 2048-char Claude cap.
     let required = vec![
-        "ALWAYS use lean-ctx ctx_* tools",
-        "ctx_read",
-        "ctx_shell",
-        "ctx_search",
-        "ctx_tree",
-        "ctx_compose",
-        "ctx_session",
+        "native tools keep working",
+        "sobre_expand",
+        "sobre_patch",
+        "sobre_read",
+        "sobre_shell",
+        "sobre_search",
+        "sobre_tree",
+        "sobre_compose",
+        "sobre_session",
     ];
 
     for keyword in &required {
@@ -713,8 +545,6 @@ fn guard_essential_instructions_present() {
         required.len()
     );
 }
-
-// AUTONOMY TOKEN IMPACT removed — writes to ~/.lean-ctx/ (not hermetic for CI)
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DATA GENERATORS
@@ -1212,7 +1042,7 @@ fn generate_git_log_stat(n: usize) -> String {
 // v3.4.1 Optimization benchmarks: Token overhead + Latency
 // ---------------------------------------------------------------------------
 
-/// Points `LEAN_CTX_DATA_DIR` at a fresh temp dir for the guard's lifetime and
+/// Points `SOBRE_DATA_DIR` at a fresh temp dir for the guard's lifetime and
 /// restores the previous value on drop. Callers hold `test_env_lock()`.
 struct TempConfig {
     _dir: tempfile::TempDir,
@@ -1222,9 +1052,9 @@ struct TempConfig {
 impl TempConfig {
     fn new() -> Self {
         let dir = tempfile::tempdir().expect("tempdir");
-        let prev_data_dir = std::env::var("LEAN_CTX_DATA_DIR").ok();
+        let prev_data_dir = std::env::var("SOBRE_DATA_DIR").ok();
         // SAFETY: serialized by `test_env_lock()`.
-        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
+        unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
         Self {
             _dir: dir,
             prev_data_dir,
@@ -1236,9 +1066,9 @@ impl Drop for TempConfig {
     fn drop(&mut self) {
         match self.prev_data_dir.take() {
             // SAFETY: serialized by `test_env_lock()`.
-            Some(v) => unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", v) },
+            Some(v) => unsafe { std::env::set_var("SOBRE_DATA_DIR", v) },
             // SAFETY: serialized by `test_env_lock()`.
-            None => unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") },
+            None => unsafe { std::env::remove_var("SOBRE_DATA_DIR") },
         }
     }
 }
@@ -1247,10 +1077,10 @@ impl Drop for TempConfig {
 fn bench_minimal_overhead_suppresses_all_meta_strings() {
     // The data dir is process-global; serialize against the other instruction
     // benchmarks.
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let _config = TempConfig::new();
 
-    let instructions = lean_ctx::server::build_instructions_for_test(CrpMode::Tdd);
+    let instructions = instructions_at_off();
     let instr_tokens = count_tokens(&instructions);
 
     eprintln!("\n{}", "=".repeat(70));
@@ -1267,8 +1097,8 @@ fn bench_minimal_overhead_suppresses_all_meta_strings() {
 
 #[test]
 fn bench_hash_fast_vs_full_correctness() {
-    use lean_ctx::core::hasher::hash_str;
-    use lean_ctx::server::helpers::hash_fast;
+    use sobre::core::hasher::hash_str;
+    use sobre::server::helpers::hash_fast;
 
     let small = "a".repeat(1000);
     assert_eq!(
@@ -1355,12 +1185,12 @@ fn bench_count_tokens_cache_effectiveness() {
 
 #[test]
 fn bench_session_prepare_save_is_cpu_only() {
-    use lean_ctx::core::session::SessionState;
+    use sobre::core::session::SessionState;
 
     let mut session = SessionState::new();
     session.set_task("benchmark task for save split", None);
     for _ in 0..20 {
-        session.record_tool_call(100, 200);
+        session.record_tool_call(100);
         session.stats.unsaved_changes = 0;
     }
 
@@ -1398,7 +1228,7 @@ fn bench_session_prepare_save_is_cpu_only() {
 
 #[test]
 fn bench_session_save_semantics() {
-    use lean_ctx::core::session::SessionState;
+    use sobre::core::session::SessionState;
 
     let mut session = SessionState::new();
     for _ in 0..6 {

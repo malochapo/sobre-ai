@@ -3,11 +3,11 @@
 //! These in-process mutexes serialize concurrent operations on the *same* file
 //! path while letting operations on *different* paths run fully in parallel.
 //!
-//! Why this exists: tools like `ctx_read` and `ctx_edit` would otherwise contend
+//! Why this exists: tools like `sobre_read` and `sobre_patch` would otherwise contend
 //! on the single global cache write-lock for the entire duration of their disk
 //! I/O. When several agents (or sub-agents) hammer files concurrently, that
-//! global lock becomes a bottleneck and edits can time out waiting for it (see
-//! issue #320). A per-path lock keeps the contention scoped to the one file that
+//! global lock becomes a bottleneck and edits can time out waiting for it.
+//! A per-path lock keeps the contention scoped to the one file that
 //! actually needs serialization, so unrelated reads/edits never block each other.
 //!
 //! Lock ordering (see `LOCK_ORDERING.md`, L17): the inner registry mutex is held

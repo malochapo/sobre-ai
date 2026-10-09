@@ -172,21 +172,21 @@ mod tests {
     // --- Regression tests for GitHub Issues ---
 
     #[test]
-    fn issue_198_gh_api_jq() {
+    fn gh_api_jq() {
         // gh api returns JSON — verbatim (API data)
         assert_eq!(
-            classify("gh api repos/yvgude/lean-ctx/issues/198 --jq '.body'", &[]),
+            classify("gh api repos/yvgude/sobre/issues/198 --jq '.body'", &[]),
             OutputPolicy::Verbatim
         );
     }
 
     #[test]
-    fn issue_159_cat_pubspec() {
+    fn cat_pubspec() {
         assert_eq!(classify("cat pubspec.yaml", &[]), OutputPolicy::Verbatim);
     }
 
     #[test]
-    fn issue_114_git_stash() {
+    fn git_stash() {
         // git stash list/show should not be over-compressed
         // "git stash" without subcommand is not in passthrough,
         // and is_verbatim_output doesn't match plain "git stash".
@@ -196,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_194_git_diff_raw() {
+    fn git_diff_raw() {
         // git diff/show output should be preserved
         let p = classify("git diff --cached", &[]);
         assert_eq!(p, OutputPolicy::Compressible);
@@ -251,15 +251,12 @@ mod tests {
     }
 
     #[test]
-    fn lean_ctx_is_passthrough() {
+    fn sobre_is_passthrough() {
         assert_eq!(
-            classify("lean-ctx init powershell", &[]),
+            classify("sobre init powershell", &[]),
             OutputPolicy::Passthrough
         );
-        assert_eq!(
-            classify("lean-ctx overview", &[]),
-            OutputPolicy::Passthrough
-        );
+        assert_eq!(classify("sobre overview", &[]), OutputPolicy::Passthrough);
     }
 
     #[test]
@@ -267,7 +264,7 @@ mod tests {
         assert_eq!(classify("stripe charges list", &[]), OutputPolicy::Verbatim);
     }
 
-    // --- Regression: daviddatu_ git command rewriting bug ---
+    // --- Regression: git command rewriting bug ---
 
     #[test]
     fn git_commit_is_verbatim() {

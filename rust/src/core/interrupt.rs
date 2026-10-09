@@ -18,8 +18,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 static CANCELLED: AtomicBool = AtomicBool::new(false);
+#[cfg(feature = "dense")]
 static HANDLER_INSTALLED: AtomicBool = AtomicBool::new(false);
-#[cfg(unix)]
+#[cfg(all(unix, feature = "dense"))]
 static SIGNAL_COUNT: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// `true` once the user has requested cancellation via Ctrl-C.
@@ -27,7 +28,7 @@ pub fn is_cancelled() -> bool {
     CANCELLED.load(Ordering::Relaxed)
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "dense"))]
 extern "C" fn handle_sigint(_sig: libc::c_int) {
     CANCELLED.store(true, Ordering::SeqCst);
     let count = SIGNAL_COUNT
@@ -48,8 +49,9 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
 /// Install the cooperative SIGINT handler (idempotent).
 ///
 /// Call this at the start of a long-running, cancellable CLI operation. The
-/// daemon/MCP server never calls it, so [`is_cancelled`] stays `false` there
+/// MCP server never calls it, so [`is_cancelled`] stays `false` there
 /// and background embedding is unaffected.
+#[cfg(feature = "dense")]
 pub fn install_ctrlc_handler() {
     if HANDLER_INSTALLED.swap(true, Ordering::SeqCst) {
         return;

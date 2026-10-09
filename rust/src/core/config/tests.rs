@@ -9,9 +9,9 @@ mod config_load_cache_tests {
     use super::super::*;
     use crate::core::data_dir::isolated_data_dir;
 
-    /// #406 regression: `Config::load()` must reflect a content change even when
+    /// Regression: `Config::load` must reflect a content change even when
     /// the file mtime is unchanged. A mtime-only cache (the old behaviour) kept a
-    /// long-lived MCP server on a stale `allow_paths` while a fresh `doctor`
+    /// long-lived MCP server on a stale `search_roots` while a fresh `doctor`
     /// process — with an empty cache — saw the new value. The cache is now keyed
     /// on a content hash, so this scenario stays live.
     #[test]
@@ -22,26 +22,26 @@ mod config_load_cache_tests {
             std::fs::create_dir_all(parent).unwrap();
         }
 
-        // Warm the cache with the jail closed (default).
+        // Warm the cache with no search roots (default).
         std::fs::write(&path, "# initial\n").unwrap();
         let mtime0 = std::fs::metadata(&path).unwrap().modified().unwrap();
-        assert!(!Config::load().jail_open());
+        assert!(Config::load().search_roots.is_empty());
 
-        // Open the jail but restore the original mtime, so any mtime-only
-        // cache would serve the stale value (#406).
-        std::fs::write(&path, "allow_paths = [\"/\"]\n").unwrap();
+        // Add a root but restore the original mtime, so any mtime-only
+        // cache would serve the stale value.
+        std::fs::write(&path, "search_roots = [\"/srv\"]\n").unwrap();
         filetime::set_file_mtime(&path, filetime::FileTime::from_system_time(mtime0)).unwrap();
 
         assert!(
-            Config::load().jail_open(),
-            "Config::load() must honor a content change with unchanged mtime (#406)"
+            Config::load().search_roots == ["/srv"],
+            "Config::load() must honor a content change with unchanged mtime"
         );
     }
 }
 
 #[cfg(test)]
 mod persist_global_tests {
-    //! Regression tests for #443: persisting config must never reset customized
+    //! Regression tests: persisting config must never reset customized
     //! values.
     use super::super::*;
 
@@ -68,7 +68,7 @@ mod persist_global_tests {
             Some(4444),
             "customized value must survive"
         );
-        assert_eq!(reloaded.compression_level, Some(0.5));
+        assert_eq!(reloaded.compression_level, 0.5);
         assert_eq!(reloaded.proxy.enabled, Some(true));
     }
 
@@ -139,16 +139,16 @@ mod shell_timeout_and_writes_tests {
 mod config_path_visibility_tests {
     use super::super::*;
 
-    // #540: `missing_config_path()` is the visible signal that the runtime
+    // `missing_config_path` is the visible signal that the runtime
     // resolved a `config.toml` that doesn't exist — i.e. an edit landed in a
     // different file (a custom config dir, or a sandboxed HOME). The block messages
     // turn this into an over-MCP-visible note.
     #[test]
     fn missing_config_path_flags_absent_then_clears_when_present() {
         let _lock = crate::core::data_dir::test_env_lock();
-        let saved = std::env::var("LEAN_CTX_CONFIG_DIR").ok();
+        let saved = std::env::var("SOBRE_CONFIG_DIR").ok();
         let dir = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", dir.path());
+        crate::test_env::set_var("SOBRE_CONFIG_DIR", dir.path());
 
         // No config.toml in the resolved dir → flagged as missing (on defaults).
         assert_eq!(
@@ -160,9 +160,9 @@ mod config_path_visibility_tests {
         std::fs::write(dir.path().join("config.toml"), "ultra_compact = true\n").unwrap();
         assert!(Config::missing_config_path().is_none());
 
-        crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+        crate::test_env::remove_var("SOBRE_CONFIG_DIR");
         if let Some(v) = saved {
-            crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", v);
+            crate::test_env::set_var("SOBRE_CONFIG_DIR", v);
         }
     }
 }

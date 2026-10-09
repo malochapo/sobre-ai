@@ -1,17 +1,17 @@
-use super::model::{Gotcha, GotchaStore, MAX_PENDING};
+use super::model::{GotchaStore, MAX_PENDING};
 use std::path::PathBuf;
 
 impl GotchaStore {
     pub fn load(project_root: &str) -> Self {
         let hash = crate::core::project_hash::hash_project_root(project_root);
-        let path = gotcha_path(&hash);
-        if let Ok(content) = std::fs::read_to_string(&path)
+        if let Some(path) = gotcha_path(&hash)
+            && let Ok(content) = std::fs::read_to_string(&path)
             && let Ok(mut store) = serde_json::from_str::<GotchaStore>(&content)
         {
             store.apply_decay();
             store.cross_session_boost();
-            // #451 shell-ding: keep persisted pending errors so a fail→fix that
-            // spans two `lean-ctx -c` processes still correlates — but drop
+            // Shell-ding: keep persisted pending errors so a fail→fix that
+            // spans two `sobre -c` processes still correlates — but drop
             // expired ones (15-min TTL) and bound to the most recent MAX_PENDING
             // so a stale file can never grow unbounded or resurrect old errors.
             store.pending_errors.retain(|p| !p.is_expired());
@@ -26,58 +26,25 @@ impl GotchaStore {
 
     pub fn save(&self, project_root: &str) -> Result<(), String> {
         let hash = crate::core::project_hash::hash_project_root(project_root);
-        let path = gotcha_path(&hash);
+        let path = gotcha_path(&hash).ok_or("no data dir")?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let tmp = path.with_extension("tmp");
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-        let universal = self.extract_universal();
-        if !universal.is_empty() {
-            let _ = save_universal_gotchas(&universal);
-        }
-        Ok(())
+        std::fs::rename(&tmp, &path).map_err(|e| e.to_string())
     }
 }
 
-fn gotcha_path(project_hash: &str) -> PathBuf {
-    crate::core::data_dir::lean_ctx_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("knowledge")
-        .join(project_hash)
-        .join("gotchas.json")
-}
-
-// ---------------------------------------------------------------------------
-// Universal gotchas (cross-project)
-// ---------------------------------------------------------------------------
-
-pub fn load_universal_gotchas() -> Vec<Gotcha> {
-    let policy = crate::core::memory_boundary::BoundaryPolicy::default();
-    if !policy.universal_gotchas_enabled {
-        return Vec::new();
-    }
-    let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() else {
-        return Vec::new();
-    };
-    let path = dir.join("universal-gotchas.json");
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        serde_json::from_str(&content).unwrap_or_default()
-    } else {
-        Vec::new()
-    }
-}
-
-pub fn save_universal_gotchas(gotchas: &[Gotcha]) -> Result<(), String> {
-    let dir = crate::core::data_dir::lean_ctx_data_dir()?;
-    let path = dir.join("universal-gotchas.json");
-    let tmp = path.with_extension("tmp");
-    let json = serde_json::to_string_pretty(gotchas).map_err(|e| e.to_string())?;
-    std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-    Ok(())
+fn gotcha_path(project_hash: &str) -> Option<PathBuf> {
+    Some(
+        crate::core::data_dir::sobre_data_dir()
+            .ok()?
+            .join("knowledge")
+            .join(project_hash)
+            .join("gotchas.json"),
+    )
 }
 
 #[cfg(test)]
@@ -86,11 +53,11 @@ mod tests {
 
     #[test]
     fn pending_errors_persist_across_load_for_cross_process_correlation() {
-        // #451 shell-ding: in `lean-ctx -c` mode every command is its own
+        // Shell-ding: in `sobre -c` mode every command is its own
         // process, so the fix correlation can only work if pending errors are
         // persisted. Simulate process 1 (failing build) → process 2 (green run).
         let _iso = crate::core::data_dir::isolated_data_dir();
-        let root = "/tmp/lean-ctx-gotcha-persist-test-xyzzy";
+        let root = "/tmp/sobre-gotcha-persist-test-xyzzy";
 
         let mut p1 = GotchaStore::load(root);
         assert!(p1.learn_from_shell(

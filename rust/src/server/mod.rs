@@ -1,16 +1,13 @@
 pub mod background_shell;
 pub mod bounded_lock;
-pub mod bypass_hint;
 pub mod compaction_sync;
 pub mod context_gate;
-mod dispatch;
+pub(crate) mod dispatch;
 pub(crate) mod execute;
 pub mod helpers;
 pub mod multi_path;
 pub mod progress;
-pub mod prompts;
 pub mod registry;
-pub mod resources;
 pub mod roots;
 use roots::has_project_marker;
 pub mod tool_trait;
@@ -20,27 +17,17 @@ use futures::FutureExt;
 use rmcp::ErrorData;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeRequestParams,
-    InitializeResult, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
+    InitializeRequestParams, InitializeResult, ListToolsResult, PaginatedRequestParams,
+    ProtocolVersion, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::{RequestContext, RoleServer};
-use std::path::PathBuf;
 
-use crate::tools::{CrpMode, LeanCtxServer};
+use crate::tools::SobreServer;
 mod call_tool;
 mod post_dispatch;
-mod post_process;
+pub(crate) mod post_process;
 mod server_handler;
-
-pub fn build_instructions_for_test(crp_mode: CrpMode) -> String {
-    crate::instructions::build_instructions_for_test(crp_mode)
-}
-
-/// Deterministic STATIC Claude Code instructions (cold first-contact, no dynamic
-/// session/knowledge/gotcha payload) for the char-budget benchmark.
-pub fn build_claude_code_static_instructions_for_test() -> String {
-    crate::instructions::claude_code_static_instructions_for_test()
-}
 
 fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {
     if let Some(home) = dirs::home_dir()
@@ -110,10 +97,10 @@ use crate::core::pathutil::is_broad_or_unsafe_root;
 
 /// Detect a multi-root workspace: a directory that has no project markers
 /// itself, but contains child directories that do. In this case, use the
-/// parent as jail root and auto-allow all child projects.
+/// parent as the project root.
 fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     // Never enumerate the home dir or macOS TCC-protected dirs (Documents/Desktop/
-    // Downloads): read_dir there triggers a macOS privacy prompt (#356), and a real
+    // Downloads): read_dir there triggers a macOS privacy prompt, and a real
     // project under them is already handled upstream via has_project_marker.
     if crate::core::pathutil::is_tcc_sensitive_home_dir(dir) {
         return None;
@@ -130,11 +117,8 @@ fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     }
 
     if child_projects.len() >= 2 {
-        crate::core::runtime_flags::add_allow_paths(
-            child_projects.iter().map(PathBuf::from).collect(),
-        );
         tracing::info!(
-            "Multi-root workspace detected at {}: auto-allowing {} child projects",
+            "Multi-root workspace detected at {}: {} child projects",
             dir.display(),
             child_projects.len()
         );
@@ -144,6 +128,7 @@ fn detect_multi_root_workspace(dir: &std::path::Path) -> Option<String> {
     None
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn tool_descriptions_for_test() -> Vec<(String, String)> {
     crate::server::registry::build_registry()
         .tool_defs()
@@ -157,6 +142,7 @@ pub fn tool_descriptions_for_test() -> Vec<(String, String)> {
         .collect()
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn tool_schemas_json_for_test() -> String {
     crate::server::registry::build_registry()
         .tool_defs()
@@ -173,7 +159,7 @@ pub fn tool_schemas_json_for_test() -> String {
 }
 
 fn is_shell_tool_name(name: &str) -> bool {
-    name == "ctx_shell"
+    name == "sobre_shell"
 }
 
 #[cfg(test)]
@@ -202,32 +188,14 @@ mod tests {
         let registry = crate::server::registry::build_registry();
         assert_eq!(
             registry.len(),
-            17,
-            "registry tool count drift — the surface is 17 and capped at 20              (invariant 1). Update this test AND the docs when it moves."
-        );
-    }
-
-    #[test]
-    fn production_server_always_has_registry() {
-        // The list_tools fallback that serves static defs when `registry` is None
-        // must stay unreachable in production: every public constructor funnels
-        // through new_with_startup, which sets registry = Some. Lock that invariant
-        // so the advertised tool set can never silently drift from what dispatch
-        // (which requires the registry) can actually execute.
-        let server = crate::tools::create_server();
-        assert!(
-            server.registry.is_some(),
-            "production server must carry a tool registry"
+            15,
+            "registry tool count drift — the surface is 15 and capped at 20 \
+             (invariant 1). Update this test AND the docs when it moves."
         );
     }
 
     #[test]
     fn detect_multi_root_workspace_with_child_projects() {
-        // detect_multi_root_workspace adds runtime allow paths as a side
-        // effect (auto-allowing the child projects) — hold the global env
-        // lock so a parallel jail test never observes the transient value
-        // (the pre-existing full-suite flake reported in #695).
-        let _guard = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
         let workspace = tmp.path().join("workspace");
         std::fs::create_dir_all(&workspace).unwrap();
@@ -264,7 +232,7 @@ mod tests {
     #[test]
     fn is_broad_or_unsafe_root_allows_tmp_subdirs() {
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
-            "/tmp/leanctx-test"
+            "/tmp/sobre-test"
         )));
         assert!(!is_broad_or_unsafe_root(std::path::Path::new(
             "/tmp/my-project"

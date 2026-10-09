@@ -6,7 +6,7 @@ const BOUNCE_RATE_THRESHOLD: f64 = 0.30;
 /// Seq-tick window during which a full read is treated as *edit-forced* rather
 /// than a compression bounce. Must match the window `should_force_full` uses to
 /// escalate post-edit reads to `full`, so the read we forced is never blamed on
-/// the compression arm (GL #622).
+/// the compression arm.
 const EDIT_FORCE_WINDOW: u64 = 10;
 /// Outer-map retention: a path whose newest activity is older than this many seq ticks
 /// can no longer satisfy BOUNCE_WINDOW (5) or the edit-force window (10), so it is inert
@@ -38,8 +38,8 @@ pub struct BounceTracker {
     total_bounces: u64,
     total_wasted_tokens: usize,
     /// When true (only for the process-global tracker), detected bounces are appended to
-    /// the persistent savings ledger so a fresh `gain` process sees historical bounce.
-    /// Local trackers in unit tests leave this `false` to avoid touching the real ledger.
+    /// the usage ledger, where `gain` subtracts them from the savings. Local trackers
+    /// in unit tests leave this `false` to avoid touching the real ledger.
     persist: bool,
 }
 
@@ -108,7 +108,7 @@ impl BounceTracker {
 
     fn detect_bounce(&mut self, norm_path: &str, full_seq: u64) {
         // A full re-read the system itself forced after an edit is not a
-        // compression failure (GL #622): `should_force_full` returns `full` for
+        // compression failure: `should_force_full` returns `full` for
         // EDIT_FORCE_WINDOW ticks post-edit, so the agent had no choice. Counting
         // it as a bounce would penalize the compression arm for the edit and
         // inflate the per-extension bounce rate until `should_force_full` pins the
@@ -139,33 +139,7 @@ impl BounceTracker {
             }
 
             if self.persist {
-                crate::core::savings_ledger::record_bounce_event(wasted);
-            }
-        }
-    }
-
-    pub fn record_shell_file_access(&mut self, path: &str) {
-        let norm = crate::core::pathutil::normalize_tool_path(path);
-        let seq = self.seq_counter;
-        self.detect_bounce(&norm, seq);
-    }
-
-    /// Records an explicit archive/context expansion as a quality bounce.
-    ///
-    /// Unlike a full file re-read, `ctx_expand` may address a content handle
-    /// rather than a path, so it cannot always be inferred by `detect_bounce`.
-    /// Benchmark replay uses this method to keep the quality proxy on the same
-    /// tracker as ordinary compressed-then-full bounces.
-    pub fn record_expansion(&mut self, source: Option<&str>, wasted_tokens: usize) {
-        self.total_bounces = self.total_bounces.saturating_add(1);
-        self.total_wasted_tokens = self.total_wasted_tokens.saturating_add(wasted_tokens);
-
-        if let Some(path) = source {
-            let ext = extension_of(path);
-            if !ext.is_empty() {
-                let stats = self.per_extension.entry(ext).or_default();
-                stats.bounces = stats.bounces.saturating_add(1);
-                stats.wasted_tokens = stats.wasted_tokens.saturating_add(wasted_tokens);
+                crate::core::usage::record_bounce("read", wasted);
             }
         }
     }
@@ -213,55 +187,9 @@ impl BounceTracker {
         false
     }
 
-    pub fn bounce_rate_for_extension(&self, path: &str) -> Option<f64> {
-        let ext = extension_of(path);
-        self.per_extension.get(&ext).and_then(|s| {
-            if s.total_reads >= 3 {
-                Some(s.bounces as f64 / s.total_reads as f64)
-            } else {
-                None
-            }
-        })
-    }
-
+    #[cfg(test)]
     pub fn total_bounces(&self) -> u64 {
         self.total_bounces
-    }
-
-    pub fn total_wasted_tokens(&self) -> usize {
-        self.total_wasted_tokens
-    }
-
-    pub fn adjusted_savings(&self, raw_savings: usize) -> isize {
-        raw_savings as isize - self.total_wasted_tokens as isize
-    }
-
-    pub fn format_summary(&self) -> String {
-        if self.total_bounces == 0 {
-            return "Bounces: 0".to_string();
-        }
-        let mut lines = vec![format!(
-            "Bounces: {} ({} wasted tokens)",
-            self.total_bounces, self.total_wasted_tokens
-        )];
-        let mut exts: Vec<_> = self
-            .per_extension
-            .iter()
-            .filter(|(_, s)| s.bounces > 0)
-            .collect();
-        exts.sort_by_key(|a| std::cmp::Reverse(a.1.bounces));
-        for (ext, stats) in exts.iter().take(5) {
-            let rate = if stats.total_reads > 0 {
-                stats.bounces as f64 / stats.total_reads as f64 * 100.0
-            } else {
-                0.0
-            };
-            lines.push(format!(
-                "  {ext}: {}/{} reads bounced ({rate:.0}%), {} tok wasted",
-                stats.bounces, stats.total_reads, stats.wasted_tokens,
-            ));
-        }
-        lines.join("\n")
     }
 }
 
@@ -269,12 +197,9 @@ static GLOBAL_TRACKER: OnceLock<Mutex<BounceTracker>> = OnceLock::new();
 
 pub fn global() -> &'static Mutex<BounceTracker> {
     GLOBAL_TRACKER.get_or_init(|| {
-        // Seed from the persistent ledger so every process (including a fresh `gain`)
-        // accounts for historical bounce, then mark this tracker as the persisting one.
-        let summary = crate::core::savings_ledger::summary();
+        // The process-wide tracker is the one that records bounces in the
+        // usage ledger; its totals cover this process only.
         let mut bt = BounceTracker::new();
-        bt.total_wasted_tokens = summary.bounce_tokens as usize;
-        bt.total_bounces = summary.bounce_events as u64;
         bt.persist = true;
         Mutex::new(bt)
     })
@@ -290,7 +215,7 @@ mod tests {
         bt.seq_counter = 1;
         bt.record_read("src/main.rs", "full", 500, 500);
         assert_eq!(bt.total_bounces(), 0);
-        assert_eq!(bt.total_wasted_tokens(), 0);
+        assert_eq!(bt.total_wasted_tokens, 0);
     }
 
     #[test]
@@ -301,7 +226,7 @@ mod tests {
         bt.seq_counter = 2;
         bt.record_read("src/main.rs", "full", 500, 500);
         assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens(), 50);
+        assert_eq!(bt.total_wasted_tokens, 50);
     }
 
     #[test]
@@ -315,27 +240,8 @@ mod tests {
     }
 
     #[test]
-    fn shell_access_triggers_bounce() {
-        let mut bt = BounceTracker::new();
-        bt.seq_counter = 1;
-        bt.record_read("config.yml", "signatures", 30, 400);
-        bt.seq_counter = 3;
-        bt.record_shell_file_access("config.yml");
-        assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens(), 30);
-    }
-
-    #[test]
-    fn explicit_expansion_tracks_quality_and_waste() {
-        let mut bt = BounceTracker::new();
-        bt.record_expansion(Some("src/main.rs"), 125);
-        assert_eq!(bt.total_bounces(), 1);
-        assert_eq!(bt.total_wasted_tokens(), 125);
-    }
-
-    #[test]
     fn edit_forced_full_read_is_not_a_bounce() {
-        // GL #622: a compressed overview read, then an edit, then the `full`
+        // A compressed overview read, then an edit, then the `full`
         // re-read that `should_force_full` mandates must NOT register as a bounce
         // — the edit forced it, the compression did not fail.
         let mut bt = BounceTracker::new();
@@ -385,27 +291,5 @@ mod tests {
             bt.record_read(&format!("f{i}.yml"), "full", 400, 400);
         }
         assert!(bt.should_force_full("new.yml"));
-    }
-
-    #[test]
-    fn adjusted_savings_subtracts_waste() {
-        let mut bt = BounceTracker::new();
-        bt.seq_counter = 1;
-        bt.record_read("a.rs", "map", 50, 500);
-        bt.seq_counter = 2;
-        bt.record_read("a.rs", "full", 500, 500);
-        assert_eq!(bt.adjusted_savings(1000), 950);
-    }
-
-    #[test]
-    fn bounce_rate_for_extension_below_minimum() {
-        let bt = BounceTracker::new();
-        assert!(bt.bounce_rate_for_extension("test.rs").is_none());
-    }
-
-    #[test]
-    fn format_summary_empty() {
-        let bt = BounceTracker::new();
-        assert_eq!(bt.format_summary(), "Bounces: 0");
     }
 }

@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-fn setup_project() -> (tempfile::TempDir, lean_ctx::engine::ContextEngine) {
+fn setup_project() -> (tempfile::TempDir, sobre::engine::ContextEngine) {
     let dir = tempfile::tempdir().expect("tempdir");
     let project = dir.path().join("project");
     std::fs::create_dir_all(&project).expect("create project");
@@ -87,10 +87,10 @@ edition = "2021"
     std::fs::create_dir_all(&data_dir).expect("create data dir");
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::set_var("LEAN_CTX_DATA_DIR", data_dir.to_string_lossy().to_string());
+        std::env::set_var("SOBRE_DATA_DIR", data_dir.to_string_lossy().to_string());
     }
 
-    let engine = lean_ctx::engine::ContextEngine::with_project_root(&project);
+    let engine = sobre::engine::ContextEngine::with_project_root(&project);
     (dir, engine)
 }
 
@@ -98,11 +98,11 @@ edition = "2021"
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase1_tree_depth() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let tree = engine
-        .call_tool_text("ctx_tree", Some(json!({"depth": 3})))
+        .call_tool_text("sobre_tree", Some(json!({"depth": 3})))
         .await
         .expect("tree");
     assert!(tree.contains("src"), "tree should show src: {tree}");
@@ -113,7 +113,7 @@ async fn phase1_tree_depth() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -121,14 +121,17 @@ async fn phase1_tree_depth() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_full_and_cache_stub() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
     let main_path = project.join("src/main.rs").to_string_lossy().to_string();
 
     let full1 = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "full"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "full"})),
+        )
         .await
         .expect("full read 1");
     assert!(
@@ -137,7 +140,10 @@ async fn phase2_read_full_and_cache_stub() {
     );
 
     let full2 = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "full"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "full"})),
+        )
         .await
         .expect("full read 2");
     assert!(
@@ -149,13 +155,13 @@ async fn phase2_read_full_and_cache_stub() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_signatures() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -163,7 +169,7 @@ async fn phase2_read_signatures() {
 
     let sigs = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({"path": main_path, "mode": "signatures"})),
         )
         .await
@@ -175,33 +181,33 @@ async fn phase2_read_signatures() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_map() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
     let lib_path = project.join("src/lib.rs").to_string_lossy().to_string();
 
     let map = engine
-        .call_tool_text("ctx_read", Some(json!({"path": lib_path, "mode": "map"})))
+        .call_tool_text("sobre_read", Some(json!({"path": lib_path, "mode": "map"})))
         .await
         .expect("map read");
     assert!(!map.is_empty(), "map should not be empty");
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_lines_range() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -209,7 +215,7 @@ async fn phase2_read_lines_range() {
 
     let lines = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({"path": main_path, "mode": "lines:1-5"})),
         )
         .await
@@ -221,33 +227,36 @@ async fn phase2_read_lines_range() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_auto() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
     let main_path = project.join("src/main.rs").to_string_lossy().to_string();
 
     let auto = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "auto"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "auto"})),
+        )
         .await
         .expect("auto read");
     assert!(!auto.is_empty(), "auto mode should return content");
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_aggressive() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
@@ -255,7 +264,7 @@ async fn phase2_read_aggressive() {
 
     let aggressive = engine
         .call_tool_text(
-            "ctx_read",
+            "sobre_read",
             Some(json!({"path": main_path, "mode": "aggressive"})),
         )
         .await
@@ -267,20 +276,23 @@ async fn phase2_read_aggressive() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase2_read_diff_after_edit() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let project = _dir.path().join("project");
     let main_path = project.join("src/main.rs").to_string_lossy().to_string();
 
     let _ = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "full"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "full"})),
+        )
         .await
         .expect("initial read");
 
@@ -289,7 +301,10 @@ async fn phase2_read_diff_after_edit() {
     std::fs::write(project.join("src/main.rs"), &modified).unwrap();
 
     let diff = engine
-        .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "diff"})))
+        .call_tool_text(
+            "sobre_read",
+            Some(json!({"path": main_path, "mode": "diff"})),
+        )
         .await
         .expect("diff read");
     assert!(
@@ -302,7 +317,7 @@ async fn phase2_read_diff_after_edit() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -310,11 +325,11 @@ async fn phase2_read_diff_after_edit() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase3_search_regex() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
-        .call_tool_text("ctx_search", Some(json!({"pattern": "fn main"})))
+        .call_tool_text("sobre_search", Some(json!({"pattern": "fn main"})))
         .await
         .expect("search");
     assert!(
@@ -324,18 +339,18 @@ async fn phase3_search_regex() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase3_search_with_path_filter() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
         .call_tool_text(
-            "ctx_search",
+            "sobre_search",
             Some(json!({"pattern": "pub fn", "path": "src/utils"})),
         )
         .await
@@ -347,7 +362,7 @@ async fn phase3_search_with_path_filter() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -355,12 +370,12 @@ async fn phase3_search_with_path_filter() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase4_shell_echo() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
         .call_tool_text(
-            "ctx_shell",
+            "sobre_shell",
             Some(json!({"command": "echo hello-from-shell"})),
         )
         .await
@@ -372,18 +387,18 @@ async fn phase4_shell_echo() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase4_shell_raw_mode() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let out = engine
         .call_tool_text(
-            "ctx_shell",
+            "sobre_shell",
             Some(json!({"command": "echo raw-test-value", "raw": true})),
         )
         .await
@@ -395,7 +410,7 @@ async fn phase4_shell_raw_mode() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -407,12 +422,12 @@ async fn phase4_shell_raw_mode() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase7_knowledge_remember_and_recall() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let remember = engine
         .call_tool_text(
-            "ctx_knowledge",
+            "sobre_knowledge",
             Some(json!({
                 "action": "remember",
                 "category": "architecture",
@@ -426,7 +441,7 @@ async fn phase7_knowledge_remember_and_recall() {
 
     let recall = engine
         .call_tool_text(
-            "ctx_knowledge",
+            "sobre_knowledge",
             Some(json!({"action": "recall", "category": "architecture"})),
         )
         .await
@@ -438,18 +453,18 @@ async fn phase7_knowledge_remember_and_recall() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase7_knowledge_timeline_and_rooms() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+async fn phase7_knowledge_status_lists_categories() {
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let _ = engine
         .call_tool_text(
-            "ctx_knowledge",
+            "sobre_knowledge",
             Some(json!({
                 "action": "remember",
                 "category": "decisions",
@@ -460,41 +475,32 @@ async fn phase7_knowledge_timeline_and_rooms() {
         .await
         .expect("remember decision");
 
-    let timeline = engine
-        .call_tool_text(
-            "ctx_knowledge",
-            Some(json!({"action": "timeline", "category": "decisions"})),
-        )
+    let status = engine
+        .call_tool_text("sobre_knowledge", Some(json!({"action": "status"})))
         .await
-        .expect("timeline");
-    assert!(!timeline.is_empty(), "timeline should return entries");
-
-    let rooms = engine
-        .call_tool_text("ctx_knowledge", Some(json!({"action": "rooms"})))
-        .await
-        .expect("rooms");
+        .expect("status");
     assert!(
-        rooms.contains("decisions"),
-        "rooms should list the decisions category: {rooms}"
+        status.contains("decisions"),
+        "status should list the decisions category: {status}"
     );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase7_session_finding_and_decision() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let finding = engine
         .call_tool_text(
-            "ctx_session",
+            "sobre_session",
             Some(json!({
                 "action": "finding",
-                "content": "Config struct lacks validation for port range",
+                "value": "Config struct lacks validation for port range",
             })),
         )
         .await
@@ -503,10 +509,10 @@ async fn phase7_session_finding_and_decision() {
 
     let decision = engine
         .call_tool_text(
-            "ctx_session",
+            "sobre_session",
             Some(json!({
                 "action": "decision",
-                "content": "Use builder pattern for Config validation",
+                "value": "Use builder pattern for Config validation",
             })),
         )
         .await
@@ -515,7 +521,7 @@ async fn phase7_session_finding_and_decision() {
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
@@ -524,26 +530,29 @@ async fn phase7_session_finding_and_decision() {
 // ── Phase 9: Metrics & Verification ────────────────────────
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase9_session_save() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
+async fn phase9_session_status_shows_the_task() {
+    let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let _ = engine
         .call_tool_text(
-            "ctx_session",
-            Some(json!({"action": "task", "content": "Final verification"})),
+            "sobre_session",
+            Some(json!({"action": "task", "value": "Final verification"})),
         )
         .await
         .expect("set task");
 
-    let save = engine
-        .call_tool_text("ctx_session", Some(json!({"action": "save"})))
+    let status = engine
+        .call_tool_text("sobre_session", Some(json!({"action": "status"})))
         .await
-        .expect("session save");
-    assert!(!save.is_empty(), "save should return confirmation");
+        .expect("session status");
+    assert!(
+        status.contains("Final verification"),
+        "status should show the task: {status}"
+    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
+        std::env::remove_var("SOBRE_DATA_DIR");
     }
 }

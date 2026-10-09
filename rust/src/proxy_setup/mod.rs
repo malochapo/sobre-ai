@@ -1,12 +1,15 @@
-//! Install / uninstall LLM-client proxy environment wiring.
+//! Point installed agents at the proxy, each through its own configuration:
+//! Claude Code's `settings.json`, Codex's `config.toml` and OpenCode's
+//! `opencode.json`. Nothing is written into shell rc files.
 //!
-//! Submodules hold per-client setup (Claude, Codex, shell). This
-//! facade keeps the public API stable as `crate::proxy_setup::*`.
+//! Submodules hold per-client setup. This facade keeps the public API stable
+//! as `crate::proxy_setup::*`.
 
 mod claude;
 mod codex;
-mod shell;
+mod opencode;
 mod util;
+mod wiring;
 
 #[cfg(test)]
 #[path = "tests.rs"]
@@ -14,16 +17,15 @@ mod tests;
 
 use std::path::Path;
 
-use crate::marked_block;
-
 use claude::{install_claude_env, install_claude_env_inner, uninstall_claude_env};
-use codex::{codex_config_has_local_proxy_entry, strip_codex_proxy_entries, uninstall_codex_env};
-use shell::install_shell_exports;
-use util::{PROXY_ENV_END, PROXY_ENV_START};
+use codex::{codex_points_at_proxy, uninstall_codex_env};
+use opencode::{has_proxy_base_url, install_opencode_env, uninstall_opencode_env};
 
 pub use claude::anthropic_api_key_available;
+pub(crate) use claude::claude_points_at_proxy;
 pub(crate) use codex::install_codex_env;
-pub use util::{default_port, is_local_lean_ctx_url, proxy_timeout};
+pub use util::{default_port, proxy_timeout};
+pub(crate) use util::{is_proxy_reachable, last_started_port, remember_started_port};
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
     let cfg = crate::core::config::Config::load();
@@ -33,158 +35,58 @@ pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {
         }
         return;
     }
-    install_shell_exports(home, port, quiet);
     install_claude_env(home, port, quiet);
     install_codex_env(home, port, quiet);
+    install_opencode_env(home, port, quiet);
 }
 
-/// Install proxy env without config guard (used by `lean-ctx proxy enable` which has already set the flag).
+/// Install proxy env without config guard (used by `sobre proxy enable` which has already set the flag).
 /// `force_endpoint`: if true, overrides even non-local custom endpoints.
 pub fn install_proxy_env_unchecked(home: &Path, port: u16, quiet: bool, force_endpoint: bool) {
-    install_shell_exports(home, port, quiet);
     if force_endpoint {
         install_claude_env_inner(home, port, quiet, true);
     } else {
         install_claude_env(home, port, quiet);
     }
     install_codex_env(home, port, quiet);
+    install_opencode_env(home, port, quiet);
 }
 
-pub fn preview_proxy_cleanup(home: &Path) {
-    let settings_dir = crate::core::editor_registry::claude_state_dir(home);
-    let settings_path = settings_dir.join("settings.json");
-    if let Ok(content) = std::fs::read_to_string(&settings_path)
-        && content.contains("ANTHROPIC_BASE_URL")
-    {
-        let cfg = crate::core::config::Config::load();
-        if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
-            println!("  Would restore ANTHROPIC_BASE_URL → {upstream} in Claude Code settings");
-        } else {
-            println!("  Would remove ANTHROPIC_BASE_URL from Claude Code settings");
-        }
-    }
-
-    let codex_path = crate::core::home::resolve_codex_config_path()
-        .unwrap_or_else(|| home.join(".codex/config.toml"));
-    if let Ok(content) = std::fs::read_to_string(codex_path)
-        && codex_config_has_local_proxy_entry(&content)
-    {
-        println!("  Would remove Codex proxy URL from config.toml");
-    }
-}
-
-/// Removes stale proxy URLs from Claude Code / Codex settings when the proxy is not enabled.
+/// Removes stale proxy URLs from Claude Code / Codex / OpenCode settings when the proxy is not enabled.
 /// Returns the number of stale URLs cleaned up.
 pub fn cleanup_stale_proxy_env(home: &Path) -> usize {
     let cfg = crate::core::config::Config::load();
     if cfg.proxy.enabled == Some(true) {
         return 0;
     }
-
-    let mut cleaned = 0;
-
-    let settings_dir = crate::core::editor_registry::claude_state_dir(home);
-    let settings_path = settings_dir.join("settings.json");
-    if let Ok(content) = std::fs::read_to_string(&settings_path)
-        && let Ok(mut doc) = crate::core::jsonc::parse_jsonc(&content)
-        && let Some(base_url) = doc
-            .get("env")
-            .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-            .and_then(|v| v.as_str())
-            .map(String::from)
-        && is_local_lean_ctx_url(&base_url)
-        && let Some(env_obj) = doc.get_mut("env").and_then(|e| e.as_object_mut())
-    {
-        if let Some(ref upstream) = cfg.proxy.upstreams.get("anthropic").cloned() {
-            env_obj.insert(
-                "ANTHROPIC_BASE_URL".to_string(),
-                serde_json::Value::String(upstream.clone()),
-            );
-            println!("  ✓ Restored ANTHROPIC_BASE_URL → {upstream} in Claude Code settings");
-        } else {
-            env_obj.remove("ANTHROPIC_BASE_URL");
-            if env_obj.is_empty() {
-                doc.as_object_mut().map(|o| o.remove("env"));
-            }
-            println!("  ✓ Removed stale ANTHROPIC_BASE_URL from Claude Code settings");
-        }
-        let out = serde_json::to_string_pretty(&doc).unwrap_or_default();
-        let _ = std::fs::write(&settings_path, out + "\n");
-        cleaned += 1;
-    }
-
-    let codex_path = crate::core::home::resolve_codex_config_path()
-        .unwrap_or_else(|| home.join(".codex/config.toml"));
-    if let Ok(content) = std::fs::read_to_string(&codex_path)
-        && codex_config_has_local_proxy_entry(&content)
-    {
-        let filtered = strip_codex_proxy_entries(&content);
-        let _ = std::fs::write(&codex_path, &filtered);
-        println!("  ✓ Removed stale Codex proxy URL from config.toml");
-        cleaned += 1;
-    }
-
-    cleaned
+    usize::from(uninstall_claude_env(home, false))
+        + usize::from(uninstall_codex_env(home, false))
+        + usize::from(uninstall_opencode_env(home, false))
 }
 
-pub fn has_stale_proxy_url(home: &Path) -> bool {
+/// The agents whose configuration still points at the local proxy although
+/// the proxy is not enabled: what [`cleanup_stale_proxy_env`] repairs.
+pub fn stale_proxy_agents(home: &Path) -> Vec<&'static str> {
     let cfg = crate::core::config::Config::load();
     if cfg.proxy.enabled == Some(true) {
-        return false;
+        return Vec::new();
     }
-
-    let settings_dir = crate::core::editor_registry::claude_state_dir(home);
-    let settings_path = settings_dir.join("settings.json");
-    let Ok(content) = std::fs::read_to_string(&settings_path) else {
-        return false;
-    };
-    let Ok(doc) = crate::core::jsonc::parse_jsonc(&content) else {
-        return false;
-    };
-
-    let base_url = doc
-        .get("env")
-        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    is_local_lean_ctx_url(base_url)
+    let mut stale = Vec::new();
+    if claude_points_at_proxy(home) {
+        stale.push("Claude Code");
+    }
+    if codex_points_at_proxy(home) {
+        stale.push("Codex");
+    }
+    if has_proxy_base_url(home) {
+        stale.push("OpenCode");
+    }
+    stale
 }
 
-pub fn uninstall_proxy_env(home: &Path, quiet: bool) {
-    for rc in &[home.join(".zshrc"), home.join(".bashrc")] {
-        let label = format!(
-            "proxy env from ~/{}",
-            rc.file_name().unwrap_or_default().to_string_lossy()
-        );
-        marked_block::remove_from_file(rc, PROXY_ENV_START, PROXY_ENV_END, quiet, &label);
-    }
-
-    let fish_config = home.join(".config/fish/config.fish");
-    if fish_config.exists() {
-        marked_block::remove_from_file(
-            &fish_config,
-            PROXY_ENV_START,
-            PROXY_ENV_END,
-            quiet,
-            "proxy env from ~/.config/fish/config.fish",
-        );
-    }
-
-    let ps_profile =
-        dirs::home_dir().map(|h| crate::shell::platform::resolve_powershell_profile_path(&h));
-    if let Some(ref ps) = ps_profile
-        && ps.exists()
-    {
-        marked_block::remove_from_file(
-            ps,
-            PROXY_ENV_START,
-            PROXY_ENV_END,
-            quiet,
-            "proxy env from PowerShell profile",
-        );
-    }
-
-    uninstall_claude_env(home, quiet);
-    uninstall_codex_env(home, quiet);
+/// Takes every agent sobre wired off the proxy; returns how many it changed.
+pub fn uninstall_proxy_env(home: &Path, quiet: bool) -> usize {
+    usize::from(uninstall_claude_env(home, quiet))
+        + usize::from(uninstall_codex_env(home, quiet))
+        + usize::from(uninstall_opencode_env(home, quiet))
 }

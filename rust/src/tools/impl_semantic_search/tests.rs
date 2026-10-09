@@ -1,35 +1,13 @@
 //! Unit tests for the semantic-search stack (moved verbatim in the split).
 
 #[cfg(test)]
-mod filter_tests {
-    #[allow(clippy::wildcard_imports)]
-    use super::super::*;
-
-    #[test]
-    fn filter_language_rust() {
-        let f = SearchFilter::new(Some(&["rust".into()]), None).unwrap();
-        assert!(f.matches("src/main.rs"));
-        assert!(!f.matches("src/main.ts"));
-    }
-
-    #[test]
-    fn filter_path_glob() {
-        let f = SearchFilter::new(None, Some("rust/src/**")).unwrap();
-        assert!(f.matches("rust/src/core/mod.rs"));
-        assert!(!f.matches("website/src/pages/index.astro"));
-    }
-}
-
-#[cfg(test)]
 mod root_resolution_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
 
     #[test]
     fn subdir_filter_scopes_results_to_subtree() {
-        let f = SearchFilter::new(None, None)
-            .unwrap()
-            .with_subdir(Some("crate_a/src".to_string()));
+        let f = SearchFilter::default().with_subdir(Some("crate_a/src".to_string()));
         assert!(f.is_active());
         assert!(f.matches("crate_a/src/auth.rs"));
         assert!(f.matches("crate_a/src/nested/db.rs"));
@@ -41,20 +19,8 @@ mod root_resolution_tests {
     }
 
     #[test]
-    fn subdir_filter_combines_with_extension_filter() {
-        let f = SearchFilter::new(Some(&["rust".to_string()]), None)
-            .unwrap()
-            .with_subdir(Some("src".to_string()));
-        assert!(f.matches("src/main.rs"));
-        assert!(!f.matches("src/readme.md"), "wrong extension");
-        assert!(!f.matches("docs/main.rs"), "outside subdir");
-    }
-
-    #[test]
     fn empty_subdir_is_no_scope() {
-        let f = SearchFilter::new(None, None)
-            .unwrap()
-            .with_subdir(Some(String::new()));
+        let f = SearchFilter::default().with_subdir(Some(String::new()));
         assert!(!f.is_active());
         assert!(f.matches("anything/here.rs"));
     }
@@ -73,7 +39,7 @@ mod root_resolution_tests {
 
     #[test]
     fn resolve_search_root_promotes_subdir_to_project_root() {
-        // #948: the index namespace is keyed on the project root; a subdir search
+        // The index namespace is keyed on the project root; a subdir search
         // must resolve to that same root (and keep the subdir as a scope) instead
         // of hashing to a different, empty namespace.
         let _lock = crate::core::data_dir::test_env_lock();
@@ -82,12 +48,10 @@ mod root_resolution_tests {
         let sub = root.join("crate_a").join("src");
         std::fs::create_dir_all(&sub).unwrap();
 
-        // Pin the project root so resolution is deterministic regardless of host
-        // config; remove the env before asserting so a failure cannot leak it.
-        crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", root.to_string_lossy().as_ref());
+        // A project marker at the root is what makes it the project root.
+        std::fs::create_dir_all(root.join(".git")).unwrap();
         let from_sub = resolve_search_root(&sub.to_string_lossy());
         let from_root = resolve_search_root(&root.to_string_lossy());
-        crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
 
         let (resolved, subdir) = from_sub.unwrap();
         assert_eq!(resolved, root, "subdir must promote to the project root");
@@ -104,14 +68,14 @@ mod root_resolution_tests {
     }
 }
 
-#[cfg(all(test, feature = "embeddings"))]
+#[cfg(all(test, feature = "dense"))]
 mod cold_start_guard_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
 
     #[test]
     fn budget_zero_disables_guard() {
-        // 0 = "always embed inline" (pre-#512 behavior), regardless of size.
+        // 0 = "always embed inline" (the earlier behavior), regardless of size.
         assert!(!exceeds_inline_embed_budget(1_000_000, 0));
     }
 
@@ -137,10 +101,10 @@ mod cold_start_guard_tests {
     #[test]
     fn dense_build_hint_always_points_at_the_cli_build() {
         let full = dense_build_hint(22_741, false);
-        assert!(full.contains("lean-ctx index build-semantic"));
+        assert!(full.ends_with("sobre index build]"));
         assert!(full.contains("22741"));
         let compact = dense_build_hint(22_741, true);
-        assert!(compact.contains("lean-ctx index build-semantic"));
+        assert!(compact.ends_with("sobre index build]"));
         assert!(compact.contains("22741"));
     }
 }
@@ -161,7 +125,6 @@ mod determinism_tests {
             end_line: 1,
             snippet: "a".to_string(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -174,7 +137,6 @@ mod determinism_tests {
             end_line: 1,
             snippet: "b".to_string(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -195,18 +157,7 @@ mod determinism_tests {
     }
 }
 
-#[cfg(test)]
-mod dense_config_tests {
-    use crate::core::hybrid_search::HybridConfig;
-
-    /// #686: dense stays on by default — the flip is opt-in, no behavior change.
-    #[test]
-    fn dense_enabled_defaults_true() {
-        assert!(HybridConfig::default().dense_enabled);
-    }
-}
-
-#[cfg(all(test, feature = "embeddings"))]
+#[cfg(all(test, feature = "dense"))]
 mod dense_toggle_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
@@ -239,42 +190,64 @@ mod dense_toggle_tests {
         ])
     }
 
-    /// #686: the dense-disabled body ranks via BM25 (+ graph + rerank + SPLADE),
-    /// emits a BM25 header, finds the lexical match, and crucially never loads the
-    /// embedding engine or writes `embeddings.json` — the on-disk vector footprint
-    /// and embed latency disappear.
+    /// On a cold dense index hybrid ranks without the dense signal,
+    /// finds the lexical match, says it degraded, and never writes embeddings.
     #[test]
-    fn bm25_graph_search_ranks_without_embeddings() {
+    fn hybrid_on_cold_index_ranks_without_embeddings_and_says_so() {
+        let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let index = small_index();
+        let filter = SearchFilter::default();
         let cfg = HybridConfig {
-            dense_enabled: false,
-            ..Default::default()
+            splade_weight: 0.0,
+            ..HybridConfig::default()
         };
-        let filter = SearchFilter::new(None, None).unwrap();
 
-        let out = bm25_graph_search(
-            "jwt token validation",
-            root,
-            &index,
-            5,
-            false,
-            &filter,
-            &cfg,
-        );
+        let Ok(ranked) = hybrid_ranked("jwt token validation", root, &index, 5, &filter, &cfg)
+        else {
+            // No embedding engine in this environment: nothing to rank with.
+            return;
+        };
+        if ranked.degraded.is_some() {
+            assert!(
+                ranked
+                    .results
+                    .iter()
+                    .any(|r| r.symbol_name == "validate_token"),
+                "expected lexical match"
+            );
+            let out = render_ranked(SearchMode::Hybrid, "q", &index, 5, false, &ranked);
+            assert!(out.contains("dense index not built"), "got: {out}");
+        }
+        assert!(!root.join("embeddings.json").exists());
+    }
+}
 
-        assert!(
-            out.contains("Semantic search (BM25"),
-            "expected BM25 header, got: {out}"
-        );
-        assert!(
-            out.contains("validate_token"),
-            "expected lexical match, got: {out}"
-        );
-        assert!(
-            !root.join("embeddings.json").exists(),
-            "dense-disabled path must not persist embeddings.json"
-        );
+mod search_mode_tests {
+    use super::super::SearchMode;
+
+    #[test]
+    fn bm25_is_the_default_and_unknown_modes_are_rejected() {
+        assert_eq!(SearchMode::parse(None), Ok(SearchMode::Bm25));
+        assert_eq!(SearchMode::parse(Some(" BM25 ")), Ok(SearchMode::Bm25));
+        let err = SearchMode::parse(Some("vector")).unwrap_err();
+        assert!(err.contains("unknown mode"), "{err}");
+    }
+
+    #[cfg(not(feature = "dense"))]
+    #[test]
+    fn dense_modes_are_an_error_without_embeddings() {
+        for mode in ["dense", "hybrid"] {
+            let err = SearchMode::parse(Some(mode)).unwrap_err();
+            assert!(err.contains("--features dense"), "{err}");
+        }
+    }
+
+    #[cfg(feature = "dense")]
+    #[test]
+    fn dense_modes_parse_with_embeddings() {
+        assert_eq!(SearchMode::parse(Some("dense")), Ok(SearchMode::Dense));
+        assert_eq!(SearchMode::parse(Some("hybrid")), Ok(SearchMode::Hybrid));
     }
 }

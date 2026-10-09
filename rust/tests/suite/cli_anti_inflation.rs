@@ -1,34 +1,30 @@
-//! End-to-end anti-inflation guarantee for the additive one-shot CLI read path
-//! (#361). An independent benchmark measured the *CLI* surface (the pi default),
-//! yet only the MCP `cap_to_raw` invariant had a test. This exercises the
-//! SHIPPED binary end-to-end (resolver → frame → cap → print) and proves that
-//! `lean-ctx read <file> --mode auto` can never emit more tokens than the bare
-//! file. It complements the in-process `cap_cli_to_raw` unit tests in
-//! `cli::read_cmd`.
+//! End-to-end anti-inflation guarantee for reads. This exercises the
+//! SHIPPED binary end-to-end (`sobre call sobre_read`: resolver → frame → cap
+//! → print) and proves that an `auto` read can never emit more tokens than the
+//! bare file. It complements the in-process `cap_to_raw` unit tests.
 
 use std::path::Path;
 use std::process::Command;
 
-use lean_ctx::core::tokens::count_tokens;
+use sobre::core::tokens::count_tokens;
 
-/// Runs `lean-ctx read <path> --mode auto` fully hermetically and returns stdout.
+/// Runs an `auto` read of `file` through `sobre call sobre_read` fully
+/// hermetically and returns stdout.
 ///
-/// Isolation strategy: the daemon socket lives under `dirs::data_local_dir()`
-/// (HOME-derived), so pointing `HOME`/XDG at empty temp dirs guarantees no
-/// daemon is listening there; `LEAN_CTX_HOOK_CHILD` then short-circuits the
-/// daemon client so the in-process CLI path (the code under test) runs even when
-/// the developer's real daemon is up. `LEAN_CTX_DATA_DIR` keeps stat tracking
-/// out of the real data dir.
+/// Isolation: `HOME`/XDG point at empty temp dirs and `SOBRE_DATA_DIR`
+/// keeps stat tracking out of the real data dir.
 fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
+    let json = serde_json::json!({ "path": file, "mode": "auto" }).to_string();
     let out = Command::new(bin)
-        .args(["read", file.to_str().unwrap(), "--mode", "auto"])
-        .env("LEAN_CTX_HOOK_CHILD", "1")
+        .args(["call", "sobre_read", "--project-root"])
+        .arg(file.parent().unwrap())
+        .args(["--json", &json])
         .env("HOME", home)
         .env("XDG_DATA_HOME", home.join("share"))
         .env("XDG_CONFIG_HOME", home.join("config"))
-        .env("LEAN_CTX_DATA_DIR", data_dir)
+        .env("SOBRE_DATA_DIR", data_dir)
         .output()
-        .expect("run lean-ctx read");
+        .expect("run sobre call sobre_read");
     assert!(
         out.status.success(),
         "read failed for {}: {}",
@@ -39,8 +35,8 @@ fn read_auto(bin: &str, home: &Path, data_dir: &Path, file: &Path) -> String {
 }
 
 #[test]
-fn cli_auto_read_never_inflates_tiny_files() {
-    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+fn auto_read_never_inflates_tiny_files() {
+    let bin = env!("CARGO_BIN_EXE_sobre");
     let dir = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();
@@ -66,7 +62,7 @@ fn cli_auto_read_never_inflates_tiny_files() {
         let emitted = count_tokens(stdout.trim_end_matches('\n'));
         assert!(
             emitted <= raw_tokens,
-            "{name}: emitted {emitted} tok > raw {raw_tokens} tok (CLI inflated a read!)\n\
+            "{name}: emitted {emitted} tok > raw {raw_tokens} tok (the read inflated it!)\n\
              --- stdout ---\n{stdout}"
         );
         // Capping must never drop data — the file body stays fully present.

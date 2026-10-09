@@ -4,6 +4,7 @@ mod log;
 mod parser;
 mod status;
 
+use crate::core::patterns::compact_lines;
 use parser::extract_git_subcommand;
 
 macro_rules! static_regex {
@@ -83,18 +84,6 @@ fn extract_change_stats(output: &str) -> String {
     }
 }
 
-fn compact_lines(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
-}
-
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let sub = extract_git_subcommand(command)?;
     match sub {
@@ -157,7 +146,7 @@ mod tests {
     // A chained `git add … && git commit …` routes the whole compound output
     // through the add-compressor, which used to label OUTPUT LINE COUNT as a
     // file count ("ok (+7 files)" for a 1-file commit). Numbers in summaries
-    // must come from the output, not be fabricated (limitations audit, #2).
+    // must come from the output, not be fabricated (limitations audit).
     #[test]
     fn git_add_does_not_label_line_count_as_files() {
         let output = "[main abc1234] fix: x\n 1 file changed, 1 insertion(+)\nhook line\nanother\nmore\nlines\nseven\n";
@@ -396,6 +385,20 @@ mod tests {
             result.len(),
             output.len()
         );
+    }
+
+    /// J15: the totals come from the `--stat` summary lines; a commit
+    /// message's `- bullet` lines are not deletions.
+    #[test]
+    fn git_log_stat_totals_are_the_summary_lines() {
+        let mut output = String::new();
+        for i in 0..5 {
+            output.push_str(&format!(
+                "commit {i:07}abc1234\nAuthor: U <u@e.com>\nDate:   Mon\n\n    msg {i}\n\n    - first point\n    - second point\n\n src/file{i}.rs | 10 ++++------\n 1 file changed, 4 insertions(+), 6 deletions(-)\n\n"
+            ));
+        }
+        let result = compress("git log --stat", &output).unwrap();
+        assert!(result.contains("+20/-30 total"), "{result}");
     }
 
     #[test]

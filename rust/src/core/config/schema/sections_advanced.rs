@@ -20,34 +20,32 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u16?",
             serde_json::json!(null),
-            "Port the proxy listens on (default: 4444)",
+            "Port the proxy listens on (default: 4444 + uid mod 1000 on Unix, 4444 on Windows)",
         ),
     );
     for id in crate::core::config::upstream_ids() {
+        let default = if id == "anthropic" {
+            "https://api.anthropic.com"
+        } else {
+            "https://api.openai.com"
+        };
         proxy.insert(
             format!("upstreams.{id}"),
             key(
                 "string?",
                 serde_json::json!(null),
                 &format!(
-                    "Upstream URL for the {id} provider (unset = its default{}). Writing a URL is the opt-in for a custom or plaintext host",
-                    if id == "bedrock" { "; bedrock is served only when set" } else { "" }
+                    "Upstream URL for the {id} provider (unset = {default}). Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)"
                 ),
             ),
         );
     }
-    proxy.insert(
-        "routing".into(),
-        key(
-            "table",
-            serde_json::json!({}),
-            "Model routing: [proxy.routing.aliases] maps a requested model to \"model\" or \"provider:model\"; [proxy.routing.tiers] maps fast/standard/premium to a target. Active as soon as one rule is written",
-        ),
-    );
     sections.insert(
         "proxy".into(),
         SectionSchema {
-            description: "The local API proxy: switch, port, upstream URLs and model routing"
+            description: "The local API proxy: switch, port and upstream URLs. Built in: \
+                          the proxy never compresses the results of tools whose name \
+                          contains `serena`, whose code reads it would otherwise cut."
                 .into(),
             keys: proxy,
         },

@@ -7,24 +7,8 @@ use crate::core::cache::SessionCache;
 use crate::core::session::SessionState;
 use rmcp::service::{Peer, RoleServer};
 
-pub(super) struct CepComputedStats {
-    pub(super) cep_score: u32,
-    pub(super) cache_util: u32,
-    pub(super) mode_diversity: u32,
-    pub(super) compression_rate: u32,
-    pub(super) total_original: u64,
-    pub(super) total_compressed: u64,
-    pub(super) total_saved: u64,
-    pub(super) mode_counts: std::collections::HashMap<String, u64>,
-    pub(super) complexity: String,
-    pub(super) cache_hits: u64,
-    pub(super) total_reads: u64,
-    pub(super) tool_call_count: u64,
-}
-
+// Defined in core::protocol, which tools must not depend back on.
 pub use crate::core::protocol::CrpMode;
-// CrpMode is now defined in core::protocol to avoid reverse-dependency.
-// Re-exported here for backward compatibility.
 
 impl CrpMode {
     /// Effective CRP mode, derived from CompressionLevel.
@@ -46,34 +30,27 @@ pub type SharedCache = Arc<RwLock<SessionCache>>;
 
 /// Central MCP server state: cache, session, metrics, and autonomy runtime.
 #[derive(Clone)]
-pub struct LeanCtxServer {
+pub struct SobreServer {
     pub cache: SharedCache,
     pub session: Arc<RwLock<SessionState>>,
-    pub tool_calls: Arc<RwLock<Vec<ToolCallRecord>>>,
     pub call_count: Arc<AtomicUsize>,
     pub cache_ttl_secs: u64,
     pub last_call: Arc<RwLock<Instant>>,
-    pub agent_id: Arc<RwLock<Option<String>>>,
-    pub(crate) presence_agent_id: Arc<RwLock<Option<String>>>,
     pub client_name: Arc<RwLock<String>>,
     pub autonomy: Arc<super::autonomy::AutonomyState>,
-    pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,
-    pub ledger: Arc<RwLock<crate::core::context_ledger::ContextLedger>>,
-    pub context_ir: Option<Arc<RwLock<crate::core::context_ir::ContextIrV1>>>,
-    pub registry: Option<Arc<crate::server::registry::ToolRegistry>>,
-    pub(crate) rules_stale_checked: Arc<std::sync::atomic::AtomicBool>,
-    pub(crate) rules_tip_shown: Arc<std::sync::atomic::AtomicBool>,
+    pub refetch_signals: Arc<RwLock<crate::core::refetch_signals::RefetchSignals>>,
+    pub registry: Arc<crate::server::registry::ToolRegistry>,
     pub(crate) startup_project_root: Option<String>,
     pub(crate) startup_shell_cwd: Option<String>,
     pub(crate) peer: Arc<RwLock<Option<Peer<RoleServer>>>>,
     pub(crate) has_client_roots: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) roots_resolved: Arc<std::sync::atomic::AtomicBool>,
-    /// Failed `roots/list` attempts (GH #694): transient failures re-arm
+    /// Held while `roots/list` is asked, so the calls that arrive meanwhile
+    /// wait for its answer.
+    pub(crate) roots_gate: Arc<tokio::sync::Mutex<()>>,
+    /// Failed `roots/list` attempts: transient failures re-arm
     /// `roots_resolved` until a small budget is exhausted.
     pub(crate) roots_list_attempts: Arc<std::sync::atomic::AtomicU32>,
     pub(crate) bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>>,
     pub(crate) _eviction_target: Arc<crate::core::eviction_orchestrator::EvictionOrchestrator>,
-    pub(crate) progress_sender: crate::server::progress::SharedProgressSender,
 }
-
-pub use crate::core::protocol::ToolCallRecord;

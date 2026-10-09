@@ -5,17 +5,14 @@ use std::process::Command;
 
 // ─── helpers ───────────────────────────────────────────────────────
 
-fn lean_ctx_bin() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+fn sobre_bin() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
     cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
-    cmd.env("LEAN_CTX_ACTIVE", "1");
     cmd
 }
 
 mod session_features {
-    use lean_ctx::core::session::{
-        Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, SessionState, TaskInfo,
-    };
+    use sobre::core::session::{Decision, FileTouched, Finding, SessionState, TaskInfo};
 
     #[test]
     #[allow(clippy::field_reassign_with_default)]
@@ -26,7 +23,6 @@ mod session_features {
         session.task = Some(TaskInfo {
             description: "Build Context OS".to_string(),
             intent: Some("architecture".to_string()),
-            progress_pct: Some(0),
         });
 
         for i in 0..5 {
@@ -53,40 +49,18 @@ mod session_features {
                 last_mode: "full".to_string(),
                 tokens: 500,
                 stale: false,
-                context_item_id: None,
                 summary: None,
             });
         }
 
-        session.evidence.push(EvidenceRecord {
-            kind: EvidenceKind::Manual,
-            key: "test:unit".to_string(),
-            value: Some("42 passed, 0 failed".to_string()),
-            tool: Some("cargo test".to_string()),
-            input_md5: None,
-            output_md5: None,
-            agent_id: Some("test-agent".to_string()),
-            client_name: None,
-            timestamp: chrono::Utc::now(),
-        });
-
-        if let Some(ref mut t) = session.task {
-            t.progress_pct = Some(75);
-        }
-
         let resume = session.build_resume_block();
         assert!(resume.contains("Build Context OS"), "task in resume");
-        assert!(resume.contains("75%"), "progress in resume");
         assert!(resume.contains("SSE"), "decision in resume");
-
-        let snapshot = session.build_compaction_snapshot();
-        assert!(!snapshot.is_empty(), "snapshot is non-empty");
 
         let json = serde_json::to_string(&session).unwrap();
         let restored: SessionState = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.findings.len(), 5);
         assert_eq!(restored.files_touched.len(), 10);
-        assert_eq!(restored.evidence.len(), 1);
     }
 }
 
@@ -95,87 +69,36 @@ mod cli_commands {
 
     #[test]
     fn cli_help() {
-        let out = lean_ctx_bin().arg("--help").output().unwrap();
+        let out = sobre_bin().arg("--help").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("Context Runtime"));
+        assert!(stdout.contains("local context tools for coding agents"));
     }
 
     #[test]
     fn cli_config() {
-        let out = lean_ctx_bin().arg("config").output().unwrap();
+        let out = sobre_bin().arg("config").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("passthrough_commands"));
     }
 
     #[test]
-    fn cli_read_cargo_toml_full() {
-        let out = lean_ctx_bin()
-            .args(["read", "Cargo.toml"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(
-            stdout.contains("Cargo") || stdout.contains("cached") || stdout.contains("lean"),
-            "read output should reference the file: {stdout}"
-        );
-    }
-
-    #[test]
-    fn cli_read_cargo_toml_map() {
-        let out = lean_ctx_bin()
-            .args(["read", "Cargo.toml", "-m", "map"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-    }
-
-    #[test]
-    fn cli_read_cargo_toml_signatures() {
-        let out = lean_ctx_bin()
-            .args(["read", "Cargo.toml", "-m", "signatures"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-    }
-
-    #[test]
     fn cli_shell_echo() {
-        let out = lean_ctx_bin().args(["-c", "echo hello"]).output().unwrap();
+        let out = sobre_bin().args(["-c", "echo hello"]).output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("hello"));
     }
 
     #[test]
-    fn cli_ls() {
-        let out = lean_ctx_bin().args(["ls", "."]).output().unwrap();
-        assert!(out.status.success());
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("Cargo.toml") || stdout.contains("src"));
-    }
-
-    #[test]
-    fn cli_grep_pattern() {
-        let out = lean_ctx_bin()
-            .args(["grep", "lean-ctx", "Cargo.toml"])
-            .output()
-            .unwrap();
-        assert!(out.status.success());
-    }
-
-    #[test]
     fn cli_doctor() {
-        let out = lean_ctx_bin().arg("doctor").output().unwrap();
+        let out = sobre_bin().arg("doctor").output().unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);
         let stderr = String::from_utf8_lossy(&out.stderr);
         let combined = format!("{stdout}{stderr}");
         assert!(
-            combined.contains("lean-ctx")
-                || combined.contains("doctor")
-                || combined.contains("check"),
+            combined.contains("sobre") || combined.contains("doctor") || combined.contains("check"),
             "doctor must produce diagnostic output"
         );
     }
@@ -186,7 +109,7 @@ mod contract_gates {
     #[test]
     fn committed_contract_docs_are_valid() {
         let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let committed = vec!["context-ir-v1.md"];
+        let committed = vec!["usage-ledger-v1.md"];
 
         for name in &committed {
             let path = format!("{manifest_dir}/../docs/contracts/{name}");
@@ -201,8 +124,8 @@ mod contract_gates {
 }
 
 mod knowledge_system {
-    use lean_ctx::core::knowledge::ProjectKnowledge;
-    use lean_ctx::core::memory_policy::MemoryPolicy;
+    use sobre::core::knowledge::ProjectKnowledge;
+    use sobre::core::memory_policy::MemoryPolicy;
 
     #[test]
     fn remember_recall_roundtrip() {
@@ -288,21 +211,28 @@ mod shell_compression {
 
     #[test]
     fn shell_compresses_git_status() {
-        let out = lean_ctx_bin().args(["-c", "git status"]).output().unwrap();
+        let out = sobre_bin().args(["-c", "git status"]).output().unwrap();
         assert!(out.status.success());
     }
 
     #[test]
     fn shell_compresses_cargo_build_output() {
-        let out = lean_ctx_bin()
-            .args(["-c", "echo 'Compiling lean-ctx v3.4.7\n   Compiling serde v1.0.0\n   Compiling tokio v1.0.0\n   Finished dev [unoptimized + debuginfo] target(s) in 5.00s'"])
+        let out = sobre_bin()
+            .args(["-c", "echo 'Compiling sobre v3.4.7\n   Compiling serde v1.0.0\n   Compiling tokio v1.0.0\n   Finished dev [unoptimized + debuginfo] target(s) in 5.00s'"])
             .output().unwrap();
         assert!(out.status.success());
     }
 
     #[test]
     fn shell_compresses_ls_output() {
-        let out = lean_ctx_bin().args(["-c", "ls -la"]).output().unwrap();
-        assert!(out.status.success());
+        // `ls -la` is not a PowerShell or cmd command; `dir` lists a directory
+        // under all three shells Windows may resolve to (PowerShell, cmd, Git Bash).
+        let listing = if cfg!(windows) { "dir" } else { "ls -la" };
+        let out = sobre_bin().args(["-c", listing]).output().unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
 }

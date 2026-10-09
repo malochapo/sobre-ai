@@ -5,8 +5,8 @@
 //! a project is opened cold. If `open_or_build` went through that path, the
 //! background build would acquire the `graph-idx` lock and the synchronous
 //! `load_or_build` fallback would then contend on the same lock and return an
-//! empty index, so the very first `ctx_graph` / `export_graph_html` on a fresh
-//! repo failed with "No graph available" until a retry (#695/#682.2).
+//! empty index, so the very first `sobre_graph` / `export_graph_html` on a fresh
+//! repo failed with "No graph available" until a retry.
 //!
 //! Current `open_or_build` opens via `open_existing` (which never triggers the
 //! background build) and only then builds synchronously, so the race cannot
@@ -40,7 +40,7 @@ fn open_or_build_returns_graph_on_first_cold_open() {
     let root_str = root.to_string_lossy().to_string();
 
     // First call, no warm-up, no retry — must build synchronously.
-    let provider = lean_ctx::core::graph_provider::open_or_build(&root_str);
+    let provider = sobre::core::graph_provider::open_or_build(&root_str);
     assert!(
         provider.is_some(),
         "first cold open_or_build must build the graph synchronously \

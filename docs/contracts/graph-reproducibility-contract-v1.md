@@ -1,17 +1,14 @@
 # Graph Reproducibility Contract v1
 
-GitLab: `#2318`
-
 ## Goal
 
 Make graph-driven tooling **reproducible** (CI/proofs), **deterministic** (stable ordering), **bounded** (output caps), and **safe-by-default**.
 
 This contract covers:
 
-- Property graph storage under `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/graph.db`
-- Graph build + freshness semantics (`ctx_impact action=build|status`)
-- Deterministic exports from `ctx_impact` and `ctx_graph action=cycles|entrypoints`
-  (incl. `format=json`)
+- Property graph storage under `<data_dir>/graphs/<project_hash>/graph.db`
+- Graph build + freshness semantics (`sobre_graph action=build|status`)
+- Deterministic outputs from `sobre_graph` (incl. `format=json`)
 
 ## Version
 
@@ -23,18 +20,28 @@ This contract covers:
 ### Auto-build (zero-config)
 
 - Tools **may** auto-build the property graph when it is missing/empty:
-  - `ctx_impact action=analyze` (auto-build if empty)
-  - `ctx_graph action=cycles|entrypoints` (auto-build if empty)
+  - `sobre_graph action=impact|changes` (auto-build if empty or built by an
+    older engine)
 
 ### Explicit rebuild
 
-- `ctx_impact action=build` is the authoritative rebuild:
-  - Clears and rebuilds `graph.db` (in `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/`)
-  - Writes `graph.meta.json` alongside the database
+- `sobre_graph action=build` rescans the project and rewrites `graph.db` (in
+  `<data_dir>/graphs/<project_hash>/`) and `graph.meta.json` alongside
+  it. Files whose content hash is unchanged are reused, so the result equals a
+  build from scratch.
+- There is one extractor: `sobre_graph build` and `sobre index build` run the
+  same scan.
+
+### Edge semantics
+
+- Dependencies, dependents, impact and chains follow code references only:
+  imports, module declarations and re-exports, and type uses.
+- `related` also follows two heuristics: files changed together in git and
+  files in the same directory.
 
 ### Freshness check
 
-- `ctx_impact action=status` reports whether the graph looks **fresh** or **stale**.
+- `sobre_graph action=status` reports whether the graph looks **fresh** or **stale**.
 - Staleness is determined by comparing build metadata (git head/dirty) to current repo state when available.
 
 ## Determinism (MUST)
@@ -50,26 +57,28 @@ Rules:
 
 ## Output format (tools)
 
-`ctx_impact` and `ctx_graph` accept:
+`sobre_graph action=neighbors|path|impact|changes` accept:
 
 - `format=text|json` (default: `text`)
 
 When `format=json`:
 
 - Output is machine-readable JSON (no token-suffix lines).
-- Payload includes:
+- The `impact` payload includes:
   - `schema_version` (Graph Reproducibility Contract v1)
   - `tool`, `action`
-  - `project.project_root_hash` + `project.project_identity_hash` (hash-only; never leak identity strings)
+  - `project.project_root_hash` (the hash of the canonical root; never the path)
   - `graph` summary (exists, nodes, edges, db_path)
   - action-specific fields + `truncated` flags
 
 ## Boundedness (MUST)
 
-Graph tool outputs are capped by hard budgets (see `rust/src/core/budgets.rs`) to prevent DoS/token-burn.
+`sobre_graph action=impact` affected-file lists are capped by `IMPACT_AFFECTED_FILES_LIMIT`
+(`rust/src/core/budgets.rs`) to prevent DoS/token-burn. `sobre_graph` outputs
+are not budgeted.
 
 ## Security & privacy
 
-- Graph DB + meta are written **only** under `$LEAN_CTX_DATA_DIR/graphs/<project_hash>/`.
+- Graph DB + meta are written **only** under `<data_dir>/graphs/<project_hash>/`.
 - No secrets must appear in graph artifacts, logs, or exports.
 

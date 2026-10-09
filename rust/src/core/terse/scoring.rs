@@ -10,10 +10,7 @@ use std::collections::HashSet;
 /// Score for a single line — higher means more informative.
 #[derive(Debug, Clone)]
 pub struct LineScore {
-    pub line_idx: usize,
-    pub entropy: f32,
     pub has_structural_marker: bool,
-    pub repetition_ratio: f32,
     pub combined: f32,
 }
 
@@ -26,7 +23,7 @@ pub fn score_lines(text: &str) -> Vec<LineScore> {
     let mut trigram_saturated = false;
     let mut scores = Vec::with_capacity(lines.len());
 
-    for (idx, line) in lines.iter().enumerate() {
+    for line in &lines {
         let trimmed = line.trim();
 
         let entropy = char_entropy(trimmed);
@@ -48,10 +45,7 @@ pub fn score_lines(text: &str) -> Vec<LineScore> {
         let combined = compute_combined(entropy, has_marker, rep_ratio, is_noise);
 
         scores.push(LineScore {
-            line_idx: idx,
-            entropy,
             has_structural_marker: has_marker,
-            repetition_ratio: rep_ratio,
             combined,
         });
     }

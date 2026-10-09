@@ -1,6 +1,6 @@
 #[allow(unused_imports)]
 use super::*;
-/// #342: already-compact TOON output must be preserved verbatim (not recompressed)
+/// Already-compact TOON output must be preserved verbatim (not recompressed)
 /// regardless of the command, because re-compressing it destroys the exact
 /// line/field shape agents use to validate CLI output contracts.
 #[cfg(test)]
@@ -36,7 +36,7 @@ mod toon_passthrough_tests {
 
     #[test]
     fn toon_passthrough_is_command_agnostic() {
-        // A command lean-ctx would normally compress still passes TOON through,
+        // A command sobre would normally compress still passes TOON through,
         // because the decision is output-shape based, not command based.
         let toon = toon_task_list(20);
         let result = compress_if_beneficial("my-tool report --format toon", &toon);
@@ -62,9 +62,9 @@ mod toon_passthrough_tests {
     }
 }
 
-/// Exit-code-aware compression (#809 / #810): a command that actually FAILED must
+/// Exit-code-aware compression: a command that actually FAILED must
 /// never be lossily compressed, so the agent always sees the real error and never
-/// re-runs the command without lean-ctx.
+/// re-runs the command without sobre.
 #[cfg(test)]
 mod outcome_aware_tests {
     use super::super::engine::{compress_and_measure, compress_for_outcome};
@@ -135,7 +135,7 @@ mod outcome_aware_tests {
         );
     }
 }
-/// #848: MSBuild parallel diagnostics dedup
+/// MSBuild parallel diagnostics dedup
 #[test]
 fn msbuild_parallel_dedup_removes_duplicate_diagnostics() {
     let output = "Microsoft (R) Build Engine\n\
@@ -163,14 +163,14 @@ Build succeeded with warnings.\n\
     );
     // Error line should still be there
     assert!(deduped.contains("CS1002"), "error line must be preserved");
-    // Dedup note should be present
+    // The dedup note says so, as sobre
     assert!(
-        deduped.contains("duplicate diagnostic"),
+        deduped.contains("[sobre: ") && deduped.contains("duplicate diagnostic(s) removed]"),
         "dedup note missing: {deduped}"
     );
 }
 
-// #1130: chained commands must not be pattern-compressed
+// Chained commands must not be pattern-compressed
 #[test]
 fn chained_command_detection() {
     use super::engine::is_chained_command;
@@ -188,11 +188,11 @@ fn chained_git_fetch_preserves_worktree_output() {
     let compressed = super::engine::compress_if_beneficial_pub(cmd, output);
     assert!(
         compressed.contains("worktree") || compressed.contains("Preparing"),
-        "#1130: worktree output must survive chain compression, got: {compressed}"
+        "worktree output must survive chain compression, got: {compressed}"
     );
 }
 
-// #1129: small output should NOT be compressed — verbatim is cheaper
+// Small output should NOT be compressed — verbatim is cheaper
 #[test]
 fn small_output_stays_verbatim() {
     let cmd = "ls -la /tmp/templates";
@@ -203,6 +203,6 @@ fn small_output_stays_verbatim() {
     let compressed = super::engine::compress_if_beneficial_pub(cmd, &output);
     assert_eq!(
         compressed, output,
-        "#1129: output under 200 tokens must stay verbatim, got: {compressed}"
+        "output under 200 tokens must stay verbatim, got: {compressed}"
     );
 }

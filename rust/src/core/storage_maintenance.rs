@@ -1,30 +1,23 @@
-//! Daemon-safe storage maintenance.
+//! MCP-server-safe storage maintenance.
 //!
-//! Unlike the interactive `lean-ctx cache prune` (which prints per-file output),
-//! these routines are silent (tracing only) so they can run inside the MCP
-//! daemon without corrupting the stdio protocol. They enforce the disk budget
-//! that the field had been silently exceeding (see EPIC 6 / #2364): unbounded
-//! archive FTS growth and accumulated quarantined BM25 indexes.
+//! Unlike the interactive `sobre doctor --fix` (which reports what it
+//! pruned), these routines are silent (tracing only) so they can run inside the MCP
+//! server without corrupting the stdio protocol. They remove accumulated
+//! quarantined BM25 indexes and saved sessions older than a week.
 
 use std::path::PathBuf;
 
-/// Result of a quiet maintenance pass.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct MaintenanceResult {
-    pub quarantined_removed: u32,
-    pub bytes_freed: u64,
-    pub archive_entries_pruned: u32,
-    pub archive_db_bytes_after: u64,
-}
-
 const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
+
+/// Saved sessions older than this are deleted at server start.
+pub(crate) const SESSION_MAX_AGE_DAYS: i64 = 7;
 
 /// Remove accumulated quarantined BM25 index files. These are dead weight: an
 /// index is only quarantined when it failed a load/size check and was replaced.
 fn prune_quarantined_bm25() -> (u32, u64) {
     let mut removed = 0u32;
     let mut freed = 0u64;
-    let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() else {
+    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
         return (removed, freed);
     };
     let vectors_dir = data_dir.join("vectors");
@@ -51,27 +44,24 @@ fn prune_quarantined_bm25() -> (u32, u64) {
     (removed, freed)
 }
 
-/// Run a silent maintenance pass: prune quarantined BM25 indexes and enforce
-/// the archive FTS size cap. Safe to call from the MCP daemon.
-pub fn run_quiet() -> MaintenanceResult {
-    let (quarantined_removed, bytes_freed) = prune_quarantined_bm25();
-    // Enforce the archive TTL + on-disk size budget (prunes `.txt`/`.meta.json`
-    // + FTS rows together), then backstop the DB cap. Without this the archive
-    // grew unbounded on disk and exhausted host RAM via the page cache (#417).
-    let archive_entries_pruned = crate::core::archive::cleanup();
-    let archive_db_bytes_after = crate::core::archive_fts::enforce_cap();
-    if quarantined_removed > 0 || archive_entries_pruned > 0 {
+/// Run a silent maintenance pass: prune quarantined BM25 indexes and saved
+/// sessions older than `SESSION_MAX_AGE_DAYS` days. Safe to call from the MCP
+/// server.
+pub fn run_quiet() {
+    let sessions_removed =
+        crate::core::session::SessionState::cleanup_old_sessions(SESSION_MAX_AGE_DAYS);
+    if sessions_removed > 0 {
         tracing::info!(
-            "storage maintenance: pruned {quarantined_removed} quarantined BM25 index file(s) \
-             (freed {bytes_freed} bytes) + {archive_entries_pruned} archive entry/entries; \
-             archive DB now {archive_db_bytes_after} bytes"
+            "storage maintenance: deleted {sessions_removed} saved session(s) older than \
+             {SESSION_MAX_AGE_DAYS} days"
         );
     }
-    MaintenanceResult {
-        quarantined_removed,
-        bytes_freed,
-        archive_entries_pruned,
-        archive_db_bytes_after,
+    let (quarantined_removed, bytes_freed) = prune_quarantined_bm25();
+    if quarantined_removed > 0 {
+        tracing::info!(
+            "storage maintenance: pruned {quarantined_removed} quarantined BM25 index file(s) \
+             (freed {bytes_freed} bytes)"
+        );
     }
 }
 
@@ -83,7 +73,7 @@ mod tests {
     fn prune_removes_quarantined_files() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
+        crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path());
 
         let idx_dir = tmp.path().join("vectors").join("proj_abc");
         std::fs::create_dir_all(&idx_dir).unwrap();
@@ -99,6 +89,6 @@ mod tests {
             "live index must be preserved"
         );
 
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
     }
 }

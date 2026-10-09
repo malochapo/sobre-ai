@@ -14,7 +14,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string[]",
             serde_json::json!(cfg.passthrough_commands),
-            "Commands whose output is passed through uncompressed (the command still runs normally)",
+            "Commands whose output is passed through uncompressed (the command still runs normally). An entry matches a command that is the entry or starts with it and a space, case-insensitively: `mytool` matches `mytool --watch`. Adds to the built-in list below",
         ),
     );
     root.insert(
@@ -22,15 +22,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "f64",
             serde_json::json!(cfg.compression_level),
-            "Compression intensity 0.0 (none) – 1.0 (densest). Tunes read-mode compression continuously and picks the prose style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. Empty = adaptive defaults with the lite prose style",
+            "Compression intensity 0.0 (none) – 1.0 (densest), default 0.3. Picks the prose, shell-output and CRP style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. File reads choose their mode per file",
         ),
     );
     root.insert(
-        "allow_paths".into(),
+        "search_roots".into(),
         key(
             "string[]",
-            serde_json::json!(cfg.allow_paths),
-            "Paths the tools may read and write besides the project root; each is also searched as an extra root. [\"/\"] opens the path jail",
+            serde_json::json!(cfg.search_roots),
+            "Extra directories searched alongside the project root, as the other roots of a multi-root workspace",
         ),
     );
     root.insert(
@@ -38,23 +38,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string[]",
             serde_json::json!(cfg.ignore),
-            "Globs kept out of the index and project walks, on top of .gitignore (always respected)",
-        ),
-    );
-    root.insert(
-        "shell_hook".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.shell_hook),
-            "Install the shell hook that routes common commands through sobre",
-        ),
-    );
-    root.insert(
-        "read_only_roots".into(),
-        key(
-            "string[]",
-            serde_json::json!(cfg.read_only_roots),
-            "Read-only sibling roots: reads allowed, writes always denied (edit/refactor/export)",
+            "Globs kept out of the search and graph indexes (BM25, dense, graph), on top of .gitignore (always respected). sobre_glob, sobre_tree and regex search do not read it",
         ),
     );
     root.insert(
@@ -62,7 +46,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(false),
-            "Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`",
+            "Opt-in (default off): write a human-readable debug log of MCP tool calls and of the native tool calls hooks changed (with the reason) to <state_dir>/logs/debug.log; `sobre doctor` prints the path",
         ),
     );
     root.insert(
@@ -70,7 +54,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string?",
             serde_json::json!(null),
-            "Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/lean-ctx) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution",
+            "Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/sobre) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution",
         ),
     );
     root.insert(
@@ -78,7 +62,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string?",
             serde_json::json!(null),
-            "Embedding model for semantic search (dense builds): minilm (default), nomic, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search",
+            "Embedding model for semantic search (dense builds): minilm (default: sentence-transformers/all-MiniLM-L6-v2), nomic (nomic-ai/nomic-embed-text-v1.5), each pinned to a commit, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search",
         ),
     );
     root.insert(
@@ -86,7 +70,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u64?",
             serde_json::json!(null),
-            "Shell command timeout (seconds) for normal commands. null = built-in 2-minute default",
+            "sobre_shell stops a command after this many seconds without new output (null = 120; 0 stops it at once; builds and tests get at least 600; a call's timeout_ms wins). A foreground command still running after about 110 s moves to the background and returns a job id",
         ),
     );
 

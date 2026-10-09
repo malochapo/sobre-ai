@@ -1,8 +1,7 @@
-use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum LeanCtxError {
+pub enum SobreError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
@@ -11,18 +10,6 @@ pub enum LeanCtxError {
 
     #[error("parse error: {0}")]
     Parse(String),
-
-    #[error(transparent)]
-    PathJail(#[from] PathJailError),
-
-    #[error("tool execution failed: {0}")]
-    ToolExecution(String),
-
-    #[error("network error: {0}")]
-    Network(String),
-
-    #[error("{0}")]
-    Other(String),
 }
 
 #[derive(Error, Debug)]
@@ -51,7 +38,7 @@ pub enum ConfigError {
     #[error("Error saving config: {source}")]
     Save {
         #[source]
-        source: Box<LeanCtxError>,
+        source: Box<SobreError>,
     },
 
     #[error("Expected bool (true/false), got: {value}")]
@@ -90,64 +77,6 @@ pub enum DispatchError {
     Tool { message: String },
 }
 
-#[derive(Error, Debug)]
-pub enum ShellError {
-    #[error("{message}")]
-    Blocked { message: String },
-}
-
-impl From<String> for ShellError {
-    fn from(message: String) -> Self {
-        Self::Blocked { message }
-    }
-}
-
-impl From<&str> for ShellError {
-    fn from(message: &str) -> Self {
-        Self::Blocked {
-            message: message.to_string(),
-        }
-    }
-}
-
-impl ShellError {
-    pub fn message(&self) -> &str {
-        match self {
-            Self::Blocked { message } => message,
-        }
-    }
-
-    pub fn contains(&self, needle: &str) -> bool {
-        self.message().contains(needle)
-    }
-
-    pub fn lines(&self) -> std::str::Lines<'_> {
-        self.message().lines()
-    }
-}
-
-#[derive(Error, Debug)]
-pub enum PathJailError {
-    #[error("path contains null byte")]
-    NullByte,
-
-    #[error("path does not exist and has no existing ancestor: {path}")]
-    NoExistingAncestor { path: PathBuf },
-
-    #[error("path escapes project root: {path} (root: {root}){hint}")]
-    EscapesRoot {
-        path: PathBuf,
-        root: PathBuf,
-        hint: String,
-    },
-
-    #[error("post-canonicalize jail escape detected: {path} resolves to {resolved}")]
-    PostCanonicalizeEscape { path: PathBuf, resolved: PathBuf },
-
-    #[error("symlink not allowed in jailed path: {path}")]
-    Symlink { path: PathBuf },
-}
-
 impl From<String> for ConfigError {
     fn from(message: String) -> Self {
         ConfigError::Message(message)
@@ -160,14 +89,14 @@ impl From<&str> for ConfigError {
     }
 }
 
-impl From<toml::de::Error> for LeanCtxError {
+impl From<toml::de::Error> for SobreError {
     fn from(e: toml::de::Error) -> Self {
-        LeanCtxError::Config(ConfigError::Message(e.to_string()))
+        SobreError::Config(ConfigError::Message(e.to_string()))
     }
 }
 
-impl From<serde_json::Error> for LeanCtxError {
+impl From<serde_json::Error> for SobreError {
     fn from(e: serde_json::Error) -> Self {
-        LeanCtxError::Parse(e.to_string())
+        SobreError::Parse(e.to_string())
     }
 }
