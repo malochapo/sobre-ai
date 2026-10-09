@@ -20,8 +20,9 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Only the publish job writes: it creates the release and its tag.
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -60,10 +61,18 @@ jobs:
               echo "::error::v$version is already released; bump the version in rust/Cargo.toml"
               exit 1
             fi
-            # rc.N counts this version's pre-releases: rc.1, rc.2, …
-            n="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName \
-              --jq "[.[] | select(.tagName | startswith(\"v$version-rc.\"))] | length")"
-            echo "tag=v$version-rc.$((n + 1))" >> "$GITHUB_OUTPUT"
+            # rc.N is one more than the highest rc tag or release of this
+            # version, so a deleted release or a leftover tag never brings a
+            # number back.
+            version_re="${version//./\\.}"
+            n="$(
+              {
+                gh api --paginate "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/v$version-rc." \
+                  --jq '.[].ref | ltrimstr("refs/tags/")'
+                gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 --json tagName --jq '.[].tagName'
+              } | sed -n "s/^v$version_re-rc\.\([0-9][0-9]*\)\$/\1/p" | sort -n | tail -n 1
+            )"
+            echo "tag=v$version-rc.$((${n:-0} + 1))" >> "$GITHUB_OUTPUT"
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -99,7 +108,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           pip3 install -q ziglang==0.16.0
-          echo "$(python3 -c 'import ziglang, os; print(os.path.dirname(ziglang.__file__))')" >> "$GITHUB_PATH"
+          python3 -c 'import ziglang, os; print(os.path.dirname(ziglang.__file__))' >> "$GITHUB_PATH"
           cargo install --locked cargo-zigbuild@0.23.4
       - name: Build
         working-directory: rust
@@ -134,6 +143,8 @@ jobs:
     name: Publish ${{ needs.version.outputs.tag }}
     needs: [version, build]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
