@@ -163,10 +163,9 @@ impl EvictionOrchestrator {
                 }
                 let content_freed = super::content_cache::memory_usage_bytes();
                 super::content_cache::clear();
-                // The ANN/HNSW graph, resident trigram indices and the
-                // materialized graph indexes were invisible to eviction — on
-                // embedding-heavy sessions they dominated RSS while the
-                // guardian could only trim the (small) session cache.
+                // The ANN/HNSW graph and the resident trigram indices
+                // dominate RSS in embedding-heavy sessions, far beyond the
+                // session cache.
                 #[cfg(feature = "dense")]
                 let ann_freed = {
                     let bytes = super::ann_cache::memory_usage_bytes();

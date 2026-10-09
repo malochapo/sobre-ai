@@ -10,7 +10,7 @@
 //!
 //! Correctness: an entry is only ever served when the file's *current*
 //! `(mtime, size)` exactly matches the stored identity, and a file modified
-//! less than [`RACY_WINDOW_MS`] before it was read is not cached at all: a
+//! less than `RACY_WINDOW_MS` (4 s) before it was read is not cached at all: a
 //! same-size edit within one mtime tick (1 s on HFS+, 2 s on FAT) would
 //! otherwise keep the old identity. A miss simply falls back to a disk read.
 //!
@@ -143,7 +143,7 @@ pub fn get(path: &Path, current: FileState) -> Option<Arc<str>> {
 
 /// Insert (or replace) the content for `path` at version `state`. Skipped while
 /// the process is under memory pressure, so the cache never *adds* to a memory
-/// problem, and for a file modified in the last [`RACY_WINDOW_MS`].
+/// problem, and for a file modified in the last `RACY_WINDOW_MS`.
 pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
     if state.is_racy() || crate::core::memory_guard::is_under_pressure() {
         return;
