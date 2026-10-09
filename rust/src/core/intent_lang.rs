@@ -1,9 +1,8 @@
 //! Multilingual building blocks for intent classification.
 //!
-//! `intent_engine::PHRASE_RULES` only understands English keywords, so
-//! non-English tasks ("räum die Funktion auf") used to fall back to
-//! Explore/0.3. This module adds language support without ML:
-//! verb-stem tables (de/fr/es), function-word language detection, and
+//! `intent_engine::PHRASE_RULES` only understands English keywords. This
+//! module classifies German, French and Spanish tasks ("räum die Funktion
+//! auf") without ML: verb-stem tables, function-word language detection, and
 //! per-language stopword lists.
 
 use super::intent_engine::TaskType;
@@ -169,20 +168,6 @@ pub(crate) const STEM_RULES: &[(&[&str], TaskType, f64)] = &[
     ),
 ];
 
-/// Urgency markers beyond the English list in `detect_urgency`.
-pub(crate) const URGENT_WORDS_I18N: &[&str] = &[
-    "dringend",
-    "sofort",
-    "umgehend",
-    "kritisch",
-    "urgente",
-    "urgence",
-    "immédiat",
-    "inmediat",
-    "critique",
-    "crítico",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum QueryLang {
     En,
@@ -308,8 +293,8 @@ mod tests {
 
     #[test]
     fn stems_do_not_shadow_common_english() {
-        // English words that previously caused vetting rejections (e.g.
-        // "genera" → "general") must not be caught by any single-token stem.
+        // Common English words a stem could swallow (e.g. "genera" →
+        // "general") must not be caught by any single-token stem.
         // Aligned overlaps like "crea"→"created" (same type as the English
         // rule) are intentional and not listed here.
         let dangerous = [

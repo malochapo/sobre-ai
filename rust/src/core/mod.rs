@@ -181,7 +181,6 @@ pub mod index_progress;
 pub mod ingestion;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
-pub mod intent_router;
 pub mod io_health;
 pub mod jsonc;
 pub mod language_capabilities;
