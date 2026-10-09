@@ -36,7 +36,7 @@ fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("warm.rs");
     let p = path.to_string_lossy().to_string();
-    // Body big enough that a full re-delivery dwarfs the ~13-token stub.
+    // Body big enough that a full re-delivery dwarfs the one-line stub.
     let body = (0..48)
         .map(|i| format!("fn function_number_{i}() {{ let value_{i} = {i} * 2; }}"))
         .collect::<Vec<_>>()

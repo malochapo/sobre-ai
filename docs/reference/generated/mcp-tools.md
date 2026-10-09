@@ -93,13 +93,13 @@ For understanding code use sobre_compose FIRST.
 ## `sobre_knowledge`
 
 Facts that outlive the session: decisions, conventions, pitfalls.
-remember value= saves one (key derived when omitted; a new value for a key replaces the old); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; remove deletes one; status lists categories. consolidate imports this session's findings and decisions. gotcha trigger= resolution= records a pitfall, recalled for matching tasks.
+remember value= saves one (key derived when omitted; a new value for a key replaces the old); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; remove deletes one; status lists categories. consolidate imports this session's findings and decisions. gotcha trigger= resolution= records a pitfall, which sobre_compose shows for a matching task.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `action` | one of `remember`, `recall`, `search`, `status`, `remove`, `consolidate`, `gotcha` | yes |  |
 | `as_of` | string |  | recall: the facts valid at this date (YYYY-MM-DD) |
-| `category` | string |  | Groups facts (remember: default general) |
+| `category` | string |  | Groups facts (remember: default general; gotcha: default convention) |
 | `confidence` | number |  | remember: 0.0-1.0 (default 0.8) |
 | `dry_run` | boolean |  | consolidate: preview only |
 | `key` | string |  |  |

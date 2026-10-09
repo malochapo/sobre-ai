@@ -759,7 +759,7 @@ pub struct DeltaExplicitDecision {
 ///   `diff`, plus an advisory note. The diff carries exactly the new
 ///   information in a fraction of the tokens.
 /// - **Unchanged** and the request is `lines:` of an already-fully-delivered
-///   file → `full`, so the read collapses to the ~15-token `[unchanged]` stub
+///   file → `full`, so the read collapses to the one-line `[unchanged]` stub
 ///   instead of re-extracting a window the model has seen.
 /// - Otherwise the caller's `mode` is returned untouched.
 ///
@@ -815,7 +815,7 @@ pub fn resolve_explicit_delta_mode(
     }
     // Unchanged on disk: a `lines:` window of a file this conversation holds
     // in full re-emits text the model holds — collapse to the full-mode stub
-    // (~15 tokens). A plain `full` re-read already hits that stub downstream.
+    // (one line). A plain `full` re-read already hits that stub downstream.
     if mode.starts_with("lines:") {
         return DeltaExplicitDecision {
             mode: "full".to_string(),
@@ -916,10 +916,8 @@ fn prepare_inner(
         // Resolve the read mode first — and *cache-aware* for `auto`. Handing the
         // live cache to the resolver is what lets an `auto` re-read of an
         // unchanged, already-fully-delivered file short-circuit to
-        // ("full", "cache_hit") and collapse to the cheap ~13-token `[unchanged]`
-        // stub, exactly like an explicit `full` re-read. The previous call passed
-        // no cache, so that branch was dead code and every `auto` re-read
-        // re-delivered the whole file ("re-reads aren't cached"). Resolving
+        // ("full", "cache_hit") and collapse to the one-line `[unchanged]`
+        // stub, exactly like an explicit `full` re-read. Resolving
         // up-front also lets us hit the compressed-output cache BEFORE
         // decompressing the full body (avoids ~2-5ms zstd on hits). The
         // aggressiveness knob still routes `auto` through the density path.
