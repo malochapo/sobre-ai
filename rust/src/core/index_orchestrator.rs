@@ -57,7 +57,7 @@ struct ProjectBuild {
     warm_triggered: bool,
     graph: Component,
     bm25: Component,
-    /// Dense embedding index (semantic search). Built after BM25 as Phase 3.
+    /// Dense embedding index (semantic search), built from the BM25 index.
     /// Tracked separately so the orchestrator does not block on a missing ONNX
     /// model — the status lets users see why semantic stays cold.
     semantic: Component,
@@ -141,10 +141,9 @@ fn finish_err(c: &mut Component, e: String) {
     c.last_error = Some(e);
 }
 
-/// The index warmth a tool benefits from. Drives lazy, demand-driven warming
-/// so the server no longer scans the whole project eagerly on every
-/// `initialize` — a session that only uses `sobre_read`/`sobre_shell`/`sobre_tree`
-/// pays zero indexing cost.
+/// The index warmth a tool benefits from. Drives lazy, demand-driven warming:
+/// nothing is indexed at `initialize`, and a session that only uses
+/// `sobre_read`/`sobre_shell`/`sobre_tree` pays zero indexing cost.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WarmNeed {
     /// No prebuilt index needed.
@@ -208,8 +207,8 @@ pub fn ensure_warm_for_tool(project_root: &str, tool: &str) -> bool {
 }
 
 /// Stack size for background index workers. Large enough that deep ASTs and
-/// graph traversals cannot overflow it (the SIGABRT class). The AST walks
-/// are iterative now too, so this is defense-in-depth.
+/// graph traversals cannot overflow it. The AST walks are iterative too, so
+/// this is defense in depth.
 const INDEXER_STACK_BYTES: usize = 16 * 1024 * 1024;
 
 /// Try to claim the per-root build slot. Returns `false` when a worker is
@@ -261,10 +260,8 @@ pub fn ensure_all_background(project_root: &str) {
 /// own the threading. Requires the caller to have claimed the worker slot via
 /// [`try_claim_worker`]; releases it on exit.
 fn run_build_worker(root: &str) {
-    // Start the memory guardian for background builds. Previously only
-    // the CLI path (index_cmd.rs) started it, leaving background builds (MCP
-    // `ensure_all_background`, watcher, graph_coordinator) to run without RSS
-    // pressure checks — the guardian's abort/pressure flags never fired.
+    // Every build runs under the memory guardian, whatever started it (a tool
+    // call or `sobre index build`), so its abort/pressure flags can fire.
     // `start_guard` is idempotent: a second call in the same process is a no-op.
     crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
         tracing::warn!(
@@ -498,14 +495,12 @@ pub fn ensure_extra_roots_background(primary_root: &str, extra_roots: &[String])
         return;
     }
 
-    // Build extra roots *sequentially* on one supervisor thread. The old
-    // per-root `ensure_all_background` fan-out ran up to MAX_EXTRA_ROOT_BUILDS
-    // graph+BM25 pairs concurrently (each with rayon pools inside) — on the
-    // reported multi-root setup (1M+ files across 6+ roots) the combined
-    // transient build state outran the guardian to 75 GB RSS. One root at a
-    // time keeps peak memory bounded to a single build while still warming
-    // every root; the guardian check between roots stops the queue as soon as
-    // pressure appears.
+    // Build extra roots *sequentially* on one supervisor thread: concurrent
+    // graph+BM25 builds (each with rayon pools inside) add up their transient
+    // state faster than the guardian can react on large multi-root setups.
+    // One root at a time keeps peak memory bounded to a single build while
+    // still warming every root; the guardian check between roots stops the
+    // queue as soon as pressure appears.
     let spawned = std::thread::Builder::new()
         .name("sobre-extra-roots".to_string())
         .stack_size(INDEXER_STACK_BYTES)
@@ -799,7 +794,7 @@ pub struct DiskStatusAll {
     pub code_graph: DiskStatus,
     /// On-disk embedding index (`embeddings.bin`).  Present when dense search
     /// has been built at least once; absent when the model is not downloaded
-    /// yet or embeddings are disabled by config.
+    /// yet or this build has no local embeddings.
     pub semantic_index: DiskStatus,
 }
 
@@ -816,8 +811,10 @@ fn disk_status_for_graph(project_root: &str) -> DiskStatus {
         return DiskStatus::default();
     }
     let meta = std::fs::metadata(&meta_file).ok();
-    let file_count =
-        graph_index::ProjectIndex::load(project_root).map(|idx| idx.files.len() as u64);
+    let file_count = crate::core::property_graph::CodeGraph::open(project_root)
+        .ok()
+        .and_then(|g| g.file_catalog_count().ok())
+        .map(|n| n as u64);
     DiskStatus {
         exists: true,
         size_bytes: meta.as_ref().map(std::fs::Metadata::len),

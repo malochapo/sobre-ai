@@ -90,6 +90,9 @@ pub fn language_for_ext(ext: &str) -> Option<LanguageId> {
     }
 }
 
+/// Whether the code graph indexes a file with this extension (symbols and
+/// edges): the 21 languages `deep_queries` parses, plus Vue, Svelte and
+/// Godot scenes.
 pub fn is_indexable_ext(ext: &str) -> bool {
     language_for_ext(ext).is_some()
 }

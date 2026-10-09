@@ -20,6 +20,17 @@ pub(crate) fn build_edges_cached(
     build_implicit_edges_with_cache(index, content_cache);
     build_cochange_edges(index, cochange_git);
     build_sibling_edges(index);
+
+    // One order whatever the passes visited first (some walk hash maps).
+    index.edges.sort_by(|a, b| {
+        a.from
+            .cmp(&b.from)
+            .then_with(|| a.to.cmp(&b.to))
+            .then_with(|| a.kind.cmp(&b.kind))
+    });
+    index
+        .edges
+        .dedup_by(|a, b| a.from == b.from && a.to == b.to && a.kind == b.kind);
 }
 
 fn build_edges_with_cache(index: &mut ProjectIndex, content_cache: &HashMap<String, String>) {
@@ -243,7 +254,7 @@ fn resolve_file_edges(
 }
 
 // ---------------------------------------------------------------------------
-// Layer 2: Implicit Language Edges (weight 0.8)
+// Layer 2: Implicit Language Edges
 // ---------------------------------------------------------------------------
 
 fn build_implicit_edges_with_cache(
@@ -271,11 +282,9 @@ fn build_implicit_edges_with_cache(
                     content_cache,
                 );
             }
-            // Go same-package dependencies are now precise `type_ref` edges
-            // (bug class); the old coarse one-edge-per-file `package`
-            // heuristic mislabelled them as top-weight `imports` in the mirror
-            // and polluted the impact blast radius, so it is gone — unused
-            // orphans fall to the standard low-weight sibling rescue instead.
+            // Go same-package dependencies are `type_ref` edges (see
+            // `type_ref_edges`), not one `import` edge per package file;
+            // unused orphans fall to the low-weight sibling edges instead.
             "py" => collect_python_init_edges(file, &file_paths, &mut new_edges),
             "ts" | "js" | "tsx" | "jsx" => {
                 collect_barrel_edges_cached(file, &file_set, index, &mut new_edges, content_cache);
@@ -462,7 +471,7 @@ fn collect_barrel_edges_cached(
 }
 
 // ---------------------------------------------------------------------------
-// Layer 3: Co-Change Edges (weight 0.5)
+// Layer 3: Co-Change Edges
 // ---------------------------------------------------------------------------
 
 /// Spawn the co-change `git log` as a detached child so it runs concurrently with
@@ -470,10 +479,16 @@ fn collect_barrel_edges_cached(
 /// then skips the co-change layer (same as a failed invocation). See
 /// [`build_edges_cached`] for the overlap rationale.
 fn spawn_cochange_git(project_root: &str) -> Option<std::process::Child> {
+    // `--relative`: paths relative to the project root (which may be a
+    // subdirectory of the repository), as the index keys them; unquoted, so
+    // non-ASCII names match too.
     std::process::Command::new("git")
         .args([
+            "-c",
+            "core.quotePath=false",
             "log",
             "--name-only",
+            "--relative",
             "--pretty=format:---",
             "--since=6 months",
             "--",
@@ -501,44 +516,9 @@ fn build_cochange_edges(index: &mut ProjectIndex, git: Option<std::process::Chil
         .flat_map(|e| [e.from.as_str(), e.to.as_str()])
         .collect();
 
-    // Parse commits into groups of files
-    let mut cooccurrence: HashMap<(String, String), u32> = HashMap::new();
-    let mut current_commit: Vec<&str> = Vec::new();
-
-    for line in output.lines() {
-        if line == "---" {
-            if current_commit.len() >= 2 && current_commit.len() <= 20 {
-                for i in 0..current_commit.len() {
-                    for j in (i + 1)..current_commit.len() {
-                        let a = current_commit[i];
-                        let b = current_commit[j];
-                        if !file_set.contains(a) || !file_set.contains(b) {
-                            continue;
-                        }
-                        // Only add if at least one is currently isolated
-                        if connected.contains(a) && connected.contains(b) {
-                            continue;
-                        }
-                        let key = if a < b {
-                            (a.to_string(), b.to_string())
-                        } else {
-                            (b.to_string(), a.to_string())
-                        };
-                        *cooccurrence.entry(key).or_insert(0) += 1;
-                    }
-                }
-            }
-            current_commit.clear();
-        } else if !line.is_empty() {
-            current_commit.push(line.trim());
-        }
-    }
-
-    // Filter: min 5 shared commits
-    let mut cochange_edges: Vec<IndexEdge> = cooccurrence
+    let cochange_edges: Vec<IndexEdge> = cochange_pairs(&output, &file_set, &connected)
         .into_iter()
-        .filter(|(_, count)| *count >= 5)
-        .map(|((from, to), _)| IndexEdge {
+        .map(|(from, to)| IndexEdge {
             from,
             to,
             kind: "cochange".to_string(),
@@ -546,25 +526,81 @@ fn build_cochange_edges(index: &mut ProjectIndex, git: Option<std::process::Chil
         })
         .collect();
 
-    // Cap at 500 to prevent noise
-    cochange_edges.sort_by(|a, b| a.from.cmp(&b.from).then_with(|| a.to.cmp(&b.to)));
-    cochange_edges.truncate(500);
-
     index.edges.extend(cochange_edges);
 }
 
+/// The file pairs changed together in at least 5 commits of `log` (the
+/// output of `git log --name-only --pretty=format:---`), among `file_set`,
+/// where at least one of the two files has no other edge (`connected`).
+/// Commits touching more than 20 files are skipped. Sorted, at most 500.
+pub(super) fn cochange_pairs(
+    log: &str,
+    file_set: &std::collections::HashSet<&str>,
+    connected: &std::collections::HashSet<&str>,
+) -> Vec<(String, String)> {
+    let mut cooccurrence: HashMap<(String, String), u32> = HashMap::new();
+    let mut count_commit = |files: &[String]| {
+        if files.len() < 2 || files.len() > 20 {
+            return;
+        }
+        for (i, a) in files.iter().enumerate() {
+            for b in &files[i + 1..] {
+                let (a, b) = (a.as_str(), b.as_str());
+                if !file_set.contains(a) || !file_set.contains(b) {
+                    continue;
+                }
+                // Only add if at least one is currently isolated
+                if connected.contains(a) && connected.contains(b) {
+                    continue;
+                }
+                let key = if a < b {
+                    (a.to_string(), b.to_string())
+                } else {
+                    (b.to_string(), a.to_string())
+                };
+                *cooccurrence.entry(key).or_insert(0) += 1;
+            }
+        }
+    };
+
+    // Each commit starts with a `---` line; the last one ends with the output.
+    let mut current_commit: Vec<String> = Vec::new();
+    for line in log.lines() {
+        if line == "---" {
+            count_commit(&current_commit);
+            current_commit.clear();
+        } else if !line.trim().is_empty() {
+            // git writes `/`; the index keys use the platform separator.
+            current_commit.push(line.trim().replace('/', std::path::MAIN_SEPARATOR_STR));
+        }
+    }
+    count_commit(&current_commit);
+
+    let mut pairs: Vec<(String, String)> = cooccurrence
+        .into_iter()
+        .filter(|(_, count)| *count >= 5)
+        .map(|(pair, _)| pair)
+        .collect();
+    // Cap at 500 to prevent noise
+    pairs.sort();
+    pairs.truncate(500);
+    pairs
+}
+
 // ---------------------------------------------------------------------------
-// Layer 4: Sibling Edges (weight 0.2)
+// Layer 4: Sibling Edges
 // ---------------------------------------------------------------------------
 
-fn build_sibling_edges(index: &mut ProjectIndex) {
+pub(super) fn build_sibling_edges(index: &mut ProjectIndex) {
     let connected: std::collections::HashSet<&str> = index
         .edges
         .iter()
         .flat_map(|e| [e.from.as_str(), e.to.as_str()])
         .collect();
 
-    let file_paths: Vec<String> = index.files.keys().cloned().collect();
+    // Sorted, so each isolated file gets the same sibling on every scan.
+    let mut file_paths: Vec<String> = index.files.keys().cloned().collect();
+    file_paths.sort();
     let mut new_edges: Vec<IndexEdge> = Vec::new();
 
     for file in &file_paths {

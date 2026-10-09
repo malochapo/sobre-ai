@@ -1,19 +1,14 @@
-//! Learned attention weights replacing the heuristic U-curve.
-//!
-//! Instead of a static quadratic U-curve (Liu et al. approximation),
-//! uses empirically measured attention distributions from Experiment B.
-//!
-//! The learned weights are a piecewise-linear function fitted to
-//! real attention maps from multiple LLMs.
+//! Position weights for lines in a file: how much attention a model pays to
+//! a line by its relative position, as a fixed piecewise-linear table.
 
 pub struct LearnedAttention {
     breakpoints: Vec<(f64, f64)>,
 }
 
-/// Empirically measured attention curve from TinyLlama 1.1B on 106 Rust files.
-/// Lab Experiment B (2026-04-02): NOT a U-curve (Liu et al.) but an L-curve —
-/// massive attention at position 0.00, rapid decay, no recovery at end.
-/// Normalized to [0, 1] from raw values where pos 0.0 had 20x the attention of mid-file.
+/// Attention curve measured on TinyLlama 1.1B over 106 Rust files: not a
+/// U-curve (Liu et al.) but an L-curve — massive attention at position 0.00,
+/// rapid decay, no recovery at the end. Normalized to [0, 1] from raw values
+/// where position 0.0 had 20x the attention of mid-file.
 const DEFAULT_BREAKPOINTS: &[(f64, f64)] = &[
     (0.00, 1.00),
     (0.05, 0.055),

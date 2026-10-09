@@ -1,8 +1,8 @@
 //! Persisted project health (`health.json`) + stale-guarded background refresh.
 //!
-//! The engine computes the [`NavigabilityScore`] once per index build and stores
-//! it next to the graph index. Session-start and other surfaces then *read* it
-//! (no re-parse), realizing the plan's "compute once, fan-out everywhere".
+//! The background index build computes the project's health once per change of
+//! the indexed source set, stores it next to the graph index, and fans the
+//! hotspots out to the other stores ([`super::fabric`]).
 //!
 //! The refresh is gated by a fingerprint of the indexed source set, so a touch
 //! with no byte change never triggers a recompute (mirrors the index's own

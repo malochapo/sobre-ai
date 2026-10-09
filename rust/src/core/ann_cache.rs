@@ -36,8 +36,8 @@ fn cache() -> &'static Mutex<Option<Cached>> {
 /// Drop the cached HNSW index (eviction hook). The next large-corpus
 /// query transparently rebuilds it; queries in between fall back to exact
 /// brute force, so correctness is unaffected. Called by the eviction
-/// orchestrator under memory pressure — before this hook the built graph +
-/// its `FlatEmbeddings` corpus stayed resident forever.
+/// orchestrator under memory pressure, so the built graph and its
+/// `FlatEmbeddings` corpus do not stay resident for good.
 pub fn clear() {
     if let Ok(mut guard) = cache().lock() {
         *guard = None;

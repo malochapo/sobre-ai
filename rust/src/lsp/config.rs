@@ -101,6 +101,12 @@ pub fn language_for_extension(ext: &str) -> Option<&'static str> {
 }
 
 pub fn install_hint_for_language(language: &str) -> &'static str {
+    // JavaScript is served by the TypeScript server.
+    let language = if language == "javascript" {
+        "typescript"
+    } else {
+        language
+    };
     for info in KNOWN_SERVERS {
         if info.language == language {
             return info.install_hint;
@@ -129,4 +135,14 @@ pub fn check_server_available(language: &str) -> Result<PathBuf, String> {
             config.command, language, hint
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn javascript_gets_the_typescript_install_hint() {
+        assert!(install_hint_for_language("javascript").contains("typescript-language-server"));
+    }
 }

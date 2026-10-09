@@ -352,16 +352,13 @@ impl StructuralWeights {
     }
 }
 
-/// Information Bottleneck filter v3 — Mutual Information scoring, QUITO-X inspired.
+/// Keep the lines of `content` most relevant to `task_keywords`, about
+/// `budget_ratio` of them (an information-bottleneck filter, after QUITO-X).
 ///
-/// IB principle: maximize I(T;Y) (task relevance) while minimizing I(T;X) (input redundancy).
-/// v3: MI(line, task) approximated via token overlap + IDF weighting + structural importance.
-///
-/// Key changes from v2:
-///   - Mutual Information scoring: MI(line, task) = H(line) - H(line|task)
-///   - Adaptive budget allocation based on task type via TaskClassifier
-///   - Token-level IDF computed over full document for better term weighting
-///   - Maintains L-curve attention, MMR dedup, error-handling priority from v2
+/// A line's score approximates its mutual information with the task (token
+/// overlap weighted by the token's IDF over the document) plus structural
+/// importance (definitions, control flow, error handling) and a weight for its
+/// position in the file; near-duplicate lines are dropped by MMR.
 pub fn information_bottleneck_filter(
     content: &str,
     task_keywords: &[String],
@@ -431,7 +428,7 @@ fn inject_section_headers(original: &str, filtered: &str) -> String {
 
 /// Task-type-aware IB filter. Uses `TaskType` to adjust structural weights.
 /// `force_keep` lines (explicit `protect` tokens) are kept verbatim on top
-/// of the budget; `&[]` reproduces the pre-protect output byte-for-byte.
+/// of the budget.
 pub fn information_bottleneck_filter_typed(
     content: &str,
     task_keywords: &[String],

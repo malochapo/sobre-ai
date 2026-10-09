@@ -8,7 +8,7 @@
 //!
 //! These helpers walk the tree with a heap-allocated work stack instead, so the
 //! traversal depth is bounded by available heap rather than by the native call
-//! stack. Indexing a single deep file can therefore no longer crash the MCP server.
+//! stack: indexing a single deep file cannot crash the MCP server.
 
 #[cfg(feature = "tree-sitter")]
 use tree_sitter::Node;

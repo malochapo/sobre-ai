@@ -2,16 +2,12 @@
 
 use rusqlite::{Connection, OptionalExtension, params};
 
+/// A graph node is a file or a code symbol (the symbol's precise kind lives
+/// in its metadata).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NodeKind {
     File,
     Symbol,
-    Module,
-    Commit,
-    Test,
-    CIRun,
-    Knowledge,
-    Issue,
 }
 
 impl NodeKind {
@@ -19,24 +15,12 @@ impl NodeKind {
         match self {
             Self::File => "file",
             Self::Symbol => "symbol",
-            Self::Module => "module",
-            Self::Commit => "commit",
-            Self::Test => "test",
-            Self::CIRun => "ci_run",
-            Self::Knowledge => "knowledge",
-            Self::Issue => "issue",
         }
     }
 
     pub fn parse(s: &str) -> Self {
         match s {
             "symbol" => Self::Symbol,
-            "module" => Self::Module,
-            "commit" => Self::Commit,
-            "test" => Self::Test,
-            "ci_run" => Self::CIRun,
-            "knowledge" => Self::Knowledge,
-            "issue" => Self::Issue,
             _ => Self::File,
         }
     }
@@ -178,19 +162,24 @@ fn like_escape(s: &str) -> String {
     out
 }
 
+/// Symbols whose name contains `name` (case-insensitive), in files whose path
+/// contains `file_filter`, of the source kind `kind_filter` (`struct`, `fn`, …,
+/// as recorded in the node metadata). At most 100, exact name matches first,
+/// then by path and line, so a common name cannot push the exact one out.
 pub(super) fn find_symbols(
     conn: &Connection,
     name: &str,
     file_filter: Option<&str>,
     kind_filter: Option<&str>,
 ) -> anyhow::Result<Vec<Node>> {
-    let name_lower = like_escape(&name.to_lowercase());
+    let lower = name.to_lowercase();
+    let name_like = like_escape(&lower);
     let mut sql = String::from(
         "SELECT n.id, n.kind, n.name, p.path, n.line_start, n.line_end, n.metadata
          FROM nodes n JOIN paths p ON p.id = n.file_id WHERE n.kind != 'file'
          AND LOWER(name) LIKE '%' || ?1 || '%' ESCAPE '\\'",
     );
-    let mut param_idx = 2;
+    let mut param_idx = 3;
     if file_filter.is_some() {
         sql.push_str(&format!(
             " AND p.path LIKE '%' || ?{param_idx} || '%' ESCAPE '\\'"
@@ -198,14 +187,17 @@ pub(super) fn find_symbols(
         param_idx += 1;
     }
     if kind_filter.is_some() {
-        sql.push_str(&format!(" AND kind = ?{param_idx}"));
+        sql.push_str(&format!(
+            " AND json_extract(n.metadata, '$.kind') = ?{param_idx}"
+        ));
     }
-    sql.push_str(" ORDER BY p.path, n.line_start LIMIT 100");
+    sql.push_str(" ORDER BY LOWER(n.name) = ?2 DESC, p.path, n.line_start LIMIT 100");
 
     let mut stmt = conn.prepare(&sql)?;
 
     let params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = {
-        let mut v: Vec<Box<dyn rusqlite::types::ToSql>> = vec![Box::new(name_lower)];
+        let mut v: Vec<Box<dyn rusqlite::types::ToSql>> =
+            vec![Box::new(name_like), Box::new(lower)];
         if let Some(f) = file_filter {
             v.push(Box::new(like_escape(f)));
         }
@@ -311,10 +303,8 @@ pub(super) fn file_count(conn: &Connection) -> anyhow::Result<usize> {
 pub(super) fn all_edges_flat(
     conn: &Connection,
 ) -> anyhow::Result<Vec<(String, String, String, f64)>> {
-    // The `edges` table carries no weight column — impact scoring derives the
-    // weight from the edge kind (see `queries::edge_weight`). Selecting a
-    // non-existent `e.weight` made this query error out, so PG `edges()` always
-    // returned empty. Compute the weight from the kind instead.
+    // The `edges` table carries no weight column: the weight follows from the
+    // edge kind (see `queries::edge_weight`).
     let mut stmt = conn.prepare(
         "SELECT p1.path, p2.path, e.kind
          FROM edges e

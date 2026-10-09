@@ -1,17 +1,14 @@
 //! Parallel, deterministic BM25 index construction.
 //!
-//! The full directory build was a sequential parse + tokenize loop over every
-//! file that pinned a single core for ~2.85 s on the sobre repo. Fanning that
-//! work across a rayon pool brings it down to ~0.69 s (~4x), measured.
-//!
 //! The per-file work — tree-sitter chunking + tokenization — is pure and
 //! thread-safe (the parser is `thread_local!`, the shared `content_cache` is
-//! `Mutex`-guarded), so we fan it across a rayon pool with an order-preserving
-//! `collect`, then **merge the results sequentially in the original sorted file
-//! order**. The merge replays exactly what [`BM25Index::add_chunk`] does, so the
-//! resulting index is identical to the sequential build (same chunk order, same
-//! inverted postings, same `doc_freqs`) — upholding the determinism contract.
-//! See `tests.rs` (`parallel_build_matches_sequential_*`).
+//! `Mutex`-guarded), so it fans out across a rayon pool (about 4x faster than
+//! one core on the sobre repo) with an order-preserving `collect`, then the
+//! results are **merged sequentially in the original sorted file order**
+//! through [`BM25Index::add_prepared`], the step [`BM25Index::add_chunk`] takes
+//! too. The resulting index is identical to the sequential build (same chunk
+//! order, same inverted postings, same `doc_freqs`): see `tests.rs`
+//! (`parallel_build_matches_sequential_*`).
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -23,9 +20,8 @@ use rayon::prelude::*;
 pub(super) const PARALLEL_MIN_FILES: usize = 32;
 
 /// Upper bound for batch size — the parallel paths never exceed this even with
-/// generous headroom. Lowered from 2000 to 500 after reports of 30 GB RSS
-/// spikes: `par_iter().collect()` materializes the entire batch atomically,
-/// so every file in the batch is live in RAM simultaneously.
+/// generous headroom: `par_iter().collect()` materializes the entire batch
+/// atomically, so every file in the batch is live in RAM simultaneously.
 const MAX_BATCH_FILES: usize = 500;
 
 /// Minimum progress unit under low headroom.
@@ -47,12 +43,31 @@ fn effective_batch_size(max_files: usize) -> usize {
 
 const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024;
 
-/// A chunk with its lowercased index tokens precomputed off the hot merge path.
-struct PreparedChunk {
-    chunk: CodeChunk,
-    /// Lowercased tokens in `tokenize(enrich_for_bm25(chunk))` order — drives the
-    /// inverted index and `doc_freqs` exactly as [`BM25Index::add_chunk`] would.
-    lowered: Vec<String>,
+/// A chunk with its index terms precomputed off the hot merge path.
+#[derive(Debug, Clone)]
+pub(super) struct PreparedChunk {
+    pub(super) chunk: CodeChunk,
+    /// Each distinct lowercased term of `tokenize(enrich_for_bm25(chunk))` with
+    /// its frequency in the chunk, in first-occurrence order. Counted over the
+    /// whole body, before `content` is cut down to its first lines.
+    pub(super) terms: Vec<(String, f64)>,
+}
+
+/// Distinct lowercased terms of `tokens` with their counts, in
+/// first-occurrence order.
+fn term_frequencies(tokens: &[String]) -> Vec<(String, f64)> {
+    let mut terms: Vec<(String, f64)> = Vec::new();
+    let mut position: HashMap<String, usize> = HashMap::new();
+    for token in tokens {
+        let lower = token.to_lowercase();
+        if let Some(&i) = position.get(&lower) {
+            terms[i].1 += 1.0;
+        } else {
+            position.insert(lower.clone(), terms.len());
+            terms.push((lower, 1.0));
+        }
+    }
+    terms
 }
 
 /// All prepared chunks for a single file, plus the file state to record.
@@ -82,18 +97,19 @@ fn parallel_build_must_stop(what: &str, files_done: usize) -> bool {
     false
 }
 
-/// Pure, thread-safe per-chunk preparation: enrich → tokenize → lowercase.
-/// Mirrors the first half of [`BM25Index::add_chunk`] so the cheap sequential
-/// merge only has to update the shared maps.
-fn prepare_chunk(mut chunk: CodeChunk) -> PreparedChunk {
+/// Lines of a chunk's body the index keeps, for result snippets. The terms are
+/// counted over the whole body first.
+const SNIPPET_LINES: usize = 10;
+
+/// Pure, thread-safe per-chunk preparation: enrich → tokenize → count terms,
+/// then cut `content` down to [`SNIPPET_LINES`]. The sequential merge
+/// ([`BM25Index::add_prepared`]) only has to update the shared maps.
+pub(super) fn prepare_chunk(mut chunk: CodeChunk) -> PreparedChunk {
     let enriched = enrich_for_bm25(&chunk);
     let tokens = tokenize(&enriched);
-    let lowered: Vec<String> = tokens.iter().map(|t| t.to_lowercase()).collect();
+    let terms = term_frequencies(&tokens);
     let token_count = tokens.len();
 
-    // Truncate content AFTER tokenization (full text used for BM25 scoring
-    // above). Must mirror add_chunk's SNIPPET_LINES to keep parallel ≡ sequential.
-    const SNIPPET_LINES: usize = 10;
     if chunk.content.lines().nth(SNIPPET_LINES).is_some() {
         chunk.content = chunk
             .content
@@ -110,7 +126,7 @@ fn prepare_chunk(mut chunk: CodeChunk) -> PreparedChunk {
             tokens: Vec::new(),
             ..chunk
         },
-        lowered,
+        terms,
     }
 }
 
@@ -187,16 +203,14 @@ fn prepare_file(
 }
 
 /// Per-file work for the incremental rebuild, mirroring the sequential branch:
-/// reuse the previous chunks when the file is unchanged and they carry content,
-/// otherwise re-`prepare_file`. Crucially, reused chunks are re-prepared (enrich
-/// → tokenize → lowercase) here too, so the *whole* tokenization — not just the
-/// changed files — runs on the rayon pool, off the serial merge. The reuse guard
-/// (`state` match + non-empty first chunk) and the changed-file fallthrough match
+/// reuse the previous chunks and their terms when the file is unchanged and
+/// they carry content, otherwise re-`prepare_file`. The reuse guard (`state`
+/// match + non-empty first chunk) and the changed-file fallthrough match
 /// `rebuild_incremental_sequential` exactly, keeping the two paths in lock-step.
 fn prepare_incremental_file(
     root: &Path,
     prev: &BM25Index,
-    old_by_file: &HashMap<String, Vec<CodeChunk>>,
+    old_by_file: &HashMap<String, Vec<PreparedChunk>>,
     content_hint: &HashMap<String, String>,
     rel: &str,
 ) -> Option<PreparedFile> {
@@ -209,12 +223,12 @@ fn prepare_incremental_file(
     let unchanged = prev.files.get(rel).is_some_and(|old| *old == state);
     if unchanged
         && let Some(chunks) = old_by_file.get(rel)
-        && chunks.first().is_some_and(|c| !c.content.is_empty())
+        && chunks.first().is_some_and(|c| !c.chunk.content.is_empty())
     {
         return Some(PreparedFile {
             rel: rel.to_string(),
             state,
-            chunks: chunks.iter().cloned().map(prepare_chunk).collect(),
+            chunks: chunks.clone(),
         });
     }
 
@@ -230,7 +244,7 @@ impl BM25Index {
     /// rayon pool (order-preserving `par_iter().collect()`), then merges
     /// sequentially in the sorted file order so the index is identical to
     /// [`Self::build_sequential`] for the same `files`.
-    pub(crate) fn build_parallel(
+    pub(super) fn build_parallel(
         root: &Path,
         content_hint: &HashMap<String, String>,
         files: &[String],
@@ -277,18 +291,17 @@ impl BM25Index {
         index
     }
 
-    /// Deterministic parallel incremental rebuild. Fans **all** per-file
-    /// tokenization across the rayon pool — changed files through the full
-    /// `prepare_file`, unchanged files by re-`prepare_chunk`-ing their reused
-    /// chunks — then merges sequentially in file order via `add_prepared`. The
-    /// result is identical to [`Self::rebuild_incremental_sequential`] for the same
-    /// inputs (same file order, same chunk order, same postings / `doc_freqs`),
-    /// upholding the determinism contract. See `tests.rs`
-    /// (`parallel_incremental_matches_sequential`).
-    pub(crate) fn rebuild_incremental_parallel(
+    /// Deterministic parallel incremental rebuild. Fans the per-file work
+    /// across the rayon pool — changed files through the full `prepare_file`,
+    /// unchanged files by taking their previous chunks and terms — then merges
+    /// sequentially in file order via `add_prepared`. The result is identical
+    /// to [`Self::rebuild_incremental_sequential`] for the same inputs (same
+    /// file order, same chunk order, same postings / `doc_freqs`). See
+    /// `tests.rs` (`parallel_incremental_matches_sequential`).
+    pub(super) fn rebuild_incremental_parallel(
         root: &Path,
         prev: &BM25Index,
-        old_by_file: &HashMap<String, Vec<CodeChunk>>,
+        old_by_file: &HashMap<String, Vec<PreparedChunk>>,
         files: &[String],
     ) -> Self {
         // No per-build content hint for a rebuild; `prepare_file` falls back to the
@@ -326,7 +339,7 @@ impl BM25Index {
 
     /// Sequential full build with incremental memory-pressure guards. Used for
     /// small corpora and as the safe fallback when memory is tight.
-    pub(crate) fn build_sequential(
+    pub(super) fn build_sequential(
         root: &Path,
         content_hint: &HashMap<String, String>,
         files: &[String],
@@ -424,17 +437,14 @@ impl BM25Index {
         index
     }
 
-    /// Merge a [`PreparedChunk`] into the index. Replays [`Self::add_chunk`]'s
-    /// inverted-index / `doc_freqs` updates using the precomputed tokens, so a
-    /// parallel build reaches the same state as the sequential one.
-    fn add_prepared(&mut self, prepared: PreparedChunk) {
+    /// Append a [`PreparedChunk`]: one posting per distinct term, carrying the
+    /// term's frequency in the chunk, and one more document in each term's
+    /// `doc_freqs`. Every build path adds its chunks through here.
+    pub(super) fn add_prepared(&mut self, prepared: PreparedChunk) {
         let idx = self.chunks.len();
-        for lower in &prepared.lowered {
-            let postings = self.inverted.entry(lower.clone()).or_default();
-            if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
-                *self.doc_freqs.entry(lower.clone()).or_insert(0) += 1;
-            }
-            postings.push((idx, 1.0));
+        for (term, tf) in prepared.terms {
+            *self.doc_freqs.entry(term.clone()).or_insert(0) += 1;
+            self.inverted.entry(term).or_default().push((idx, tf));
         }
         self.chunks.push(prepared.chunk);
     }

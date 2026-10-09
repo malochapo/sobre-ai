@@ -1,12 +1,11 @@
 //! int8 scalar quantization + SIMD-friendly scoring for embedding vectors.
 //!
-//! Adapted from the TurboQuant approach (RyanCodrai/turbovec, ICLR 2026): a
-//! data-oblivious, training-free, single-pass quantizer. At sobre's scale
-//! (hundreds of facts × 384-dim MiniLM vectors) the win is twofold:
-//!   1. **4× smaller** on-disk knowledge index (`i8` codes vs `f32`).
-//!   2. **Faster scoring** — the query is rotated once into the codebook domain
-//!      (the per-vector `scale`) and accumulated directly over `i8` codes, so we
-//!      never reconstruct the full `f32` document vector (turbovec's core idea).
+//! Symmetric per-vector (absmax) quantization: data-oblivious, training-free
+//! and single-pass. For the embedding and knowledge indexes the win is twofold:
+//!   1. **4× smaller** on disk (`i8` codes vs `f32`).
+//!   2. **Faster scoring** — the full-precision query is accumulated directly
+//!      over the `i8` codes and scaled once per vector, so the `f32` document
+//!      vector is never reconstructed.
 //!
 //! No heavy SIMD crate is pulled in: the chunked-lane accumulators below are
 //! shaped so the autovectorizer emits NEON/AVX automatically, with a scalar tail
@@ -32,8 +31,8 @@ pub struct QuantizedVector {
 }
 
 impl QuantizedVector {
-    /// Reconstruct the approximate `f32` vector. Only needed for diagnostics /
-    /// migration; the hot path scores against the codes directly via [`dot_quant`].
+    /// Reconstruct the approximate `f32` vector, for tests; the hot path
+    /// scores against the codes directly via [`dot_quant`].
     #[must_use]
     #[cfg(test)]
     pub fn dequantize(&self) -> Vec<f32> {

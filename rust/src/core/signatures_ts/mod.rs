@@ -233,10 +233,10 @@ void cleanup(struct Config* cfg) {
 
     #[test]
     fn test_cpp_signatures() {
-        // Regression: a bad `namespace_definition` node name used to make the
-        // whole C++ query fail to compile, dropping every `.cpp` file to the
-        // regex fallback. `extract_signatures_ts` is the tree-sitter path, so a
-        // non-empty result here proves the query compiles and matches.
+        // A bad node name makes the whole C++ query fail to compile, dropping
+        // every `.cpp` file to the regex fallback. `extract_signatures_ts` is
+        // the tree-sitter path, so a non-empty result here proves the query
+        // compiles and matches.
         let src = r"
 namespace net {
 

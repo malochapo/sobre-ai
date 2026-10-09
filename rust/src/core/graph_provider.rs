@@ -98,11 +98,6 @@ impl GraphProvider {
         self.graph.edge_count().ok()
     }
 
-    /// Files that reference `file_path`.
-    pub fn dependents(&self, file_path: &str) -> Vec<String> {
-        self.graph.dependents(file_path).unwrap_or_default()
-    }
-
     /// Files within `depth` hops of `file_path` over references and
     /// heuristics (co-change, same directory), in either direction.
     pub fn related(&self, file_path: &str, depth: usize) -> Vec<String> {
@@ -150,15 +145,13 @@ impl GraphProvider {
         file_filter: Option<&str>,
         kind_filter: Option<&str>,
     ) -> Vec<SymbolInfo> {
-        // Kind is filtered after mapping, not in SQL: the `nodes.kind` column is
-        // the coarse `NodeKind` (every code symbol is `"symbol"`), while the
-        // precise source kind (`struct`, `fn`, …) lives in metadata.
+        // The kind is the precise source kind (`struct`, `fn`, …) kept in the
+        // node metadata, not the coarse `nodes.kind` column.
         self.graph
-            .find_symbols(name, file_filter, None)
+            .find_symbols(name, file_filter, kind_filter)
             .unwrap_or_default()
             .into_iter()
             .map(symbol_info_from_node)
-            .filter(|s| kind_filter.is_none_or(|k| s.kind == k))
             .collect()
     }
 
@@ -343,9 +336,13 @@ impl GraphProvider {
         graph_index::ProjectIndex::index_dir(project_root)
     }
 
-    /// Whether the source changed since this graph was built: older than the
-    /// TTL, or a file removed, edited or added since.
+    /// Whether the graph must be rebuilt: built by an older graph engine
+    /// ([`super::property_graph::engine_outdated`]), older than the TTL, or a
+    /// file removed, edited or added since.
     pub fn is_stale(&self) -> bool {
+        if super::property_graph::engine_outdated(&self.project_root) {
+            return true;
+        }
         let paths = self.file_paths();
         let refs: Vec<&String> = paths.iter().collect();
         let root = super::index_paths::normalize_project_root(&self.project_root);
@@ -417,7 +414,7 @@ pub fn open_or_build(project_root: &str) -> Option<GraphProvider> {
     let root_owned = project_root.to_string();
     let (tx, rx) = std::sync::mpsc::sync_channel(1);
     std::thread::spawn(move || {
-        let idx = graph_index::load_or_build(&root_owned);
+        let idx = graph_index::scan(&root_owned);
         let _ = tx.send(idx.files.is_empty());
     });
 
@@ -533,7 +530,7 @@ mod tests {
     fn pg_kind_filter_matches_precise_metadata_kind() {
         // A PG symbol's coarse `nodes.kind` is always `"symbol"`; the
         // source kind (`struct`) lives in metadata. Filtering by kind="struct"
-        // must still find it (previously matched the coarse column → empty).
+        // must still find it.
         use super::super::property_graph::{Node, NodeKind};
 
         let pg = CodeGraph::open_in_memory().unwrap();
@@ -556,6 +553,41 @@ mod tests {
 
         // A non-matching kind still filters it out.
         assert!(gp.find_symbols("State", None, Some("fn")).is_empty());
+    }
+
+    /// A name that many symbols contain still finds its exact match, and a
+    /// kind filter still finds its symbol, past the 100-row cap.
+    #[test]
+    fn exact_name_and_kind_survive_the_row_cap() {
+        use super::super::property_graph::{Node, NodeKind};
+
+        let pg = CodeGraph::open_in_memory().unwrap();
+        for i in 0..150 {
+            pg.upsert_node(
+                &Node::symbol(&format!("run_step_{i}"), "a/steps.rs", NodeKind::Symbol)
+                    .with_lines(i, i)
+                    .with_metadata(r#"{"kind":"fn","exported":true}"#),
+            )
+            .unwrap();
+        }
+        pg.upsert_node(
+            &Node::symbol("run", "z/main.rs", NodeKind::Symbol)
+                .with_lines(1, 3)
+                .with_metadata(r#"{"kind":"struct","exported":true}"#),
+        )
+        .unwrap();
+        let gp = GraphProvider::new(pg, "/test");
+
+        let hits = gp.find_symbols("run", None, None);
+        assert_eq!(hits.len(), 100);
+        assert_eq!(
+            (hits[0].name.as_str(), hits[0].file.as_str()),
+            ("run", "z/main.rs")
+        );
+
+        let structs = gp.find_symbols("run", None, Some("struct"));
+        assert_eq!(structs.len(), 1);
+        assert_eq!(structs[0].name, "run");
     }
 
     #[test]

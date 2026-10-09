@@ -44,14 +44,14 @@ pub fn persist_ceiling_bytes() -> u64 {
 
 /// Outcome of persisting a BM25 index to disk. Distinguishes a real write from a
 /// size-capped refusal so callers never mistake "refused to persist" for
-/// success (the bug behind the perpetual "index warming" report).
+/// success.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveOutcome {
     /// Written to disk. Carries the compressed (zstd) size in bytes.
     Persisted { compressed_bytes: u64 },
     /// Built fine but NOT written — the compressed size exceeds the disk
     /// ceiling. The in-memory index is still usable for this process; callers
-    /// should surface the remedy (raise the cap / add ignore patterns) instead
+    /// should surface the remedy (add ignore patterns) instead
     /// of silently rebuilding on every call.
     SkippedTooLarge {
         compressed_bytes: u64,
@@ -80,7 +80,7 @@ pub enum ChunkKind {
     Class,
     Method,
     Other,
-    // -- External source kinds (Context Engine) --
+    // Chunks ingested from outside the source tree (`ingest_content_chunks`).
     Issue,
     PullRequest,
     WikiPage,
@@ -114,17 +114,22 @@ impl IndexedFileState {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BM25Index {
+    /// The indexed chunks. `content` keeps a chunk's first lines only (for
+    /// snippets and embeddings); its terms are in `inverted`.
     pub chunks: Vec<CodeChunk>,
+    /// Term → one `(chunk index, term frequency in that chunk)` per chunk that
+    /// holds the term, in chunk order.
     pub inverted: HashMap<String, Vec<(usize, f64)>>,
     pub avg_doc_len: f64,
     pub doc_count: usize,
+    /// Term → number of chunks that hold it.
     pub doc_freqs: HashMap<String, usize>,
     pub files: HashMap<String, IndexedFileState>,
     /// True once `shrink_resident_content_to_snippet` has trimmed each chunk's
-    /// `content` down to the snippet lines. Resident-only RAM-saving state: never
-    /// persisted (`skip`) so the on-disk index keeps full content, and a reload
+    /// `content` further. Resident-only RAM-saving state: never persisted
+    /// (`skip`), so the on-disk index keeps the longer content and a reload
     /// always starts as `false`. Guards the embedding pass against re-embedding
-    /// truncated bodies (see `ensure_embeddings`).
+    /// trimmed bodies (see `ensure_embeddings`).
     #[serde(default, skip)]
     pub content_truncated: bool,
 }
@@ -227,16 +232,14 @@ impl BM25Index {
     }
 
     /// Shrinks each resident chunk's `content` to its first `keep_lines` lines,
-    /// reclaiming the RAM held by the full source bodies once the embedding pass
-    /// has already consumed them. The search path only ever reads
-    /// `content.lines().take(5)` for snippets, so the trimmed copy is functionally
-    /// complete for BM25/dense/hybrid result rendering.
+    /// reclaiming RAM once the embedding pass has consumed the longer bodies.
+    /// The search path only ever reads `content.lines().take(5)` for snippets,
+    /// so the trimmed copy is complete for BM25/dense/hybrid result rendering.
     ///
-    /// Further shrinks resident content (chunks are already truncated to 10 lines
-    /// during `add_chunk`; this method can tighten that further). Sets
-    /// `content_truncated` so a later `ensure_embeddings` against this same
-    /// resident index skips re-embedding (which would otherwise feed truncated
-    /// bodies to the embedder).
+    /// Chunks already hold at most 10 lines (see `build::SNIPPET_LINES`); this
+    /// tightens that further. Sets `content_truncated` so a later
+    /// `ensure_embeddings` against this same resident index skips re-embedding
+    /// (which would otherwise feed trimmed bodies to the embedder).
     ///
     /// Idempotent and only ever shrinks: chunks shorter than `keep_lines` are
     /// left untouched.
@@ -316,20 +319,37 @@ impl BM25Index {
         Self::build_sequential(root, content_hint, &files)
     }
 
-    /// Group a previous index's chunks by file, each file's list sorted by
-    /// (start_line, end_line, symbol_name) — the deterministic reuse order shared
-    /// by both incremental rebuild paths (and the equivalence test, so it feeds
-    /// them identical inputs).
-    fn group_prev_chunks_by_file(prev: &BM25Index) -> HashMap<String, Vec<CodeChunk>> {
-        let mut old_by_file: HashMap<String, Vec<CodeChunk>> = HashMap::new();
-        for c in &prev.chunks {
+    /// Group a previous index's chunks by file, with the terms each was indexed
+    /// under, each file's list sorted by (start_line, end_line, symbol_name) —
+    /// the deterministic reuse order shared by both incremental rebuild paths
+    /// (and the equivalence test, so it feeds them identical inputs).
+    ///
+    /// The terms come from the previous postings, not from `content`: a
+    /// stored chunk keeps its first lines only, so re-tokenizing it would
+    /// drop the rest of the body from the index.
+    fn group_prev_chunks_by_file(prev: &BM25Index) -> HashMap<String, Vec<build::PreparedChunk>> {
+        let mut terms_by_chunk: Vec<Vec<(String, f64)>> = vec![Vec::new(); prev.chunks.len()];
+        for (term, postings) in &prev.inverted {
+            for &(idx, tf) in postings {
+                if let Some(terms) = terms_by_chunk.get_mut(idx) {
+                    terms.push((term.clone(), tf));
+                }
+            }
+        }
+        let mut old_by_file: HashMap<String, Vec<build::PreparedChunk>> = HashMap::new();
+        for (chunk, mut terms) in prev.chunks.iter().zip(terms_by_chunk) {
+            terms.sort_by(|a, b| a.0.cmp(&b.0));
             old_by_file
-                .entry(c.file_path.clone())
+                .entry(chunk.file_path.clone())
                 .or_default()
-                .push(c.clone());
+                .push(build::PreparedChunk {
+                    chunk: chunk.clone(),
+                    terms,
+                });
         }
         for v in old_by_file.values_mut() {
             v.sort_by(|a, b| {
+                let (a, b) = (&a.chunk, &b.chunk);
                 a.start_line
                     .cmp(&b.start_line)
                     .then_with(|| a.end_line.cmp(&b.end_line))
@@ -343,13 +363,10 @@ impl BM25Index {
         let old_by_file = Self::group_prev_chunks_by_file(prev);
         let files = list_code_files(root);
 
-        // Mirror `build`'s dispatch. The edit loop is the hottest path in
-        // daily use, and its serial cost is dominated by re-tokenizing the *many
-        // unchanged* files' reused chunks — not the few changed ones. So the
-        // parallel path fans the entire tokenization (changed files via
-        // `prepare_file`, unchanged via re-`prepare_chunk`) across the rayon pool
-        // and merges sequentially in file order. The sequential path keeps the
-        // per-file memory-pressure early-break and serves small corpora / pressure.
+        // Mirror `build`'s dispatch: the parallel path stats every file and
+        // re-extracts the changed ones on the rayon pool, then merges
+        // sequentially in file order. The sequential path keeps the per-file
+        // memory-pressure early-break and serves small corpora / pressure.
         // Oversized corpora degrade to sequential via admission control.
         // Both produce an identical index (see determinism tests).
         if files.len() >= build::PARALLEL_MIN_FILES
@@ -370,10 +387,10 @@ impl BM25Index {
     /// Sequential incremental rebuild with per-file memory-pressure guards. Reuses
     /// unchanged files' chunks and re-extracts changed ones. Used for small
     /// corpora and as the safe fallback under memory pressure.
-    pub(crate) fn rebuild_incremental_sequential(
+    fn rebuild_incremental_sequential(
         root: &Path,
         prev: &BM25Index,
-        old_by_file: &HashMap<String, Vec<CodeChunk>>,
+        old_by_file: &HashMap<String, Vec<build::PreparedChunk>>,
         files: &[String],
     ) -> Self {
         let mut index = Self::new();
@@ -402,10 +419,10 @@ impl BM25Index {
             let unchanged = prev.files.get(rel).is_some_and(|old| *old == state);
             if unchanged
                 && let Some(chunks) = old_by_file.get(rel)
-                && chunks.first().is_some_and(|c| !c.content.is_empty())
+                && chunks.first().is_some_and(|c| !c.chunk.content.is_empty())
             {
                 for chunk in chunks {
-                    index.add_chunk(chunk.clone());
+                    index.add_prepared(chunk.clone());
                 }
                 index.files.insert(rel.clone(), state);
                 continue;
@@ -445,43 +462,14 @@ impl BM25Index {
         index
     }
 
-    fn add_chunk(&mut self, mut chunk: CodeChunk) {
-        let idx = self.chunks.len();
-
-        let enriched = enrich_for_bm25(&chunk);
-        let tokens = tokenize(&enriched);
-        for token in &tokens {
-            let lower = token.to_lowercase();
-            let postings = self.inverted.entry(lower.clone()).or_default();
-            if postings.last().map(|(last_idx, _)| *last_idx) != Some(idx) {
-                *self.doc_freqs.entry(lower).or_insert(0) += 1;
-            }
-            postings.push((idx, 1.0));
-        }
-
-        // Truncate content to snippet AFTER tokenization — full text was
-        // used for BM25 scoring above; stored content is only for result display.
-        const SNIPPET_LINES: usize = 10;
-        if chunk.content.lines().nth(SNIPPET_LINES).is_some() {
-            chunk.content = chunk
-                .content
-                .lines()
-                .take(SNIPPET_LINES)
-                .collect::<Vec<_>>()
-                .join("\n");
-            chunk.content.shrink_to_fit();
-        }
-
-        self.chunks.push(CodeChunk {
-            token_count: tokens.len(),
-            tokens: Vec::new(),
-            ..chunk
-        });
+    fn add_chunk(&mut self, chunk: CodeChunk) {
+        self.add_prepared(build::prepare_chunk(chunk));
     }
 
     fn finalize(&mut self) {
         self.doc_count = self.chunks.len();
         if self.doc_count == 0 {
+            self.avg_doc_len = 0.0;
             return;
         }
 
@@ -495,8 +483,7 @@ impl BM25Index {
             return Vec::new();
         }
 
-        // Pre-allocated score array: O(1) per-access vs HashMap overhead.
-        // Kolmogorov-optimal: minimal allocation for the scoring operation.
+        // A dense score array: O(1) per access, no hashing.
         let n = self.chunks.len();
         let mut scores = vec![0.0f64; n];
         let mut touched = Vec::with_capacity(n.min(256));
@@ -511,11 +498,11 @@ impl BM25Index {
             let idf = ((self.doc_count as f64 - df + 0.5) / (df + 0.5) + 1.0).ln();
 
             if let Some(postings) = self.inverted.get(&lower) {
-                for &(idx, weight) in postings {
+                for &(idx, tf) in postings {
                     let doc_len = self.chunks[idx].token_count as f64;
                     let norm_len = doc_len / self.avg_doc_len.max(1.0);
-                    let bm25 = idf * (weight * (BM25_K1 + 1.0))
-                        / (weight + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_len));
+                    let bm25 = idf * (tf * (BM25_K1 + 1.0))
+                        / (tf + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_len));
 
                     if scores[idx] == 0.0 {
                         touched.push(idx);
@@ -677,9 +664,8 @@ impl BM25Index {
         Some(index_dir(root)?.join("bm25_index.bin.zst"))
     }
 
-    /// Ingest external `ContentChunk`s into the BM25 index.
-    /// Converts each chunk to a `CodeChunk` (backward-compatible) and
-    /// rebuilds the inverted index. Returns the number of chunks ingested.
+    /// Ingest external `ContentChunk`s into the BM25 index, each converted to
+    /// a `CodeChunk`. Returns the number of chunks ingested.
     pub fn ingest_content_chunks(
         &mut self,
         chunks: impl IntoIterator<Item = super::content_chunk::ContentChunk>,
@@ -696,16 +682,44 @@ impl BM25Index {
     }
 
     /// Remove every chunk whose `file_path` starts with `prefix` (e.g.
-    /// `health://`) and rebuild the inverted index. Lets a recomputed source
+    /// `health://`), with its postings; the remaining postings are renumbered
+    /// to the chunks' new positions. Lets a recomputed source
     /// (like the code-health fabric) evict its prior pass so stale entries never
     /// linger in search. Returns the number of chunks removed.
     pub fn remove_chunks_with_prefix(&mut self, prefix: &str) -> usize {
-        let before = self.chunks.len();
-        self.chunks.retain(|c| !c.file_path.starts_with(prefix));
-        let removed = before - self.chunks.len();
-        if removed > 0 {
-            self.finalize();
+        // Old chunk index → new one, `None` for a removed chunk.
+        let mut next = 0usize;
+        let new_index: Vec<Option<usize>> = self
+            .chunks
+            .iter()
+            .map(|c| {
+                (!c.file_path.starts_with(prefix)).then(|| {
+                    next += 1;
+                    next - 1
+                })
+            })
+            .collect();
+        let removed = self.chunks.len() - next;
+        if removed == 0 {
+            return 0;
         }
+        self.chunks.retain(|c| !c.file_path.starts_with(prefix));
+        for postings in self.inverted.values_mut() {
+            postings.retain_mut(|(idx, _)| match new_index.get(*idx).copied().flatten() {
+                Some(new) => {
+                    *idx = new;
+                    true
+                }
+                None => false,
+            });
+        }
+        self.inverted.retain(|_, postings| !postings.is_empty());
+        self.doc_freqs = self
+            .inverted
+            .iter()
+            .map(|(term, postings)| (term.clone(), postings.len()))
+            .collect();
+        self.finalize();
         removed
     }
 }
@@ -714,28 +728,9 @@ fn is_safe_bm25_root(root: &Path) -> bool {
     super::graph_index::is_safe_scan_root_public(&root.to_string_lossy())
 }
 
+/// Whether the index no longer matches the files: one indexed file is gone
+/// or changed (mtime, size), or a file to index is not in it yet.
 fn bm25_index_looks_stale(index: &BM25Index, root: &Path) -> bool {
-    if index.chunks.is_empty() {
-        return false;
-    }
-
-    if index.files.is_empty() {
-        let mut seen = std::collections::HashSet::<&str>::new();
-        for chunk in &index.chunks {
-            let rel = chunk.file_path.trim_start_matches(['/', '\\']);
-            if rel.is_empty() {
-                continue;
-            }
-            if !seen.insert(rel) {
-                continue;
-            }
-            if !root.join(rel).exists() {
-                return true;
-            }
-        }
-        return false;
-    }
-
     for (rel, old_state) in &index.files {
         let abs = root.join(rel);
         if !abs.exists() {
@@ -801,11 +796,10 @@ fn list_code_files(root: &Path) -> Vec<String> {
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
 
-    let mut ignore_patterns: Vec<glob::Pattern> = DEFAULT_BM25_IGNORES
+    let ignore_patterns: Vec<glob::Pattern> = DEFAULT_BM25_IGNORES
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
         .collect();
-    ignore_patterns.extend(cfg.ignore.iter().filter_map(|p| glob::Pattern::new(p).ok()));
 
     let mut files: Vec<String> = Vec::new();
     let mut filtered_out = 0usize;
@@ -829,8 +823,7 @@ fn list_code_files(root: &Path) -> Vec<String> {
             continue;
         }
         // Match on forward slashes so globs behave identically on Windows;
-        // the index key keeps the platform separator (existing indexes stay
-        // valid).
+        // the index key keeps the platform separator.
         if filter.is_excluded(&rel.replace('\\', "/")) {
             filtered_out += 1;
             continue;

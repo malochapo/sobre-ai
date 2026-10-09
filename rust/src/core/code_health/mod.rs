@@ -3,7 +3,7 @@
 //! Computes the structural signals the Sonar study links to agent token cost —
 //! **cognitive complexity** (S3776-style) and **naming quality** — once during
 //! indexing, then fans them out across the data fabric
-//! and every agent surface (see the Code Health Engine plan).
+//! and the agent surfaces.
 //!
 //! Naming note: this is distinct from [`crate::core::quality`] (compression
 //! fidelity); this module scores the *source code's* navigability.

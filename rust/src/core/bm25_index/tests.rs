@@ -219,6 +219,19 @@ fn bm25_index_is_stale_when_any_indexed_file_is_missing() {
     assert!(bm25_index_looks_stale(&idx, root));
 }
 
+/// An index built while the project had no files is stale once one appears.
+#[test]
+fn empty_index_is_stale_when_a_file_appears() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    let idx = BM25Index::build_from_directory(root);
+    assert!(idx.chunks.is_empty());
+    assert!(!bm25_index_looks_stale(&idx, root));
+
+    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write a.rs");
+    assert!(bm25_index_looks_stale(&idx, root));
+}
+
 #[test]
 #[cfg(unix)]
 fn bm25_incremental_rebuild_reuses_unchanged_files_without_reading() {
@@ -532,14 +545,11 @@ fn postcard_roundtrip_and_garbage_is_graceful() {
         "chunk count survives round-trip"
     );
 
-    // (b) corrupt/legacy bytes must NOT panic — decode returns Err,
+    // (b) corrupt bytes must NOT panic — decode returns Err,
     //     which load() maps via .ok()? to None (→ rebuild), never a crash.
     let garbage = b"\x00\x01\x02not-a-valid-postcard-index\xff\xff";
     let res: Result<BM25Index, _> = postcard::from_bytes(garbage);
-    assert!(
-        res.is_err(),
-        "corrupt/legacy bytes must decode to Err, not panic"
-    );
+    assert!(res.is_err(), "corrupt bytes must decode to Err, not panic");
 }
 
 #[test]
@@ -841,7 +851,7 @@ fn parallel_incremental_rebuild_perf_gate() {
         par.as_secs_f64() / seq.as_secs_f64().max(f64::MIN_POSITIVE)
     );
 
-    // CI-safe gate (plan: "großzügiges CI-sicheres Budget"). The parallel path
+    // A generous, CI-safe budget. The parallel path
     // must not be *dramatically* slower than sequential: a 2x ceiling flags a path
     // that serialized and piled on overhead (e.g. a deadlock-y merge), while
     // tolerating scheduler noise and low-core CI runners where a small fixture's
@@ -965,4 +975,118 @@ fn plain_language_query_finds_snake_case_function() {
             hits.iter().map(|h| &h.symbol_name).collect::<Vec<_>>()
         );
     }
+}
+
+fn plain_chunk(file: &str, name: &str, content: &str) -> CodeChunk {
+    CodeChunk {
+        file_path: file.into(),
+        symbol_name: name.into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 1,
+        content: content.into(),
+        tokens: Vec::new(),
+        token_count: 0,
+    }
+}
+
+/// A term repeated in a chunk is one posting carrying its frequency, and the
+/// chunk counts once in the term's document frequency.
+#[test]
+fn repeated_term_is_one_posting_with_its_frequency() {
+    let index =
+        BM25Index::from_chunks_for_test(vec![plain_chunk("a.rs", "f", "alpha alpha alpha beta")]);
+    assert_eq!(index.inverted["alpha"], vec![(0, 3.0)]);
+    assert_eq!(index.doc_freqs["alpha"], 1);
+    assert_eq!(index.inverted["beta"], vec![(0, 1.0)]);
+}
+
+/// BM25 saturates term frequency: four occurrences score well under four
+/// times one occurrence in a chunk of the same length.
+#[test]
+fn term_frequency_saturates() {
+    let index = BM25Index::from_chunks_for_test(vec![
+        plain_chunk("x/one.rs", "f", "needle other other other"),
+        plain_chunk("x/four.rs", "g", "needle needle needle needle"),
+        plain_chunk("x/none.rs", "h", "other other other other"),
+    ]);
+    let hits = index.search("needle", 5);
+    let score = |file: &str| hits.iter().find(|h| h.file_path == file).unwrap().score;
+    let ratio = score("x/four.rs") / score("x/one.rs");
+    assert!(ratio > 1.0 && ratio < 2.0, "tf=4 vs tf=1 ratio {ratio}");
+}
+
+/// An incremental rebuild indexes an unchanged file exactly as a full build
+/// does: its chunks keep the terms of their whole body, not only those of the
+/// first lines the index stores.
+#[test]
+fn incremental_rebuild_keeps_unchanged_chunks_fully_indexed() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    let mut long_fn = String::from("pub fn long_body() -> u32 {\n");
+    for i in 0..14 {
+        long_fn.push_str(&format!("    let v{i} = {i};\n"));
+    }
+    long_fn.push_str("    let zebra_marker = 1;\n    zebra_marker\n}\n");
+    std::fs::write(root.join("a.rs"), &long_fn).expect("write a.rs");
+    std::fs::write(root.join("b.rs"), "pub fn b() -> u32 {\n    1\n}\n").expect("write b.rs");
+
+    let prev = BM25Index::build_from_directory(root);
+    assert!(
+        prev.search("zebra_marker", 5)
+            .iter()
+            .any(|h| h.file_path == "a.rs"),
+        "a full build indexes the whole body"
+    );
+
+    std::fs::write(root.join("b.rs"), "pub fn b() -> u32 {\n    22\n}\n").expect("rewrite b.rs");
+    let rebuilt = BM25Index::rebuild_incremental(root, &prev);
+    assert!(
+        rebuilt
+            .search("zebra_marker", 5)
+            .iter()
+            .any(|h| h.file_path == "a.rs"),
+        "the unchanged file keeps its whole body in the index"
+    );
+    assert_same_index(&BM25Index::build_from_directory(root), &rebuilt);
+}
+
+/// Removing chunks renumbers the postings of the chunks that stay: no posting
+/// points past the end or at the wrong chunk, before or after new chunks come.
+#[test]
+fn remove_chunks_with_prefix_renumbers_postings() {
+    use crate::core::content_chunk::ContentChunk;
+
+    let provider = |source: &str, id: &str, text: &str| {
+        ContentChunk::from_provider(
+            source,
+            "items",
+            id,
+            id,
+            ChunkKind::Other,
+            text.into(),
+            vec![],
+            None,
+        )
+    };
+    let mut index =
+        BM25Index::from_chunks_for_test(vec![plain_chunk("src/lib.rs", "main", "fn main() {}")]);
+    index.ingest_content_chunks(vec![
+        provider("health", "a", "complex function body"),
+        provider("github", "b", "issue text"),
+    ]);
+
+    assert_eq!(index.remove_chunks_with_prefix("health://"), 1);
+    assert!(index.search("complex", 5).is_empty());
+    assert!(!index.doc_freqs.contains_key("complex"));
+    let issue = index.search("issue", 5);
+    assert_eq!(issue.len(), 1);
+    assert!(issue[0].file_path.starts_with("github://"), "{issue:?}");
+
+    index.ingest_content_chunks(vec![provider("health", "c", "fresh hotspot")]);
+    let issue = index.search("issue", 5);
+    assert_eq!(issue.len(), 1);
+    assert!(issue[0].file_path.starts_with("github://"), "{issue:?}");
+    assert!(index.search("complex", 5).is_empty());
+    assert_eq!(index.doc_freqs["issue"], 1);
 }
