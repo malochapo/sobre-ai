@@ -17,8 +17,7 @@ pub struct ResolvedPaths {
 /// 4. Fallback to the project root, refused when it is a broad directory
 ///
 /// Returns `Err` when an **explicit** `path`/`paths` argument was supplied but
-/// could not be resolved. Silently falling back to the project root in that case made
-/// `sobre_tree path=/outside/repo` return the whole project tree.
+/// could not be resolved, rather than answering for the project root.
 pub fn resolve_tool_paths(
     args: &Map<String, Value>,
     ctx: &ToolContext,
@@ -41,23 +40,17 @@ pub fn resolve_tool_paths(
         ));
     }
 
-    // `file_path` is an alias for `path` in sobre_search — agents
-    // (especially Claude Code) send it expecting file-level scoping.
-    // Without this fallback the parameter is silently ignored and the
-    // search runs on the project root.
-    for key in &["path", "file_path"] {
-        if let Some(p) = ctx.resolved_path(key) {
-            return Ok(ResolvedPaths {
-                roots: vec![p.to_string()],
-                is_multi: false,
-            });
-        }
-        // An explicit path the dispatcher could not resolve lands in
-        // `path_errors`. Do NOT fall back to the project root — return the
-        // resolution error rather than silently an unrelated tree.
-        if let Some(detail) = ctx.path_error(key) {
-            return Err(detail.to_string());
-        }
+    if let Some(p) = ctx.resolved_path("path") {
+        return Ok(ResolvedPaths {
+            roots: vec![p.to_string()],
+            is_multi: false,
+        });
+    }
+    // An explicit path the dispatcher could not resolve lands in
+    // `path_errors`. Do NOT fall back to the project root — return the
+    // resolution error rather than silently an unrelated tree.
+    if let Some(detail) = ctx.path_error("path") {
+        return Err(detail.to_string());
     }
 
     if let Some(session_lock) = ctx.session.as_ref() {
