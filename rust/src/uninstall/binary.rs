@@ -16,19 +16,27 @@ pub(super) fn stop_proxy() {
 
 /// How a candidate binary path should be handled.
 enum Disposition {
-    /// Safe to delete (a managed copy or a PATH symlink we created).
+    /// Safe to delete: a copy an install script put in place (or a link to
+    /// one).
     Remove,
     /// A dev build inside a cargo `target/` dir — never touch the user's repo build.
     DevBuild,
-    /// Installed by a package manager that tracks it — defer to that manager.
+    /// Installed by `cargo install` into `~/.cargo`: cargo removes it.
     Cargo,
 }
 
+/// Decided on the path's components, whichever separator it uses, so a
+/// Windows path (`C:\Users\me\.cargo\bin\sobre.exe`) is read like a Unix
+/// one.
 fn classify(path: &Path) -> Disposition {
-    let p = path.to_string_lossy();
-    if p.contains("/target/release/") || p.contains("/target/debug/") {
+    let text = path.to_string_lossy().replace('\\', "/");
+    let components: Vec<&str> = text.split('/').collect();
+    if components
+        .windows(2)
+        .any(|pair| pair[0] == "target" && matches!(pair[1], "debug" | "release"))
+    {
         Disposition::DevBuild
-    } else if p.contains("/.cargo/") {
+    } else if components.contains(&".cargo") {
         Disposition::Cargo
     } else {
         Disposition::Remove
@@ -62,9 +70,9 @@ pub(super) fn remove_binary(home: &Path, keep_binary: bool) -> bool {
     for path in candidate_paths() {
         // `symlink_metadata` does not follow symlinks: a PATH symlink is
         // removed as the link itself, never its target.
-        let Ok(meta) = fs::symlink_metadata(&path) else {
+        if fs::symlink_metadata(&path).is_err() {
             continue;
-        };
+        }
         let short = shorten(&path, home);
         match classify(&path) {
             Disposition::DevBuild => {
@@ -76,14 +84,9 @@ pub(super) fn remove_binary(home: &Path, keep_binary: bool) -> bool {
                 );
             }
             Disposition::Remove => {
-                let res = if meta.is_dir() {
-                    fs::remove_dir_all(&path)
-                } else {
-                    // Unlinking a running executable is allowed on Unix (the
-                    // inode lives until the process exits).
-                    fs::remove_file(&path)
-                };
-                match res {
+                // Unlinking a running executable is allowed on Unix (the
+                // inode lives until the process exits).
+                match fs::remove_file(&path) {
                     Ok(()) => {
                         println!("  ✓ Deleted the binary {short}");
                         removed = true;
@@ -105,34 +108,47 @@ mod tests {
 
     #[test]
     fn dev_builds_are_never_removed() {
-        assert!(matches!(
-            classify(Path::new("/home/u/sobre/rust/target/release/sobre")),
-            Disposition::DevBuild
-        ));
-        assert!(matches!(
-            classify(Path::new("/home/u/proj/target/debug/sobre")),
-            Disposition::DevBuild
-        ));
+        for path in [
+            "/home/u/sobre/rust/target/release/sobre",
+            "/home/u/proj/target/debug/sobre",
+            r"C:\Users\u\sobre\rust\target\release\sobre.exe",
+            r"D:\proj\target\debug\sobre.exe",
+        ] {
+            assert!(
+                matches!(classify(Path::new(path)), Disposition::DevBuild),
+                "{path}"
+            );
+        }
     }
 
     #[test]
-    fn package_managers_are_deferred() {
-        assert!(matches!(
-            classify(Path::new("/home/u/.cargo/bin/sobre")),
-            Disposition::Cargo
-        ));
+    fn cargo_installs_are_left_to_cargo() {
+        for path in [
+            "/home/u/.cargo/bin/sobre",
+            r"C:\Users\u\.cargo\bin\sobre.exe",
+        ] {
+            assert!(
+                matches!(classify(Path::new(path)), Disposition::Cargo),
+                "{path}"
+            );
+        }
     }
 
     #[test]
-    fn managed_install_dirs_are_removable() {
-        assert!(matches!(
-            classify(Path::new("/home/u/.local/bin/sobre")),
-            Disposition::Remove
-        ));
-        assert!(matches!(
-            classify(Path::new("/usr/local/bin/sobre")),
-            Disposition::Remove
-        ));
+    fn installed_copies_are_removable() {
+        for path in [
+            "/home/u/.local/bin/sobre",
+            "/usr/local/bin/sobre",
+            r"C:\Users\u\AppData\Local\Programs\sobre\sobre.exe",
+            // A directory merely named like a build or cargo dir is no match.
+            "/home/u/targets/debug/sobre",
+            "/home/u/my.cargo/bin/sobre",
+        ] {
+            assert!(
+                matches!(classify(Path::new(path)), Disposition::Remove),
+                "{path}"
+            );
+        }
     }
 
     #[test]
