@@ -3,11 +3,14 @@
 //! Unlike the interactive `sobre doctor --fix` (which reports what it
 //! pruned), these routines are silent (tracing only) so they can run inside the MCP
 //! server without corrupting the stdio protocol. They remove accumulated
-//! quarantined BM25 indexes.
+//! quarantined BM25 indexes and saved sessions older than a week.
 
 use std::path::PathBuf;
 
 const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
+
+/// Saved sessions older than this are deleted at server start.
+pub(crate) const SESSION_MAX_AGE_DAYS: i64 = 7;
 
 /// Remove accumulated quarantined BM25 index files. These are dead weight: an
 /// index is only quarantined when it failed a load/size check and was replaced.
@@ -41,9 +44,18 @@ fn prune_quarantined_bm25() -> (u32, u64) {
     (removed, freed)
 }
 
-/// Run a silent maintenance pass: prune quarantined BM25 indexes. Safe to call
-/// from the MCP server.
+/// Run a silent maintenance pass: prune quarantined BM25 indexes and saved
+/// sessions older than `SESSION_MAX_AGE_DAYS` days. Safe to call from the MCP
+/// server.
 pub fn run_quiet() {
+    let sessions_removed =
+        crate::core::session::SessionState::cleanup_old_sessions(SESSION_MAX_AGE_DAYS);
+    if sessions_removed > 0 {
+        tracing::info!(
+            "storage maintenance: deleted {sessions_removed} saved session(s) older than \
+             {SESSION_MAX_AGE_DAYS} days"
+        );
+    }
     let (quarantined_removed, bytes_freed) = prune_quarantined_bm25();
     if quarantined_removed > 0 {
         tracing::info!(

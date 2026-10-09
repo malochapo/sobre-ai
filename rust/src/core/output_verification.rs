@@ -1,13 +1,5 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
-
-static STATS: OnceLock<VerificationStats> = OnceLock::new();
-
-fn global_stats() -> &'static VerificationStats {
-    STATS.get_or_init(VerificationStats::new)
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum WarningKind {
@@ -92,16 +84,13 @@ pub fn verify_output(source: &str, compressed: &str) -> VerificationResult {
 
     let pass = !warnings.iter().any(|w| w.severity == WarningSeverity::High);
 
-    let result = VerificationResult {
+    VerificationResult {
         pass,
         warnings,
         info_loss_score,
         paths_checked,
         identifiers_checked,
-    };
-
-    record_result(&result);
-    result
+    }
 }
 
 fn check_paths(source: &str, compressed: &str) -> (Vec<VerificationWarning>, usize) {
@@ -231,119 +220,6 @@ fn extract_identifiers(text: &str) -> Vec<String> {
     ids
 }
 
-struct VerificationStats {
-    pass_count: AtomicU64,
-    warn_run_count: AtomicU64,
-    warn_item_count: AtomicU64,
-    total_count: AtomicU64,
-    sum_info_loss_score_ppm: AtomicU64,
-    last_info_loss_score_ppm: AtomicU64,
-    recent_warnings: Mutex<Vec<VerificationWarning>>,
-}
-
-impl VerificationStats {
-    fn new() -> Self {
-        Self {
-            pass_count: AtomicU64::new(0),
-            warn_run_count: AtomicU64::new(0),
-            warn_item_count: AtomicU64::new(0),
-            total_count: AtomicU64::new(0),
-            sum_info_loss_score_ppm: AtomicU64::new(0),
-            last_info_loss_score_ppm: AtomicU64::new(0),
-            recent_warnings: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-fn record_result(result: &VerificationResult) {
-    let stats = global_stats();
-    stats.total_count.fetch_add(1, Ordering::Relaxed);
-    if result.warnings.is_empty() {
-        stats.pass_count.fetch_add(1, Ordering::Relaxed);
-    } else {
-        stats.warn_run_count.fetch_add(1, Ordering::Relaxed);
-        stats
-            .warn_item_count
-            .fetch_add(result.warnings.len() as u64, Ordering::Relaxed);
-    }
-    let ppm = (result.info_loss_score.clamp(0.0, 1.0) * 1_000_000.0).round() as u64;
-    stats
-        .sum_info_loss_score_ppm
-        .fetch_add(ppm, Ordering::Relaxed);
-    stats.last_info_loss_score_ppm.store(ppm, Ordering::Relaxed);
-
-    if !result.warnings.is_empty()
-        && let Ok(mut recent) = stats.recent_warnings.lock()
-    {
-        for w in &result.warnings {
-            recent.push(w.clone());
-        }
-        if recent.len() > 200 {
-            let excess = recent.len() - 200;
-            recent.drain(..excess);
-        }
-    }
-}
-
-pub fn stats_snapshot() -> VerificationSnapshot {
-    let s = global_stats();
-    let total = s.total_count.load(Ordering::Relaxed);
-    let pass = s.pass_count.load(Ordering::Relaxed);
-    let warn_runs = s.warn_run_count.load(Ordering::Relaxed);
-    let warn_items = s.warn_item_count.load(Ordering::Relaxed);
-    let sum_ppm = s.sum_info_loss_score_ppm.load(Ordering::Relaxed);
-    let last_ppm = s.last_info_loss_score_ppm.load(Ordering::Relaxed);
-    let recent = s
-        .recent_warnings
-        .lock()
-        .map(|r| r.clone())
-        .unwrap_or_default();
-    VerificationSnapshot {
-        total,
-        pass,
-        warn_runs,
-        warn_items,
-        pass_rate: if total > 0 {
-            pass as f64 / total as f64
-        } else {
-            1.0
-        },
-        avg_info_loss_score: if total > 0 {
-            (sum_ppm as f64 / total as f64) / 1_000_000.0
-        } else {
-            0.0
-        },
-        last_info_loss_score: (last_ppm as f64) / 1_000_000.0,
-        recent_warnings: recent,
-    }
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct VerificationSnapshot {
-    pub total: u64,
-    pub pass: u64,
-    pub warn_runs: u64,
-    pub warn_items: u64,
-    pub pass_rate: f64,
-    pub avg_info_loss_score: f64,
-    pub last_info_loss_score: f64,
-    pub recent_warnings: Vec<VerificationWarning>,
-}
-
-impl VerificationSnapshot {
-    pub fn format_compact(&self) -> String {
-        format!(
-            "Verification: {}/{} pass ({:.0}%), warn_runs={}, warn_items={}, loss(avg)={:.1}%",
-            self.pass,
-            self.total,
-            self.pass_rate * 100.0,
-            self.warn_runs,
-            self.warn_items,
-            self.avg_info_loss_score * 100.0
-        )
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,12 +310,5 @@ mod tests {
         let r = verify_output(src, compressed);
         assert!(r.info_loss_score >= 0.0);
         assert!(r.info_loss_score <= 1.0);
-    }
-
-    #[test]
-    fn snapshot_starts_clean() {
-        let snap = stats_snapshot();
-        assert!(snap.pass_rate >= 0.0);
-        assert!(snap.pass_rate <= 1.0);
     }
 }

@@ -5,6 +5,9 @@
 use super::*;
 use chrono::Utc;
 
+#[cfg(feature = "dense")]
+use super::embeddings::{embedding_engine, embedding_engine_nonblocking};
+
 use crate::core::knowledge::{AdmissionResult, sort_fact_for_output};
 
 /// Where `remember` files a fact given without a category.
@@ -139,7 +142,7 @@ pub(crate) fn handle_remember(
         // hit the 120s tool watchdog before the first fact was ever embedded).
         // When the engine is not loaded yet this kicks off the one-time
         // background activation and skips the side-car for THIS call only;
-        // compaction / embeddings_reindex backfill the vector later.
+        // a later remember or recall backfills the vector.
         if let Some(engine) = embedding_engine_nonblocking() {
             // Serialize the embedding index's read-modify-write under the same
             // per-project lock as the fact write above, and compact against the
@@ -189,8 +192,7 @@ pub(crate) fn handle_remember(
                         // was still warming up (non-blocking remember) or via
                         // the consolidation/ETL writers have no vector yet —
                         // embed a bounded batch of them now that the engine is
-                        // warm, so semantic recall converges without a manual
-                        // embeddings_reindex.
+                        // warm, so semantic recall converges on its own.
                         crate::core::knowledge_embedding::backfill_missing(
                             &mut idx,
                             engine,
@@ -335,11 +337,27 @@ pub(crate) fn handle_recall(
             } else {
                 embedding_engine_nonblocking()
             };
-            if let Some(engine) = engine_opt
-                && let Some(idx) = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
-                    &knowledge.project_hash,
-                )
-            {
+            if let Some(engine) = engine_opt {
+                // Embed a bounded batch of the facts that have no vector yet,
+                // so semantic recall works without any reindex step.
+                let idx = ProjectKnowledge::with_project_lock(project_root, || {
+                    let hash = &knowledge.project_hash;
+                    let mut idx =
+                        crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(hash)
+                            .unwrap_or_else(|| {
+                                crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::new(hash)
+                            });
+                    if crate::core::knowledge_embedding::backfill_missing(
+                        &mut idx,
+                        engine,
+                        &knowledge,
+                        crate::core::knowledge_embedding::BACKFILL_PER_REMEMBER,
+                    ) > 0
+                    {
+                        let _ = idx.save();
+                    }
+                    idx
+                });
                 embedded = true;
                 let limit = policy.knowledge.recall_facts_limit;
                 if mode == "semantic" {
@@ -394,8 +412,8 @@ pub(crate) fn handle_recall(
         if !embedded && (mode == "semantic" || mode == "hybrid") {
             return format!(
                 "mode={mode} recall needs embeddings: the sobre-dense release build (or a \
-                 build with --features dense) and a built index (sobre_knowledge \
-                 action=\"embeddings_reindex\"). Use mode=auto for lexical recall."
+                 build with --features dense) and the model (`sobre embeddings provision`). \
+                 Use mode=auto for lexical recall."
             );
         }
 

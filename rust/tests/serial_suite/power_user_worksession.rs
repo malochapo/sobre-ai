@@ -458,7 +458,7 @@ async fn phase7_knowledge_remember_and_recall() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase7_knowledge_timeline_and_rooms() {
+async fn phase7_knowledge_status_lists_categories() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -475,22 +475,13 @@ async fn phase7_knowledge_timeline_and_rooms() {
         .await
         .expect("remember decision");
 
-    let timeline = engine
-        .call_tool_text(
-            "sobre_knowledge",
-            Some(json!({"action": "timeline", "category": "decisions"})),
-        )
+    let status = engine
+        .call_tool_text("sobre_knowledge", Some(json!({"action": "status"})))
         .await
-        .expect("timeline");
-    assert!(!timeline.is_empty(), "timeline should return entries");
-
-    let rooms = engine
-        .call_tool_text("sobre_knowledge", Some(json!({"action": "rooms"})))
-        .await
-        .expect("rooms");
+        .expect("status");
     assert!(
-        rooms.contains("decisions"),
-        "rooms should list the decisions category: {rooms}"
+        status.contains("decisions"),
+        "status should list the decisions category: {status}"
     );
 
     // SAFETY: serialized by `test_env_lock()`.
@@ -539,23 +530,26 @@ async fn phase7_session_finding_and_decision() {
 // ── Phase 9: Metrics & Verification ────────────────────────
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase9_session_save() {
+async fn phase9_session_status_shows_the_task() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
     let _ = engine
         .call_tool_text(
             "sobre_session",
-            Some(json!({"action": "task", "content": "Final verification"})),
+            Some(json!({"action": "task", "value": "Final verification"})),
         )
         .await
         .expect("set task");
 
-    let save = engine
-        .call_tool_text("sobre_session", Some(json!({"action": "save"})))
+    let status = engine
+        .call_tool_text("sobre_session", Some(json!({"action": "status"})))
         .await
-        .expect("session save");
-    assert!(!save.is_empty(), "save should return confirmation");
+        .expect("session status");
+    assert!(
+        status.contains("Final verification"),
+        "status should show the task: {status}"
+    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {

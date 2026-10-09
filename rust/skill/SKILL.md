@@ -101,9 +101,11 @@ Never rebuild exact content from a compressed view in line-by-line chunks.
 ## Memory
 
 - `sobre_session` — this session: `task`, `finding`, `decision` (value=text),
-  `save` at the end, `load` at the start, `status`.
+  saved as they change; `status`; `load` (and `list`) to pick up an earlier
+  session; `resume` after the host compacts its context.
 - `sobre_knowledge` — facts that outlive the session: `remember value=...`,
-  `recall query=...`, `gotcha trigger=... resolution=...` for pitfalls.
+  `recall query=...`, `search`, `remove`, `consolidate` (this session's
+  findings and decisions), `gotcha trigger=... resolution=...` for pitfalls.
 
 ## Output
 

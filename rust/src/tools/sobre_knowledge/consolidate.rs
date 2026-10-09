@@ -18,9 +18,6 @@ pub(crate) struct KnowledgeConsolidationReport {
     pub archived_facts: usize,
     pub fact_capacity_target: usize,
     pub fact_capacity_archived: usize,
-    pub patterns: usize,
-    pub patterns_capacity_target: usize,
-    pub patterns_compacted: usize,
     pub history: usize,
     pub history_capacity_target: usize,
     pub history_compacted: usize,
@@ -81,7 +78,6 @@ fn run_consolidation_locked(
     // Lossless capacity reclaim for the non-fact stores (facts settle inside the
     // lifecycle). History is already bounded per consolidate; the explicit pass
     // also compacts a pre-existing over-cap history when no session was imported.
-    let patterns_compacted = reclaim_patterns(knowledge, policy)?;
     history_compacted += reclaim_history(knowledge, policy)?;
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
@@ -95,9 +91,6 @@ fn run_consolidation_locked(
         archived_facts,
         fact_capacity_target: reclaim_target(policy.knowledge.max_facts, headroom),
         fact_capacity_archived: lifecycle.capacity_archived,
-        patterns: knowledge.patterns.len(),
-        patterns_capacity_target: reclaim_target(policy.knowledge.max_patterns, headroom),
-        patterns_compacted,
         history: knowledge.history.len(),
         history_capacity_target: reclaim_target(policy.knowledge.max_history, headroom),
         history_compacted,
@@ -154,11 +147,6 @@ fn dry_run_report(
         policy.knowledge.max_history,
         headroom,
     );
-    let patterns_compacted = reclaim_preview(
-        knowledge.patterns.len(),
-        policy.knowledge.max_patterns,
-        headroom,
-    );
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
 
@@ -170,9 +158,6 @@ fn dry_run_report(
         archived_facts,
         fact_capacity_target: reclaim_target(policy.knowledge.max_facts, headroom),
         fact_capacity_archived: lifecycle.capacity_archived,
-        patterns: knowledge.patterns.len(),
-        patterns_capacity_target: reclaim_target(policy.knowledge.max_patterns, headroom),
-        patterns_compacted,
         history: knowledge.history.len(),
         history_capacity_target: reclaim_target(policy.knowledge.max_history, headroom),
         history_compacted,
@@ -201,27 +186,6 @@ fn reclaim_history(
     .map(|archived| archived.len())
 }
 
-/// Lossless pattern capacity reclaim (newest kept). Returns the archived count.
-fn reclaim_patterns(
-    knowledge: &mut ProjectKnowledge,
-    policy: &MemoryPolicy,
-) -> Result<usize, String> {
-    reclaim_store(
-        MemoryStore::Patterns,
-        Some(&knowledge.project_hash),
-        &mut knowledge.patterns,
-        policy.knowledge.max_patterns,
-        policy.lifecycle.reclaim_headroom_pct,
-        |a, b| {
-            b.created_at
-                .cmp(&a.created_at)
-                .then_with(|| a.pattern_type.cmp(&b.pattern_type))
-                .then_with(|| a.description.cmp(&b.description))
-        },
-    )
-    .map(|archived| archived.len())
-}
-
 pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport) -> String {
     let session_line = match report.session_id.as_deref() {
         Some(session_id) => {
@@ -242,16 +206,13 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
     let body = format!(
         "{banner}{session_line}\n\
          Facts: {} active, {} archived, {} total (target <= {}, archived-to-target {})\n\
-         Patterns: {} (target <= {}, compacted {}), History: {} (target <= {}, compacted {})\n\
+         History: {} (target <= {}, compacted {})\n\
          Lifecycle: decayed {}, consolidated {}, archived {}, compacted {}, remaining {}",
         report.active_facts,
         report.archived_facts,
         report.facts,
         report.fact_capacity_target,
         report.fact_capacity_archived,
-        report.patterns,
-        report.patterns_capacity_target,
-        report.patterns_compacted,
         report.history,
         report.history_capacity_target,
         report.history_compacted,
@@ -262,10 +223,8 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
         report.lifecycle.remaining_facts
     );
 
-    // Eviction is lossless: if anything was (or would be) archived this run, point
-    // the user at the explicit restore path.
-    let archived_total =
-        report.fact_capacity_archived + report.patterns_compacted + report.history_compacted;
+    // Eviction is lossless: say what was (or would be) archived this run.
+    let archived_total = report.fact_capacity_archived + report.history_compacted;
     if archived_total > 0 {
         let verb = if report.dry_run {
             "would archive"
@@ -273,7 +232,7 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
             "archived"
         };
         format!(
-            "{body}\n{verb} {archived_total} item(s) — restore with: sobre_knowledge action=restore"
+            "{body}\n{verb} {archived_total} item(s); recall brings an archived fact back when nothing current matches"
         )
     } else {
         body
