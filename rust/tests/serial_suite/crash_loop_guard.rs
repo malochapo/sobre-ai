@@ -27,8 +27,8 @@ impl Drop for DataDir {
     }
 }
 
-#[test]
-fn crash_loop_limits_tolerate_slow_hosts() {
+// The limits tolerate slow hosts; checked when this file compiles.
+const _: () = {
     assert!(
         CRASH_LOOP_THRESHOLD >= 8,
         "a slow host may restart the server 5-7 times while starting up"
@@ -41,7 +41,7 @@ fn crash_loop_limits_tolerate_slow_hosts() {
         CRASH_LOOP_MAX_BACKOFF_SECS <= 30,
         "a longer wait reads as a hung server"
     );
-}
+};
 
 #[test]
 fn restarts_under_the_threshold_do_not_wait() {
