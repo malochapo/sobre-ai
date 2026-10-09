@@ -20,7 +20,7 @@ impl ProjectKnowledge {
 
         let archived = crate::core::memory_capacity::reclaim_store(
             crate::core::memory_archive::MemoryStore::History,
-            Some(&self.project_hash),
+            &self.project_hash,
             &mut self.history,
             policy.knowledge.max_history,
             policy.lifecycle.reclaim_headroom_pct,

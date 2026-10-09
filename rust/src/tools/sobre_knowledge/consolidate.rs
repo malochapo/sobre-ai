@@ -173,7 +173,7 @@ fn reclaim_history(
 ) -> Result<usize, String> {
     reclaim_store(
         MemoryStore::History,
-        Some(&knowledge.project_hash),
+        &knowledge.project_hash,
         &mut knowledge.history,
         policy.knowledge.max_history,
         policy.lifecycle.reclaim_headroom_pct,

@@ -588,10 +588,9 @@ pub(crate) fn rehydrate_from_archives(
     session_id: &str,
     policy: &MemoryPolicy,
 ) -> bool {
-    // Scan every *retained* archive: the reach now aligns with retention,
-    // so a recall miss can recover from any archive still on disk instead of only
-    // the newest few that the prior fixed cap left reachable.
+    // Every retained archive of this project, and only of this project.
     let archives = crate::core::memory_lifecycle::reachable_archives(
+        &knowledge.project_hash,
         &crate::core::memory_archive::ArchiveConfig::default(),
     );
     if archives.is_empty() {
