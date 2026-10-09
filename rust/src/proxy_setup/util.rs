@@ -28,16 +28,12 @@ pub(crate) fn last_started_port() -> Option<u16> {
         .and_then(|s| s.trim().parse().ok())
 }
 
-/// Proxy reachability timeout (200 ms).
-pub fn proxy_timeout() -> std::time::Duration {
-    std::time::Duration::from_millis(200)
-}
-
-/// Whether something accepts a TCP connection on `port` on localhost.
+/// Whether something accepts a TCP connection on `port` on localhost within
+/// 200 ms.
 pub(crate) fn is_proxy_reachable(port: u16) -> bool {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    TcpStream::connect_timeout(&addr, proxy_timeout()).is_ok()
+    TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(200)).is_ok()
 }
 
 pub fn default_port() -> u16 {

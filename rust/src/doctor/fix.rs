@@ -12,6 +12,7 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
         let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
         crate::outln!("{json_text}");
     } else {
+        print_repairs(&report);
         let (passed, total) = compact_score();
         print_compact_status(passed, total);
         if let Ok(path) = crate::core::setup_report::doctor_report_path() {
@@ -19,6 +20,48 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
         }
     }
     Ok(i32::from(!report.success))
+}
+
+/// Repairs without printing anything: what `doctor integrations --fix
+/// --json` runs before its own report.
+pub(super) fn run_fix_silently() {
+    let _ = build_and_persist_fix_report(true);
+}
+
+/// What `--fix` changed, one line each; what needed nothing is left out.
+fn print_repairs(report: &crate::core::setup_report::SetupReport) {
+    let mut changed = 0;
+    for step in &report.steps {
+        let label = match step.name.as_str() {
+            "agents" => None,
+            "bm25_cache_prune" => Some("Search indexes"),
+            "graph_cache_prune" => Some("Code graphs"),
+            "proxy_env" => Some("Proxy URLs"),
+            "crash_loop_reset" => Some("MCP start history"),
+            "orphaned_knowledge" => Some("Knowledge"),
+            _ => continue,
+        };
+        for item in &step.items {
+            if matches!(item.status.as_str(), "already" | "clean" | "no stale URLs") {
+                continue;
+            }
+            changed += 1;
+            let what = label.unwrap_or(&item.name);
+            match &item.note {
+                Some(note) => crate::outln!("  {what}: {} ({note})", item.status),
+                None => crate::outln!("  {what}: {}", item.status),
+            }
+        }
+        for warning in &step.warnings {
+            crate::outln!("  note: {warning}");
+        }
+        for error in &step.errors {
+            crate::outln!("  error: {error}");
+        }
+    }
+    if changed == 0 {
+        crate::outln!("  Nothing needed repair.");
+    }
 }
 
 fn build_and_persist_fix_report(
@@ -147,9 +190,7 @@ fn build_and_persist_fix_report(
         name: "crash_loop_backoff".to_string(),
         status: "reset".to_string(),
         path: None,
-        note: Some(
-            "cleared MCP startup history (fixes backoff after IDE restart loops)".to_string(),
-        ),
+        note: Some("so a restart loop no longer delays the next start".to_string()),
     });
     steps.push(startup_step);
 

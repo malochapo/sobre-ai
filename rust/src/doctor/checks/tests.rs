@@ -8,7 +8,7 @@ fn write(home: &Path, rel: &str, content: &str) {
 }
 
 fn check(home: &Path) -> Outcome {
-    claude_instructions_check(home)
+    claude_skill_check(home)
 }
 
 #[test]
