@@ -68,7 +68,7 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     }
 
     let tool_input = payload::resolve_tool_args(&v);
-    let (_, path) = payload::resolve_path_field(tool_input.as_ref(), payload::READ_PATH_FIELDS)?;
+    let path = payload::resolve_read_path(tool_input.as_ref())?;
     let session_id = v.get("session_id").and_then(|s| s.as_str())?.to_string();
     let agent_id = v
         .get("agent_id")
@@ -109,9 +109,8 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     };
 
     let (prev_hash, prev_tool_use) = parse_record(&prev)?;
-    // Same tool_use_id = a duplicate fire of the SAME event (Cursor
-    // double-fires hooks). The first fire passed the content
-    // through, so its twin must too.
+    // Same tool_use_id = the hook fired twice for one tool call. The first
+    // fire passed the content through, so its twin must too.
     if prev_hash != disk_hash || (!tool_use_id.is_empty() && prev_tool_use == tool_use_id) {
         write_record(&store, &disk_hash, &tool_use_id);
         return None;
@@ -459,8 +458,8 @@ mod tests {
 
     #[test]
     fn duplicate_fire_of_same_tool_use_never_stubs() {
-        // Cursor double-fires hooks: the twin of a first read must not
-        // be mistaken for a re-read.
+        // A hook fired twice for one tool call: the twin of a first read must
+        // not be mistaken for a re-read.
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
