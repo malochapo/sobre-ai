@@ -12,8 +12,6 @@ macro_rules! static_regex {
 #[derive(Debug, Clone)]
 pub struct SecretMatch {
     pub pattern_name: &'static str,
-    pub line_number: usize,
-    pub redacted_preview: String,
 }
 
 fn aws_key_re() -> &'static Regex {
@@ -112,54 +110,20 @@ fn guarded_match_is_benign(caps: &regex::Captures) -> bool {
         .is_some_and(|value| crate::core::redaction::is_benign_secret_value(value.as_str()))
 }
 
-fn make_redacted_preview(matched: &str) -> String {
-    let chars: Vec<char> = matched.chars().collect();
-    if chars.len() <= 6 {
-        return "***".to_string();
-    }
-    let prefix: String = chars[..4].iter().collect();
-    let suffix: String = chars[chars.len() - 2..].iter().collect();
-    format!("{prefix}***{suffix}")
-}
-
 fn collect_matches(content: &str) -> Vec<SecretMatch> {
     let mut matches = Vec::new();
 
-    let line_offsets: Vec<usize> = std::iter::once(0)
-        .chain(content.match_indices('\n').map(|(i, _)| i + 1))
-        .collect();
-
-    let offset_to_line = |byte_offset: usize| -> usize {
-        match line_offsets.binary_search(&byte_offset) {
-            Ok(i) => i + 1,
-            Err(i) => i,
-        }
-    };
-
     for &(name, regex_fn) in BUILTIN_PATTERNS {
-        let re = regex_fn();
-        for m in re.find_iter(content) {
-            matches.push(SecretMatch {
-                pattern_name: name,
-                line_number: offset_to_line(m.start()),
-                redacted_preview: make_redacted_preview(m.as_str()),
-            });
+        for _ in regex_fn().find_iter(content) {
+            matches.push(SecretMatch { pattern_name: name });
         }
     }
 
     for &(name, regex_fn) in GUARDED_PATTERNS {
-        let re = regex_fn();
-        for caps in re.captures_iter(content) {
-            let whole = caps.get(0).map_or("", |m| m.as_str());
-            if guarded_match_is_benign(&caps) {
-                continue;
+        for caps in regex_fn().captures_iter(content) {
+            if !guarded_match_is_benign(&caps) {
+                matches.push(SecretMatch { pattern_name: name });
             }
-            let start = caps.get(0).map_or(0, |m| m.start());
-            matches.push(SecretMatch {
-                pattern_name: name,
-                line_number: offset_to_line(start),
-                redacted_preview: make_redacted_preview(whole),
-            });
         }
     }
 
@@ -310,20 +274,6 @@ mod tests {
     }
 
     #[test]
-    fn redacted_preview_format() {
-        let preview = make_redacted_preview("AKIAIOSFODNN7EXAMPLE");
-        assert!(preview.starts_with("AKIA"));
-        assert!(preview.ends_with("LE"));
-        assert!(preview.contains("***"));
-    }
-
-    #[test]
-    fn redacted_preview_short_string() {
-        let preview = make_redacted_preview("short");
-        assert_eq!(preview, "***");
-    }
-
-    #[test]
     fn scan_and_redact_replaces_secrets() {
         let input = "key = AKIAIOSFODNN7EXAMPLE";
         let (redacted, matches) = scan_and_redact(input);
@@ -333,28 +283,12 @@ mod tests {
     }
 
     #[test]
-    fn line_numbers_are_correct() {
-        let input = "line1\nline2\nAKIAIOSFODNN7EXAMPLE\nline4";
-        let matches = detect_secrets(input);
-        assert!(!matches.is_empty());
-        assert_eq!(matches[0].line_number, 3);
-    }
-
-    #[test]
     fn multiple_secrets_on_different_lines() {
         let input = "AKIAIOSFODNN7EXAMPLE\nclean\nsk-abcdefghijklmnopqrstuvwx";
         let matches = detect_secrets(input);
         assert!(matches.len() >= 2);
-        let aws = matches
-            .iter()
-            .find(|m| m.pattern_name == "aws_key")
-            .unwrap();
-        assert_eq!(aws.line_number, 1);
-        let oai = matches
-            .iter()
-            .find(|m| m.pattern_name == "openai_key")
-            .unwrap();
-        assert_eq!(oai.line_number, 3);
+        assert!(matches.iter().any(|m| m.pattern_name == "aws_key"));
+        assert!(matches.iter().any(|m| m.pattern_name == "openai_key"));
     }
 
     #[test]

@@ -25,7 +25,6 @@ impl SobreServer {
         let input = helpers::canonical_args_string(args);
         let input_hash = helpers::hash_fast(&input);
         let output_hash = helpers::hash_fast(result_text);
-        let agent_id = self.agent_id.read().await.clone();
         let client_name = self.client_name.read().await.clone();
 
         let pending_session_save = {
@@ -35,7 +34,6 @@ impl SobreServer {
                 action,
                 &input_hash,
                 &output_hash,
-                agent_id.as_deref(),
                 Some(&client_name),
             );
 

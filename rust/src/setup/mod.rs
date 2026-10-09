@@ -46,7 +46,6 @@ impl Drop for EnvVarGuard {
 #[derive(Debug)]
 pub struct AgentOutcome {
     pub name: &'static str,
-    pub key: String,
     /// False when the agent is not installed and was not named: nothing was
     /// written for it.
     pub detected: bool,
@@ -89,7 +88,6 @@ pub fn connect_agents(named: &[&str], dry_run: bool) -> Vec<AgentOutcome> {
             if named.is_empty() && !target.detect_path.exists() {
                 AgentOutcome {
                     name: target.name,
-                    key: target.agent_key.clone(),
                     detected: false,
                     files: Vec::new(),
                     warnings: Vec::new(),
@@ -118,7 +116,6 @@ fn connect_agent(target: &EditorTarget, binary: &str) -> AgentOutcome {
     }
     AgentOutcome {
         name: target.name,
-        key: target.agent_key.clone(),
         detected: true,
         files: journal::take(),
         warnings,

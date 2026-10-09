@@ -34,19 +34,6 @@ impl IngestKind {
     pub fn is_ingestible(self) -> bool {
         !matches!(self, IngestKind::Binary | IngestKind::Generated)
     }
-
-    /// Stable lowercase label (for capabilities / diagnostics).
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            IngestKind::Code => "code",
-            IngestKind::Document => "document",
-            IngestKind::Data => "data",
-            IngestKind::Text => "text",
-            IngestKind::Generated => "generated",
-            IngestKind::Binary => "binary",
-        }
-    }
 }
 
 /// Prose / document extensions.

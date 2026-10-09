@@ -7,7 +7,6 @@ use super::entropy::kolmogorov_proxy;
 pub struct CompressionThresholds {
     pub bpe_entropy: f64,
     pub jaccard: f64,
-    pub auto_delta: f64,
 }
 
 impl Default for CompressionThresholds {
@@ -15,7 +14,6 @@ impl Default for CompressionThresholds {
         Self {
             bpe_entropy: 1.0,
             jaccard: 0.7,
-            auto_delta: 0.6,
         }
     }
 }
@@ -27,7 +25,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 1.2,
             jaccard: 0.65,
-            auto_delta: 0.55,
         },
     ),
     // Rust: Repetitive keywords (fn, pub, impl, let, mut) → lower threshold catches more
@@ -36,7 +33,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.85,
             jaccard: 0.72,
-            auto_delta: 0.6,
         },
     ),
     // TypeScript/JavaScript: Type annotations are predictable
@@ -45,7 +41,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.95,
             jaccard: 0.68,
-            auto_delta: 0.58,
         },
     ),
     (
@@ -53,7 +48,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.95,
             jaccard: 0.68,
-            auto_delta: 0.58,
         },
     ),
     (
@@ -61,7 +55,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 1.0,
             jaccard: 0.68,
-            auto_delta: 0.58,
         },
     ),
     (
@@ -69,7 +62,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 1.0,
             jaccard: 0.68,
-            auto_delta: 0.58,
         },
     ),
     // Go: Verbose but highly structured → aggressive threshold
@@ -78,7 +70,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.9,
             jaccard: 0.72,
-            auto_delta: 0.55,
         },
     ),
     // Java/Kotlin: Very verbose, lots of boilerplate
@@ -87,7 +78,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.8,
             jaccard: 0.65,
-            auto_delta: 0.5,
         },
     ),
     (
@@ -95,7 +85,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.85,
             jaccard: 0.68,
-            auto_delta: 0.55,
         },
     ),
     // C/C++: Headers are highly repetitive
@@ -104,7 +93,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.9,
             jaccard: 0.7,
-            auto_delta: 0.6,
         },
     ),
     (
@@ -112,7 +100,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.75,
             jaccard: 0.65,
-            auto_delta: 0.5,
         },
     ),
     (
@@ -120,7 +107,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.9,
             jaccard: 0.7,
-            auto_delta: 0.6,
         },
     ),
     (
@@ -128,7 +114,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.75,
             jaccard: 0.65,
-            auto_delta: 0.5,
         },
     ),
     // Ruby: English-like, high entropy
@@ -137,7 +122,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 1.15,
             jaccard: 0.65,
-            auto_delta: 0.55,
         },
     ),
     // Config/data files: highly repetitive
@@ -146,7 +130,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.6,
             jaccard: 0.6,
-            auto_delta: 0.4,
         },
     ),
     (
@@ -154,7 +137,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.7,
             jaccard: 0.62,
-            auto_delta: 0.45,
         },
     ),
     (
@@ -162,7 +144,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.7,
             jaccard: 0.62,
-            auto_delta: 0.45,
         },
     ),
     (
@@ -170,7 +151,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.7,
             jaccard: 0.62,
-            auto_delta: 0.45,
         },
     ),
     (
@@ -178,7 +158,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.6,
             jaccard: 0.6,
-            auto_delta: 0.4,
         },
     ),
     // Markdown/docs: natural language, high entropy
@@ -187,7 +166,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 1.3,
             jaccard: 0.6,
-            auto_delta: 0.55,
         },
     ),
     // CSS: very repetitive selectors/properties
@@ -196,7 +174,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.7,
             jaccard: 0.6,
-            auto_delta: 0.45,
         },
     ),
     (
@@ -204,7 +181,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.75,
             jaccard: 0.62,
-            auto_delta: 0.48,
         },
     ),
     // SQL: repetitive keywords
@@ -213,7 +189,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.8,
             jaccard: 0.65,
-            auto_delta: 0.5,
         },
     ),
     // Shell scripts
@@ -222,7 +197,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 1.0,
             jaccard: 0.68,
-            auto_delta: 0.55,
         },
     ),
     (
@@ -230,7 +204,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 1.0,
             jaccard: 0.68,
-            auto_delta: 0.55,
         },
     ),
     // Swift/C#
@@ -239,7 +212,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.9,
             jaccard: 0.68,
-            auto_delta: 0.55,
         },
     ),
     (
@@ -247,7 +219,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.85,
             jaccard: 0.65,
-            auto_delta: 0.52,
         },
     ),
     // PHP
@@ -256,7 +227,6 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
         CompressionThresholds {
             bpe_entropy: 0.95,
             jaccard: 0.68,
-            auto_delta: 0.55,
         },
     ),
 ];

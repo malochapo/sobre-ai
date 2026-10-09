@@ -1,7 +1,7 @@
 use rmcp::model::Tool;
 use serde_json::{Value, json};
 
-use crate::core::contracts::MCP_MANIFEST_SCHEMA_VERSION;
+const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
 const READ_MODES: [&str; 10] = [
     "auto",

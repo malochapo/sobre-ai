@@ -174,9 +174,7 @@ impl McpTool for SobreShellTool {
                 }
             }
 
-            let arg_raw = get_bool(args, "raw").unwrap_or(false);
-            let arg_bypass = get_bool(args, "bypass").unwrap_or(false);
-            let (raw, bypass) = (arg_raw || arg_bypass, arg_bypass);
+            let raw = get_bool(args, "raw").unwrap_or(false);
 
             let crp_mode = ctx.crp_mode;
             let cmd_clone = command.clone();
@@ -298,14 +296,6 @@ impl McpTool for SobreShellTool {
                 (result, original, saved, tee_hint)
             };
 
-            let mode = if bypass {
-                Some("bypass".to_string())
-            } else if raw {
-                Some("raw".to_string())
-            } else {
-                None
-            };
-
             let shell_mismatch = if cfg!(windows) && !raw {
                 shell_mismatch_hint(&command, &result_out)
             } else {
@@ -333,8 +323,6 @@ impl McpTool for SobreShellTool {
                 text: final_out,
                 original_tokens: original,
                 saved_tokens: saved,
-                mode,
-                path: None,
                 shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                 content_blocks: None,
             })

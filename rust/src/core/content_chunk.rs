@@ -93,17 +93,6 @@ impl ContentChunk {
             metadata,
         }
     }
-
-    pub fn is_external(&self) -> bool {
-        !matches!(self.source, ContentSource::File)
-    }
-
-    pub fn provider_id(&self) -> Option<&str> {
-        match &self.source {
-            ContentSource::Provider { provider_id, .. } => Some(provider_id),
-            _ => None,
-        }
-    }
 }
 
 impl From<ContentChunk> for CodeChunk {
@@ -189,8 +178,6 @@ mod tests {
             None,
         );
 
-        assert!(cc.is_external());
-        assert_eq!(cc.provider_id(), Some("github"));
         assert_eq!(cc.file_path, "github://issues/123");
 
         let code_chunk: CodeChunk = cc.into();
@@ -212,7 +199,6 @@ mod tests {
         };
 
         let cc: ContentChunk = code.into();
-        assert!(!cc.is_external());
         assert_eq!(cc.source, ContentSource::File);
         assert!(cc.references.is_empty());
     }

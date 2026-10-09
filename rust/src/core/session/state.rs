@@ -118,7 +118,6 @@ impl SessionState {
                 existing.file_ref = Some(r.to_string());
             }
         } else {
-            let item_id = crate::core::context_field::ContextItemId::from_file(path);
             self.files_touched.push(FileTouched {
                 path: path.to_string(),
                 file_ref: file_ref.map(std::string::ToString::to_string),
@@ -127,7 +126,6 @@ impl SessionState {
                 last_mode: mode.to_string(),
                 tokens,
                 stale: false,
-                context_item_id: Some(item_id.to_string()),
                 summary: None,
             });
             while self.files_touched.len() > MAX_FILES {
@@ -172,7 +170,6 @@ impl SessionState {
         action: Option<&str>,
         input_hash: &str,
         output_hash: &str,
-        agent_id: Option<&str>,
         client_name: Option<&str>,
     ) {
         let now = Utc::now();
@@ -184,7 +181,6 @@ impl SessionState {
                 tool: Some(tool.to_string()),
                 input_hash: Some(input_hash.to_string()),
                 output_hash: Some(output_hash.to_string()),
-                agent_id: agent_id.map(std::string::ToString::to_string),
                 client_name: client_name.map(std::string::ToString::to_string),
                 timestamp: now,
             });
@@ -210,7 +206,6 @@ impl SessionState {
             tool: None,
             input_hash: None,
             output_hash: None,
-            agent_id: None,
             client_name: None,
             timestamp: Utc::now(),
         });

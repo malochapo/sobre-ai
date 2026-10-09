@@ -83,8 +83,6 @@ impl McpTool for SobreSessionTool {
             text: result,
             original_tokens: 0,
             saved_tokens: 0,
-            mode: Some(action),
-            path: None,
             shell_outcome: None,
             content_blocks: None,
         })

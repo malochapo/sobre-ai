@@ -3,7 +3,6 @@ use super::*;
 #[test]
 fn format_impact_empty() {
     let impact = ImpactResult {
-        root_file: "a.rs".to_string(),
         affected_files: vec![],
         max_depth_reached: 0,
         edges_traversed: 0,
@@ -15,7 +14,6 @@ fn format_impact_empty() {
 #[test]
 fn format_impact_with_files() {
     let impact = ImpactResult {
-        root_file: "a.rs".to_string(),
         affected_files: vec!["b.rs".to_string(), "c.rs".to_string()],
         max_depth_reached: 2,
         edges_traversed: 3,

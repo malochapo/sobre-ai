@@ -79,35 +79,16 @@ impl SobreServer {
             crate::core::eviction_orchestrator::on_memory_pressure,
         ));
 
-        let presence_root = startup
-            .project_root
-            .as_deref()
-            .or(startup.shell_cwd.as_deref())
-            .unwrap_or(".");
-        let presence_agent_id =
-            match crate::core::agents::AgentRegistry::register_mcp_process(presence_root) {
-                Ok(agent_id) => Some(agent_id),
-                Err(error) => {
-                    tracing::warn!("sobre: failed to register MCP agent presence: {error}");
-                    None
-                }
-            };
-
         Self {
             cache,
             session,
             call_count: Arc::new(AtomicUsize::new(0)),
             cache_ttl_secs: ttl,
             last_call: Arc::new(RwLock::new(Instant::now())),
-            agent_id: Arc::new(RwLock::new(None)),
-            presence_agent_id: Arc::new(RwLock::new(presence_agent_id)),
             client_name: Arc::new(RwLock::new(String::new())),
             autonomy: Arc::new(autonomy::AutonomyState::new()),
             refetch_signals: Arc::new(RwLock::new(
                 crate::core::refetch_signals::RefetchSignals::default(),
-            )),
-            ledger: Arc::new(RwLock::new(
-                crate::core::context_ledger::ContextLedger::load(),
             )),
             registry: std::sync::Arc::new(crate::server::registry::build_registry()),
             startup_project_root: startup.project_root,
@@ -150,11 +131,6 @@ impl SobreServer {
 
     /// Aggressive cleanup on connection drop: save session, consolidate knowledge, clear caches.
     pub async fn shutdown(&self) {
-        if let Some(agent_id) = self.presence_agent_id.read().await.clone()
-            && let Err(error) = crate::core::agents::AgentRegistry::finish_persistent(&agent_id)
-        {
-            tracing::warn!("sobre: failed to finish MCP agent presence: {error}");
-        }
         {
             let mut session = self.session.write().await;
             let _ = session.save();

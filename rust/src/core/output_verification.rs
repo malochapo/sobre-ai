@@ -59,26 +59,6 @@ impl VerificationResult {
             identifiers_checked: 0,
         }
     }
-
-    pub fn format_compact(&self) -> String {
-        if self.warnings.is_empty() {
-            return "PASS".to_string();
-        }
-        let status = if self.pass { "WARN" } else { "FAIL" };
-        let mut counts = std::collections::BTreeMap::<String, u32>::new();
-        for w in &self.warnings {
-            *counts.entry(w.kind.to_string()).or_insert(0) += 1;
-        }
-        let counts: Vec<String> = counts
-            .into_iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect();
-        format!(
-            "{status}({}) loss={:.1}%",
-            counts.join(", "),
-            self.info_loss_score * 100.0
-        )
-    }
 }
 
 /// Checks that compression kept file paths, identifiers and block structure.
@@ -461,22 +441,5 @@ mod tests {
         let snap = stats_snapshot();
         assert!(snap.pass_rate >= 0.0);
         assert!(snap.pass_rate <= 1.0);
-    }
-
-    #[test]
-    fn compact_format_is_deterministic_and_sorted() {
-        let src = "fn calculate_monthly_revenue() {} see src/utils/helper.ts";
-        let compressed = "compressed";
-        let r = verify_output(src, compressed);
-        let s = r.format_compact();
-        // Stable ordering for parsing: keys are lexicographically sorted.
-        let want_order = ["mangled_identifier", "missing_path"];
-        let mut idx = 0usize;
-        for k in want_order {
-            if let Some(pos) = s.find(k) {
-                assert!(pos >= idx, "expected sorted keys in: {s}");
-                idx = pos;
-            }
-        }
     }
 }

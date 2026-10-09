@@ -6,6 +6,7 @@ use flate2::write::GzEncoder;
 
 use super::tokens::{count_tokens, encode_tokens};
 
+#[cfg(test)]
 const BPE_ENTROPY_THRESHOLD: f64 = 1.0;
 
 /// Result of entropy-based compression: output text, token counts, and techniques used.
@@ -512,49 +513,23 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
     }
 }
 
-/// Per-line entropy statistics for a block of content.
-#[derive(Debug)]
-pub struct EntropyAnalysis {
-    pub avg_entropy: f64,
-    pub low_entropy_count: usize,
-    pub high_entropy_count: usize,
-    pub total_lines: usize,
-}
-
-/// Analyzes per-line BPE token entropy, counting low/high entropy lines.
-pub fn analyze_entropy(content: &str) -> EntropyAnalysis {
-    let lines: Vec<&str> = content.lines().collect();
-    let total = lines.len();
+/// Mean BPE token entropy over the non-blank lines of `content` (0 when there
+/// are none).
+pub fn average_line_entropy(content: &str) -> f64 {
     let mut sum = 0.0;
-    let mut low = 0;
-    let mut high = 0;
     let mut counted = 0;
-
-    for line in &lines {
+    for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
-        let h = token_entropy(trimmed);
-        sum += h;
+        sum += token_entropy(trimmed);
         counted += 1;
-        if h < BPE_ENTROPY_THRESHOLD {
-            low += 1;
-        }
-        if h > 3.0 {
-            high += 1;
-        }
     }
-
-    EntropyAnalysis {
-        avg_entropy: if counted > 0 {
-            sum / counted as f64
-        } else {
-            0.0
-        },
-        low_entropy_count: low,
-        high_entropy_count: high,
-        total_lines: total,
+    if counted > 0 {
+        sum / counted as f64
+    } else {
+        0.0
     }
 }
 

@@ -53,7 +53,7 @@ The lots run in this order:
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
-| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #43, #44, #45) |
+| D | Dead code, stale files, stale comments, duplicates; decision 7 | done (#41, #42, #43, #44, #45, #46) |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
@@ -697,19 +697,51 @@ written with; the lots after it use the new names.
 
 ## Lot D — dead code and cleanup
 
-Fixed so far: #41 (dead code, write-only stores, decision 7), #42
-(constant settings, test-only code, dead modules), #43 (Cargo, stale files,
+Fixed in #41 (dead code, write-only stores, decision 7), #42 (constant
+settings, test-only code, dead modules), #43 (Cargo, stale files,
 contracts), #44 (comments), #45 (duplicates, hashing, the rest of the
-dead code).
+dead code) and #46 (the reachability sweep).
 
 ### Code that compiles but never does anything
 
-- [ ] **D1 About 244 `pub` items are unused from the binary's point of
+- [x] **D1 About 244 `pub` items are unused from the binary's point of
   view** (reachability oracle baseline).
   - Every module is `pub mod` from `lib.rs`, so `dead_code = "deny"` never
     sees `pub` items.
   - Sweep them with the oracle; the items below are the ones confirmed by
     hand.
+  - Done: the items below were already gone, and four oracle rounds
+    (default and `dense`) reached a fixpoint. Besides single functions,
+    methods and re-exports, the sweep removed:
+    - three write-only stores: the context ledger (`context_ledger.json`;
+      its pressure and eviction readers had no caller), the agent registry
+      (`agents/registry.json`, written at start-up and on every call, read
+      by nothing since the multi-agent briefing went), and the `@F1`
+      labels in `sobre_overview`, which no tool could resolve
+      (`context_handles`, `context_field`);
+    - `pop_pruning`, `adaptive` (folded into `intent_engine`),
+      `ThinkingBudget`, and the model registry
+      (`data/model_registry.json`, whose context windows only the ledger
+      read);
+    - fields written and never read: `ToolOutput.mode` and `.path` (only
+      the ledger read them), the terse attribution counters,
+      `QualityScore` (the density gate now returns the output),
+      `FileTouched.context_item_id`, `EvidenceRecord.agent_id` and a dozen
+      more;
+    - `DenseBackendKind`, an enum with one variant, and the `root` and
+      `changed_files` parameters the dense path ignored;
+    - the debug log's `Route`: only `sobre` was ever logged, so the log
+      now records what hooks changed, and the `debug_log` key says so.
+  - Test helpers (`test_env_lock`, `handle_with_task_resolved`,
+    `end_burst`) and the docs generator (`reference_docs`, `mcp_manifest`)
+    are behind `test-support`.
+  - Kept on purpose: `ResolvedMode.source`, which the quality-loop golden
+    test reads to check the escalation fires once, and the
+    `SessionDegrade`, `EvidenceKind` and `join_command_for` re-exports the
+    integration tests use.
+  - Found while fixing: `sobre_shell` read a `bypass` argument (an alias of
+    `raw`) that its schema does not declare, so no agent could know it.
+    Removed.
 - [x] **D2 Remove the non-PDF extractors (decision 7).**
   - Production calls `extractors::extract` only behind
     `is_binary_document()`, which matches `.pdf` only

@@ -285,8 +285,6 @@ impl SobreReadTool {
                 text: content,
                 original_tokens: tokens,
                 saved_tokens: 0,
-                mode: Some("raw".to_string()),
-                path: Some(path.to_string()),
                 shell_outcome: None,
                 content_blocks: None,
             });
@@ -937,8 +935,6 @@ impl SobreReadTool {
             text: final_output,
             original_tokens: original,
             saved_tokens: saved,
-            mode: Some(resolved_mode),
-            path: Some(path.to_string()),
             shell_outcome: None,
             content_blocks: None,
         })
@@ -1091,8 +1087,5 @@ fn read_image_file(path: &str) -> Result<ToolOutput, ErrorData> {
     ));
     let image_block = ContentBlock::image(base64_data, mime_type);
 
-    Ok(ToolOutput::image(
-        vec![text_block, image_block],
-        path.to_string(),
-    ))
+    Ok(ToolOutput::image(vec![text_block, image_block]))
 }

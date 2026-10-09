@@ -10,15 +10,6 @@ pub enum SobreError {
 
     #[error("parse error: {0}")]
     Parse(String),
-
-    #[error("tool execution failed: {0}")]
-    ToolExecution(String),
-
-    #[error("network error: {0}")]
-    Network(String),
-
-    #[error("{0}")]
-    Other(String),
 }
 
 #[derive(Error, Debug)]
@@ -84,42 +75,6 @@ pub enum DispatchError {
 
     #[error("{message}")]
     Tool { message: String },
-}
-
-#[derive(Error, Debug)]
-pub enum ShellError {
-    #[error("{message}")]
-    Blocked { message: String },
-}
-
-impl From<String> for ShellError {
-    fn from(message: String) -> Self {
-        Self::Blocked { message }
-    }
-}
-
-impl From<&str> for ShellError {
-    fn from(message: &str) -> Self {
-        Self::Blocked {
-            message: message.to_string(),
-        }
-    }
-}
-
-impl ShellError {
-    pub fn message(&self) -> &str {
-        match self {
-            Self::Blocked { message } => message,
-        }
-    }
-
-    pub fn contains(&self, needle: &str) -> bool {
-        self.message().contains(needle)
-    }
-
-    pub fn lines(&self) -> std::str::Lines<'_> {
-        self.message().lines()
-    }
 }
 
 impl From<String> for ConfigError {

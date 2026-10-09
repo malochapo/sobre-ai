@@ -51,7 +51,6 @@ mod session_features {
                 last_mode: "full".to_string(),
                 tokens: 500,
                 stale: false,
-                context_item_id: None,
                 summary: None,
             });
         }
@@ -63,7 +62,6 @@ mod session_features {
             tool: Some("cargo test".to_string()),
             input_hash: None,
             output_hash: None,
-            agent_id: Some("test-agent".to_string()),
             client_name: None,
             timestamp: chrono::Utc::now(),
         });

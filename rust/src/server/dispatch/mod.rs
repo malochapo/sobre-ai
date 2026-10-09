@@ -94,14 +94,10 @@ impl SobreServer {
             }
 
             let crp_mode = crate::tools::CrpMode::effective();
-            let (extra_roots, shell_cwd) = {
-                let session = self.session.read().await;
-                (session.extra_roots.clone(), session.shell_cwd.clone())
-            };
+            let shell_cwd = self.session.read().await.shell_cwd.clone();
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
                 shell_cwd,
-                extra_roots,
                 resolved_paths,
                 crp_mode,
                 cache: Some(self.cache.clone()),
@@ -138,28 +134,6 @@ impl SobreServer {
                 ));
             }
 
-            if let Some(ref path) = output.path {
-                {
-                    // Skip ledger record for sobre_read — it's recorded in post_dispatch
-                    // with correct final token counts after terse compression.
-                    if name != "sobre_read" {
-                        let sent_tokens = if output.original_tokens > 0 {
-                            output.original_tokens.saturating_sub(output.saved_tokens)
-                        } else {
-                            crate::core::tokens::count_tokens(&output.text)
-                        };
-                        let orig = if output.original_tokens > 0 {
-                            output.original_tokens
-                        } else {
-                            sent_tokens
-                        };
-                        let mode_str = output.mode.as_deref().unwrap_or("full");
-                        let mut ledger = self.ledger.write().await;
-                        ledger.record(path, mode_str, orig, sent_tokens);
-                        ledger.save_debounced();
-                    }
-                }
-            }
             self.record_call(name, output.original_tokens, output.saved_tokens)
                 .await;
 

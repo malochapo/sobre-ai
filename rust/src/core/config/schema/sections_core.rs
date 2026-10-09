@@ -46,7 +46,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(false),
-            "Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (sobre vs native, with the reason) to <state_dir>/logs/debug.log; `sobre doctor` prints the path",
+            "Opt-in (default off): write a human-readable debug log of MCP tool calls and of the native tool calls hooks changed (with the reason) to <state_dir>/logs/debug.log; `sobre doctor` prints the path",
         ),
     );
     root.insert(

@@ -7,10 +7,6 @@ pub fn backup_path_for(path: &Path) -> PathBuf {
     path.with_file_name(format!("{filename}.sobre.bak"))
 }
 
-pub fn snapshot_mtime(path: &Path) -> Option<std::time::SystemTime> {
-    std::fs::metadata(path).ok().and_then(|m| m.modified().ok())
-}
-
 /// Writes an agent config file that `init` (or `proxy enable`) edits.
 ///
 /// - Content identical to what is on disk writes nothing.

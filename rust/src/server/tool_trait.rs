@@ -40,9 +40,6 @@ pub struct ToolOutput {
     pub text: String,
     pub original_tokens: usize,
     pub saved_tokens: usize,
-    pub mode: Option<String>,
-    /// Path associated with the tool call (for record_call_with_path).
-    pub path: Option<String>,
     /// Set by shell-executing tools so dispatch can populate `isError` +
     /// `structuredContent` on the MCP result. `None` for tools
     /// that don't run shell commands.
@@ -58,8 +55,6 @@ impl ToolOutput {
             text,
             original_tokens: 0,
             saved_tokens: 0,
-            mode: None,
-            path: None,
             shell_outcome: None,
             content_blocks: None,
         }
@@ -67,13 +62,11 @@ impl ToolOutput {
 
     /// Construct a ToolOutput for image/binary content blocks.
     /// Bypasses all text processing in the dispatch pipeline.
-    pub fn image(blocks: Vec<ContentBlock>, path: String) -> Self {
+    pub fn image(blocks: Vec<ContentBlock>) -> Self {
         Self {
             text: String::new(),
             original_tokens: 0,
             saved_tokens: 0,
-            mode: Some("image".to_string()),
-            path: Some(path),
             shell_outcome: None,
             content_blocks: Some(blocks),
         }
@@ -157,14 +150,10 @@ fn is_section_label(line: &str) -> bool {
 #[derive(Clone)]
 pub struct ToolContext {
     pub project_root: String,
-    /// The session's shell cwd (where `sobre_shell` last ran), snapshotted like
-    /// `extra_roots`: relative paths fall back to it, and a cwd in another git
-    /// checkout outranks `project_root`.
+    /// The session's shell cwd (where `sobre_shell` last ran): relative paths
+    /// fall back to it, and a cwd in another git checkout outranks
+    /// `project_root`.
     pub shell_cwd: Option<String>,
-    /// Session-scoped extra roots (MCP `roots/list`, config `search_roots`),
-    /// snapshotted from the session so sync handlers can honor them without an
-    /// async lock. Empty = single root.
-    pub extra_roots: Vec<String>,
     /// Pre-resolved paths keyed by argument name (e.g. "path" -> "/abs/dir").
     pub resolved_paths: std::collections::HashMap<String, String>,
     /// CRP mode for compression-aware tools.
@@ -189,7 +178,6 @@ impl Default for ToolContext {
         Self {
             project_root: String::new(),
             shell_cwd: None,
-            extra_roots: Vec::new(),
             resolved_paths: std::collections::HashMap::new(),
             crp_mode: crate::tools::CrpMode::Off,
             cache: None,

@@ -89,44 +89,13 @@ fn persist_detected_model(model: &str) {
         return;
     };
     let path = data_dir.join("detected_model.json");
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    let window = model_context_window(model);
-    let payload = serde_json::json!({
-        "model": model,
-        "window_size": window,
-        "detected_at": ts,
-    });
+    let payload = serde_json::json!({ "model": model });
     if let Ok(json) = serde_json::to_string_pretty(&payload) {
         let tmp = path.with_extension("tmp");
         if std::fs::write(&tmp, &json).is_ok() {
             let _ = std::fs::rename(&tmp, &path);
         }
     }
-}
-
-pub fn model_context_window(model: &str) -> usize {
-    crate::core::model_registry::context_window_for_model(model)
-}
-
-pub fn load_detected_model() -> Option<(String, usize)> {
-    let data_dir = crate::core::data_dir::sobre_data_dir().ok()?;
-    let path = data_dir.join("detected_model.json");
-    let content = std::fs::read_to_string(&path).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&content).ok()?;
-    let model = v.get("model")?.as_str()?.to_string();
-    let window = v.get("window_size")?.as_u64()? as usize;
-    let detected_at = v.get("detected_at")?.as_u64()?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    if now.saturating_sub(detected_at) > 7200 {
-        return None;
-    }
-    Some((model, window))
 }
 
 fn persist_transcript_path(path: &str, conversation_id: Option<&str>, session_id: Option<&str>) {

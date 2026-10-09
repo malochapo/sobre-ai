@@ -20,10 +20,9 @@ pub mod persist;
 pub mod scan;
 pub mod score;
 
-pub use annotate::{ReadAnnotation, annotations_for_file};
 pub use cognitive::{FunctionCognitive, cognitive_per_function};
-pub use delta::{CognitiveDelta, cognitive_delta, format_gate_notice, worst_regression};
-pub use naming::{NamingFinding, cryptic_reason, naming_findings};
+pub use delta::{cognitive_delta, format_gate_notice, worst_regression};
+pub use naming::{NamingFinding, naming_findings};
 pub use score::{Hotspot, NavigabilityInputs, NavigabilityScore, navigability};
 
 use serde::Serialize;
@@ -40,13 +39,6 @@ pub struct FileHealth {
 }
 
 impl FileHealth {
-    /// Functions whose cognitive complexity exceeds `threshold`.
-    pub fn over_threshold(&self, threshold: u32) -> impl Iterator<Item = &FunctionCognitive> {
-        self.functions
-            .iter()
-            .filter(move |f| f.cognitive > threshold)
-    }
-
     /// The single worst cognitive complexity in the file (0 if none).
     pub fn worst_cognitive(&self) -> u32 {
         self.functions
@@ -84,14 +76,5 @@ mod tests {
     #[test]
     fn analyze_file_unsupported_ext_is_none() {
         assert!(analyze_file("plain text", "txt").is_none());
-    }
-
-    #[test]
-    fn over_threshold_filters() {
-        let src = "fn deep(a: bool) { if a { if a { if a { if a {} } } } }\n";
-        let health = analyze_file(src, "rs").unwrap();
-        // 1+2+3+4 = 10 cognitive; above 5, below 15.
-        assert_eq!(health.over_threshold(5).count(), 1);
-        assert_eq!(health.over_threshold(15).count(), 0);
     }
 }

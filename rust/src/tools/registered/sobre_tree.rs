@@ -88,8 +88,6 @@ impl McpTool for SobreTreeTool {
             text: final_out,
             original_tokens: total_original,
             saved_tokens: saved,
-            mode: None,
-            path: None,
             shell_outcome: None,
             content_blocks: None,
         })
@@ -126,8 +124,6 @@ fn handle_single(
         text: final_out,
         original_tokens: original,
         saved_tokens: saved,
-        mode: None,
-        path: Some(path.to_string()),
         shell_outcome: None,
         content_blocks: None,
     })

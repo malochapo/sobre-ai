@@ -759,7 +759,6 @@ mod tests {
             "s1",
         );
         KnowledgeSnapshot {
-            project_root: "/tmp/proj".into(),
             project_hash: "hash".into(),
             facts,
             patterns: Vec::new(),

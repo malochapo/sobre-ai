@@ -24,8 +24,8 @@ mod tests_parsing;
 pub use enums::{CompressionLevel, SessionDegrade};
 pub use loader::last_config_parse_error;
 pub use proxy::{
-    ProxyConfig, ProxyProvider, Upstreams, is_local_proxy_url, normalize_url, normalize_url_opt,
-    upstream_drifted, upstream_ids,
+    ProxyConfig, ProxyProvider, Upstreams, is_local_proxy_url, normalize_url_opt, upstream_drifted,
+    upstream_ids,
 };
 
 /// On-disk ceiling (MB) for the persisted BM25 index.
@@ -49,9 +49,6 @@ pub const PROACTIVE_EXPANSION_MAX_AGE_SECS: u64 = 3600;
 
 /// Graph indexes untouched for longer than this are purged.
 pub const GRAPH_INDEX_MAX_AGE_HOURS: u64 = 48;
-
-/// Compact output formats preserved verbatim instead of recompressed.
-pub const PRESERVE_COMPACT_FORMATS: &[&str] = &["toon"];
 
 /// Cap on files the graph index scans, bounding its RAM.
 pub const GRAPH_INDEX_MAX_FILES: u64 = 15_000;
@@ -95,8 +92,8 @@ pub struct Config {
     /// roots of a multi-root workspace (absolute, `~`/`$HOME` expanded).
     #[serde(default)]
     pub search_roots: Vec<String>,
-    /// Opt-in: write a human-readable debug log of intercepted MCP tool
-    /// calls and hook routing decisions (sobre vs native, with reasons) to
+    /// Opt-in: write a human-readable debug log of MCP tool calls and of the
+    /// native tool calls hooks changed (with reasons) to
     /// `<state_dir>/logs/debug.log`.
     #[serde(default)]
     pub debug_log: bool,

@@ -16,7 +16,7 @@ pub fn sobre_data_dir() -> Result<PathBuf, String> {
     }
 
     // Test sandbox: without this, any unit test that triggers a
-    // store write (usage ledger, context ledger, sessions, ...)
+    // store write (usage ledger, sessions, knowledge, ...)
     // silently pollutes the developer's real data dir. Tests that
     // set SOBRE_DATA_DIR keep full control (handled above); everyone else
     // lands in a per-process temp dir and physically cannot touch real data.
@@ -73,6 +73,7 @@ pub(crate) fn ensure_dir_permissions(path: &std::path::Path) {
 #[cfg(not(unix))]
 pub(crate) fn ensure_dir_permissions(_path: &std::path::Path) {}
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
     use std::sync::{Mutex, OnceLock};
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();

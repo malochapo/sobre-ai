@@ -9,10 +9,7 @@ use std::path::PathBuf;
 
 /// Result of a quiet maintenance pass.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct MaintenanceResult {
-    pub quarantined_removed: u32,
-    pub bytes_freed: u64,
-}
+pub struct MaintenanceResult {}
 
 const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
 
@@ -58,10 +55,7 @@ pub fn run_quiet() -> MaintenanceResult {
              (freed {bytes_freed} bytes)"
         );
     }
-    MaintenanceResult {
-        quarantined_removed,
-        bytes_freed,
-    }
+    MaintenanceResult {}
 }
 
 #[cfg(test)]

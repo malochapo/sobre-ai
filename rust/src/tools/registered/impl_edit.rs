@@ -165,8 +165,6 @@ impl McpTool for SobreEditTool {
                 text: output,
                 original_tokens: 0,
                 saved_tokens: 0,
-                mode: None,
-                path: Some(path),
                 shell_outcome: None,
                 content_blocks: None,
             })

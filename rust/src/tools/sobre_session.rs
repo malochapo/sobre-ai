@@ -217,10 +217,6 @@ stale_files: {}\n",
             let _ = session.save();
             let old_id = session.id.clone();
             *session = SessionState::new();
-            // The context ledger belongs to the session it was built in.
-            let mut ledger = crate::core::context_ledger::ContextLedger::load();
-            ledger.reset();
-            ledger.save();
             format!("Session reset. Previous: {old_id}. New: {}.", session.id)
         }
 

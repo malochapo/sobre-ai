@@ -107,8 +107,6 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
                 text,
                 original_tokens: 0,
                 saved_tokens: 0,
-                mode: Some(action),
-                path: None,
                 shell_outcome: None,
                 content_blocks: None,
             }),

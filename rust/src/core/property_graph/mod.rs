@@ -17,9 +17,9 @@ mod sync;
 
 pub use edge::{Edge, EdgeKind};
 pub use file_catalog::FileCatalogEntry;
-pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
+pub use meta::{PropertyGraphMetaV1, load_meta, write_meta};
 pub use node::{Node, NodeKind};
-pub use queries::{DependencyChain, ImpactResult, edge_weight, related_files};
+pub use queries::ImpactResult;
 #[cfg(test)]
 pub(crate) use sync::populate_from_project_index;
 pub use sync::{mirror_index, parse_symbol_metadata};
@@ -168,14 +168,6 @@ impl CodeGraph {
         max_depth: usize,
     ) -> anyhow::Result<ImpactResult> {
         queries::impact_analysis(&self.conn, file_path, max_depth)
-    }
-
-    pub fn dependency_chain(
-        &self,
-        from: &str,
-        to: &str,
-    ) -> anyhow::Result<Option<DependencyChain>> {
-        queries::dependency_chain(&self.conn, from, to)
     }
 
     pub fn related_files(
@@ -379,23 +371,6 @@ mod tests {
     }
 
     #[test]
-    fn dependency_chain_found() {
-        let g = test_graph();
-
-        let a = g.upsert_node(&Node::file("a.rs")).unwrap();
-        let b = g.upsert_node(&Node::file("b.rs")).unwrap();
-        let c = g.upsert_node(&Node::file("c.rs")).unwrap();
-
-        g.upsert_edge(&Edge::new(a, b, EdgeKind::Imports)).unwrap();
-        g.upsert_edge(&Edge::new(b, c, EdgeKind::Imports)).unwrap();
-
-        let chain = g.dependency_chain("a.rs", "c.rs").unwrap();
-        assert!(chain.is_some());
-        let chain = chain.unwrap();
-        assert_eq!(chain.path, vec!["a.rs", "b.rs", "c.rs"]);
-    }
-
-    #[test]
     fn counts() {
         let g = test_graph();
         assert_eq!(g.node_count().unwrap(), 0);
@@ -428,11 +403,6 @@ mod tests {
         assert_eq!(
             g.dependents("src/a.rs").unwrap(),
             vec!["src/b.rs".to_string(), "src/c.rs".to_string()]
-        );
-        assert!(
-            g.dependency_chain("src/d.rs", "src/a.rs")
-                .unwrap()
-                .is_none()
         );
     }
 

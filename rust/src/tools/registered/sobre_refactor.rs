@@ -2,7 +2,7 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_str, require_resolved_path};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, require_resolved_path};
 use crate::tool_defs::tool_def;
 
 pub struct SobreRefactorTool;
@@ -98,13 +98,10 @@ impl McpTool for SobreRefactorTool {
         let result =
             crate::tools::sobre_refactor::handle(&args_value, &ctx.project_root, &abs_path);
 
-        let action = get_str(args, "action").unwrap_or_default();
         Ok(ToolOutput {
             text: result,
             original_tokens: 0,
             saved_tokens: 0,
-            mode: Some(action.clone()),
-            path: get_str(args, "path"),
             shell_outcome: None,
             content_blocks: None,
         })

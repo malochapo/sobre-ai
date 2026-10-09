@@ -32,11 +32,6 @@ pub struct QuantizedVector {
 }
 
 impl QuantizedVector {
-    #[must_use]
-    pub fn dim(&self) -> usize {
-        self.code.len()
-    }
-
     /// Reconstruct the approximate `f32` vector. Only needed for diagnostics /
     /// migration; the hot path scores against the codes directly via [`dot_quant`].
     #[must_use]

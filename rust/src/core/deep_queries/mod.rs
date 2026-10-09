@@ -961,7 +961,6 @@ namespace App
         );
 
         let save = analysis.calls.iter().find(|c| c.callee == "Save").unwrap();
-        assert_eq!(save.receiver.as_deref(), Some("_repository"));
         assert!(save.is_method);
     }
 
@@ -1029,7 +1028,6 @@ end
             .iter()
             .find(|c| c.callee == "method2")
             .unwrap();
-        assert_eq!(m.receiver.as_deref(), Some("obj"));
         assert!(m.is_method);
     }
 

@@ -8,7 +8,6 @@ pub mod compressor;
 pub mod entropy;
 pub mod json_crush;
 pub mod markdown_compact;
-pub mod pop_pruning;
 pub mod preservation;
 pub mod protect;
 pub mod rabin_karp;
@@ -41,9 +40,6 @@ pub mod property_graph;
 // ---------------------------------------------------------------------------
 // Domain: Context
 // ---------------------------------------------------------------------------
-pub mod context_field;
-pub mod context_handles;
-pub mod context_ledger;
 pub mod context_lint;
 pub mod context_overhead;
 pub mod cross_source_hints;
@@ -69,6 +65,7 @@ pub mod content_cache;
 pub mod content_chunk;
 pub mod context_packing;
 pub mod cooccurrence;
+#[cfg(feature = "dense")]
 pub mod dense_backend;
 pub mod embedding_index;
 pub mod embedding_quant;
@@ -113,15 +110,12 @@ pub mod patterns;
 // Domain: Agents
 // ---------------------------------------------------------------------------
 pub mod agent_runtime_env;
-pub mod agents;
 
 // ---------------------------------------------------------------------------
 // Domain: Adaptive & Scoring
 // ---------------------------------------------------------------------------
-pub mod adaptive;
 pub mod adaptive_thresholds;
 pub mod auto_mode_resolver;
-pub mod model_registry;
 pub mod task_relevance;
 
 // ---------------------------------------------------------------------------
@@ -193,6 +187,7 @@ pub mod launchd;
 pub mod levenshtein;
 pub mod limits;
 pub mod logging;
+#[cfg(any(test, feature = "test-support"))]
 pub mod mcp_manifest;
 pub mod path_locks;
 pub mod path_resolve;
@@ -204,6 +199,7 @@ pub mod protocol;
 pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;
+#[cfg(any(test, feature = "test-support"))]
 pub mod reference_docs;
 pub mod sanitize;
 pub mod search_index;

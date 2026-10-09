@@ -1,24 +1,12 @@
-//! Shared path-resolution for tool handlers.
-//!
-//! Previously two near-identical `resolve_path_sync` implementations lived in
-//! `tools/registered/mod.rs` (SessionState-based) and `server/tool_trait.rs`
-//! (ToolContext-based), plus several copies of the project-marker test. This
-//! module is the single source of truth: [`resolve_tool_path`] for tool path
-//! resolution and a re-export of [`has_project_marker`] for marker detection.
+//! Shared path resolution for tool handlers: [`resolve_tool_path`].
 
 use std::path::{Path, PathBuf};
-
-/// Single canonical project-marker test (`.git`, `Cargo.toml`, …).
-///
-/// Re-exported from [`crate::core::pathutil`] so callers that think in terms of
-/// path resolution have a local, discoverable handle.
-pub use crate::core::pathutil::has_project_marker;
 
 /// Nearest ancestor (including `start` itself) containing a `.git` entry —
 /// directory (normal checkout) **or file** (linked worktree: `gitdir: …`),
 /// canonicalized for comparison. `None` when no git boundary exists upward.
 ///
-/// Deliberately `.git`-only, NOT [`has_project_marker`]: markers like
+/// Deliberately `.git`-only, NOT [`crate::core::pathutil::has_project_marker`]: markers like
 /// `Cargo.toml` exist in nested monorepo subdirectories (`rust/Cargo.toml`
 /// in this very repo), so using them here would make a plain `cd rust/` look
 /// like a checkout switch.

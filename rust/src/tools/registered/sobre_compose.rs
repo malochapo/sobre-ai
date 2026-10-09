@@ -53,8 +53,6 @@ impl SobreComposeTool {
             text: result,
             original_tokens: 0,
             saved_tokens: 0,
-            mode: Some("overview".to_string()),
-            path: None,
             shell_outcome: None,
             content_blocks: None,
         })
@@ -124,8 +122,6 @@ impl McpTool for SobreComposeTool {
             text,
             original_tokens: sent,
             saved_tokens: 0,
-            mode: Some("compose".to_string()),
-            path: Some(path),
             shell_outcome: None,
             content_blocks: None,
         })

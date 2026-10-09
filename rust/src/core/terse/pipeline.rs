@@ -25,14 +25,8 @@ pub fn compress(
     level: &CompressionLevel,
     pattern_compressed: Option<&str>,
 ) -> TerseResult {
-    if !level.is_active() || input.is_empty() {
-        let tokens = counter::count(input);
-        return TerseResult::passthrough(input.to_string(), tokens);
-    }
-
-    if input.len() > MAX_TERSE_INPUT_BYTES {
-        let tokens = counter::count(input);
-        return TerseResult::passthrough(input.to_string(), tokens);
+    if !level.is_active() || input.is_empty() || input.len() > MAX_TERSE_INPUT_BYTES {
+        return TerseResult::passthrough(input.to_string());
     }
 
     // Structured-data fast path: tool/command output that is a single JSON
@@ -46,12 +40,7 @@ pub fn compress(
         if after < before {
             return TerseResult {
                 output: compact,
-                tokens_before: before,
-                tokens_after: after,
                 savings_pct: counter::savings_pct(before, after),
-                layers_applied: vec!["json-compact"],
-                pattern_savings: 0,
-                terse_savings: before.saturating_sub(after),
                 quality_passed: true,
             };
         }
@@ -198,7 +187,7 @@ fn compress_fence_aware(input: &str, level: &CompressionLevel) -> Option<TerseRe
             output.push_str(text);
         } else {
             let res = engine::compress(text, level);
-            if res.quality.passed && res.tokens_after < res.tokens_before {
+            if res.quality_passed && res.tokens_after < res.tokens_before {
                 output.push_str(&res.output);
                 // Keep prose/fence boundaries on separate lines.
                 if !output.ends_with('\n') && text.ends_with('\n') {
@@ -214,12 +203,7 @@ fn compress_fence_aware(input: &str, level: &CompressionLevel) -> Option<TerseRe
     let tokens_after = counter::count(&output);
     Some(TerseResult {
         output,
-        tokens_before,
-        tokens_after,
         savings_pct: counter::savings_pct(tokens_before, tokens_after),
-        layers_applied: vec!["deterministic", "fence-guard"],
-        pattern_savings: 0,
-        terse_savings: tokens_before.saturating_sub(tokens_after),
         quality_passed: true,
     })
 }
@@ -227,19 +211,14 @@ fn compress_fence_aware(input: &str, level: &CompressionLevel) -> Option<TerseRe
 fn compress_direct(input: &str, level: &CompressionLevel) -> TerseResult {
     let result = engine::compress(input, level);
 
-    if !result.quality.passed {
-        return TerseResult::passthrough(input.to_string(), result.tokens_before);
+    if !result.quality_passed {
+        return TerseResult::passthrough(input.to_string());
     }
 
     TerseResult {
         output: result.output,
-        tokens_before: result.tokens_before,
-        tokens_after: result.tokens_after,
         savings_pct: counter::savings_pct(result.tokens_before, result.tokens_after),
-        layers_applied: vec!["deterministic"],
-        pattern_savings: 0,
-        terse_savings: result.tokens_before.saturating_sub(result.tokens_after),
-        quality_passed: result.quality.passed,
+        quality_passed: result.quality_passed,
     }
 }
 
@@ -250,20 +229,9 @@ fn compress_with_patterns(
 ) -> TerseResult {
     let res = residual::compress_residual(original, after_patterns, level);
 
-    let layers = if res.terse_savings > 0 {
-        vec!["patterns", "deterministic"]
-    } else {
-        vec!["patterns"]
-    };
-
     TerseResult {
         output: res.output,
-        tokens_before: res.tokens_before_patterns,
-        tokens_after: res.tokens_after_terse,
         savings_pct: res.total_savings_pct,
-        layers_applied: layers,
-        pattern_savings: res.pattern_savings,
-        terse_savings: res.terse_savings,
         quality_passed: res.quality_passed,
     }
 }
@@ -277,7 +245,6 @@ mod tests {
         let result = compress("hello world", &CompressionLevel::Off, None);
         assert_eq!(result.output, "hello world");
         assert_eq!(result.savings_pct, 0.0);
-        assert!(result.layers_applied.is_empty());
     }
 
     #[test]
@@ -291,21 +258,9 @@ mod tests {
     }
 
     #[test]
-    fn pattern_compression_attribution() {
-        let original = "This is a very long and verbose text with many unnecessary words and filler content that serves no real purpose";
-        let after_patterns = "Short summary";
-        let result = compress(original, &CompressionLevel::Standard, Some(after_patterns));
-        assert!(
-            result.pattern_savings > 0,
-            "should attribute savings to patterns"
-        );
-    }
-
-    #[test]
     fn empty_input_passthrough() {
         let result = compress("", &CompressionLevel::Max, None);
         assert_eq!(result.output, "");
-        assert_eq!(result.tokens_before, 0);
     }
 
     /// Fenced code (edit evidence diffs) must survive byte-exact —

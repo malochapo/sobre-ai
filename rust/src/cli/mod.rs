@@ -8,6 +8,5 @@ mod init_cmd;
 pub(crate) mod prompt;
 pub(crate) use call_cmd::cmd_call;
 pub use config_cmd::*;
-pub use dispatch::run;
 pub(crate) use index_cmd::cmd_index;
 pub use init_cmd::cmd_init;

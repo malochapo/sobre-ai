@@ -415,14 +415,7 @@ fn bench_rrf_eviction_handles_single_entry() {
 
     let now = Instant::now();
     let key = "solo.rs".to_string();
-    let entry = sobre::core::cache::CacheEntry::new(
-        "single",
-        "h".to_string(),
-        1,
-        50,
-        "/solo.rs".to_string(),
-        None,
-    );
+    let entry = sobre::core::cache::CacheEntry::new("single", "h".to_string(), 1, 50, None);
 
     let refs: Vec<(&String, &sobre::core::cache::CacheEntry)> = vec![(&key, &entry)];
     let scores = sobre::core::cache::eviction_scores_rrf(&refs, now);

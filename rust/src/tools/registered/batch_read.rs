@@ -154,8 +154,6 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         text: output,
         original_tokens: total_original,
         saved_tokens: total_original.saturating_sub(tokens),
-        mode: Some(mode),
-        path: None,
         shell_outcome: None,
         content_blocks: None,
     })

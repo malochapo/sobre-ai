@@ -79,22 +79,9 @@ impl RelevanceTracker {
 
     #[cfg(test)]
     pub fn with_config(budget_tokens: usize, threshold: f64) -> Self {
-        Self::with_config_and_age(budget_tokens, threshold, DEFAULT_MAX_AGE_SECS)
-    }
-
-    pub fn with_config_and_age(budget_tokens: usize, threshold: f64, max_age_secs: u64) -> Self {
-        Self {
-            entries: Vec::new(),
-            seq_counter: 0,
-            budget_tokens,
-            threshold: if threshold.is_finite() {
-                threshold.clamp(0.0, 1.0)
-            } else {
-                DEFAULT_THRESHOLD
-            },
-            max_age_secs,
-            disabled_handles: BTreeSet::new(),
-        }
+        let mut tracker = Self::new();
+        tracker.configure(budget_tokens, threshold, DEFAULT_MAX_AGE_SECS);
+        tracker
     }
 
     /// Update runtime settings without discarding already indexed entries.

@@ -110,7 +110,6 @@ impl McpTool for SobreGraphTool {
         };
         if let Some(text) = calls {
             return Ok(ToolOutput {
-                mode: Some(action),
                 ..ToolOutput::simple(text)
             });
         }
@@ -159,7 +158,6 @@ impl McpTool for SobreGraphTool {
         };
         if let Some(text) = impact {
             return Ok(ToolOutput {
-                mode: Some(action),
                 ..ToolOutput::simple(text)
             });
         }
@@ -196,7 +194,6 @@ impl McpTool for SobreGraphTool {
         );
 
         Ok(ToolOutput {
-            mode: Some(action),
             ..ToolOutput::simple(result)
         })
     }

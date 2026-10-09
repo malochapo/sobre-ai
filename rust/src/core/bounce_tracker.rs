@@ -191,38 +191,6 @@ impl BounceTracker {
     pub fn total_bounces(&self) -> u64 {
         self.total_bounces
     }
-
-    pub fn adjusted_savings(&self, raw_savings: usize) -> isize {
-        raw_savings as isize - self.total_wasted_tokens as isize
-    }
-
-    pub fn format_summary(&self) -> String {
-        if self.total_bounces == 0 {
-            return "Bounces: 0".to_string();
-        }
-        let mut lines = vec![format!(
-            "Bounces: {} ({} wasted tokens)",
-            self.total_bounces, self.total_wasted_tokens
-        )];
-        let mut exts: Vec<_> = self
-            .per_extension
-            .iter()
-            .filter(|(_, s)| s.bounces > 0)
-            .collect();
-        exts.sort_by_key(|a| std::cmp::Reverse(a.1.bounces));
-        for (ext, stats) in exts.iter().take(5) {
-            let rate = if stats.total_reads > 0 {
-                stats.bounces as f64 / stats.total_reads as f64 * 100.0
-            } else {
-                0.0
-            };
-            lines.push(format!(
-                "  {ext}: {}/{} reads bounced ({rate:.0}%), {} tok wasted",
-                stats.bounces, stats.total_reads, stats.wasted_tokens,
-            ));
-        }
-        lines.join("\n")
-    }
 }
 
 static GLOBAL_TRACKER: OnceLock<Mutex<BounceTracker>> = OnceLock::new();
@@ -323,21 +291,5 @@ mod tests {
             bt.record_read(&format!("f{i}.yml"), "full", 400, 400);
         }
         assert!(bt.should_force_full("new.yml"));
-    }
-
-    #[test]
-    fn adjusted_savings_subtracts_waste() {
-        let mut bt = BounceTracker::new();
-        bt.seq_counter = 1;
-        bt.record_read("a.rs", "map", 50, 500);
-        bt.seq_counter = 2;
-        bt.record_read("a.rs", "full", 500, 500);
-        assert_eq!(bt.adjusted_savings(1000), 950);
-    }
-
-    #[test]
-    fn format_summary_empty() {
-        let bt = BounceTracker::new();
-        assert_eq!(bt.format_summary(), "Bounces: 0");
     }
 }

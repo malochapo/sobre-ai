@@ -150,7 +150,7 @@ fn default_live_compress_exclude() -> Vec<String> {
     vec!["serena".to_string()]
 }
 
-pub fn normalize_url(value: &str) -> String {
+pub(crate) fn normalize_url(value: &str) -> String {
     value.trim().trim_end_matches('/').to_string()
 }
 

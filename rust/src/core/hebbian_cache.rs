@@ -144,7 +144,9 @@ impl CoAccessMatrix {
         }
     }
 
-    /// Force flush any pending burst (call at end of tool-call processing).
+    /// Commit the pending burst now. Production commits it on the first
+    /// access after the burst window instead.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn end_burst(&mut self) {
         self.flush_burst();
     }

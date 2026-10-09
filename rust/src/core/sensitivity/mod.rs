@@ -31,29 +31,6 @@ pub enum SensitivityLevel {
     Secret,
 }
 
-impl SensitivityLevel {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            SensitivityLevel::Public => "public",
-            SensitivityLevel::Internal => "internal",
-            SensitivityLevel::Confidential => "confidential",
-            SensitivityLevel::Secret => "secret",
-        }
-    }
-
-    /// Tolerant parse from a config/env string. Returns `None` on unknown input
-    /// so callers can fall back to the default without panicking.
-    pub fn parse(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "public" | "none" | "" => Some(SensitivityLevel::Public),
-            "internal" => Some(SensitivityLevel::Internal),
-            "confidential" | "pii" => Some(SensitivityLevel::Confidential),
-            "secret" | "secrets" | "credential" | "credentials" => Some(SensitivityLevel::Secret),
-            _ => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -63,19 +40,5 @@ mod tests {
         assert!(SensitivityLevel::Public < SensitivityLevel::Internal);
         assert!(SensitivityLevel::Internal < SensitivityLevel::Confidential);
         assert!(SensitivityLevel::Confidential < SensitivityLevel::Secret);
-    }
-
-    #[test]
-    fn parse_is_tolerant() {
-        assert_eq!(
-            SensitivityLevel::parse("SECRET"),
-            Some(SensitivityLevel::Secret)
-        );
-        assert_eq!(
-            SensitivityLevel::parse("pii"),
-            Some(SensitivityLevel::Confidential)
-        );
-        assert_eq!(SensitivityLevel::parse(""), Some(SensitivityLevel::Public));
-        assert_eq!(SensitivityLevel::parse("nope"), None);
     }
 }

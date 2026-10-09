@@ -86,7 +86,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            bm25_score: Some(result.score),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -107,7 +106,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -233,7 +231,6 @@ fn dense_search(
             let chunk = chunks.get(idx)?;
             let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
             Some(DenseSearchResult {
-                chunk_idx: idx,
                 similarity: sim,
                 file_path: chunk.file_path.clone(),
                 symbol_name: chunk.symbol_name.clone(),
@@ -255,7 +252,6 @@ fn result_key(file_path: &str, start_line: usize) -> String {
 #[cfg(any(test, feature = "dense"))]
 #[derive(Debug, Clone)]
 pub struct DenseSearchResult {
-    pub chunk_idx: usize,
     pub similarity: f32,
     pub file_path: String,
     pub symbol_name: String,
@@ -275,7 +271,6 @@ pub struct HybridResult {
     pub end_line: usize,
     pub snippet: String,
     pub rrf_score: f64,
-    pub bm25_score: Option<f64>,
     pub dense_score: Option<f32>,
     pub bm25_rank: Option<usize>,
     pub dense_rank: Option<usize>,
@@ -295,7 +290,6 @@ impl HybridResult {
             end_line: result.end_line,
             snippet: result.snippet,
             rrf_score: result.score,
-            bm25_score: Some(result.score),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -378,7 +372,6 @@ mod tests {
 
     fn make_dense_result(file: &str, name: &str, line: usize, sim: f32) -> DenseSearchResult {
         DenseSearchResult {
-            chunk_idx: 0,
             similarity: sim,
             file_path: file.to_string(),
             symbol_name: name.to_string(),
@@ -498,7 +491,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            bm25_score: Some(4.2),
             dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
@@ -519,7 +511,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            bm25_score: Some(4.2),
             dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
@@ -540,7 +531,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.5898,
-            bm25_score: Some(4.2),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -563,7 +553,6 @@ mod tests {
             end_line: 0,
             snippet: String::new(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,

@@ -130,7 +130,6 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     // requires the top-level `path`.
     let groups = plan_groups(args, ctx)?;
     validate_cross_file_options(args, groups.len())?;
-    let output_path = (groups.len() == 1).then(|| groups[0].0.clone());
 
     let mut texts = Vec::with_capacity(groups.len());
     for (path, ops) in groups {
@@ -154,8 +153,6 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         text: texts.join("\n\n"),
         original_tokens: 0,
         saved_tokens: 0,
-        mode: None,
-        path: output_path,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -512,8 +509,6 @@ fn delegate_replace_symbol(
         text: result,
         original_tokens: 0,
         saved_tokens: 0,
-        mode: Some("replace_symbol".to_string()),
-        path: get_str(args, "path"),
         shell_outcome: None,
         content_blocks: None,
     })
