@@ -91,7 +91,7 @@ impl McpTool for SobreGraphTool {
 
         // The call actions read `symbol`, `path` and `to` raw: the dispatcher
         // resolves `path` and `to` as filesystem paths, which would turn a
-        // function name into `<root>/name`. They need no session cache either.
+        // function name into `<root>/name`.
         let symbol = get_str(args, "symbol");
         let calls = match action.as_str() {
             "callers" | "callees" => Some(crate::tools::sobre_graph_calls::callers_or_callees(
@@ -172,21 +172,10 @@ impl McpTool for SobreGraphTool {
             None
         };
 
-        let cache = ctx
-            .cache
-            .as_ref()
-            .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
-        let Some(mut guard) = crate::server::bounded_lock::write(cache, "sobre_graph") else {
-            return Ok(ToolOutput::simple(
-                "[graph cache temporarily unavailable — retry in a moment]".to_string(),
-            ));
-        };
         let result = crate::tools::sobre_graph::handle(
             &action,
             path.as_deref(),
             &root,
-            &mut guard,
-            ctx.crp_mode,
             depth,
             kind.as_deref(),
             to.as_deref(),
@@ -285,6 +274,50 @@ mod tests {
         );
         assert!(trace.contains("Call path (2 hop(s))"), "{trace}");
         assert!(trace.contains("→ gamma"), "{trace}");
+    }
+
+    /// L1: a path-qualified call (`util::helper()`) is a call to `helper`,
+    /// and `Type::method` names a symbol, not a file.
+    #[test]
+    fn path_qualified_calls_and_names_resolve() {
+        let (_iso, _tmp, root) = chain_fixture();
+        std::fs::write(
+            format!("{root}/src/util.rs"),
+            "pub fn helper() {}\npub struct Config;\nimpl Config {\n    pub fn load() {}\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            format!("{root}/src/main.rs"),
+            "mod util;\nfn main() {\n    util::helper();\n    util::Config::load();\n}\n",
+        )
+        .unwrap();
+        crate::core::graph_index::scan(&root);
+
+        let callers = call(&root, &json!({"action": "callers", "symbol": "helper"}));
+        assert!(callers.contains("src/main.rs → main"), "{callers}");
+        let load = call(
+            &root,
+            &json!({"action": "symbol", "symbol": "Config::load"}),
+        );
+        assert!(load.contains("pub fn load()"), "{load}");
+    }
+
+    /// L2: an edit after the build is in the next answer.
+    #[test]
+    fn an_edit_after_the_build_is_seen() {
+        let (_iso, _tmp, root) = chain_fixture();
+        let first = call(&root, &json!({"action": "callers", "symbol": "gamma"}));
+        assert!(first.contains("1 caller(s)"), "{first}");
+
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::fs::write(
+            format!("{root}/src/extra.rs"),
+            "pub fn delta() {\n    crate::gamma();\n}\n",
+        )
+        .unwrap();
+        let after = call(&root, &json!({"action": "callers", "symbol": "gamma"}));
+        assert!(after.contains("2 caller(s)"), "{after}");
+        assert!(after.contains("src/extra.rs → delta"), "{after}");
     }
 
     #[test]

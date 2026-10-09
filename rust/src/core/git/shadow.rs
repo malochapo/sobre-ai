@@ -256,10 +256,9 @@ fn shadow_git_dir(project: &Path) -> Result<PathBuf, String> {
         .join("git"))
 }
 
-/// Stable per-project directory name (short BLAKE3 of the canonical path).
+/// The per-project directory name every store uses (decision 6).
 fn project_hash(project: &Path) -> String {
-    let canonical = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
-    crate::core::hasher::hash_short(&canonical.to_string_lossy())
+    crate::core::project_hash::hash_project_root(&project.to_string_lossy())
 }
 
 /// What a snapshot never records (keeps snapshots lean even without a

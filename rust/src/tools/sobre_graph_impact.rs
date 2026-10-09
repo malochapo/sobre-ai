@@ -91,25 +91,19 @@ fn open_graph(root: &str) -> Result<CodeGraph, String> {
     CodeGraph::open(root).map_err(|e| format!("Failed to open graph: {e}"))
 }
 
-/// Open the property graph for a *query*, rebuilding first when it cannot be
-/// trusted: either empty (never built) or produced by an engine older than
-/// [`crate::core::property_graph::GRAPH_ENGINE_VERSION`]. The rebuild is
-/// one-shot and idempotent: a fresh build stamps the current engine version,
-/// so a healthy graph is returned without rebuilding.
+/// Open the property graph for a *query*, built or refreshed first when it is
+/// missing or the source changed since it was built
+/// ([`crate::core::graph_provider::open_or_build`]), and rebuilt when an
+/// older engine produced it ([`crate::core::property_graph::engine_outdated`]).
 fn open_graph_fresh(root: &str) -> Result<CodeGraph, String> {
-    let graph = open_graph(root)?;
-    let empty = graph.node_count().unwrap_or(0) == 0;
-    let outdated = !empty && crate::core::property_graph::engine_outdated(root);
-    if empty || outdated {
-        drop(graph);
-        crate::core::graph_index::scan(root);
-        tracing::info!(
-            "Rebuilt property graph before impact query ({})",
-            if empty { "empty" } else { "engine outdated" },
-        );
-        return open_graph(root);
+    if crate::core::graph_provider::open_or_build(root).is_none() {
+        return Err(crate::core::graph_provider::GRAPH_UNAVAILABLE.to_string());
     }
-    Ok(graph)
+    if crate::core::property_graph::engine_outdated(root) {
+        crate::core::graph_index::scan(root);
+        tracing::info!("Rebuilt property graph before impact query (engine outdated)");
+    }
+    open_graph(root)
 }
 
 fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputFormat) -> String {

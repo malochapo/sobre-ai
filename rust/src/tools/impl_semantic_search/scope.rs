@@ -4,12 +4,10 @@ use std::path::{Path, PathBuf};
 
 /// Resolve the index root for a search/index path.
 ///
-/// The BM25 namespace is keyed on the detected *project* root (git remote /
-/// build marker), not on the literal search path: `project_identity` inspects
-/// only the exact directory it is handed and never walks up. A search launched
-/// from — or pointed at — a subdirectory therefore hashes to a different,
-/// usually empty namespace and returns zero hits, even though the real index
-/// sits one directory up. Promoting the search path the same way the
+/// The BM25 namespace is keyed on the detected *project* root, not on the
+/// literal search path: a search launched from — or pointed at — a
+/// subdirectory would otherwise hash to a different, usually empty namespace
+/// and return zero hits, even though the real index sits one directory up. Promoting the search path the same way the
 /// build does makes both agree. A genuinely requested subdirectory is kept as a
 /// result-scope filter (second tuple field) rather than becoming its own
 /// namespace.

@@ -79,7 +79,7 @@ was added.
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #58) |
 | J | Editing and shell tools | done (#59, #60) |
 | K | Reading and search tools | done (#61, #62) |
-| L | Graph, session, knowledge, review, `gain` | in progress (#63) |
+| L | Graph, session, knowledge, review, `gain` | done (#63, #PRNUM) |
 | M | Code: dense-only code in the default build, leftovers, Windows lints | open |
 | P | CI and release | open |
 | N | Documentation: complete reference and architecture, written last | open |
@@ -861,7 +861,7 @@ documented:
 
 ## Lot L — graph, session, knowledge, review, `gain`
 
-- [ ] **L1 The Rust call graph misses path-qualified calls.**
+- [x] **L1 The Rust call graph misses path-qualified calls.** (#PRNUM)
   - A `scoped_identifier` callee is stored whole (`util::check`,
     `Config::load`), symbols are stored bare
     (`core/deep_queries/calls.rs:297-301`).
@@ -876,16 +876,29 @@ documented:
     no related tests, and the checklist says "No tests found".
   - Imports through the crate's own name (`use demo::{add, Counter}`) are
     not edges either: `neighbors src/lib.rs` shows no incoming file.
-- [ ] **L2 The graph is never refreshed after its first build in a
-  process.** `open_or_build` (`core/graph_provider.rs:370`) and
+  - Done: a call is stored under its last path segment; `Type::method` is
+    looked up as a symbol unless the part before `::` is a file; `use
+    my_crate::…` resolves inside the crate, and `use a::b::{c, d}` imports
+    from `a::b` (it was cut to `a`). Related tests include the test files
+    that depend on the file. On the same crate, `callers helper` now finds
+    three, `trace main→helper` finds the path, `neighbors src/lib.rs` shows
+    `src/main.rs` and `tests/basic.rs`, and `review` lists
+    `tests/basic.rs`.
+- [x] **L2 The graph is never refreshed after its first build in a
+  process.** (#PRNUM) `open_or_build` (`core/graph_provider.rs:370`) and
   `open_graph_fresh` (`tools/sobre_graph_impact.rs:97-112`) rebuild
   only when the graph is empty or of another version; `index_looks_stale`
   (`core/graph_index/mod.rs:359-480`) is never what decides.
   `impact`, `changes` and `callers` answer from stale data, unlabelled.
-- [ ] **L3 The first graph call races the background warm-up**
+  Done: every graph read checks the source against the built graph
+  (removed, edited or new files) and rebuilds first when it changed.
+- [x] **L3 The first graph call races the background warm-up** (#PRNUM)
   (`server/dispatch/mod.rs:39-55`, `core/graph_index/mod.rs:615-627`).
   `build` can print "0 files… Index saved" and `callers` "0 edges"; the
   empty call graph is then saved.
+  Done: a scan waits for the running one and uses its result when current;
+  a graph call waits for an in-process build; with no graph yet, the tools
+  answer `ERROR: no code graph yet …` and the call graph is not saved.
 - [x] **L4 `sobre_session reset`, `load` and `import` drop the project
   root, the shell directory and the extra roots** (#63)
   (`tools/registered/sobre_session.rs:21-40,211-216`,
@@ -950,9 +963,11 @@ documented:
   absolute path in a graph keyed by relative paths
   (`server/context_gate.rs:66-95`, `core/property_graph/queries.rs:40-62,121-140`).
   Done: removed with L12.
-- [ ] **L15 `sobre_graph` holds the cache write lock for its whole run**
+- [x] **L15 `sobre_graph` holds the cache write lock for its whole run** (#PRNUM)
   (`tools/registered/sobre_graph.rs:177-195`); concurrent reads fail meanwhile.
-  Likely.
+  Likely. Done: it takes no lock; its one use of the cache, a full read when
+  a symbol's lines were past the end of its file, is now an error saying the
+  graph is out of date.
 - [x] **L16 `gain` overstates the proxy's savings.** (#63) The proxy recompresses
   the whole history on every request (`proxy/anthropic.rs:61-90`) and
   records each request's difference (`proxy/forward/prepare.rs:68-70`),
@@ -960,7 +975,7 @@ documented:
   (`cli/dispatch/analytics/gain.rs:168-173`) and `docs/contracts/usage-ledger-v1.md` call the figure a lower
   bound "priced once". Likely, from reading.
   Done: `gain` and the contract call the figure an estimate and say why.
-- [ ] **L17 Stores disagree on what a project is.**
+- [x] **L17 Stores disagree on what a project is.** (#PRNUM)
   - `hash_project_root` mixes the root with an identity (the git remote,
     or the package name). Knowledge, gotchas, graphs and co-occurrence move
     when a remote is added or changed, or the package is renamed;
@@ -973,7 +988,10 @@ documented:
   - Checkpoints use the canonical path (`core/git/shadow.rs:259`); sessions
     compare the root string.
   - Decision 6.
-- [ ] **L18 Smaller ones.**
+  - Done: every store is keyed on a hash of the canonical root; the
+    identity detectors (git remote, package names) are gone, and so is
+    `project_identity_hash` in the session bundle and the graph JSON.
+- [x] **L18 Smaller ones.**
   - The observe hook treats any model name containing "mini" as a
     background model, so "gemini" is never detected
     (`hook_handlers/observe.rs:76-86`).
@@ -999,6 +1017,8 @@ documented:
     `ERROR`; an empty value is refused; `sobre call` resolves `path`, `to`
     and `project_root` as the dispatcher does; the `repo` line is gone;
     with only local calls `gain` shows no money figure.
+  - Done in #PRNUM: a missing graph is an `ERROR`, and `diff-review`
+    honours `depth`.
 - [x] **L19 `sobre call` compressions are not in `usage.jsonl`.** (#63) The same
   `sobre_shell` call adds a line over MCP and none through `sobre call`;
   the README says every compression is recorded "on every path".

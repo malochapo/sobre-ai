@@ -22,7 +22,7 @@ pub fn handle(
 
 fn render_dep_graph(file: Option<&str>, depth: usize, project_root: &str) -> String {
     let Some(open) = graph_provider::open_or_build(project_root) else {
-        return "No dependency edges found in project index.".to_string();
+        return graph_provider::GRAPH_UNAVAILABLE.to_string();
     };
     let all_edges = open.edges();
 
@@ -114,7 +114,9 @@ fn bfs_reachable_files(
 }
 
 fn render_call_graph(file: Option<&str>, _depth: usize, project_root: &str) -> String {
-    let call_graph = crate::tools::sobre_graph_calls::load(project_root);
+    let Some(call_graph) = crate::tools::sobre_graph_calls::load(project_root) else {
+        return graph_provider::GRAPH_UNAVAILABLE.to_string();
+    };
 
     if call_graph.edges.is_empty() {
         return "No call edges found.".to_string();
@@ -250,15 +252,14 @@ mod tests {
         assert_eq!(shorten_path("a/b/c/main.rs"), "…/c/main.rs");
     }
 
+    /// No graph is an error, not an empty diagram.
     #[test]
-    fn render_dep_graph_empty_index() {
-        let result = render_dep_graph(None, 2, "/nonexistent/path");
-        assert!(result.contains("No dependency edges") || result.contains("flowchart"));
-    }
-
-    #[test]
-    fn render_call_graph_empty() {
-        let result = render_call_graph(None, 2, "/nonexistent/path");
-        assert!(result.contains("No call edges") || result.contains("flowchart"));
+    fn a_missing_graph_is_an_error() {
+        for result in [
+            render_dep_graph(None, 2, "/nonexistent/path"),
+            render_call_graph(None, 2, "/nonexistent/path"),
+        ] {
+            assert!(result.starts_with("ERROR: no code graph yet"), "{result}");
+        }
     }
 }

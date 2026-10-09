@@ -36,6 +36,10 @@ pub struct ResolverContext {
     /// resolution. Keyed by *declared* `namespace` first (authoritative) and by
     /// folder suffix as a fallback (see `build_csharp_namespace_index`).
     csharp_ns_index: HashMap<String, String>,
+    /// The project's own Rust crates: the name `use` writes (`my_crate`) ->
+    /// the crate's `src/` directory (`""`-relative, e.g. `src/` or
+    /// `rust/src/`), so `use my_crate::util` resolves like `crate::util`.
+    rust_crates: HashMap<String, String>,
 }
 
 impl ResolverContext {
@@ -55,6 +59,7 @@ impl ResolverContext {
         let dart_package = load_dart_package(project_root);
         let csharp_ns_index =
             build_csharp_namespace_index(project_root, &file_paths, file_contents);
+        let rust_crates = load_rust_crates(project_root, &file_paths);
 
         Self {
             file_paths,
@@ -63,7 +68,13 @@ impl ResolverContext {
             dart_package,
             file_set,
             csharp_ns_index,
+            rust_crates,
         }
+    }
+
+    /// The `src/` directory of the project's own crate named `name`.
+    fn rust_crate_src(&self, name: &str) -> Option<&str> {
+        self.rust_crates.get(name).map(String::as_str)
     }
 
     fn file_exists(&self, rel_path: &str) -> bool {
@@ -266,6 +277,29 @@ fn load_tsconfig_paths(root: &Path) -> HashMap<String, String> {
     }
 
     paths
+}
+
+/// Every crate of the project that has a library (`<dir>src/lib.rs` beside a
+/// `<dir>Cargo.toml`): its name as `use` writes it (`-` becomes `_`) -> `<dir>src/`.
+fn load_rust_crates(root: &Path, file_paths: &[String]) -> HashMap<String, String> {
+    let mut crates = HashMap::new();
+    for lib in file_paths.iter().filter(|f| f.ends_with("src/lib.rs")) {
+        let crate_dir = &lib[..lib.len() - "src/lib.rs".len()];
+        let Some(name) = std::fs::read_to_string(root.join(crate_dir).join("Cargo.toml"))
+            .ok()
+            .and_then(|c| c.parse::<toml::Table>().ok())
+            .and_then(|t| {
+                t.get("package")?
+                    .get("name")?
+                    .as_str()
+                    .map(|n| n.replace('-', "_"))
+            })
+        else {
+            continue;
+        };
+        crates.insert(name, format!("{crate_dir}src/"));
+    }
+    crates
 }
 
 fn load_go_module(root: &Path) -> Option<String> {
