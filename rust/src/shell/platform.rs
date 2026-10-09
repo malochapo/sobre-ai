@@ -286,21 +286,10 @@ fn find_real_shell() -> String {
 
 #[cfg(windows)]
 fn find_real_shell() -> String {
-    if is_running_in_msys_or_gitbash() {
-        for candidate in &["bash.exe", "sh.exe"] {
-            if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
-                if output.status.success() {
-                    if let Ok(path) = String::from_utf8(output.stdout) {
-                        if let Some(first_line) = path.lines().next() {
-                            let trimmed = first_line.trim();
-                            if !trimmed.is_empty() {
-                                return trimmed.to_string();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    if is_running_in_msys_or_gitbash()
+        && let Some(shell) = ["bash.exe", "sh.exe"].into_iter().find_map(where_first)
+    {
+        return shell;
     }
     if let Ok(pwsh) = which_powershell() {
         return pwsh;
@@ -318,21 +307,28 @@ fn is_running_in_msys_or_gitbash() -> bool {
 
 #[cfg(windows)]
 fn which_powershell() -> Result<String, ()> {
-    for candidate in &["pwsh.exe", "powershell.exe"] {
-        if let Ok(output) = std::process::Command::new("where").arg(candidate).output() {
-            if output.status.success() {
-                if let Ok(path) = String::from_utf8(output.stdout) {
-                    if let Some(first_line) = path.lines().next() {
-                        let trimmed = first_line.trim();
-                        if !trimmed.is_empty() {
-                            return Ok(trimmed.to_string());
-                        }
-                    }
-                }
-            }
-        }
+    ["pwsh.exe", "powershell.exe"]
+        .into_iter()
+        .find_map(where_first)
+        .ok_or(())
+}
+
+/// The first path `where` prints for `program`.
+#[cfg(windows)]
+fn where_first(program: &str) -> Option<String> {
+    let output = std::process::Command::new("where")
+        .arg(program)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
     }
-    Err(())
+    String::from_utf8(output.stdout)
+        .ok()?
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
 }
 
 /// Join multiple CLI arguments into a single command string, using quoting

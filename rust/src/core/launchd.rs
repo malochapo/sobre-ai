@@ -54,8 +54,8 @@ pub fn bootout(label: &str, plist: &Path) {
 /// timeout-protected. Returns `true` if bootstrap reported success.
 ///
 /// The job is always booted out first, so the subsequent bootstrap is a clean
-/// load that honours the plist's `RunAtLoad` (proxy/daemon start immediately;
-/// interval-only jobs like the auto-updater simply register). No `kickstart` is
+/// load that honours the plist's `RunAtLoad` (the proxy starts immediately).
+/// No `kickstart` is
 /// issued, so this never forces an unwanted immediate run.
 pub fn bootstrap(label: &str, plist: &Path) -> bool {
     // Clear any stale registration so bootstrap can't fail with

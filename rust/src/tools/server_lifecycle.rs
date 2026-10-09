@@ -128,7 +128,7 @@ impl SobreServer {
         *self.last_call.write().await = Instant::now();
     }
 
-    /// Aggressive cleanup on connection drop: save session, consolidate knowledge, clear caches.
+    /// Cleanup on connection drop: save the session, clear the caches.
     pub async fn shutdown(&self) {
         {
             let mut session = self.session.write().await;

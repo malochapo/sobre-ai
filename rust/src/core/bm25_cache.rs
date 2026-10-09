@@ -135,6 +135,7 @@ pub fn memory_usage(cache: &SharedBm25Cache) -> usize {
 /// has not yet dropped its clone, or a background refresh is in flight. The next
 /// search call retries against the then-sole-owner cache entry. Returns the bytes
 /// reclaimed (0 if skipped).
+#[cfg(feature = "dense")]
 pub fn shrink_resident_to_snippet(
     cache: &SharedBm25Cache,
     root: &Path,

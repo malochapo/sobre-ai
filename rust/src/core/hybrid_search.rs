@@ -12,7 +12,9 @@
 #[cfg(any(test, feature = "dense"))]
 use std::collections::HashMap;
 
-use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
+#[cfg(feature = "dense")]
+use super::bm25_index::BM25Index;
+use super::bm25_index::{ChunkKind, SearchResult};
 
 #[cfg(feature = "dense")]
 use super::embeddings::EmbeddingEngine;
@@ -158,18 +160,6 @@ pub fn hybrid_search(
         reciprocal_rank_fusion(&bm25_results, &dense_results, config, candidate_count)
     };
 
-    super::search_reranking::rerank_pipeline(&mut results, query, top_k);
-    results
-}
-
-#[cfg(not(feature = "dense"))]
-pub fn hybrid_search(query: &str, index: &BM25Index, top_k: usize) -> Vec<HybridResult> {
-    let candidate_count = (top_k * 5).min(50);
-    let mut results: Vec<HybridResult> = index
-        .search(query, candidate_count)
-        .into_iter()
-        .map(HybridResult::from_bm25)
-        .collect();
     super::search_reranking::rerank_pipeline(&mut results, query, top_k);
     results
 }

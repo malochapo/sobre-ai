@@ -237,6 +237,7 @@ impl BM25Index {
     ///
     /// Idempotent and only ever shrinks: chunks shorter than `keep_lines` are
     /// left untouched.
+    #[cfg(any(test, feature = "dense"))]
     pub fn shrink_resident_content_to_snippet(&mut self, keep_lines: usize) {
         let before = self.memory_usage_bytes();
         for chunk in &mut self.chunks {

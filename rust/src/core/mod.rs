@@ -66,6 +66,7 @@ pub mod context_packing;
 pub mod cooccurrence;
 #[cfg(feature = "dense")]
 pub mod dense_backend;
+#[cfg(feature = "dense")]
 pub mod embedding_index;
 pub mod embedding_quant;
 // Without `dense` the engine still compiles these modules — their
@@ -75,7 +76,9 @@ pub mod embedding_quant;
 #[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod embeddings;
 pub mod hybrid_search;
+#[cfg(feature = "dense")]
 pub mod search_reranking;
+#[cfg(feature = "dense")]
 pub mod splade_retrieval;
 pub mod spreading_activation;
 
@@ -133,6 +136,7 @@ pub mod surprise;
 // Domain: Config & Infrastructure
 // ---------------------------------------------------------------------------
 pub mod anchor;
+#[cfg(feature = "dense")]
 pub mod ann_cache;
 pub mod atomic_fs;
 pub mod binary_detect;
@@ -160,6 +164,7 @@ pub mod gotcha_tracker;
 pub mod handle;
 pub mod hasher;
 pub mod hebbian_cache;
+#[cfg(feature = "dense")]
 pub mod hnsw;
 pub mod home;
 pub mod homeostasis;

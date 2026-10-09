@@ -388,7 +388,7 @@ impl SobreReadTool {
                     .unwrap_or_else(|| ".".to_string());
             } else {
                 tracing::warn!(
-                    "session write-lock timeout (5s) in sobre_read post-update for {path}"
+                    "session write-lock timeout (10s) in sobre_read post-update for {path}"
                 );
                 project_root_snapshot = ctx.project_root.clone();
             }
@@ -620,13 +620,12 @@ fn anchored_lines_mode(start: i64, limit: Option<i64>) -> String {
     }
 }
 
-/// Apply a resolved line window to `mode`/`fresh`. An explicit non-lines mode
-/// (map/signatures/…) is never clobbered, and `start_line=1` with no
-/// limit is a no-op so it cannot disturb an auto/explicit read. An
-/// explicit `anchored` mode is windowed in place (`anchored:N-M`)
-/// instead of being collapsed to `lines:N-M` — that would silently drop the
-/// hash anchors the caller asked for, and previously let a bounded anchored
-/// read fall through to rendering (and erroring on) the whole file.
+/// Apply a resolved line window to `mode`/`fresh`: the window wins over the
+/// mode, so `signatures` with `start_line=10` reads `lines:10-…`.
+/// `start_line=1` with no limit is a no-op so it cannot disturb an
+/// auto/explicit read. An `anchored` mode is windowed in place
+/// (`anchored:N-M`) instead of being collapsed to `lines:N-M`, which would
+/// drop the hash anchors the caller asked for.
 fn apply_line_window(
     mode: &mut String,
     fresh: &mut bool,
