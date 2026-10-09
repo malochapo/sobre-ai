@@ -17,8 +17,6 @@ pub struct EntropyResult {
     pub techniques: Vec<String>,
 }
 
-impl EntropyResult {}
-
 /// Shannon entropy over already-encoded BPE token IDs (o200k_base).
 pub fn token_entropy_from_ids(tokens: &[u32]) -> f64 {
     if tokens.is_empty() {
@@ -115,9 +113,9 @@ pub fn entropy_compress_deterministic(content: &str) -> EntropyResult {
     entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[])
 }
 
-/// Entropy compression with file-type-adaptive thresholds and event emission.
-/// `force_keep` lines (explicit `protect` tokens) survive verbatim; pass
-/// `&[]` to keep the pre-protect behaviour byte-identical.
+/// Entropy compression with the per-file-type thresholds of
+/// [`super::adaptive_thresholds`]. `force_keep` lines (explicit `protect`
+/// tokens) survive verbatim.
 pub fn entropy_compress_adaptive(
     content: &str,
     path: &str,
@@ -133,10 +131,9 @@ pub fn entropy_compress_adaptive(
     )
 }
 
-/// Like [`entropy_compress_adaptive`] but overrides the learned BPE-entropy
-/// threshold (e.g. from the aggressiveness knob) while keeping the file-adaptive
-/// jaccard. Pure function of its inputs. Higher `bpe_entropy` drops more
-/// low-information lines.
+/// Like [`entropy_compress_adaptive`] but with the given BPE-entropy threshold
+/// (from the aggressiveness knob) and the per-file-type Jaccard threshold.
+/// Higher `bpe_entropy` drops more low-information lines.
 pub fn entropy_compress_with_threshold(
     content: &str,
     path: &str,
@@ -303,14 +300,17 @@ fn entropy_compress_inner(
         }
     }
     if dedup_count > 0 {
-        techniques.push(format!("⊘ {dedup_count} duplicate patterns (J≥0.7)"));
+        techniques.push(format!(
+            "⊘ {dedup_count} duplicate patterns (J≥{jaccard_threshold:.2})"
+        ));
     }
 
+    // Every block after the first of its group goes, line by line.
     let mut result: Vec<String> = Vec::new();
-    let mut skip_indices: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut skip_indices: HashSet<usize> = HashSet::new();
     for group in &groups {
-        if group.len() > 1 {
-            for &idx in &group[1..] {
+        for &block in group.iter().skip(1) {
+            for &idx in &blocks[block].lines {
                 // Protected lines are a hard keep: never dedup them away,
                 // not just exempt them from the entropy threshold above.
                 if !super::protect::line_is_protected(lines[idx], force_keep) {
@@ -488,10 +488,8 @@ pub fn entropy_compress_to_density(content: &str, target: f64) -> EntropyResult 
         kept_count += 1;
     }
 
-    // Delimiter Balance Guard: when a kept line opens unclosed
-    // delimiters ( [ {, force-keep subsequent lines until the balance
-    // is restored. This prevents `logger.info(` from being kept while
-    // its arguments are dropped, leaving syntactically broken output.
+    // A kept line inside a multi-line `(…)` or `[…]` span keeps the whole
+    // span, so `logger.info(` never survives without its arguments.
     delimiter_balance_force_keep(&lines, &scored, &mut keep, &mut used, &mut kept_count);
 
     let mut out_lines: Vec<&str> = Vec::with_capacity(kept_count);
@@ -533,29 +531,41 @@ pub fn average_line_entropy(content: &str) -> f64 {
     }
 }
 
+/// A paragraph: a run of non-blank lines.
 struct Block {
     content: String,
+    /// Indices of its lines in the slice it was cut from.
+    lines: Vec<usize>,
 }
 
 fn extract_blocks(lines: &[&str]) -> Vec<Block> {
     let mut blocks = Vec::new();
-    let mut current = String::new();
+    let mut current = Block {
+        content: String::new(),
+        lines: Vec::new(),
+    };
 
-    for line in lines {
+    for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed.is_empty() && !current.is_empty() {
-            blocks.push(Block {
-                content: current.clone(),
-            });
-            current.clear();
-        } else if !trimmed.is_empty() {
-            current.push_str(trimmed);
-            current.push('\n');
+        if trimmed.is_empty() {
+            if !current.lines.is_empty() {
+                blocks.push(std::mem::replace(
+                    &mut current,
+                    Block {
+                        content: String::new(),
+                        lines: Vec::new(),
+                    },
+                ));
+            }
+        } else {
+            current.content.push_str(trimmed);
+            current.content.push('\n');
+            current.lines.push(i);
         }
     }
 
-    if !current.is_empty() {
-        blocks.push(Block { content: current });
+    if !current.lines.is_empty() {
+        blocks.push(current);
     }
 
     blocks
@@ -637,6 +647,24 @@ mod tests {
         assert!(
             protected_hits >= baseline_hits,
             "protect must keep at least as many lines as the baseline"
+        );
+    }
+
+    /// A repeated paragraph is dropped whole, and only the repeat: the first
+    /// copy and every other line stay.
+    #[test]
+    fn duplicate_block_drops_the_repeat_not_other_lines() {
+        let a = "fn alpha_handler(request: Request) -> Response { route(request) }";
+        let b = "let beta_value = compute_beta(request.payload, config.limits);";
+        let c = "const GAMMA_LIMIT: usize = 4096;";
+        let content = format!("{a}\n{b}\n\n{a}\n{b}\n\n{c}\n");
+        let out = entropy_compress_inner(&content, 0.0, 0.7, &[], false, &[]).output;
+        assert_eq!(out.matches("alpha_handler").count(), 1, "{out}");
+        assert_eq!(out.matches("compute_beta").count(), 1, "{out}");
+        assert!(out.contains(c), "{out}");
+        assert!(
+            out.find("alpha_handler") < out.find("compute_beta"),
+            "{out}"
         );
     }
 
