@@ -91,7 +91,7 @@ fn compress_next(output: &str) -> String {
     }
 
     if parts.len() == 1 && parts[0] == "built" {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
 
     parts.join("\n")
@@ -133,7 +133,7 @@ fn compress_vite(output: &str) -> String {
     }
 
     if parts.len() == 1 && parts[0] == "built" {
-        return compact_output(trimmed, 10);
+        return super::compact_lines(trimmed, 10);
     }
     parts.join("\n")
 }
@@ -144,16 +144,4 @@ fn extract_size(line: &str) -> String {
     } else {
         "?".to_string()
     }
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
 }

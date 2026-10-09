@@ -445,7 +445,7 @@ mod tests {
     /// lines are decorative separator comments must be recognized as source, so
     /// the proxy protects it (when routed through an unrecognized tool) instead
     /// of lossy-compressing it and silently dropping the `// ————` separators —
-    /// the exact divergence that made the model's `sobre_edit` fail on a whitespace
+    /// the exact divergence that made the model's text edit fail on a whitespace
     /// mismatch.
     #[test]
     fn test_file_with_separator_comments_is_source() {

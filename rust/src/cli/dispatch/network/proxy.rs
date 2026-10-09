@@ -1,8 +1,5 @@
 //! `sobre proxy …` — proxy lifecycle and live upstreams.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
-
 /// The port named by `--port N`, `--port=N`, `-p N` or `-p=N`. A missing or
 /// unparseable value is a usage error (exit 2).
 fn port_flag(rest: &[String]) -> Option<u16> {
@@ -24,37 +21,13 @@ fn port_flag(rest: &[String]) -> Option<u16> {
     None
 }
 
-/// Where the port of the last proxy started from this CLI is kept, so
-/// `status`, `stop` and `restart` find a proxy started on another port.
-fn port_file() -> Option<std::path::PathBuf> {
-    crate::core::paths::state_dir()
-        .ok()
-        .map(|d| d.join("proxy.port"))
-}
-
-fn remember_port(port: u16) {
-    if let Some(path) = port_file() {
-        if let Some(dir) = path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let _ = std::fs::write(path, port.to_string());
-    }
-}
-
 /// The port to talk to: `--port`, else the last port a proxy was started on,
 /// else the configured one.
 fn proxy_port(rest: &[String]) -> u16 {
     port_flag(rest)
-        .or_else(|| {
-            port_file()
-                .and_then(|p| std::fs::read_to_string(p).ok())
-                .and_then(|s| s.trim().parse().ok())
-        })
+        .or_else(crate::proxy_setup::last_started_port)
         .unwrap_or_else(crate::proxy_setup::default_port)
 }
-
-const USAGE: &str =
-    "Usage: sobre proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port N]";
 
 /// Stops a standalone/foreground proxy identified by its `/health` answer.
 /// Returns true if a sobre proxy was answering on `port`. Shared by `stop` and
@@ -100,47 +73,28 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
 
 pub(crate) fn cmd_proxy(rest: &[String]) {
     {
-        // `--help` anywhere must never execute the verb.
-        if wants_help(rest) {
-            crate::outln!("{USAGE}");
-            crate::outln!();
-            crate::outln!("Commands:");
-            crate::outln!(
-                "  start     Run the compression proxy (foreground; -d/--detach for background; --autostart installs a service)"
-            );
-            crate::outln!("  stop      Unload the autostart unit and stop the proxy process");
-            crate::outln!(
-                "  restart   Reload the autostart unit, or restart the proxy process (re-reads config.toml)"
-            );
-            crate::outln!("  status    Show proxy config, process and live upstreams");
-            crate::outln!(
-                "  enable    Enable the proxy: config flag, autostart service, agent wiring (--force rewires agents that point elsewhere)"
-            );
-            crate::outln!("  disable   Disable the proxy and restore the original endpoint");
-            crate::outln!("  cleanup   Remove stale proxy URLs from AI tool configs");
-            crate::outln!("  token     Print the current proxy Bearer token (for HTTP clients)");
-            return;
-        }
         let Some(sub) = rest.first().map(String::as_str) else {
-            crate::errln!("{USAGE}");
+            crate::errln!("{}", crate::cli::spec::group_text("proxy"));
             std::process::exit(2);
         };
+        if matches!(sub, "--help" | "-h" | "help") {
+            crate::outln!("{}", crate::cli::spec::group_text("proxy"));
+            return;
+        }
+        // `--help` after the verb prints its entry and never runs it.
+        let path = format!("proxy {sub}");
+        if crate::cli::spec::COMMANDS.iter().any(|c| c.path == path) {
+            crate::cli::spec::check_or_exit(&path, &rest[1..]);
+        }
         match sub {
             "start" => {
                 let port = port_flag(rest).unwrap_or_else(crate::proxy_setup::default_port);
-                let autostart = rest.iter().any(|a| a == "--autostart");
-                if autostart {
-                    if !crate::proxy_autostart::install(port, false) {
-                        std::process::exit(1);
-                    }
-                    return;
-                }
                 let detach = rest.iter().any(|a| a == "--detach" || a == "-d");
                 if detach {
                     start_detached(port);
                     return;
                 }
-                remember_port(port);
+                crate::proxy_setup::remember_started_port(port);
                 if let Err(e) = crate::cli::dispatch::run_async(crate::proxy::start_proxy(port)) {
                     tracing::error!("Proxy error: {e}");
                     std::process::exit(1);
@@ -247,27 +201,28 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             }
             "enable" => {
                 let force = rest.iter().any(|a| a == "--force");
-                if let Err(e) =
-                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true))
-                {
-                    tracing::warn!("could not persist proxy.enabled: {e}");
-                }
-
                 let port = crate::proxy_setup::default_port();
                 if crate::proxy_autostart::is_supported() {
                     if !crate::proxy_autostart::install(port, false) {
                         crate::errln!(
-                            "\x1b[31m✗\x1b[0m Proxy enable failed; managed service did not acquire port {port}."
+                            "\x1b[31m✗\x1b[0m Proxy enable failed: the service manager did not start the proxy on port {port}. Nothing was changed.\n  Start it by hand with `sobre proxy start -d`, then run `sobre proxy enable` again."
                         );
                         std::process::exit(1);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(500));
-                } else {
+                } else if !crate::proxy_setup::is_proxy_reachable(port) {
                     // No service manager integration here (Windows): the
-                    // agents are still wired, and the proxy is started by hand.
-                    crate::outln!(
-                        "  No autostart on this platform: start the proxy with `sobre proxy start -d --port {port}`."
+                    // proxy is started by hand, and only a running proxy is
+                    // wired into the agents.
+                    crate::errln!(
+                        "No autostart on this platform. Start the proxy first with `sobre proxy start -d --port {port}`,\nthen run `sobre proxy enable` again. Nothing was changed."
                     );
+                    std::process::exit(1);
+                }
+                if let Err(e) =
+                    crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true))
+                {
+                    tracing::warn!("could not persist proxy.enabled: {e}");
                 }
 
                 let home = dirs::home_dir().unwrap_or_default();
@@ -284,10 +239,17 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 }
 
                 crate::proxy_autostart::uninstall(false);
+                crate::proxy_autostart::stop_everywhere(false);
                 let home = dirs::home_dir().unwrap_or_default();
-                crate::proxy_setup::uninstall_proxy_env(&home, false);
+                let unwired = crate::proxy_setup::uninstall_proxy_env(&home, false);
 
-                crate::outln!("\x1b[32m✓\x1b[0m Proxy disabled. Original endpoint restored.");
+                if unwired > 0 {
+                    crate::outln!(
+                        "\x1b[32m✓\x1b[0m Proxy disabled; the agents sobre had pointed at it are back on their own settings."
+                    );
+                } else {
+                    crate::outln!("\x1b[32m✓\x1b[0m Proxy disabled. No agent pointed at it.");
+                }
                 crate::outln!("  Re-enable anytime: sobre proxy enable");
             }
             "cleanup" => {
@@ -310,19 +272,25 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 }
             }
             other => {
-                crate::errln!("Unknown proxy command '{other}'.\n{USAGE}");
+                crate::errln!(
+                    "sobre proxy: unknown command '{other}'\n{}",
+                    crate::cli::spec::group_text("proxy")
+                );
                 std::process::exit(2);
             }
         }
     }
     /// Fork a child process running `sobre proxy start --port=N` with
-    /// stdout/stderr redirected to a log file, then exit the parent immediately.
-    /// The child's PID is written to the proxy PID file so `sobre proxy stop`
-    /// can find and kill it.
+    /// stdout/stderr appended to `<state>/proxy.log`, then exit the parent
+    /// immediately. Only the port is recorded (`proxy.port`); `sobre proxy
+    /// stop` asks `/health` on it for the PID.
     fn start_detached(port: u16) {
         let exe = std::env::current_exe().unwrap_or_else(|_| "sobre".into());
-        let log_dir =
-            crate::core::paths::state_dir().unwrap_or_else(|_| std::env::temp_dir().join("sobre"));
+        // The log lives in sobre's state dir, never a shared temporary one.
+        let log_dir = crate::core::paths::state_dir().unwrap_or_else(|e| {
+            crate::errln!("Cannot resolve sobre's state directory for the proxy log: {e}");
+            std::process::exit(1);
+        });
         let _ = std::fs::create_dir_all(&log_dir);
         let log_path = log_dir.join("proxy.log");
         let log_file = std::fs::OpenOptions::new()
@@ -345,7 +313,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
             .spawn()
         {
             Ok(child) => {
-                remember_port(port);
+                crate::proxy_setup::remember_started_port(port);
                 crate::outln!(
                     "\x1b[32m✓\x1b[0m Proxy started in background (PID {}, port {port})",
                     child.id()

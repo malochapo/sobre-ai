@@ -70,81 +70,31 @@ MORE:
 }
 
 pub(super) fn print_help() {
-    println!(
+    print!("{}", full_help_text());
+}
+
+/// `sobre help all`: the command reference from [`crate::cli::spec`], then
+/// what the shell commands compress.
+pub(super) fn full_help_text() -> String {
+    format!(
         "sobre {version} — local context tools for coding agents
 
 {banner}
 
-GETTING STARTED:
-    sobre init                  Connect every detected agent
-    sobre init <agent>          Connect one agent
-    sobre doctor                Check that everything is wired up correctly
-    sobre gain                  See how many tokens you have saved
-    (everything below is reference — run `sobre help` for the short version)
-
-USAGE:
-    sobre                       Start the MCP server (stdio)
-    sobre mcp                   Same, explicitly
-    sobre -c \"command\"          Run with compressed output (used by agent hooks)
-    sobre raw \"command\"         Run with the exact, uncompressed output
-    sobre call <tool> [--project-root <path>] --json '<json>'
-                                   Call one MCP tool from the shell
-
-SAVINGS:
-    gain                           Tokens saved, real cost (with the proxy), overhead
-    gain --by-tool [--limit=N]     Savings per tool or command
-    gain --daily                   Saved tokens and real cost per day
-    gain --json                    Machine-readable output
-    gain --period=<all|today|Nd>   Period to cover (default all)
-    gain --model=<m>               Price saved tokens at this model's rate
-    gain --reset                   Clear the usage ledger
-
-INDEX:
-    index build [--force] [--root <path>]
-                                   Build the graph and BM25 indexes (and the dense
-                                   index in builds with local embeddings);
-                                   --force rebuilds from scratch
-    index status [--json]          What is built, and how large
-
-SETUP AND MAINTENANCE:
-    init [<agent>] [--check] [--repair] [--json]
-    doctor [--fix] [--json]        Diagnostics (and repair), version, connected agents,
-                                   debug-log path
-    doctor integrations [--json]   Per-agent integration checks
-    doctor overhead [--json]       Fixed context cost per session
-    doctor lint-context [--json]   Low-signal or duplicate lines in injected context
-    config [show]                  Show the config file
-    config set <key> <value>       Change one key
-    config path | config init      Print the file's path | write it with every key documented
-    embeddings status|provision    Local ONNX runtime and model for semantic search
-    proxy start [--port N] [--detach] | stop | restart | status
-                                   Local API proxy (stop/status/restart find the last
-                                   port it was started on)
-    proxy enable [--force] | disable
-                                   Turn the proxy on or off (autostart and agent wiring;
-                                   --force rewires agents that point elsewhere)
-    proxy cleanup                  Remove proxy URLs left in agent configs while it is off
-    proxy token                    Print the proxy's bearer token
-    hook <name>                    Internal: run by the hooks init installs
-    uninstall [--keep-config] [--keep-binary] [--dry-run]
-                                   Remove hooks, MCP configs, the skill, autostart,
-                                   data and the binary
-
-SHELL OUTPUT PATTERNS (95+, for the hooks, sobre_shell and -c):
+COMMANDS:
+{reference}
+SHELL OUTPUT PATTERNS (for the hooks, sobre_shell and -c):
     git, docker, npm/pnpm, cargo, gh, kubectl, python (pip, ruff, poetry, uv),
     linters, tsc and bundlers, ruby, test runners, terraform/make/maven/gradle,
     data tools, security scanners, jj/mise/buf, cloud CLIs, curl/grep/find/ls
 
-OPTIONS:
-    --version, -V                  Show version
-    --help, -h                     Show this help
-
 TROUBLESHOOTING:
     Something broken?    sobre doctor --fix
-    Remove sobre?        sobre uninstall --dry-run   (lists what it would remove)
     Preview init?        sobre init --check
+    Remove sobre?        sobre uninstall --help   (what it removes)
 ",
         version = env!("CARGO_PKG_VERSION"),
         banner = capability_banner(),
-    );
+        reference = crate::cli::spec::reference_text(),
+    )
 }

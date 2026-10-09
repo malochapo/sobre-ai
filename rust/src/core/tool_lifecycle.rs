@@ -1,6 +1,5 @@
-//! Shared tool lifecycle — gives the `sobre -c` shell wrapper the session,
-//! usage and consolidation side effects the MCP server applies inline, by
-//! loading and saving state from disk.
+//! Shared tool lifecycle — records the `sobre -c` shell wrapper's compressions
+//! in the usage ledger, as the MCP server records its own.
 
 use crate::core::session::SessionState;
 use crate::core::usage::{self, Surface};
@@ -40,11 +39,6 @@ pub fn record_shell_command(command: &str, original_tokens: usize, output_tokens
         original_tokens,
         output_tokens,
     );
-
-    if let Some(mut session) = SessionState::load_latest() {
-        session.record_command();
-        let _ = session.save();
-    }
 }
 
 /// First word of a command line, without its directory: `/usr/bin/git log`

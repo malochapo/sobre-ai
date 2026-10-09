@@ -64,10 +64,6 @@ impl fmt::Display for LineRange {
 pub(crate) enum ReadMode {
     /// Verbatim, edit-ready (framed) — `"full"`.
     Full,
-    /// Headerless, trailing-whitespace-stripped verbatim — `"full-compact"`.
-    /// Used by the Read redirect to produce temp files faithful to the
-    /// original line structure while saving framing overhead.
-    FullCompact,
     /// Verbatim + per-line `N:hh|` hash anchors, edit-ready for `sobre_patch`
     /// — `"anchored"`, or windowed as `"anchored:N-M"` so a
     /// bounded anchored read never has to materialize/anchor the whole file.
@@ -146,7 +142,7 @@ impl ParseModeError {
                 format!("invalid read mode \"{s}\": expected density:0.NN, e.g. density:0.40")
             }
             ParseModeError::Malformed(s) | ParseModeError::Unknown(s) => format!(
-                "invalid read mode \"{s}\": expected one of auto, full, full-compact, raw, \
+                "invalid read mode \"{s}\": expected one of auto, full, raw, \
                  map, signatures, aggressive, entropy, task, reference, diff, anchored, \
                  lines:N-M, anchored:N-M, density:0.NN"
             ),
@@ -178,20 +174,23 @@ fn parse_line_multi(payload: &str) -> Result<String, ParseModeError> {
     Ok(payload.to_string())
 }
 
-/// Parse the payload of a line-range mode (`"5-10"`, `"5-999999"`, or a bare
-/// `"5"` meaning "from line N to EOF"). `whole` is the full original mode string
-/// (`"lines:…"` or `"anchored:…"`) so a rejection names the mode the caller
-/// actually typed — an `anchored:` typo must not be reported as `lines:`.
+/// Parse the payload of a line-range mode: `"5-10"`, `"5-"` (line 5 to the
+/// end), or a bare `"5"` (line 5 alone), the same everywhere a window is read.
+/// `whole` is the full original mode string (`"lines:…"` or `"anchored:…"`)
+/// so a rejection names the mode the caller actually typed — an `anchored:`
+/// typo must not be reported as `lines:`.
 fn parse_line_range(payload: &str, whole: &str) -> Result<LineRange, ParseModeError> {
     let malformed = || ParseModeError::Malformed(whole.to_string());
     if let Some((a, b)) = payload.split_once('-') {
         let start = a.trim().parse::<u32>().map_err(|_| malformed())?;
+        if b.trim().is_empty() {
+            return Ok(LineRange::to_eof(start));
+        }
         let end = b.trim().parse::<u32>().map_err(|_| malformed())?;
         Ok(LineRange::new(start, end))
     } else {
-        // A bare `lines:N` means "from line N to EOF".
-        let start = payload.trim().parse::<u32>().map_err(|_| malformed())?;
-        Ok(LineRange::to_eof(start))
+        let line = payload.trim().parse::<u32>().map_err(|_| malformed())?;
+        Ok(LineRange::new(line, line))
     }
 }
 
@@ -201,7 +200,6 @@ impl FromStr for ReadMode {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(match s {
             "full" => ReadMode::Full,
-            "full-compact" => ReadMode::FullCompact,
             "anchored" => ReadMode::Anchored(None),
             "raw" => ReadMode::Raw,
             "signatures" => ReadMode::Signatures,
@@ -240,7 +238,6 @@ impl fmt::Display for ReadMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let keyword = match self {
             ReadMode::Full => "full",
-            ReadMode::FullCompact => "full-compact",
             ReadMode::Raw => "raw",
             ReadMode::Signatures => "signatures",
             ReadMode::Map => "map",
@@ -327,7 +324,6 @@ mod tests {
     /// Every canonical mode string the handler/`render.rs` produce or accept.
     const CANONICAL: &[&str] = &[
         "full",
-        "full-compact",
         "anchored",
         "raw",
         "signatures",
@@ -415,10 +411,19 @@ mod tests {
             "lines:5-999999".parse::<ReadMode>().unwrap(),
             ReadMode::Lines(LineRange::to_eof(5))
         );
-        // A bare `lines:5` means "from line 5 to EOF".
+        // K15: a bare `lines:5` is line 5 alone, as everywhere else; `5-`
+        // runs to the end.
         assert_eq!(
             "lines:5".parse::<ReadMode>().unwrap(),
+            ReadMode::Lines(LineRange::new(5, 5))
+        );
+        assert_eq!(
+            "lines:5-".parse::<ReadMode>().unwrap(),
             ReadMode::Lines(LineRange::to_eof(5))
+        );
+        assert_eq!(
+            "anchored:5".parse::<ReadMode>().unwrap(),
+            ReadMode::Anchored(Some(LineRange::new(5, 5)))
         );
     }
 

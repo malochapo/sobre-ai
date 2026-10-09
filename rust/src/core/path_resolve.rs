@@ -22,14 +22,35 @@ fn nearest_git_boundary(start: &Path) -> Option<PathBuf> {
     None
 }
 
-/// True when `shell_cwd` lives in a DIFFERENT git checkout than
-/// `project_root`: both sides resolve to a `.git` boundary and the
-/// boundaries differ. This is the worktree signal — Claude Code's
-/// `EnterWorktree` nests a full checkout (own `.git` *file*) under
-/// `<repo>/.claude/worktrees/<name>/`, so a same-named relative path exists
-/// in both trees and a bare `exists()` probe silently picks the stale one.
-/// A monorepo subdirectory (`cd rust/`) shares the boundary → not diverged;
-/// either side without any `.git` upward → no signal → not diverged.
+/// The repository a checkout belongs to: its `.git` directory or, for a
+/// linked worktree (a `.git` file `gitdir: <repo>/.git/worktrees/<name>`),
+/// the common directory that names in its `commondir` file. A submodule's
+/// `.git` file points at a repository of its own under `.git/modules/`,
+/// which has no `commondir`: another repository.
+fn repository_dir(checkout: &Path) -> Option<PathBuf> {
+    let dot_git = checkout.join(".git");
+    if dot_git.is_dir() {
+        return Some(crate::core::pathutil::safe_canonicalize_or_self(&dot_git));
+    }
+    let text = std::fs::read_to_string(&dot_git).ok()?;
+    let gitdir = checkout.join(text.trim().strip_prefix("gitdir:")?.trim());
+    let common = match std::fs::read_to_string(gitdir.join("commondir")) {
+        Ok(rel) => gitdir.join(rel.trim()),
+        Err(_) => gitdir,
+    };
+    Some(crate::core::pathutil::safe_canonicalize_or_self(&common))
+}
+
+/// True when `shell_cwd` lives in ANOTHER worktree of the repository
+/// `project_root` belongs to. Claude Code's `EnterWorktree` nests a full
+/// checkout (own `.git` *file*) under `<repo>/.claude/worktrees/<name>/`, so
+/// a same-named relative path exists in both trees and a bare `exists()`
+/// probe silently picks the stale one.
+///
+/// A monorepo subdirectory (`cd rust/`) shares the checkout; a nested
+/// repository or a submodule (`cd vendor/lib`) is another repository, whose
+/// `src/lib.rs` is not the project's; either side without any `.git` upward
+/// gives no signal. None of them diverge.
 pub(crate) fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &str) -> bool {
     if shell_cwd == project_root {
         return false;
@@ -38,7 +59,12 @@ pub(crate) fn shell_cwd_is_divergent_checkout(project_root: &str, shell_cwd: &st
         nearest_git_boundary(Path::new(shell_cwd)),
         nearest_git_boundary(Path::new(project_root)),
     ) {
-        (Some(cwd_git), Some(root_git)) => cwd_git != root_git,
+        (Some(cwd_git), Some(root_git)) if cwd_git != root_git => {
+            match (repository_dir(&cwd_git), repository_dir(&root_git)) {
+                (Some(a), Some(b)) => a == b,
+                _ => false,
+            }
+        }
         _ => false,
     }
 }
@@ -227,9 +253,15 @@ mod tests {
         let repo = base.join("repo");
         let wt = repo.join(".claude").join("worktrees").join("fix-x");
         fs::create_dir_all(repo.join("src")).unwrap();
-        fs::create_dir_all(repo.join(".git")).unwrap(); // main checkout: .git dir
+        fs::create_dir_all(repo.join(".git").join("worktrees").join("fix-x")).unwrap(); // main checkout: .git dir
+        fs::write(repo.join(".git/worktrees/fix-x/commondir"), "../..\n").unwrap();
         fs::create_dir_all(wt.join("src")).unwrap();
-        fs::write(wt.join(".git"), "gitdir: ../../.git/worktrees/fix-x\n").unwrap(); // worktree: .git FILE
+        // worktree: .git FILE naming the main repository's worktree entry
+        fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", repo.join(".git/worktrees/fix-x").display()),
+        )
+        .unwrap();
         fs::write(repo.join("src/scoring.rs"), "stale").unwrap();
         fs::write(wt.join("src/scoring.rs"), "fresh").unwrap();
 
@@ -289,6 +321,41 @@ mod tests {
             "root copy",
             "same-checkout cwd must not divert resolution: {out}"
         );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    /// G9: a nested repository or a submodule under the project is another
+    /// repository: `cd` into it does not move relative paths there.
+    #[test]
+    fn nested_repository_and_submodule_are_not_divergent() {
+        let base = std::env::temp_dir().join(format!("lc_g9_nested_{}", std::process::id()));
+        let repo = base.join("repo");
+        let nested = repo.join("vendor").join("lib");
+        let sub = repo.join("deps").join("sub");
+        fs::create_dir_all(repo.join(".git").join("modules").join("sub")).unwrap();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(repo.join("src/lib.rs"), "project").unwrap();
+        fs::create_dir_all(nested.join(".git")).unwrap();
+        fs::create_dir_all(nested.join("src")).unwrap();
+        fs::write(nested.join("src/lib.rs"), "nested").unwrap();
+        fs::create_dir_all(sub.join("src")).unwrap();
+        fs::write(sub.join(".git"), "gitdir: ../../.git/modules/sub\n").unwrap();
+        fs::write(sub.join("src/lib.rs"), "submodule").unwrap();
+
+        for cwd in [&nested, &sub] {
+            assert!(!shell_cwd_is_divergent_checkout(
+                &repo.to_string_lossy(),
+                &cwd.to_string_lossy(),
+            ));
+            let out = resolve_tool_path(
+                Some(&repo.to_string_lossy()),
+                Some(&cwd.to_string_lossy()),
+                "src/lib.rs",
+            )
+            .unwrap();
+            assert_eq!(fs::read_to_string(&out).unwrap(), "project", "{out}");
+        }
 
         let _ = fs::remove_dir_all(&base);
     }

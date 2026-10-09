@@ -5,7 +5,6 @@
 
 mod autonomy_tests;
 mod claude_config_dir;
-mod claude_mcp_selfheal;
 mod codex_proxy;
 mod dual_process_rehydrate;
 mod index_scoping_scenarios;

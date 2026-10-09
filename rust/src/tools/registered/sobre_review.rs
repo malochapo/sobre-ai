@@ -71,24 +71,18 @@ impl McpTool for SobreReviewTool {
     ) -> Result<ToolOutput, ErrorData> {
         let action = get_str(args, "action")
             .ok_or_else(|| ErrorData::invalid_params("action is required", None))?;
-        let path = get_str(args, "path");
-        let depth = get_usize(args, "depth").map(|d| d.min(64));
-        let project_root = if let Some(p) = ctx
-            .resolved_path("project_root")
-            .or(ctx.resolved_path("root"))
-        {
-            p
-        } else if let Some(err) = ctx.path_error("project_root").or(ctx.path_error("root")) {
-            return Err(ErrorData::invalid_params(
-                format!("project_root: {err}"),
-                None,
-            ));
+        // `path` is a file for review/checklist, resolved as every tool's
+        // path is; for diff-review it is diff text, taken as given.
+        let path = if action == "diff-review" {
+            get_str(args, "path")
         } else {
-            &ctx.project_root
+            ctx.resolved_path("path")
+                .map(str::to_string)
+                .or_else(|| get_str(args, "path"))
         };
-
+        let depth = get_usize(args, "depth").map(|d| d.min(64));
         let result =
-            crate::tools::sobre_review::handle(&action, path.as_deref(), project_root, depth);
+            crate::tools::sobre_review::handle(&action, path.as_deref(), &ctx.project_root, depth);
 
         Ok(ToolOutput::simple(result))
     }

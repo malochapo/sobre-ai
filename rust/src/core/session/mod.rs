@@ -6,8 +6,7 @@ mod state;
 mod types;
 
 pub use types::{
-    Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, SessionState, SessionStats,
-    SessionSummary, TaskInfo,
+    Decision, FileTouched, Finding, SessionState, SessionStats, SessionSummary, TaskInfo,
 };
 
 #[cfg(test)]
@@ -239,5 +238,25 @@ mod tests {
         let snapshot = session.build_compaction_snapshot();
         assert!(snapshot.contains("calls=42"));
         assert!(snapshot.contains("saved=10000"));
+    }
+
+    /// G10: `restore` without an id takes this project's latest snapshot,
+    /// never a newer one of another project.
+    #[test]
+    fn latest_snapshot_is_the_projects_own() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        for (root, task) in [(a.path(), "alpha task"), (b.path(), "beta task")] {
+            let mut session = SessionState::new();
+            session.project_root = Some(root.to_string_lossy().to_string());
+            session.set_task(task, None);
+            session.save().unwrap();
+            session.save_compaction_snapshot().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let snapshot = SessionState::load_latest_snapshot(&a.path().to_string_lossy()).unwrap();
+        assert!(snapshot.contains("alpha task"), "{snapshot}");
+        assert!(!snapshot.contains("beta task"), "{snapshot}");
     }
 }

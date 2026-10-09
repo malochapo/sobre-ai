@@ -25,7 +25,7 @@ pub struct RangeEdit {
     pub range: TextRange0Based,
     /// Final text to write into `range` (indentation already baked in by Rust).
     pub text: String,
-    /// Optional md5-hex of the current content of `range`; mismatch → CONFLICT.
+    /// Optional BLAKE3 hex of the current content of `range`; mismatch → CONFLICT.
     pub expected_hash: Option<String>,
 }
 

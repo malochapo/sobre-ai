@@ -7,12 +7,14 @@ use crate::core::index_paths;
 const MAX_BFS_DEPTH: usize = 5;
 
 /// The project's call graph: the persisted graph with every file whose content
-/// changed re-analyzed, saved back before it is returned.
-pub fn load(project_root: &str) -> CallGraph {
-    let inputs = CallGraphInputs::open(project_root);
+/// changed re-analyzed, saved back before it is returned. `None` while the code
+/// graph it is built from is not ready; nothing is saved then.
+pub fn load(project_root: &str) -> Option<CallGraph> {
+    let open = crate::core::graph_provider::open_or_build(project_root)?;
+    let inputs = CallGraphInputs::from_provider(project_root, &open);
     let graph = CallGraph::load_or_build(project_root, &inputs);
     let _ = graph.save();
-    graph
+    Some(graph)
 }
 
 /// `sobre_graph action=callers|callees`: the callers (`callers`) or callees of
@@ -29,7 +31,9 @@ pub fn callers_or_callees(
         let action = if callers { "callers" } else { "callees" };
         return format!("ERROR: symbol is required for action={action}");
     };
-    let graph = load(project_root);
+    let Some(graph) = load(project_root) else {
+        return crate::core::graph_provider::GRAPH_UNAVAILABLE.to_string();
+    };
     let filter = scope.map(|f| graph_file_filter(f, project_root));
     let depth = depth.clamp(1, MAX_BFS_DEPTH);
     let body = if depth == 1 {
@@ -76,7 +80,10 @@ pub fn trace(symbol: Option<&str>, to: Option<&str>, project_root: &str) -> Stri
     let Some(to) = to else {
         return "ERROR: to is required for action=trace".to_string();
     };
-    with_handle_hint(call_path(&load(project_root), from, to))
+    let Some(graph) = load(project_root) else {
+        return crate::core::graph_provider::GRAPH_UNAVAILABLE.to_string();
+    };
+    with_handle_hint(call_path(&graph, from, to))
 }
 
 /// Every call edge into (`callers`) or out of `symbol`, one line per call site.

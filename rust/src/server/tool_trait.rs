@@ -94,7 +94,7 @@ pub trait McpTool: Send + Sync {
     /// Whether *this* invocation yields a machine-readable payload (e.g. JSON)
     /// that must reach the client byte-exact and parseable. When `true`, the
     /// dispatch pipeline suppresses every human-oriented decoration
-    /// (auto-context briefing, verify footer, hints, checkpoints) and terse
+    /// (verify footer, hints, checkpoints) and terse
     /// compression for this call, returning the pure body.
     /// Keyed on `args` because most tools emit machine-readable output only for
     /// an opt-in format flag (e.g. `format=json`); defaults to `false`.
@@ -134,10 +134,11 @@ pub fn reports_failure(text: &str) -> bool {
     false
 }
 
-/// A `[path]` line that opens one file's part of a multi-file answer.
+/// A `[path]` line that opens one file's part of a multi-file answer. A
+/// path may hold spaces.
 fn is_section_label(line: &str) -> bool {
     let t = line.trim();
-    t.len() > 2 && t.starts_with('[') && t.ends_with(']') && !t.contains(' ')
+    t.len() > 2 && t.starts_with('[') && t.ends_with(']')
 }
 
 /// Context passed to tool handlers. Contains pre-resolved values that
@@ -298,6 +299,7 @@ mod tests {
             "Unknown action: x. Use: status, load",
             "[src/a.rs]\nCONFLICT: 1 stale anchor(s) in a.rs",
             "[a.rs]\n✓ a.rs: 1 edit\n\n[b.rs]\nERROR: file changed since read",
+            "[my docs/a b.md]\nERROR: old_text not found in my docs/a b.md",
         ] {
             assert!(reports_failure(text), "{text}");
         }

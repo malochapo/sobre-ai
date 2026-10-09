@@ -63,6 +63,7 @@ mod bm25_performance {
     }
 }
 
+#[cfg(feature = "dense")]
 mod hnsw_stress {
     use super::*;
     use sobre::core::hnsw::FlatEmbeddings;

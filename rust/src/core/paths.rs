@@ -78,7 +78,8 @@ pub fn config_dir() -> Result<PathBuf, String> {
     category_dir("SOBRE_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
 }
 
-/// Data directory — sessions, vectors, graphs, knowledge, archives, memory.
+/// Data directory — the usage ledger, sessions, knowledge, indexes,
+/// checkpoints, the proxy token, crash log and ONNX Runtime.
 ///
 /// Delegates to [`sobre_data_dir`]: `SOBRE_DATA_DIR`, else
 /// `$XDG_DATA_HOME/sobre`.
@@ -86,13 +87,14 @@ pub fn data_dir() -> Result<PathBuf, String> {
     sobre_data_dir()
 }
 
-/// State directory — events, stats, logs, journals, ledgers, captured keys.
+/// State directory — full outputs behind compressed ones, hook state, the
+/// proxy log, port and wiring record, the debug log, captured agent variables.
 /// Override: `SOBRE_STATE_DIR`; default `$XDG_STATE_HOME/sobre`.
 pub fn state_dir() -> Result<PathBuf, String> {
     category_dir("SOBRE_STATE_DIR", "XDG_STATE_HOME", ".local/state")
 }
 
-/// Cache directory — semantic cache, models, learned patterns. tmpfs-safe.
+/// Cache directory — embedding models. tmpfs-safe.
 /// Override: `SOBRE_CACHE_DIR`; default `$XDG_CACHE_HOME/sobre`.
 pub fn cache_dir() -> Result<PathBuf, String> {
     category_dir("SOBRE_CACHE_DIR", "XDG_CACHE_HOME", ".cache")

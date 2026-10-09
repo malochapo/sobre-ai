@@ -3,15 +3,14 @@
 //! "Edit by reference, not by reproduction": the model edits lines by their
 //! `(line, hash)` anchor (from `sobre_read(mode="anchored")`) instead of quoting
 //! the old text byte-for-byte. Each anchor is verified against the *current*
-//! file; on drift the edit is rejected with fresh anchors — except a
-//! single-line anchor (`set_line`/`insert_after`) whose content moved intact
-//! to exactly one other line (e.g. an earlier, separate edit shifted it):
-//! that's resolved automatically rather than failing. Multiple edits
-//! in one call are **batch-atomic** — all validated against the same
-//! preimage and applied all-or-nothing, bottom-up.
+//! file; on drift the edit is rejected with the current lines and their
+//! fresh anchors, never moved to another line. The anchored ops on one file
+//! are validated against the same preimage and applied all-or-nothing,
+//! bottom-up.
 //!
-//! Reuses the `sobre_edit` I/O boundary (`crate::tools::edit_io`): TOCTOU
-//! preimage guard, permission-preserving atomic write, symlink rejection.
+//! Shares the I/O boundary of the text replacements (`crate::tools::edit_io`):
+//! TOCTOU preimage guard, permission-preserving atomic write, symlink
+//! rejection. A syntax error the edit introduces is reported, never refused.
 
 mod anchors;
 mod apply;
@@ -23,37 +22,22 @@ mod tests;
 pub use anchors::AnchorOp;
 pub(crate) use symbol::{build_refactor_args, is_replace_symbol};
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 #[cfg(test)]
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
 use crate::tools::edit_io::{
-    default_backup_path, ensure_preimage_still_matches, read_preimage,
-    write_atomic_bytes_with_permissions,
+    ensure_preimage_still_matches, read_preimage, write_atomic_bytes_with_permissions,
 };
 #[cfg(test)]
 use crate::tools::impl_edit::apply_cache_effect;
-use crate::tools::impl_edit::{CacheEffect, build_diff_evidence};
+use crate::tools::impl_edit::{CacheEffect, append_evidence, append_notice, dry_run_text};
 
-/// Parameters for an anchored patch: the target file and one or more anchored
-/// edit ops, plus optional guards/evidence (mirrors `EditParams` where it makes
-/// sense so the registered wrapper stays uniform).
+/// An anchored patch: the target file and one or more anchored edit ops.
 pub struct PatchParams {
     pub path: String,
     pub ops: Vec<AnchorOp>,
-    /// Optional whole-file preimage guard (BLAKE3 hex, as printed by sobre_edit's
-    /// `postimage:` line). When set, the edit fails if the file's hash differs.
-    pub expected_hash: Option<String>,
-    pub backup: bool,
-    pub backup_path: Option<String>,
-    pub evidence: bool,
-    pub diff_max_lines: usize,
-    pub allow_lossy_utf8: bool,
-    /// Post-edit tree-sitter gate: reject a write that turns a cleanly
-    /// parsing file into a broken one. Default `true`; set `false` to override
-    /// (e.g. intentionally writing an incomplete snippet).
-    pub validate_syntax: bool,
     /// Run every check and show the diff without writing anything.
     pub dry_run: bool,
 }
@@ -110,7 +94,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         };
     }
 
-    let pre = match read_preimage(path, cap, params.allow_lossy_utf8) {
+    let pre = match read_preimage(path, cap) {
         Ok(p) => p,
         Err(e) => {
             if !path.exists() {
@@ -120,18 +104,6 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
             return (e, CacheEffect::None);
         }
     };
-
-    if let Some(expected) = params.expected_hash.as_deref()
-        && expected != pre.fp.hash
-    {
-        return (
-            format!(
-                "ERROR: preimage mismatch for {file_path}: expected_hash={expected}, actual_hash={}",
-                pre.fp.hash
-            ),
-            CacheEffect::None,
-        );
-    }
 
     if params.ops.is_empty() {
         return (
@@ -149,7 +121,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         Some(rest) => ("\u{feff}", rest),
         None => ("", pre.text.as_str()),
     };
-    let (lines, sep, trailing) = apply::split_lines(body);
+    let (lines, eols) = apply::split_lines(body);
 
     let edits = match apply::resolve_ops(&lines, &params.ops) {
         Ok(e) => e,
@@ -166,8 +138,8 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
 
     let n_edits = edits.len();
     let lines_before = lines.len();
-    let new_lines = apply::apply_edits(lines.clone(), edits);
-    let new_content = format!("{bom}{}", apply::join_lines(&new_lines, sep, trailing));
+    let (new_lines, new_eols) = apply::apply_edits(lines.clone(), eols, edits);
+    let new_content = format!("{bom}{}", apply::join_lines(&new_lines, &new_eols));
 
     if new_content == pre.text {
         return (
@@ -181,24 +153,14 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
-    // Post-edit syntax gate: block a clean → broken regression before any
-    // write. Pure (no I/O), so it runs before the TOCTOU re-read.
-    if params.validate_syntax
-        && let Some(reason) = crate::core::syntax_validate::gate_edit(ext, &pre.text, &new_content)
-    {
-        return (reason, CacheEffect::None);
-    }
+    // A syntax error the edit introduces is reported with the result; the
+    // edit is written either way (decision 3).
+    let syntax_notice = crate::core::syntax_validate::syntax_notice(ext, &pre.text, &new_content);
 
     if params.dry_run {
-        return (
-            crate::tools::impl_edit::dry_run_text(
-                path,
-                &pre.text,
-                &new_content,
-                params.diff_max_lines,
-            ),
-            CacheEffect::None,
-        );
+        let mut out = dry_run_text(path, &pre.text, &new_content);
+        append_notice(&mut out, syntax_notice);
+        return (out, CacheEffect::None);
     }
 
     // Code-health gate: an advisory notice on cognitive-complexity drift.
@@ -212,11 +174,6 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         return (e, CacheEffect::None);
     }
 
-    let backup_path = match make_backup(params, path, &pre.bytes, &pre.permissions) {
-        Ok(bp) => bp,
-        Err(e) => return (e, CacheEffect::None),
-    };
-
     if let Err(e) =
         write_atomic_bytes_with_permissions(path, new_content.as_bytes(), Some(&pre.permissions))
     {
@@ -228,21 +185,15 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
     }
 
     let mut out = render_success(
-        params,
+        &params.path,
         &pre.text,
         &new_content,
-        pre.fp.size,
-        pre.fp.mtime_ms,
-        &pre.fp.hash,
         lines_before,
         new_lines.len(),
         n_edits,
-        backup_path,
     );
-    if let Some(notice) = health_notice {
-        out.push_str("\n\n");
-        out.push_str(&notice);
-    }
+    append_notice(&mut out, syntax_notice);
+    append_notice(&mut out, health_notice);
     (out, CacheEffect::Invalidate)
 }
 
@@ -265,7 +216,7 @@ fn single_create_op(ops: &[AnchorOp]) -> Option<Result<&str, String>> {
 }
 
 /// `op=create`: write a NEW file (strict — an existing file is an error, unlike
-/// `sobre_edit create=true` which overwrites). Reuses the atomic-write boundary
+/// an overwrite). Reuses the atomic-write boundary
 /// of the anchored path.
 fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, CacheEffect) {
     if path.exists() {
@@ -280,10 +231,7 @@ fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, C
     }
 
     if params.dry_run {
-        return (
-            crate::tools::impl_edit::dry_run_text(path, "", content, params.diff_max_lines),
-            CacheEffect::None,
-        );
+        return (dry_run_text(path, "", content), CacheEffect::None);
     }
 
     if let Some(parent) = path.parent()
@@ -307,55 +255,20 @@ fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, C
     let lines = content.lines().count();
     let tokens = count_tokens(content);
     let short = output::short_name(&params.path);
-    let post_md5 = crate::core::hasher::hash_hex(content.as_bytes());
-    let mut out = format!(
-        "✓ created {short}: {lines} lines, {tokens} tok\npostimage: bytes={}, md5={post_md5}",
-        content.len()
-    );
-    if params.evidence {
-        let diff = build_diff_evidence("", content, &short, params.diff_max_lines);
-        out.push_str("\n\nevidence (diff, redacted, bounded):\n```diff\n");
-        out.push_str(&diff);
-        out.push_str("\n```");
-    }
+    let mut out = format!("✓ created {short}: {lines} lines, {tokens} tok");
+    append_evidence(&mut out, "", content, &short);
     (out, CacheEffect::Invalidate)
 }
 
-/// Write a pre-edit backup when requested; returns the backup path (if any).
-fn make_backup(
-    params: &PatchParams,
-    path: &Path,
-    bytes: &[u8],
-    permissions: &std::fs::Permissions,
-) -> Result<Option<String>, String> {
-    if !params.backup {
-        return Ok(None);
-    }
-    let bp = params
-        .backup_path
-        .as_deref()
-        .map(PathBuf::from)
-        .or_else(|| default_backup_path(path))
-        .ok_or_else(|| format!("ERROR: cannot compute backup path for {}", path.display()))?;
-    write_atomic_bytes_with_permissions(&bp, bytes, Some(permissions))
-        .map_err(|e| format!("ERROR: cannot create backup {}: {e}", bp.display()))?;
-    Ok(Some(bp.to_string_lossy().to_string()))
-}
-
-#[allow(clippy::too_many_arguments)]
 fn render_success(
-    params: &PatchParams,
+    path: &str,
     old_content: &str,
     new_content: &str,
-    pre_size: u64,
-    pre_mtime_ms: u64,
-    pre_md5: &str,
     lines_before: usize,
     lines_after: usize,
     n_edits: usize,
-    backup_path: Option<String>,
 ) -> String {
-    let short = output::short_name(&params.path);
+    let short = output::short_name(path);
     let line_delta = lines_after as i64 - lines_before as i64;
     let delta_str = if line_delta >= 0 {
         format!("+{line_delta}")
@@ -365,46 +278,10 @@ fn render_success(
     let old_tokens = count_tokens(old_content);
     let new_tokens = count_tokens(new_content);
 
-    let post_mtime_ms = std::fs::metadata(&params.path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .map_or(0, crate::tools::edit_io::system_time_to_millis);
-    let post_md5 = crate::core::hasher::hash_hex(new_content.as_bytes());
-
     let edit_word = if n_edits == 1 { "edit" } else { "edits" };
     let mut out = format!(
-        "✓ {short}: {n_edits} anchored {edit_word}, {delta_str} lines ({old_tokens}→{new_tokens} tok)\n\
-preimage: bytes={pre_size}, mtime_ms={pre_mtime_ms}, md5={pre_md5}\n\
-postimage: bytes={}, mtime_ms={post_mtime_ms}, md5={post_md5}",
-        new_content.len()
+        "✓ {short}: {n_edits} anchored {edit_word}, {delta_str} lines ({old_tokens}→{new_tokens} tok)"
     );
-    if let Some(bp) = backup_path {
-        out.push_str(&format!("\nbackup: {bp}"));
-    }
-    if params.evidence {
-        let diff = build_diff_evidence(old_content, new_content, &short, params.diff_max_lines);
-        out.push_str("\n\nevidence (diff, redacted, bounded):\n```diff\n");
-        out.push_str(&diff);
-        out.push_str("\n```");
-        let balance = brace_balance(new_content);
-        if balance == 0 {
-            out.push_str("\nbrace-balance: ok (matched)");
-        } else {
-            out.push_str(&format!(
-                "\n⚠ brace-balance: {} unmatched '{{' — verify file integrity",
-                balance.abs()
-            ));
-        }
-    }
+    append_evidence(&mut out, old_content, new_content, &short);
     out
-}
-
-/// Counts unmatched `{` vs `}` in the full post-edit content. Returns the
-/// difference: positive = excess `{`, negative = excess `}`, 0 = balanced.
-fn brace_balance(content: &str) -> i64 {
-    content.chars().fold(0i64, |acc, c| match c {
-        '{' => acc + 1,
-        '}' => acc - 1,
-        _ => acc,
-    })
 }

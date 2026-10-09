@@ -20,9 +20,7 @@ pub fn is_cloud_placeholder(path: &Path) -> bool {
     use std::os::windows::fs::MetadataExt;
     // `symlink_metadata` maps to GetFileAttributes, which reports the placeholder
     // attributes without recalling (downloading) the content.
-    std::fs::symlink_metadata(path)
-        .map(|m| attrs_indicate_placeholder(m.file_attributes()))
-        .unwrap_or(false)
+    std::fs::symlink_metadata(path).is_ok_and(|m| attrs_indicate_placeholder(m.file_attributes()))
 }
 
 /// macOS variant: evicted iCloud Drive files carry `SF_DATALESS` in `st_flags`.

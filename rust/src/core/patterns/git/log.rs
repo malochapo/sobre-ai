@@ -216,6 +216,25 @@ fn compress_log_with_patches(
     result.join("\n")
 }
 
+/// The insertions and deletions of a `--stat` summary line
+/// (` 3 files changed, 20 insertions(+), 5 deletions(-)`).
+fn stat_summary(line: &str) -> Option<(u32, u32)> {
+    let line = line.trim();
+    if !(line.contains(" file changed") || line.contains(" files changed")) {
+        return None;
+    }
+    let mut counts = (0, 0);
+    for part in line.split(',').map(str::trim) {
+        let n = || part.split_whitespace().next()?.parse::<u32>().ok();
+        if part.ends_with("(+)") {
+            counts.0 = n()?;
+        } else if part.ends_with("(-)") {
+            counts.1 = n()?;
+        }
+    }
+    Some(counts)
+}
+
 fn compress_log_summary(lines: &[&str], max_entries: usize) -> String {
     let has_diff = lines.iter().any(|l| l.starts_with("diff --git"));
     let has_stat = lines
@@ -252,10 +271,14 @@ fn compress_log_summary(lines: &[&str], max_entries: usize) -> String {
         }
 
         if in_diff || is_diff_or_stat_line(trimmed) {
-            if trimmed.starts_with('+') && !trimmed.starts_with("+++") {
-                total_additions += 1;
-            } else if trimmed.starts_with('-') && !trimmed.starts_with("---") {
-                total_deletions += 1;
+            // Only a diff's own hunk lines count; a commit message's bullet
+            // lines (`- fix …`) are not insertions.
+            if in_diff {
+                if trimmed.starts_with('+') && !trimmed.starts_with("+++") {
+                    total_additions += 1;
+                } else if trimmed.starts_with('-') && !trimmed.starts_with("---") {
+                    total_deletions += 1;
+                }
             }
             continue;
         }
@@ -286,6 +309,14 @@ fn compress_log_summary(lines: &[&str], max_entries: usize) -> String {
     } else {
         entries.join("\n")
     };
+
+    // `--stat` says the totals itself, in each commit's summary line; with
+    // both a stat and a diff, the summary lines are the ones to trust.
+    let summaries: Vec<(u32, u32)> = lines.iter().filter_map(|l| stat_summary(l)).collect();
+    if !summaries.is_empty() {
+        total_additions = summaries.iter().map(|s| s.0).sum();
+        total_deletions = summaries.iter().map(|s| s.1).sum();
+    }
 
     if (has_diff || has_stat) && (total_additions > 0 || total_deletions > 0) {
         result.push_str(&format!(

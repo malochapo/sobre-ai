@@ -6,14 +6,17 @@ mod gemini;
 mod opencode;
 mod windsurf;
 
-/// Points every command containing `marker` in `entry` — a hook, or a group
-/// that holds `hooks: [...]` — at `command`, and says whether it found one. A
-/// binary that moved leaves its old path in hooks that are only ever added
-/// once; this keeps them in step with the binary `init` runs from.
+/// Points every sobre hook command containing `marker` in `entry` — a hook,
+/// or a group that holds `hooks: [...]` — at `command`, and says whether it
+/// found one. A binary that moved leaves its old path in hooks that are only
+/// ever added once; this keeps them in step with the binary `init` runs
+/// from. Another tool's hooks are left alone.
 fn refresh_command(entry: &mut serde_json::Value, marker: &str, command: &str) -> bool {
     let mut found = false;
     if let Some(current) = entry.get_mut("command")
-        && current.as_str().is_some_and(|c| c.contains(marker))
+        && current
+            .as_str()
+            .is_some_and(|c| c.contains(marker) && crate::hooks::is_sobre_hook_command(c))
     {
         *current = serde_json::json!(command);
         found = true;
@@ -33,6 +36,15 @@ fn refresh_commands(entries: &mut [serde_json::Value], marker: &str, command: &s
         found |= refresh_command(entry, marker, command);
     }
     found
+}
+
+#[cfg(test)]
+pub(super) fn refresh_commands_for_test(
+    entries: &mut [serde_json::Value],
+    marker: &str,
+    command: &str,
+) -> bool {
+    refresh_commands(entries, marker, command)
 }
 
 pub(super) use claude::install_claude_hook_config;

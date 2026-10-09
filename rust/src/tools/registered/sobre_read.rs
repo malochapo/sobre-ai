@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use rmcp::ErrorData;
@@ -45,7 +44,7 @@ impl McpTool for SobreReadTool {
                     "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch read" },
                     "mode": {
                         "type": "string",
-                        "description": "Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via sobre_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive|entropy|task=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens"
+                        "description": "Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via sobre_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive|entropy|task=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:N is one line, lines:N- runs to the end, lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens"
                     },
                     "raw": { "type": "boolean", "description": "Same as mode=raw" },
                     "start_line": { "type": "integer", "description": "1-based" },
@@ -127,7 +126,6 @@ impl SobreReadTool {
                 std::thread::sleep(std::time::Duration::from_millis(25));
             }
         };
-        let task_ref = current_task.as_deref();
         // `raw=true` is the intuitive "give me the exact bytes" escape an
         // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
         // force a fresh disk read below so a re-read never collapses to an
@@ -147,7 +145,7 @@ impl SobreReadTool {
         let mut mode = if let Some(m) = explicit_mode_arg {
             m
         } else if let Ok(cache) = cache_lock.try_read() {
-            crate::tools::impl_smart_read::select_mode_with_task(&cache, path, task_ref)
+            crate::tools::impl_smart_read::select_mode(&cache, path)
         } else {
             tracing::debug!(
                 "cache lock contested during auto-mode selection for {path}; \
@@ -175,10 +173,41 @@ impl SobreReadTool {
             )
             .to_string();
         }
+        // `raw` is the bytes on disk: a line window of it is those lines as
+        // they are, with no numbering, framing or redaction.
+        if mode == "raw"
+            && explicit_mode
+            && let Some((start, limit)) = resolve_line_window(
+                get_int(args, "start_line"),
+                get_int(args, "offset"),
+                get_int(args, "limit"),
+            )
+        {
+            if crate::core::binary_detect::is_binary_file(path) {
+                let msg = crate::core::binary_detect::binary_file_message(path);
+                return Err(ErrorData::invalid_params(msg, None));
+            }
+            let start = usize::try_from(start).unwrap_or(1).max(1);
+            let end = limit
+                .and_then(|l| usize::try_from(l).ok())
+                .map_or(usize::MAX, |l| start.saturating_add(l.max(1)) - 1);
+            let content = crate::tools::sobre_read::raw_line_window(path, start, end)
+                .map_err(|e| ErrorData::invalid_params(format!("{path}: {e}"), None))?;
+            let tokens = crate::core::tokens::count_tokens(&content);
+            return Ok(ToolOutput {
+                text: content,
+                original_tokens: tokens,
+                saved_tokens: 0,
+                shell_outcome: None,
+                content_blocks: None,
+            });
+        }
+
         // `start_line` (and its `offset`/`limit` aliases) can pin a line window.
         // The resolution lives in `apply_line_window`/`resolve_line_window` so
         // the runtime path and the unit tests share one implementation and can
         // never drift (aliases, explicit mode, line 1).
+        let mode_before_window = mode.clone();
         apply_line_window(
             &mut mode,
             &mut fresh,
@@ -187,13 +216,9 @@ impl SobreReadTool {
             get_int(args, "offset"),
             get_int(args, "limit"),
         );
+        let windowed = mode != mode_before_window;
 
-        let gate_result = crate::server::context_gate::pre_dispatch_read(
-            path,
-            &mode,
-            task_ref,
-            Some(&ctx.project_root),
-        );
+        let gate_result = crate::server::context_gate::pre_dispatch_read(path, &mode);
         // An explicit raw/verbatim request is never silently downgraded by
         // the budget gate — the caller asked for exact bytes.
         let mut mode_override_note: Option<String> = None;
@@ -210,8 +235,10 @@ impl SobreReadTool {
         }
 
         // An instruction file (SKILL.md, AGENTS.md, rules) is read whole when
-        // the agent did not pick a mode; a mode it picked is honoured.
-        let mut mode = if !explicit_mode && crate::tools::sobre_read::is_instruction_file(path) {
+        // the agent asked for nothing in particular; a mode, a line window or
+        // an aggressiveness it picked is honoured.
+        let picked = explicit_mode || windowed || aggressiveness.is_some();
+        let mut mode = if !picked && crate::tools::sobre_read::is_instruction_file(path) {
             "full".to_string()
         } else {
             mode
@@ -226,10 +253,20 @@ impl SobreReadTool {
         // `sobre_read::resolve_explicit_delta_mode`. First reads are unaffected;
         // fresh=true always bypasses. Runs BEFORE the lines:→fresh guard below
         // so a changed-file lines: re-read can still be diverted to a diff.
+        // Compaction-aware: if the host compacted since the last check, reset
+        // the delivery flags first, so neither a stub nor a delta is decided
+        // on content the agent no longer holds.
+        if !fresh
+            && let Ok(data_dir) = crate::core::data_dir::sobre_data_dir()
+            && let Ok(mut cache) = cache_lock.try_write()
+        {
+            crate::server::compaction_sync::sync_if_compacted(&mut cache, &data_dir);
+        }
+
         let mut delta_explicit_note: Option<String> = None;
         if !fresh
             && explicit_mode
-            && (mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
+            && (mode == "full" || mode.starts_with("lines:"))
             && let Ok(cache) = cache_lock.try_read()
         {
             let decision = crate::tools::sobre_read::resolve_explicit_delta_mode(
@@ -290,526 +327,33 @@ impl SobreReadTool {
             });
         }
 
-        // Compaction-aware: if host compacted since last check, reset delivery flags
-        // so post-compaction reads deliver full content instead of stubs.
-        if !fresh
-            && let Ok(data_dir) = crate::core::data_dir::sobre_data_dir()
-            && let Ok(mut cache) = cache_lock.try_write()
-        {
-            crate::server::compaction_sync::sync_if_compacted(&mut cache, &data_dir);
-        }
-
-        // Fast path: if both per-file lock and cache write-lock are immediately
-        // available, execute inline without spawning a thread. This avoids thread +
-        // channel overhead for the ~90% of calls that are cache hits.
-        let read_timeout = std::time::Duration::from_secs(30);
-        let cancelled = Arc::new(AtomicBool::new(false));
-        let (output, resolved_mode, original, is_cache_hit, file_ref) = {
-            let crp_mode = ctx.crp_mode;
-            let task_ref = current_task.as_deref();
-
-            let fast_result = 'fast: {
-                let file_lock = per_file_lock(path);
-                let Some(_file_guard) = file_lock.try_lock().ok() else {
-                    break 'fast None;
-                };
-
-                // Phase 1 (shared lock): the dominant case is re-reading an
-                // unchanged file. Serve the `[unchanged]` stub under a *read* lock
-                // so parallel reads of distinct files run concurrently instead of
-                // serializing on the global write lock. `auto` is included because
-                // a warm `auto` re-read of a fully-delivered file resolves to a
-                // full cache-hit; `try_stub_hit_readonly` self-guards (returns None
-                // unless full content was delivered and the file is unchanged), so a
-                // first or compressed-only `auto` read still falls through to
-                // Phase 2. When aggressiveness is set `mode` was already rewritten
-                // to `density:` upstream, so it never reaches this `auto` branch.
-                if !fresh
-                    && (mode == "full" || mode == "full-compact" || mode == "auto")
-                    && let Ok(cache) = cache_lock.try_read()
-                    && let Some(read_output) =
-                        crate::tools::sobre_read::try_stub_hit_readonly(&cache, path)
-                {
-                    let hit = read_output.is_cache_hit;
-                    let content = read_output.content;
-                    let rmode = read_output.resolved_mode;
-                    let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                    let fref = cache.file_ref_map().get(path).cloned();
-                    break 'fast Some((content, rmode, orig, hit, fref));
-                }
-
-                // Phase 2 (write lock): cache miss, changed file, or non-stub
-                // modes (map/signatures/diff/lines) that mutate cache state.
-                let Some(mut cache) = cache_lock.try_write().ok() else {
-                    break 'fast None;
-                };
-                let read_output = if fresh {
-                    crate::tools::sobre_read::handle_fresh_with_task_resolved_tuned(
-                        &mut cache,
-                        path,
-                        &mode,
-                        crp_mode,
-                        task_ref,
-                        aggressiveness,
-                        &protect,
-                    )
-                } else {
-                    crate::tools::sobre_read::handle_with_task_resolved_tuned(
-                        &mut cache,
-                        path,
-                        &mode,
-                        crp_mode,
-                        task_ref,
-                        aggressiveness,
-                        &protect,
-                    )
-                };
-                let hit = read_output.is_cache_hit;
-                let content = read_output.content;
-                let rmode = read_output.resolved_mode;
-                let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                let fref = cache.file_ref_map().get(path).cloned();
-                Some((content, rmode, orig, hit, fref))
-            };
-
-            if let Some(result) = fast_result {
-                result
-            } else {
-                let cache_lock = cache_lock.clone();
-                let mode = mode.clone();
-                let task_owned = current_task.clone();
-                let protect_owned = protect.clone();
-                let path_owned = path.to_string();
-                let cancel_flag = cancelled.clone();
-                let (tx, rx) = std::sync::mpsc::sync_channel(1);
-                std::thread::spawn(move || {
-                    let file_lock = per_file_lock(&path_owned);
-
-                    let _file_guard = {
-                        let deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(25);
-                        loop {
-                            if cancel_flag.load(Ordering::Relaxed) {
-                                return;
-                            }
-                            if let Ok(guard) = file_lock.try_lock() {
-                                break guard;
-                            }
-                            if std::time::Instant::now() >= deadline {
-                                tracing::error!(
-                                    "sobre_read: per-file lock timeout after 25s for {path_owned}"
-                                );
-                                let _ = tx.send((
-                                    format!("per-file lock contention for {path_owned} — retry in a moment"),
-                                    "error".to_string(), 0, false, None,
-                                ));
-                                return;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(50));
-                        }
-                    };
-
-                    if cancel_flag.load(Ordering::Relaxed) {
-                        return;
-                    }
-
-                    // ── Two-Phase Read ──────────────────────────
-                    //
-                    // Phase 1 (read lock): try the [unchanged] stub — this is the
-                    // ~70% case (repeated reads of unchanged files). Previously
-                    // missing in the slow path, forcing every slow-path call into
-                    // the expensive write-lock branch.
-                    if !fresh
-                        && (mode == "full" || mode == "full-compact" || mode == "auto")
-                        && let Ok(cache) = cache_lock.try_read()
-                        && let Some(read_output) =
-                            crate::tools::sobre_read::try_stub_hit_readonly(&cache, &path_owned)
-                    {
-                        let content = read_output.content;
-                        let rmode = read_output.resolved_mode;
-                        let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
-                        let hit = true;
-                        let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                        let _ = tx.send((content, rmode, orig, hit, fref));
-                        return;
-                    }
-
-                    // Phase 2a: disk I/O under per-file lock but WITHOUT cache lock.
-                    let preread = crate::tools::sobre_read::read_file_lossy(&path_owned).ok();
-
-                    if cancel_flag.load(Ordering::Relaxed) {
-                        return;
-                    }
-
-                    // ── Phase 2b: Three-sub-phase read ──────────
-                    //
-                    // Previously held the global cache write-lock for the
-                    // entire computation (tree-sitter, entropy compression).
-                    // For large files this caused 30+ second lock holds and
-                    // cascading timeouts for all concurrent tool calls.
-                    //
-                    // New: prepare (brief lock) → compute (no lock) → store (brief lock).
-
-                    let task_ref = task_owned.as_deref();
-                    let tuning = crate::tools::sobre_read::ReadTuning::resolve(
-                        aggressiveness,
-                        &protect_owned,
-                    );
-
-                    // Helper: acquire write lock with deadline.
-                    macro_rules! acquire_write {
-                        ($deadline_secs:expr, $label:expr) => {{
-                            let deadline = std::time::Instant::now()
-                                + std::time::Duration::from_secs($deadline_secs);
-                            loop {
-                                if cancel_flag.load(Ordering::Relaxed) {
-                                    return;
-                                }
-                                if let Ok(guard) = cache_lock.try_write() {
-                                    break guard;
-                                }
-                                if std::time::Instant::now() >= deadline {
-                                    tracing::error!(
-                                        "sobre_read: cache write-lock timeout ({}) for {path_owned}",
-                                        $label,
-                                    );
-                                    let _ = tx.send((
-                                        format!(
-                                            "cache lock contention for {path_owned} — retry in a moment"
-                                        ),
-                                        "error".into(),
-                                        0,
-                                        false,
-                                        None,
-                                    ));
-                                    return;
-                                }
-                                std::thread::sleep(std::time::Duration::from_millis(50));
-                            }
-                        }};
-                    }
-
-                    // 2b-i: Brief write lock — prepare cache state, resolve
-                    // mode, check for hits. Sub-millisecond: HashMap lookups,
-                    // staleness checks, raw-content storage for new files.
-                    #[allow(clippy::large_enum_variant)]
-                    enum PrepareOutcome {
-                        Hit(String, String, usize, bool, Option<String>),
-                        Compute {
-                            resolved_mode: String,
-                            content: String,
-                            original_tokens: usize,
-                        },
-                    }
-
-                    // The content to render when the cache holds none: the
-                    // preread, else the file itself. `None` after an error
-                    // was sent: a file that cannot be read is never empty.
-                    let content_or_disk = |cached: Option<String>| -> Option<String> {
-                        if let Some(c) = cached.or_else(|| preread.clone()) {
-                            return Some(c);
-                        }
-                        match crate::tools::sobre_read::read_file_lossy(&path_owned) {
-                            Ok(raw) => Some(raw),
-                            Err(e) => {
-                                let _ = tx.send((
-                                    format!("{path_owned}: {e}"),
-                                    "error".into(),
-                                    0,
-                                    false,
-                                    None,
-                                ));
-                                None
-                            }
-                        }
-                    };
-
-                    let outcome = {
-                        let mut cache = acquire_write!(10, "prepare 10s");
-
-                        if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
-                            bt.next_seq();
-                        }
-
-                        let mode_eff = mode.clone();
-
-                        if fresh {
-                            cache.invalidate(&path_owned);
-                        }
-
-                        if !fresh {
-                            let stale = cache.get(&path_owned).is_some_and(|e| {
-                                crate::core::cache::is_cache_entry_stale_verified(
-                                    &path_owned,
-                                    e.stored_mtime,
-                                    &e.hash,
-                                )
-                            });
-                            if stale {
-                                cache.invalidate(&path_owned);
-                            }
-                        }
-
-                        let snap = cache
-                            .get(&path_owned)
-                            .map(|e| (e.original_tokens, e.content()));
-
-                        if let Some((orig_tok, content_opt)) = snap {
-                            let resolved = if mode_eff == "auto" {
-                                tuning.auto_density_mode().unwrap_or_else(|| {
-                                    crate::tools::sobre_read::resolve_auto_mode(
-                                        Some(&cache),
-                                        &path_owned,
-                                        orig_tok,
-                                        task_ref,
-                                    )
-                                })
-                            } else {
-                                mode_eff
-                            };
-
-                            if (resolved == "full" || resolved == "full-compact")
-                                && let Some(out) = crate::tools::sobre_read::try_stub_hit_readonly(
-                                    &cache,
-                                    &path_owned,
-                                )
-                            {
-                                let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
-                                let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                                PrepareOutcome::Hit(
-                                    out.content,
-                                    out.resolved_mode,
-                                    orig,
-                                    true,
-                                    fref,
-                                )
-                            } else if crate::tools::sobre_read::is_cacheable_mode(&resolved) {
-                                let ck = crate::tools::sobre_read::compressed_cache_key(
-                                    &resolved,
-                                    crp_mode,
-                                    task_ref,
-                                    tuning.aggressiveness,
-                                    tuning.protect,
-                                );
-                                if let Some(hit) = cache.get_compressed(&path_owned, &ck).cloned() {
-                                    let hit = crate::core::redaction::redact_text(&hit);
-                                    let orig =
-                                        cache.get(&path_owned).map_or(0, |e| e.original_tokens);
-                                    let fref =
-                                        cache.file_ref_map().get(path_owned.as_str()).cloned();
-                                    PrepareOutcome::Hit(hit, resolved, orig, true, fref)
-                                } else {
-                                    let Some(c) = content_or_disk(content_opt) else {
-                                        return;
-                                    };
-                                    PrepareOutcome::Compute {
-                                        resolved_mode: resolved,
-                                        content: c,
-                                        original_tokens: orig_tok,
-                                    }
-                                }
-                            } else {
-                                let Some(c) = content_or_disk(content_opt) else {
-                                    return;
-                                };
-                                PrepareOutcome::Compute {
-                                    resolved_mode: resolved,
-                                    content: c,
-                                    original_tokens: orig_tok,
-                                }
-                            }
-                        } else {
-                            // A file that cannot be read is an error, as on
-                            // the fast path: never an empty file.
-                            let Some(raw) = content_or_disk(None) else {
-                                return;
-                            };
-                            let sr = cache.store(&path_owned, &raw);
-                            let resolved = if mode_eff == "auto" {
-                                tuning.auto_density_mode().unwrap_or_else(|| {
-                                    crate::tools::sobre_read::resolve_auto_mode(
-                                        None,
-                                        &path_owned,
-                                        sr.original_tokens,
-                                        task_ref,
-                                    )
-                                })
-                            } else {
-                                mode_eff
-                            };
-                            PrepareOutcome::Compute {
-                                resolved_mode: resolved,
-                                content: raw,
-                                original_tokens: sr.original_tokens,
-                            }
-                        }
-                    }; // write lock released
-
-                    if let PrepareOutcome::Hit(c, rm, orig, hit, fref) = outcome {
-                        let _ = tx.send((c, rm, orig, hit, fref));
-                        return;
-                    }
-                    let PrepareOutcome::Compute {
-                        resolved_mode,
-                        content: compute_content,
-                        original_tokens,
-                    } = outcome
-                    else {
-                        unreachable!()
-                    };
-
-                    if cancel_flag.load(Ordering::Relaxed) {
-                        return;
-                    }
-
-                    // 2b-ii: Heavy computation WITHOUT cache lock.
-                    // Tree-sitter, entropy compression, mode rendering all
-                    // run under the per-file mutex only (serializes same-file
-                    // reads, but does not block other files or tool calls).
-                    let short = crate::core::protocol::shorten_path(&path_owned);
-                    let ext_s = std::path::Path::new(&*path_owned)
-                        .extension()
-                        .and_then(|e| e.to_str())
-                        .unwrap_or("");
-
-                    let (mut computed, rmode) = if resolved_mode == "full"
-                        || resolved_mode == "full-compact"
-                    {
-                        if resolved_mode == "full-compact" {
-                            let (out, _) = crate::tools::sobre_read::format_full_compact_output(
-                                &compute_content,
-                            );
-                            (out, "full-compact".to_string())
-                        } else {
-                            let lc = compute_content.lines().count();
-                            let (out, _) = crate::tools::sobre_read::format_full_output(
-                                &short,
-                                ext_s,
-                                &compute_content,
-                                lc,
-                                task_ref,
-                            );
-                            let ft = crate::core::tokens::count_tokens(&out);
-                            let out = crate::tools::sobre_read::cap_to_raw(
-                                out,
-                                ft,
-                                &compute_content,
-                                original_tokens,
-                                "full",
-                            );
-                            (out, "full".to_string())
-                        }
-                    } else {
-                        let (out, _) = crate::tools::sobre_read::process_mode_tuned(
-                            &compute_content,
-                            &resolved_mode,
-                            &short,
-                            ext_s,
-                            original_tokens,
-                            crp_mode,
-                            &path_owned,
-                            task_ref,
-                            tuning,
-                        );
-                        let out = if crate::tools::sobre_read::mode_allows_raw_cap(&resolved_mode) {
-                            let ft = crate::core::tokens::count_tokens(&out);
-                            crate::tools::sobre_read::cap_to_raw(
-                                out,
-                                ft,
-                                &compute_content,
-                                original_tokens,
-                                &resolved_mode,
-                            )
-                        } else {
-                            out
-                        };
-                        (out, resolved_mode)
-                    };
-
-                    computed = crate::core::redaction::redact_text(&computed);
-
-                    if cancel_flag.load(Ordering::Relaxed) {
-                        return;
-                    }
-
-                    // 2b-iii: Brief write lock — store result + metadata.
-                    // Sub-millisecond: HashMap insert + stats snapshot.
-                    // Graceful degradation: if the lock cannot be acquired
-                    // within 5s, return the result without caching it.
-                    {
-                        let deadline =
-                            std::time::Instant::now() + std::time::Duration::from_secs(5);
-                        let cache_guard = loop {
-                            if cancel_flag.load(Ordering::Relaxed) {
-                                return;
-                            }
-                            if let Ok(g) = cache_lock.try_write() {
-                                break Some(g);
-                            }
-                            if std::time::Instant::now() >= deadline {
-                                tracing::warn!(
-                                    "sobre_read: store-lock timeout (5s) for {path_owned},                                      returning without caching"
-                                );
-                                break None;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(50));
-                        };
-
-                        if let Some(mut cache) = cache_guard {
-                            if crate::tools::sobre_read::is_cacheable_mode(&rmode) {
-                                let ck = crate::tools::sobre_read::compressed_cache_key(
-                                    &rmode,
-                                    crp_mode,
-                                    task_ref,
-                                    tuning.aggressiveness,
-                                    tuning.protect,
-                                );
-                                cache.set_compressed(&path_owned, &ck, computed.clone());
-                            }
-                            if rmode == "full" || rmode == "full-compact" {
-                                cache.mark_full_delivered(&path_owned);
-                            }
-                            if let Some(entry) = cache.get_mut(&path_owned) {
-                                entry.last_mode.clone_from(&rmode);
-                            }
-                            if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
-                                bt.record_read(
-                                    &path_owned,
-                                    &rmode,
-                                    crate::core::tokens::count_tokens(&computed),
-                                    original_tokens,
-                                );
-                            }
-                            let orig = cache.get(&path_owned).map_or(0, |e| e.original_tokens);
-                            let fref = cache.file_ref_map().get(path_owned.as_str()).cloned();
-                            let _ = tx.send((computed, rmode, orig, false, fref));
-                        } else {
-                            let _ = tx.send((computed, rmode, original_tokens, false, None));
-                        }
-                    }
-                });
-                if let Ok(result) = rx.recv_timeout(read_timeout) {
-                    result
-                } else {
-                    cancelled.store(true, Ordering::Relaxed);
-                    tracing::error!("sobre_read timed out after {read_timeout:?} for {path}");
-                    let msg = format!(
-                        "ERROR: sobre_read timed out after {}s reading {path}. \
-                     The file may be very large or a blocking I/O issue occurred. \
-                     Try mode=\"lines:1-100\" for a partial read.",
-                        read_timeout.as_secs()
-                    );
-                    return Err(ErrorData::internal_error(msg, None));
-                }
-            } // end else (slow path)
-        };
+        let (output, resolved_mode, original, file_ref) = read_through_cache(
+            cache_lock,
+            path,
+            &mode,
+            fresh,
+            ctx.crp_mode,
+            current_task.as_deref(),
+            aggressiveness,
+            &protect,
+        )
+        .map_err(|e| ErrorData::internal_error(e, None))?;
 
         if resolved_mode == "error" {
             return Err(ErrorData::invalid_params(output, None));
         }
 
         let output_tokens = crate::core::tokens::count_tokens(&output);
-        let saved = original.saturating_sub(output_tokens);
+        // A line window replaces reading those lines, not the whole file: it
+        // claims no saving (`usage.jsonl` would otherwise count the rest of
+        // the file as saved).
+        let replaced_tokens =
+            if resolved_mode.starts_with("lines:") || resolved_mode.starts_with("anchored:") {
+                output_tokens
+            } else {
+                original
+            };
+        let saved = replaced_tokens.saturating_sub(output_tokens);
 
         // Session updates (bounded lock — 10s timeout, read already succeeded)
         let mut traversal_working_set: Vec<String> = Vec::new();
@@ -830,9 +374,6 @@ impl SobreReadTool {
                 if !file_summary.is_empty() {
                     session.set_file_summary(path, &file_summary);
                 }
-                if is_cache_hit {
-                    session.record_cache_hit();
-                }
                 let root_missing = session
                     .project_root
                     .as_deref()
@@ -847,7 +388,7 @@ impl SobreReadTool {
                     .unwrap_or_else(|| ".".to_string());
             } else {
                 tracing::warn!(
-                    "session write-lock timeout (5s) in sobre_read post-update for {path}"
+                    "session write-lock timeout (10s) in sobre_read post-update for {path}"
                 );
                 project_root_snapshot = ctx.project_root.clone();
             }
@@ -882,9 +423,9 @@ impl SobreReadTool {
         // related issues/PRs/schemas without a separate tool call. Only
         // touch the DB when it already exists — never create graph.db on a read.
         let hints_suffix = {
-            let graph_db =
-                crate::core::property_graph::graph_dir(&ctx.project_root).join("graph.db");
-            let edges = if graph_db.exists() {
+            let graph_db = crate::core::property_graph::graph_dir(&ctx.project_root)
+                .map(|d| d.join("graph.db"));
+            let edges = if graph_db.is_some_and(|db| db.exists()) {
                 crate::core::property_graph::CodeGraph::open(&ctx.project_root)
                     .map(|g| g.all_cross_source_edges())
                     .unwrap_or_default()
@@ -919,26 +460,125 @@ impl SobreReadTool {
         } else {
             format!("{output}{hints_suffix}")
         };
-        let proactive_query = format!(
-            "sobre_read path={path} mode={resolved_mode} task={}",
-            task_ref.unwrap_or_default()
-        );
-        let final_output = if let Some(block) =
-            crate::core::relevance_tracker::proactive_context_for_path(&proactive_query, path)
-        {
-            format!("{final_output}{block}")
-        } else {
-            final_output
-        };
 
         Ok(ToolOutput {
             text: final_output,
-            original_tokens: original,
+            original_tokens: replaced_tokens,
             saved_tokens: saved,
             shell_outcome: None,
             content_blocks: None,
         })
     }
+}
+
+/// Waits up to `limit` for the cache's write lock.
+fn write_lock_within(
+    cache_lock: &Arc<tokio::sync::RwLock<crate::core::cache::SessionCache>>,
+    limit: std::time::Duration,
+) -> Option<tokio::sync::RwLockWriteGuard<'_, crate::core::cache::SessionCache>> {
+    let deadline = std::time::Instant::now() + limit;
+    loop {
+        if let Ok(guard) = cache_lock.try_write() {
+            return Some(guard);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// A read through the session cache, one way whatever the contention:
+/// - the `[unchanged]` stub under a shared lock (re-reads of distinct files
+///   run in parallel);
+/// - else the cache's part of the read under a brief write lock
+///   ([`crate::tools::sobre_read::prepare`]);
+/// - a compressed view rendered with no lock held, so a large file's render
+///   never blocks another call;
+/// - the result stored under a second brief lock, or returned uncached when
+///   that lock does not come within 5 s.
+///
+/// Same-file reads are serialized by the per-file lock. Returns `(output,
+/// resolved mode, original tokens, file ref)`; `Err` when a lock does not
+/// come in time.
+#[allow(clippy::too_many_arguments)]
+fn read_through_cache(
+    cache_lock: &Arc<tokio::sync::RwLock<crate::core::cache::SessionCache>>,
+    path: &str,
+    mode: &str,
+    fresh: bool,
+    crp_mode: crate::tools::CrpMode,
+    task: Option<&str>,
+    aggressiveness: Option<f64>,
+    protect: &[String],
+) -> Result<(String, String, usize, Option<String>), String> {
+    use crate::tools::sobre_read::{Prepared, ReadTuning, finish, prepare, render, settle};
+
+    let file_lock = per_file_lock(path);
+    let _file_guard = {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(25);
+        loop {
+            if let Ok(guard) = file_lock.try_lock() {
+                break guard;
+            }
+            if std::time::Instant::now() >= deadline {
+                return Err(format!(
+                    "per-file lock contention for {path} — retry in a moment"
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+    };
+
+    if !fresh
+        && matches!(mode, "full" | "auto")
+        && let Ok(cache) = cache_lock.try_read()
+        && let Some(out) = crate::tools::sobre_read::try_stub_hit_readonly(&cache, path)
+    {
+        let orig = cache.get(path).map_or(0, |e| e.original_tokens);
+        let file_ref = cache.file_ref_map().get(path).cloned();
+        return Ok((out.content, out.resolved_mode, orig, file_ref));
+    }
+
+    let tuning = ReadTuning::resolve(aggressiveness, protect);
+    let contention = || format!("cache lock contention for {path} — retry in a moment");
+    let job = {
+        let mut cache = write_lock_within(cache_lock, std::time::Duration::from_secs(10))
+            .ok_or_else(contention)?;
+        if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
+            bt.next_seq();
+        }
+        match prepare(&mut cache, path, mode, fresh, crp_mode, task, tuning, None) {
+            Prepared::Done(out) => {
+                let out = settle(&mut cache, path, out);
+                let orig = cache.get(path).map_or(0, |e| e.original_tokens);
+                let file_ref = cache.file_ref_map().get(path).cloned();
+                return Ok((out.content, out.resolved_mode, orig, file_ref));
+            }
+            Prepared::Render(job) => job,
+        }
+    };
+
+    let rendered = render(&job, path, crp_mode, task, tuning);
+
+    let Some(mut cache) = write_lock_within(cache_lock, std::time::Duration::from_secs(5)) else {
+        tracing::warn!("sobre_read: store-lock timeout (5s) for {path}, returning without caching");
+        let out = crate::core::redaction::redact_text(&rendered);
+        return Ok((out, job.resolved_mode, job.original_tokens, None));
+    };
+    let out = finish(
+        &mut cache,
+        path,
+        &job.resolved_mode,
+        rendered,
+        crp_mode,
+        task,
+        tuning,
+    );
+    let out = settle(&mut cache, path, out);
+    let orig = cache.get(path).map_or(0, |e| e.original_tokens);
+    let file_ref = cache.file_ref_map().get(path).cloned();
+    Ok((out.content, out.resolved_mode, orig, file_ref))
 }
 
 /// Resolve the `start_line`/`offset`/`limit` arguments into `(start, limit)`.
@@ -980,13 +620,12 @@ fn anchored_lines_mode(start: i64, limit: Option<i64>) -> String {
     }
 }
 
-/// Apply a resolved line window to `mode`/`fresh`. An explicit non-lines mode
-/// (map/signatures/…) is never clobbered, and `start_line=1` with no
-/// limit is a no-op so it cannot disturb an auto/explicit read. An
-/// explicit `anchored` mode is windowed in place (`anchored:N-M`)
-/// instead of being collapsed to `lines:N-M` — that would silently drop the
-/// hash anchors the caller asked for, and previously let a bounded anchored
-/// read fall through to rendering (and erroring on) the whole file.
+/// Apply a resolved line window to `mode`/`fresh`: the window wins over the
+/// mode, so `signatures` with `start_line=10` reads `lines:10-…`.
+/// `start_line=1` with no limit is a no-op so it cannot disturb an
+/// auto/explicit read. An `anchored` mode is windowed in place
+/// (`anchored:N-M`) instead of being collapsed to `lines:N-M`, which would
+/// drop the hash anchors the caller asked for.
 fn apply_line_window(
     mode: &mut String,
     fresh: &mut bool,

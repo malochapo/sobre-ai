@@ -9,30 +9,8 @@ use crate::core::pricing::{ModelPricing, ModelQuote};
 use crate::core::theme;
 use crate::core::usage::{self, Period, Summary};
 
-/// The flags `gain` reads; anything else is a usage error.
-const GAIN_FLAGS: [&str; 7] = [
-    "--reset",
-    "--period",
-    "--limit",
-    "--model",
-    "--json",
-    "--by-tool",
-    "--daily",
-];
-
 pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
-    let mut args = rest.iter();
-    while let Some(arg) = args.next() {
-        let name = arg.split('=').next().unwrap_or(arg);
-        if !GAIN_FLAGS.contains(&name) {
-            eprintln!("Unknown option '{arg}'. Use: {}", GAIN_FLAGS.join(", "));
-            std::process::exit(2);
-        }
-        // `--period 7d`: the value is the next argument.
-        if matches!(name, "--period" | "--limit" | "--model") && !arg.contains('=') {
-            args.next();
-        }
-    }
+    crate::cli::spec::check_or_exit("gain", rest);
     if rest.iter().any(|a| a == "--reset") {
         if usage::reset() {
             println!("Usage ledger cleared.");
@@ -177,22 +155,33 @@ fn print_summary(s: &Summary, quote: &ModelQuote, period: &str) {
             s.real_cost_usd,
             sources.join(", ")
         );
-        println!(
-            "  Without sobre ${counterfactual:.2} {dim}(real cost + saved tokens, {}){rst}",
-            price_label(quote)
-        );
-        println!(
-            "  Gain          ${saved_usd:.2} ({:.1}%) {dim}— a lower bound: removed tokens are priced once, though they would have been re-sent on later turns{rst}",
-            if counterfactual > 0.0 {
-                saved_usd / counterfactual * 100.0
-            } else {
-                0.0
+        if s.local_calls == s.llm_calls {
+            // Tokens a local model never read cost nothing: the saving is
+            // context and time, not money.
+            println!("  Gain          {dim}none in money: every call went to a local model{rst}");
+        } else {
+            println!(
+                "  Without sobre ${counterfactual:.2} {dim}(real cost + saved tokens, {}){rst}",
+                price_label(quote)
+            );
+            println!(
+                "  Gain          ${saved_usd:.2} ({:.1}%) {dim}— an estimate: saved tokens are priced as uncached input; prompt caching would have made many of them cheaper, and the proxy counts history it re-compresses on each request{rst}",
+                if counterfactual > 0.0 {
+                    saved_usd / counterfactual * 100.0
+                } else {
+                    0.0
+                }
+            );
+            if s.local_calls > 0 {
+                println!(
+                    "                {dim}saved tokens of the local calls are priced as hosted ones{rst}"
+                );
             }
-        );
+        }
     } else {
         println!("{bold}Value{rst} {dim}(estimated){rst}");
         println!(
-            "  At least ${saved_usd:.2} {dim}({}){rst}",
+            "  About ${saved_usd:.2} {dim}({}; saved tokens priced as uncached input){rst}",
             price_label(quote)
         );
         println!(

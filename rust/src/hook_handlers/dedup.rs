@@ -42,7 +42,7 @@ const CLEANUP_AGE: Duration = Duration::from_mins(1);
 pub(super) fn deduped<F: FnOnce() -> String>(event: &str, key_material: &str, work: F) -> String {
     match hook_dir() {
         Some(dir) => deduped_in(&dir, event, key_material, work),
-        // No usable temp dir → no caching, just do the work (never break the hook).
+        // No usable state dir → no caching, just do the work (never break the hook).
         None => work(),
     }
 }
@@ -143,14 +143,7 @@ fn key(event: &str, key_material: &str) -> String {
 }
 
 fn hook_dir() -> Option<std::path::PathBuf> {
-    let dir = std::env::temp_dir().join("sobre-hook");
-    fs::create_dir_all(&dir).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700));
-    }
-    Some(dir)
+    super::shared_dir("dedup")
 }
 
 /// Extensions [`sweep_stale`] may delete: our own dedup side channels

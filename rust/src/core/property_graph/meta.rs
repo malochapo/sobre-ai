@@ -50,12 +50,12 @@ impl Default for PropertyGraphMetaV1 {
     }
 }
 
-pub(crate) fn meta_path(project_root: &str) -> PathBuf {
-    super::graph_dir(project_root).join("graph.meta.json")
+pub(crate) fn meta_path(project_root: &str) -> Option<PathBuf> {
+    Some(super::graph_dir(project_root)?.join("graph.meta.json"))
 }
 
 pub fn load_meta(project_root: &str) -> Option<PropertyGraphMetaV1> {
-    let path = meta_path(project_root);
+    let path = meta_path(project_root)?;
     let s = std::fs::read_to_string(path).ok()?;
     let meta: PropertyGraphMetaV1 = serde_json::from_str(&s).ok()?;
     if meta.schema_version != 1 || meta.built_at.trim().is_empty() {
@@ -65,7 +65,7 @@ pub fn load_meta(project_root: &str) -> Option<PropertyGraphMetaV1> {
 }
 
 pub fn write_meta(project_root: &str, meta: &PropertyGraphMetaV1) -> Result<PathBuf, String> {
-    let path = meta_path(project_root);
+    let path = meta_path(project_root).ok_or("cannot resolve sobre's data directory")?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

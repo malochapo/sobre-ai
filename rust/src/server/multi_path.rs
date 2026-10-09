@@ -11,7 +11,6 @@ pub struct ResolvedPaths {
 /// Resolve tool paths with multi-root support.
 ///
 /// Priority:
-/// 0. `repo` argument (multi-repo alias → specific root)
 /// 1. `paths` array argument (explicit multi-root)
 /// 2. `path` string argument (single root, pre-resolved by dispatch)
 /// 3. Session `extra_roots` (default multi-root from config/MCP)

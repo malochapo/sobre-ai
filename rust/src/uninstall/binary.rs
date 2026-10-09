@@ -10,17 +10,8 @@ use super::shorten;
 /// configured port. Nothing else is signalled. MCP servers belong to the agents
 /// that started them and end when those agents restart; hooks and CLI
 /// commands are short-lived.
-pub(super) fn stop_proxy(dry_run: bool) {
-    let port = crate::proxy_setup::default_port();
-    if dry_run {
-        println!("  Would stop the sobre proxy (autostart unit, and port {port})");
-        return;
-    }
-
-    crate::proxy_autostart::stop();
-    if let Some(pid) = crate::proxy_autostart::stop_proxy_on_port(port) {
-        println!("  ✓ Proxy stopped (PID {pid}, port {port})");
-    }
+pub(super) fn stop_proxy() {
+    crate::proxy_autostart::stop_everywhere(false);
 }
 
 /// How a candidate binary path should be handled.
@@ -60,8 +51,8 @@ fn candidate_paths() -> Vec<PathBuf> {
 
 /// Removes the sobre binary where it is safe to: never a build in a cargo
 /// `target/` directory, and never one cargo manages. Returns true when a
-/// binary was (or, with `dry_run`, would be) removed.
-pub(super) fn remove_binary(home: &Path, dry_run: bool, keep_binary: bool) -> bool {
+/// binary was removed.
+pub(super) fn remove_binary(home: &Path, keep_binary: bool) -> bool {
     if keep_binary {
         println!("  · Kept the binary (--keep-binary)");
         return false;
@@ -83,10 +74,6 @@ pub(super) fn remove_binary(home: &Path, dry_run: bool, keep_binary: bool) -> bo
                 println!(
                     "  · Kept {short}: installed with cargo, remove it with `cargo uninstall sobre`"
                 );
-            }
-            Disposition::Remove if dry_run => {
-                println!("  Would delete the binary {short}");
-                removed = true;
             }
             Disposition::Remove => {
                 let res = if meta.is_dir() {
@@ -151,6 +138,6 @@ mod tests {
     #[test]
     fn keep_binary_skips_removal() {
         let home = std::env::temp_dir();
-        assert!(!remove_binary(&home, true, true));
+        assert!(!remove_binary(&home, true));
     }
 }

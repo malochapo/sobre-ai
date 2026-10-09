@@ -127,7 +127,7 @@ pub(crate) fn codex_desktop_note() -> NamedCheck {
     NamedCheck {
         name: "Codex compression".to_string(),
         ok: true,
-        detail: "hooks auto-compress when trusted (/hooks); the sobre_shell/sobre_read/sobre_search MCP tools compress reliably on every surface (CLI/Desktop/Cloud)".to_string(),
+        detail: "sobre installs only observe hooks for Codex: shell output is compressed when the agent runs it through sobre_shell, on every surface (CLI/Desktop/Cloud)".to_string(),
     }
 }
 

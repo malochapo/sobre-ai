@@ -6,6 +6,7 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 
 use super::util::is_proxy_reachable;
+use super::wiring;
 
 /// The OpenCode providers the proxy serves, with the environment variable that
 /// carries each one's API key.
@@ -19,13 +20,15 @@ fn proxy_base_url(port: u16) -> String {
     format!("http://127.0.0.1:{port}/v1")
 }
 
-/// True when `url` has the shape of a base URL sobre wrote, whatever the
-/// port: `http://127.0.0.1:<port>/v1`. A `localhost` or any other URL is
-/// the user's.
-fn is_proxy_base_url(url: &str) -> bool {
-    url.strip_prefix("http://127.0.0.1:")
-        .and_then(|rest| rest.strip_suffix("/v1"))
-        .is_some_and(|port| port.parse::<u16>().is_ok())
+/// The wiring slot of `provider`'s base URL.
+fn slot(provider: &str) -> String {
+    format!("opencode.{provider}")
+}
+
+/// True when `url`, `provider`'s base URL, is the one sobre wrote. A
+/// `localhost` URL, another port or any other URL is the user's.
+fn is_proxy_base_url(provider: &str, url: &str) -> bool {
+    wiring::is_ours(&slot(provider), url)
 }
 
 /// True when OpenCode authenticates `provider` with an API key: the key's
@@ -65,9 +68,10 @@ fn options_mut<'a>(doc: &'a mut Value, provider: &str) -> Option<&'a mut Map<Str
 /// Removes `provider.<id>.options.baseURL` when sobre wrote it, then any
 /// object that leaves empty. Returns whether it removed anything.
 fn remove_base_url(doc: &mut Value, provider: &str) -> bool {
-    if !base_url(doc, provider).is_some_and(is_proxy_base_url) {
+    if !base_url(doc, provider).is_some_and(|url| is_proxy_base_url(provider, url)) {
         return false;
     }
+    wiring::forget(&slot(provider));
     let path = ["provider", provider, "options", "baseURL"];
     for depth in (1..=path.len()).rev() {
         let parent = path[..depth - 1]
@@ -132,8 +136,11 @@ pub(crate) fn install_opencode_env(home: &Path, port: u16, quiet: bool) {
             continue;
         }
         match base_url(&doc, provider) {
-            Some(url) if url == ours => routed.push(*provider),
-            Some(url) if !is_proxy_base_url(url) => {
+            Some(url) if url == ours => {
+                wiring::record(&slot(provider), &ours, None);
+                routed.push(*provider);
+            }
+            Some(url) if !is_proxy_base_url(provider, url) => {
                 if !quiet {
                     println!("  OpenCode {provider}: custom base URL {url} kept");
                 }
@@ -144,6 +151,7 @@ pub(crate) fn install_opencode_env(home: &Path, port: u16, quiet: bool) {
                 }
                 if let Some(options) = options_mut(&mut doc, provider) {
                     options.insert("baseURL".to_string(), Value::String(ours.clone()));
+                    wiring::record(&slot(provider), &ours, None);
                     routed.push(*provider);
                     changed = true;
                 }
@@ -170,9 +178,9 @@ pub(crate) fn install_opencode_env(home: &Path, port: u16, quiet: bool) {
 /// wrote, on any port.
 pub(crate) fn has_proxy_base_url(home: &Path) -> bool {
     read(&crate::core::editor_registry::opencode_config_path(home)).is_some_and(|doc| {
-        PROVIDERS
-            .iter()
-            .any(|(provider, _)| base_url(&doc, provider).is_some_and(is_proxy_base_url))
+        PROVIDERS.iter().any(|(provider, _)| {
+            base_url(&doc, provider).is_some_and(|url| is_proxy_base_url(provider, url))
+        })
     })
 }
 
@@ -204,24 +212,31 @@ mod tests {
         crate::core::editor_registry::opencode_config_path(home)
     }
 
+    /// The URL sobre recorded for a provider is its own, on any port; with
+    /// no record, only the proxy's address on its port is.
     #[test]
-    fn own_url_is_recognised_by_shape_on_any_port() {
-        assert!(is_proxy_base_url("http://127.0.0.1:4444/v1"));
-        assert!(is_proxy_base_url("http://127.0.0.1:5123/v1"));
+    fn own_url_is_the_recorded_one_or_the_proxys_address() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let port = super::super::default_port();
+        assert!(is_proxy_base_url("anthropic", &proxy_base_url(port)));
+        wiring::record(&slot("openai"), &proxy_base_url(5123), None);
+        assert!(is_proxy_base_url("openai", &proxy_base_url(5123)));
         for user in [
-            "http://localhost:11434/v1",
-            "http://127.0.0.1:4444",
-            "http://127.0.0.1:4444/v1/extra",
-            "https://api.openai.com/v1",
-            "http://127.0.0.1:notaport/v1",
+            "http://localhost:11434/v1".to_string(),
+            "http://127.0.0.1:4000/v1".to_string(),
+            format!("http://127.0.0.1:{port}/v1/extra"),
+            "https://api.openai.com/v1".to_string(),
         ] {
-            assert!(!is_proxy_base_url(user), "{user}");
+            assert!(!is_proxy_base_url("openai", &user), "{user}");
         }
     }
 
     #[test]
     fn remove_base_url_prunes_only_what_it_emptied() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let ours = proxy_base_url(4444);
+        wiring::record(&slot("anthropic"), &proxy_base_url(5555), None);
+        wiring::record(&slot("openai"), &ours, None);
         let mut doc = json!({
             "mcp": {"sobre": {"type": "local"}},
             "provider": {
@@ -296,6 +311,7 @@ mod tests {
 
     #[test]
     fn install_writes_api_key_providers_and_keeps_user_urls() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let home = home_with_api_keys();
         let config = config_path(home.path());
         std::fs::write(
@@ -329,12 +345,15 @@ mod tests {
         );
     }
 
-    /// `proxy.port` changed between two `proxy enable`s: the URL written for
-    /// the old port is moved to the new one, and disable removes it whatever
-    /// port it names.
+    /// `proxy.port` changed between two `proxy enable`s: the URL sobre wrote
+    /// for the old port is moved to the new one, and disable removes it.
     #[test]
     fn a_url_written_for_another_port_follows_the_proxy() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
         let home = home_with_api_keys();
+        for provider in ["anthropic", "openai"] {
+            wiring::record(&slot(provider), &proxy_base_url(1), None);
+        }
         std::fs::write(
             config_path(home.path()),
             json!({"provider": {
@@ -356,12 +375,6 @@ mod tests {
             );
         }
 
-        std::fs::write(
-            config_path(home.path()),
-            json!({"provider": {"openai": {"options": {"baseURL": proxy_base_url(1)}}}})
-                .to_string(),
-        )
-        .unwrap();
         assert!(has_proxy_base_url(home.path()));
         assert!(uninstall_opencode_env(home.path(), true));
         assert_eq!(read_doc(home.path()), json!({}));
@@ -376,6 +389,8 @@ mod tests {
         if std::env::var_os("ANTHROPIC_API_KEY").is_some() {
             return;
         }
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        wiring::record(&slot("anthropic"), &proxy_base_url(1), None);
         let home = tempfile::tempdir().unwrap();
         let auth = home.path().join(".local/share/opencode");
         std::fs::create_dir_all(&auth).unwrap();

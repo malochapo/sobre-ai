@@ -41,7 +41,6 @@ pub fn hybrid_results(
     top_k: usize,
     config: &HybridConfig,
     filter: Option<&dyn Fn(&str) -> bool>,
-    graph_file_ranks: Option<&std::collections::HashMap<String, usize>>,
 ) -> Vec<HybridResult> {
     let mut results = crate::core::hybrid_search::hybrid_search(
         query,
@@ -50,7 +49,6 @@ pub fn hybrid_results(
         Some(aligned_embeddings),
         top_k,
         config,
-        graph_file_ranks,
     );
     if let Some(pred) = filter {
         results.retain(|r| pred(&r.file_path));

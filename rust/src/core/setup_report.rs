@@ -9,6 +9,9 @@ pub struct SetupReport {
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub success: bool,
+    /// `init --check`: what a run would change; nothing was written.
+    #[serde(default)]
+    pub dry_run: bool,
     pub platform: PlatformInfo,
     pub steps: Vec<SetupStepReport>,
     #[serde(default)]

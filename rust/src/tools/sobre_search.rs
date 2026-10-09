@@ -121,6 +121,9 @@ pub fn handle_filtered(
     let mut files_skipped_special = 0u32;
     let mut files_skipped_type = 0u32;
     let mut deadline_hit = false;
+    // Set when the search stopped at `max_results`: files were left unread,
+    // or the last one read may hold more matches.
+    let mut stopped_at_cap = false;
     // Set when any hit gained an `∈name@Lstart` enclosing tag, so the
     // self-describing legend is emitted only when it is actually needed.
     let mut any_enclosing = false;
@@ -183,7 +186,7 @@ pub fn handle_filtered(
             if !include_patterns.is_empty() {
                 let rel = path.strip_prefix(root).unwrap_or(path);
                 let rel_str = rel.to_string_lossy();
-                if !include_patterns.iter().any(|p| p.matches(&rel_str)) {
+                if !include_patterns.iter().any(|p| glob_matches(p, &rel_str)) {
                     continue;
                 }
             }
@@ -201,7 +204,7 @@ pub fn handle_filtered(
         files.retain(|path| {
             let rel = path.strip_prefix(root).unwrap_or(path);
             let rel_str = rel.to_string_lossy();
-            !exclude_patterns.iter().any(|p| p.matches(&rel_str))
+            !exclude_patterns.iter().any(|p| glob_matches(p, &rel_str))
         });
     }
 
@@ -212,6 +215,7 @@ pub fn handle_filtered(
     let deadline = Some(Instant::now() + SEARCH_DEADLINE);
     for path in &files {
         if matches.len() >= max_results {
+            stopped_at_cap = true;
             break;
         }
 
@@ -268,7 +272,10 @@ pub fn handle_filtered(
         // (never for non-matching files) and reused for every later hit here.
         let mut file_enclosing: Option<EnclosingIndex> = None;
 
-        for (i, line) in content.lines().enumerate() {
+        // A UTF-8 BOM is not part of line 1: an anchor hashed with it would
+        // never match what `sobre_read` and `sobre_patch` hash.
+        let body = content.strip_prefix('\u{feff}').unwrap_or(&content);
+        for (i, line) in body.lines().enumerate() {
             // `exclude_pattern` filters out matching lines (grep -v).
             if re.is_match(line) && !exclude_re.as_ref().is_some_and(|ex| ex.is_match(line)) {
                 let short_path =
@@ -310,6 +317,7 @@ pub fn handle_filtered(
                     matches.push(format!("{short_path}:{} {}{}", i + 1, shown, tag));
                 }
                 if matches.len() >= max_results {
+                    stopped_at_cap = true;
                     break;
                 }
             }
@@ -352,10 +360,7 @@ pub fn handle_filtered(
         if files_skipped_type > 0 {
             msg.push_str(&format!(" ({})", type_skip_note(files_skipped_type)));
         }
-        msg.push_str(
-            " (not searched: hidden files, symlinks, .gitignore'd paths and node_modules; \
-             ignore_gitignore=true includes the last two)",
-        );
+        msg.push_str(&format!(" ({})", not_searched_note(respect_gitignore)));
         if deadline_hit {
             msg.push_str(
                 " (search stopped at the time budget — refine the pattern or scope with path=)",
@@ -377,9 +382,10 @@ pub fn handle_filtered(
     };
 
     let mut result = format!(
-        "{} matches in {} files ({files_searched} searched)",
+        "{} matches in {} files ({files_searched} of {} files searched)",
         matches.len(),
-        matched_files.len()
+        matched_files.len(),
+        files.len()
     );
     if matched_files.len() > 1 {
         if matched_files.len() <= 10 {
@@ -432,6 +438,13 @@ pub fn handle_filtered(
             SEARCH_DEADLINE.as_secs()
         ));
     }
+    if stopped_at_cap {
+        result.push_str(&format!(
+            "\n(stopped at max_results={max_results}: more matches may exist — raise \
+             max_results or narrow the pattern or path)"
+        ));
+    }
+    result.push_str(&format!("\n({})", not_searched_note(respect_gitignore)));
 
     // Determinism contract: the hint must be a pure function of the
     // results. A show-once AtomicBool here made the first call differ from
@@ -443,6 +456,16 @@ pub fn handle_filtered(
     }
 
     SearchOutcome::from_observed(result, raw_tokens_accum)
+}
+
+/// What a search or glob walk never looks at, said with every answer
+/// (invariant 5: skipped files are named).
+pub(crate) fn not_searched_note(respect_gitignore: bool) -> &'static str {
+    if respect_gitignore {
+        "not searched: hidden files, symlinks, .gitignore'd paths and node_modules"
+    } else {
+        "not searched: hidden files and symlinks"
+    }
 }
 
 fn type_skip_note(count: u32) -> String {
@@ -556,6 +579,30 @@ impl EnclosingIndex {
     }
 }
 
+/// Compile one glob as `rg --glob` reads it: a glob without `/` (`*.rs`,
+/// `pathutil.rs`) names a file at any depth; a glob with `/` (`src/*.rs`,
+/// `src/**/*.rs`) is matched against the path from the root.
+pub(crate) fn compile_glob(glob: &str) -> Result<Pattern, glob::PatternError> {
+    if glob.contains('/') {
+        Pattern::new(glob)
+    } else {
+        Pattern::new(&format!("**/{glob}"))
+    }
+}
+
+/// Whether `path` matches `pattern` as a shell glob does: `*` and `?` stay
+/// within one path segment (`src/*.ts` is not `src/a/b.ts`); `**` crosses
+/// segments.
+pub(crate) fn glob_matches(pattern: &Pattern, path: &str) -> bool {
+    pattern.matches_with(
+        path,
+        glob::MatchOptions {
+            require_literal_separator: true,
+            ..glob::MatchOptions::default()
+        },
+    )
+}
+
 /// Upper bound on the number of globs a single `include` may expand to, so a
 /// pathological brace pattern (`{a,b}{c,d}{e,f}…`) can never blow up.
 const MAX_INCLUDE_GLOBS: usize = 64;
@@ -567,10 +614,7 @@ const MAX_INCLUDE_GLOBS: usize = 64;
 /// included when it matches *any* of the returned patterns. An empty vec means
 /// "no filter": `include` was `None`, or every expansion failed to parse.
 ///
-/// Bare globs without a `/` (e.g. `pathutil.rs`, `*.rs`) are auto-prefixed
-/// with `**/` to match at any directory depth — matching `rg --glob` and
-/// `git grep` behaviour. Globs that already contain `/` are used as-is, so
-/// `src/**/*.rs` only matches under `src/`.
+/// Each glob is read by [`compile_glob`].
 fn compile_include(include: Option<&str>) -> Vec<Pattern> {
     let Some(raw) = include else {
         return Vec::new();
@@ -579,14 +623,7 @@ fn compile_include(include: Option<&str>) -> Vec<Pattern> {
         .into_iter()
         .take(MAX_INCLUDE_GLOBS)
         .filter(|g| !g.is_empty())
-        .map(|g| {
-            if g.contains('/') {
-                g
-            } else {
-                format!("**/{g}")
-            }
-        })
-        .filter_map(|g| Pattern::new(&g).ok())
+        .filter_map(|g| compile_glob(&g).ok())
         .collect()
 }
 
@@ -703,6 +740,29 @@ mod tests {
             .text
         };
         assert_eq!(run(), run(), "search output must be deterministic");
+    }
+
+    /// K3: line 1 of a file with a UTF-8 BOM is anchored without the BOM,
+    /// as `sobre_read` and `sobre_patch` hash it.
+    #[test]
+    fn anchored_search_hashes_line_one_without_the_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("b.rs"), "\u{feff}let needle = 1;\n").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let out = handle_filtered(
+            "needle",
+            &root,
+            Some("*.rs"),
+            10,
+            CrpMode::Off,
+            true,
+            true,
+            None,
+            None,
+        )
+        .text;
+        let hh = crate::core::anchor::line_hash("let needle = 1;");
+        assert!(out.contains(&format!("b.rs:1:{hh} ")), "{out}");
     }
 
     /// Opt-in anchored search tags each hit with `:hh` (matching
@@ -995,6 +1055,46 @@ mod tests {
             out.contains("longIdentifierAlpha"),
             "identifiers should appear raw by default: {out}"
         );
+    }
+
+    /// G12: a search that stops at `max_results` says so and counts against
+    /// every candidate file; a complete one does not, and both name what the
+    /// walk never looks at.
+    #[test]
+    fn stopping_at_max_results_is_said() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..30 {
+            let body = (0..10)
+                .map(|j| format!("needle {i} {j}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            std::fs::write(dir.path().join(format!("f{i:02}.txt")), body).unwrap();
+        }
+        let search = |max| {
+            handle_filtered(
+                "needle",
+                dir.path().to_string_lossy().as_ref(),
+                None,
+                max,
+                CrpMode::Off,
+                true,
+                false,
+                None,
+                None,
+            )
+            .text
+        };
+        let capped = search(20);
+        assert!(capped.contains("of 30 files searched"), "{capped}");
+        assert!(capped.contains("stopped at max_results=20"), "{capped}");
+        assert!(capped.contains("not searched: hidden files"), "{capped}");
+        let all = search(1000);
+        assert!(
+            all.starts_with("300 matches in 30 files (30 of 30 files searched)"),
+            "{all}"
+        );
+        assert!(!all.contains("stopped at max_results"), "{all}");
+        assert!(all.contains("not searched: hidden files"), "{all}");
     }
 
     #[test]

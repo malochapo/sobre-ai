@@ -1,35 +1,13 @@
 //! Unit tests for the semantic-search stack (moved verbatim in the split).
 
 #[cfg(test)]
-mod filter_tests {
-    #[allow(clippy::wildcard_imports)]
-    use super::super::*;
-
-    #[test]
-    fn filter_language_rust() {
-        let f = SearchFilter::new(Some(&["rust".into()]), None).unwrap();
-        assert!(f.matches("src/main.rs"));
-        assert!(!f.matches("src/main.ts"));
-    }
-
-    #[test]
-    fn filter_path_glob() {
-        let f = SearchFilter::new(None, Some("rust/src/**")).unwrap();
-        assert!(f.matches("rust/src/core/mod.rs"));
-        assert!(!f.matches("website/src/pages/index.astro"));
-    }
-}
-
-#[cfg(test)]
 mod root_resolution_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
 
     #[test]
     fn subdir_filter_scopes_results_to_subtree() {
-        let f = SearchFilter::new(None, None)
-            .unwrap()
-            .with_subdir(Some("crate_a/src".to_string()));
+        let f = SearchFilter::default().with_subdir(Some("crate_a/src".to_string()));
         assert!(f.is_active());
         assert!(f.matches("crate_a/src/auth.rs"));
         assert!(f.matches("crate_a/src/nested/db.rs"));
@@ -41,20 +19,8 @@ mod root_resolution_tests {
     }
 
     #[test]
-    fn subdir_filter_combines_with_extension_filter() {
-        let f = SearchFilter::new(Some(&["rust".to_string()]), None)
-            .unwrap()
-            .with_subdir(Some("src".to_string()));
-        assert!(f.matches("src/main.rs"));
-        assert!(!f.matches("src/readme.md"), "wrong extension");
-        assert!(!f.matches("docs/main.rs"), "outside subdir");
-    }
-
-    #[test]
     fn empty_subdir_is_no_scope() {
-        let f = SearchFilter::new(None, None)
-            .unwrap()
-            .with_subdir(Some(String::new()));
+        let f = SearchFilter::default().with_subdir(Some(String::new()));
         assert!(!f.is_active());
         assert!(f.matches("anything/here.rs"));
     }
@@ -232,7 +198,7 @@ mod dense_toggle_tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let index = small_index();
-        let filter = SearchFilter::new(None, None).unwrap();
+        let filter = SearchFilter::default();
         let cfg = HybridConfig {
             splade_weight: 0.0,
             ..HybridConfig::default()

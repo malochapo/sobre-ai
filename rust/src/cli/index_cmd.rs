@@ -4,9 +4,25 @@ use std::time::Duration;
 use crate::terminal_ui::ProgressIndicator;
 
 pub(crate) fn cmd_index(args: &[String]) {
+    let sub = find_subcommand(args);
+    // The flags around the subcommand word.
+    let mut flags: Vec<String> = args.to_vec();
+    if let Some(pos) = sub.and_then(|s| args.iter().position(|a| a == s)) {
+        flags.remove(pos);
+    }
+    match sub {
+        Some(s @ ("status" | "build")) => {
+            crate::cli::spec::check_or_exit(&format!("index {s}"), &flags);
+        }
+        None if args.iter().any(|a| a == "--help" || a == "-h") => {
+            print!("{}", crate::cli::spec::group_text("index"));
+            return;
+        }
+        _ => {}
+    }
     let project_root = super::common::detect_project_root(args);
 
-    match find_subcommand(args) {
+    match sub {
         Some("status") => {
             if args.iter().any(|a| a == "--json") {
                 println!(
@@ -19,13 +35,18 @@ pub(crate) fn cmd_index(args: &[String]) {
         }
         Some("build") => build(&project_root, args.iter().any(|a| a == "--force")),
         other => {
+            // A `\` line continuation would eat the indentation.
             eprintln!(
-                "Usage: sobre index <build|status> [--root <path>]\n\
-                   sobre index build            graph + BM25 indexes, and the dense index\n\
-                                                   in builds with local embeddings\n\
-                   sobre index build --force    drop the indexes first, rebuild from scratch\n\
-                   sobre index status [--json]  what is built\n\
-                 Leave files out of every index with `ignore` in config.toml."
+                "{}",
+                [
+                    "Usage: sobre index <build|status> [--root <path>]",
+                    "  sobre index build            graph + BM25 indexes, and the dense index",
+                    "                               in builds with local embeddings",
+                    "  sobre index build --force    drop the indexes first, rebuild from scratch",
+                    "  sobre index status [--json]  what is built",
+                    "Leave files out of every index with `ignore` in config.toml.",
+                ]
+                .join("\n")
             );
             // `sobre index` alone asks for the usage; anything else is a mistake.
             if other.is_some() {
@@ -167,13 +188,12 @@ fn apply_semantic_progress(
     }
 }
 
-/// First non-flag token, skipping the value of `--root`/`--project-root`, so
+/// First non-flag token, skipping the value of `--root`, so
 /// `index --root /x build` resolves the subcommand `build`, not the path.
 fn find_subcommand(args: &[String]) -> Option<&str> {
-    const VALUE_FLAGS: [&str; 2] = ["--root", "--project-root"];
     let mut it = args.iter();
     while let Some(a) = it.next() {
-        if VALUE_FLAGS.contains(&a.as_str()) {
+        if a == "--root" {
             let _ = it.next();
             continue;
         }

@@ -119,9 +119,12 @@ fn consolidate_dry_run_previews_without_mutating() {
     }
     knowledge.save().unwrap();
 
-    let report =
-        consolidate_project_knowledge_with(&root, &ConsolidateOptions::manual().into_dry_run())
-            .unwrap();
+    let report = consolidate_project_knowledge_with(
+        &root,
+        None,
+        &ConsolidateOptions::manual().into_dry_run(),
+    )
+    .unwrap();
 
     // The preview reports the reclaim that *would* happen…
     assert!(report.dry_run);
@@ -165,7 +168,8 @@ fn consolidation_does_not_capacity_compact_at_twenty_five_percent_free() {
     }
     knowledge.save().unwrap();
 
-    let report = consolidate_project_knowledge(&root).unwrap();
+    let report =
+        consolidate_project_knowledge_with(&root, None, &ConsolidateOptions::manual()).unwrap();
     let reloaded = ProjectKnowledge::load(&root).unwrap();
 
     assert_eq!(report.fact_capacity_archived, 0);
@@ -174,48 +178,33 @@ fn consolidation_does_not_capacity_compact_at_twenty_five_percent_free() {
     assert_eq!(reloaded.history.len(), 75);
 }
 
+/// L8: `consolidate` imports the session it is given (the live one, unsaved
+/// findings included), and a second run confirms nothing twice.
 #[test]
-fn consolidation_loads_session_for_requested_project_root() {
+fn consolidating_the_live_session_twice_confirms_each_fact_once() {
     let _env_lock = crate::core::data_dir::test_env_lock();
     let data_dir = tempfile::tempdir().unwrap();
     let _data_dir = DataDirGuard::set(data_dir.path());
-    let cwd_project = tempfile::tempdir().unwrap();
-    let target_project = tempfile::tempdir().unwrap();
-    let cwd_root = cwd_project.path().to_string_lossy().to_string();
-    let target_root = target_project.path().to_string_lossy().to_string();
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
 
-    let mut cwd_session = SessionState::new();
-    cwd_session.project_root = Some(cwd_root);
-    cwd_session.add_finding(None, None, "wrong cwd finding");
-    cwd_session.save().unwrap();
+    let mut live = SessionState::new();
+    live.project_root = Some(root.clone());
+    live.add_finding(None, None, "unsaved finding from this conversation");
 
-    let mut target_session = SessionState::new();
-    target_session.project_root = Some(target_root.clone());
-    target_session.add_finding(None, None, "target project finding");
-    target_session.save().unwrap();
+    let opts = ConsolidateOptions::manual();
+    let first = consolidate_project_knowledge_with(&root, Some(&live), &opts).unwrap();
+    assert_eq!(first.session_items, 1);
+    let second = consolidate_project_knowledge_with(&root, Some(&live), &opts).unwrap();
+    assert_eq!(second.session_items, 0, "already imported");
 
-    let _cwd = CurrentDirGuard::enter(cwd_project.path());
-    let report = consolidate_project_knowledge(&target_root).unwrap();
-
-    assert_eq!(
-        report.session_id.as_deref(),
-        Some(target_session.id.as_str())
-    );
-    assert_eq!(report.session_items, 1);
-
-    let knowledge = ProjectKnowledge::load(&target_root).unwrap();
-    assert!(
-        knowledge
-            .facts
-            .iter()
-            .any(|f| f.value == "target project finding")
-    );
-    assert!(
-        !knowledge
-            .facts
-            .iter()
-            .any(|f| f.value == "wrong cwd finding")
-    );
+    let knowledge = ProjectKnowledge::load(&root).unwrap();
+    let fact = knowledge
+        .facts
+        .iter()
+        .find(|f| f.value == "unsaved finding from this conversation")
+        .expect("imported");
+    assert_eq!(fact.confirmation_count, 1);
 }
 
 #[test]
@@ -260,4 +249,41 @@ fn search_reads_only_the_requested_project() {
     assert!(out.contains("target finding about retries"), "{out}");
     assert!(out.contains("target decision about retries"), "{out}");
     assert!(!out.contains("other"), "another project leaked in: {out}");
+}
+
+/// L9: a superseded fact is not a search result.
+#[test]
+fn search_leaves_superseded_facts_out() {
+    let _env_lock = crate::core::data_dir::test_env_lock();
+    let data_dir = tempfile::tempdir().unwrap();
+    let _data_dir = DataDirGuard::set(data_dir.path());
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
+    let policy = MemoryPolicy::default();
+
+    let mut knowledge = ProjectKnowledge::new(&root);
+    knowledge.remember(
+        "deploy",
+        "region",
+        "deploys go to eu-west-1",
+        "s1",
+        0.8,
+        &policy,
+    );
+    knowledge.remember(
+        "deploy",
+        "region",
+        "deploys go to us-east-2",
+        "s2",
+        0.8,
+        &policy,
+    );
+    knowledge.save().unwrap();
+
+    let out = handle_search(&root, Some("deploys"));
+    assert!(out.contains("us-east-2"), "{out}");
+    assert!(
+        !out.contains("eu-west-1"),
+        "a superseded fact came back: {out}"
+    );
 }

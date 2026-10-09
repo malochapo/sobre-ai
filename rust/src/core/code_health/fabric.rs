@@ -139,7 +139,7 @@ fn pg_hotspots(health: &ProjectHealth) -> Vec<super::Hotspot> {
 /// Returns the highest cc among same-named hotspots, or `None` when the symbol
 /// is not a recorded hotspot or the graph is unavailable. Best-effort + cheap:
 /// one SQLite read, no parsing. Its one caller, the dense-search complexity
-/// boost, exists only with `embeddings`; the function is not gated so its test
+/// boost, exists only with `dense`; the function is not gated so its test
 /// runs in the default build.
 #[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub fn hotspot_cc(root: &str, symbol: &str) -> Option<u32> {

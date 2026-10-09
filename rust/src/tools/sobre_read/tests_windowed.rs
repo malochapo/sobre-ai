@@ -48,7 +48,7 @@ fn disk_windowed_anchored_read_serves_file_over_the_size_cap() {
     assert!(full_err.is_err(), "full read must hit the size cap");
 
     let mut cache = SessionCache::new();
-    let out = handle_with_options_inner(
+    let out = handle_with_options_resolved_preread(
         &mut cache,
         &p,
         "anchored:5-7",
@@ -108,7 +108,7 @@ fn windowed_anchored_read_via_preread_slow_path_stays_windowed() {
     let preread = std::fs::read_to_string(&path).unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_options_inner(
+    let out = handle_with_options_resolved_preread(
         &mut cache,
         &p,
         "anchored:109-118",
@@ -141,4 +141,100 @@ fn windowed_anchored_read_via_preread_slow_path_stays_windowed() {
         "header must report the file's true total line count: {}",
         out.content
     );
+}
+
+/// G7: a window on a file over the size limit holding one invalid UTF-8
+/// byte is served (U+FFFD in its place), comma parts included, and a BOM
+/// is not part of line 1 — the error used to send the agent back to the
+/// windows that had just failed.
+#[test]
+fn disk_windows_survive_invalid_utf8_and_serve_comma_ranges() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("big.log");
+    let mut bytes = b"\xEF\xBB\xBFfirst line\n".to_vec();
+    for i in 2..=400 {
+        bytes.extend_from_slice(format!("log line {i}\n").as_bytes());
+    }
+    bytes.extend_from_slice(b"caf\xE9 latin-1\n");
+    std::fs::write(&path, &bytes).unwrap();
+    let p = path.to_string_lossy().to_string();
+
+    crate::core::limits::set_max_read_bytes_for_this_thread(Some(1024));
+    let mut cache = SessionCache::new();
+    let mut read = |mode: &str| {
+        handle_with_options_resolved_preread(
+            &mut cache,
+            &p,
+            mode,
+            /* fresh */ true,
+            CrpMode::Off,
+            None,
+            ReadTuning::default(),
+            None,
+        )
+    };
+    let lines = read("lines:1-3");
+    let comma = read("lines:2,399-401");
+    let anchored = read("anchored:1-2");
+    crate::core::limits::set_max_read_bytes_for_this_thread(None);
+
+    assert!(
+        lines.content.contains("   1| first line"),
+        "{}",
+        lines.content
+    );
+    assert!(
+        lines.content.contains("   3| log line 3"),
+        "{}",
+        lines.content
+    );
+    assert!(!lines.content.contains('\u{feff}'), "{}", lines.content);
+    assert!(
+        comma.content.contains("   2| log line 2"),
+        "{}",
+        comma.content
+    );
+    assert!(
+        comma.content.contains(" 401| caf\u{fffd} latin-1"),
+        "{}",
+        comma.content
+    );
+    assert!(!comma.content.contains("log line 3\n"), "{}", comma.content);
+    assert!(
+        anchored.content.contains("first line"),
+        "{}",
+        anchored.content
+    );
+    assert!(
+        !anchored.content.contains('\u{feff}'),
+        "{}",
+        anchored.content
+    );
+    for out in [&lines, &comma, &anchored] {
+        assert!(
+            !out.content.to_lowercase().contains("too large"),
+            "{}",
+            out.content
+        );
+    }
+}
+
+/// K6: a `raw` line window is those lines as they are on disk: endings
+/// kept, no numbers, no redaction.
+#[test]
+fn a_raw_window_is_the_lines_verbatim() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("w.txt");
+    std::fs::write(
+        &path,
+        "\u{feff}one\r\ntwo\r\napi_key = \"sk-ant-api03-abcdefghijklmnopqrstuvwxyz\"\r\nfour\r\n",
+    )
+    .unwrap();
+    let p = path.to_string_lossy().to_string();
+    assert_eq!(
+        super::raw_line_window(&p, 2, 3).unwrap(),
+        "two\r\napi_key = \"sk-ant-api03-abcdefghijklmnopqrstuvwxyz\"\r\n"
+    );
+    assert_eq!(super::raw_line_window(&p, 1, 1).unwrap(), "one\r\n");
 }

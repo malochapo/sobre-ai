@@ -13,16 +13,7 @@ const TOKEN_FILE: &str = "session_token";
 pub fn generate_token() -> String {
     let mut buf = [0u8; TOKEN_BYTES];
     getrandom::fill(&mut buf).expect("getrandom failed");
-    bytes_to_hex(&buf)
-}
-
-fn bytes_to_hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        s.push(char::from_digit((b >> 4) as u32, 16).unwrap_or('0'));
-        s.push(char::from_digit((b & 0xf) as u32, 16).unwrap_or('0'));
-    }
-    s
+    crate::core::hasher::hex_encode(&buf)
 }
 
 /// Resolve or generate the proxy/HTTP session token.

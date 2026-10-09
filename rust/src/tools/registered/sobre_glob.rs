@@ -20,7 +20,7 @@ impl McpTool for SobreGlobTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "pattern": { "type": "string", "description": "e.g. **/*.ts" },
+                    "pattern": { "type": "string", "description": "*.ts names a file at any depth; a glob with / (src/*.ts, src/**/*.ts) matches the path from the root, * staying within one directory" },
                     "path": { "type": "string" },
                     "paths": { "type": "array", "items": { "type": "string" } },
                     "max_results": { "type": "integer", "description": "default 200" },
@@ -55,11 +55,10 @@ impl McpTool for SobreGlobTool {
         let mut total_sent: usize = 0;
 
         for root in &resolved.roots {
-            // The dispatch layer already runs `handle()` inside `block_in_place`
-            // (server/dispatch/mod.rs); the per-root walk is synchronous, so we
-            // call it directly and only guard against panics — nesting another
-            // `block_in_place` here would needlessly consume blocking-pool
-            // threads (the lesson from an earlier multi-read crash).
+            // The dispatch layer already runs `handle()` on the blocking pool
+            // (`spawn_blocking`, server/dispatch/mod.rs); the per-root walk is
+            // synchronous, so we call it directly and only guard against
+            // panics.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 crate::tools::sobre_glob::handle(&pattern, root, respect, per_root_max)
             }));

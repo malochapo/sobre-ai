@@ -67,7 +67,7 @@ When `format=json`:
 - The `impact` payload includes:
   - `schema_version` (Graph Reproducibility Contract v1)
   - `tool`, `action`
-  - `project.project_root_hash` + `project.project_identity_hash` (hash-only; never leak identity strings)
+  - `project.project_root_hash` (the hash of the canonical root; never the path)
   - `graph` summary (exists, nodes, edges, db_path)
   - action-specific fields + `truncated` flags
 

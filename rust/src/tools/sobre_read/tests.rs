@@ -678,14 +678,13 @@ fn resolve_auto_mode_returns_full_for_instruction_files() {
         None,
         "/home/user/.pi/agent/skills/committing-changes/SKILL.md",
         5000,
-        Some("read"),
     );
     assert_eq!(mode, "full", "SKILL.md must always be read in full");
 
-    let mode = resolve_auto_mode(None, "/workspace/AGENTS.md", 3000, Some("read"));
+    let mode = resolve_auto_mode(None, "/workspace/AGENTS.md", 3000);
     assert_eq!(mode, "full", "AGENTS.md must always be read in full");
 
-    let mode = resolve_auto_mode(None, "/workspace/.cursorrules", 2000, None);
+    let mode = resolve_auto_mode(None, "/workspace/.cursorrules", 2000);
     assert_eq!(mode, "full", ".cursorrules must always be read in full");
 }
 
@@ -770,7 +769,7 @@ fn raw_mode_returns_exact_file_content() {
 /// reproduce every source line — including decorative separator comments
 /// (`// ————`, `// ----`) — so the content the model edits never diverges from
 /// disk. The original report saw these silently stripped, which then broke
-/// `sobre_edit` on a whitespace mismatch.
+/// a text replacement on a whitespace mismatch.
 #[test]
 fn verbatim_modes_preserve_decorative_comment_lines() {
     let _lock = crate::core::data_dir::test_env_lock();

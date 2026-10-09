@@ -6,7 +6,7 @@ fn ensure_pretooluse_hook(pre: &mut Vec<serde_json::Value>, matcher: &str, comma
     pre.retain(|e| {
         !e.get("command")
             .and_then(|c| c.as_str())
-            .is_some_and(|c| c.contains("sobre") && c.contains(" hook "))
+            .is_some_and(crate::hooks::is_sobre_hook_command)
     });
     pre.push(serde_json::json!({ "matcher": matcher, "command": command }));
 }

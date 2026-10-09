@@ -225,7 +225,7 @@ impl EmbeddingEngine {
 
     /// Load from the default model directory ([`model_directory`](Self::model_directory)).
     pub fn load_default() -> anyhow::Result<Self> {
-        Self::load(&Self::model_directory())
+        Self::load(&Self::model_directory()?)
     }
 
     /// Generate an embedding vector for a single text (document/code).
@@ -337,18 +337,20 @@ impl EmbeddingEngine {
         anyhow::bail!("Embeddings feature not enabled")
     }
 
-    /// The models directory, under the cache directory.
-    pub fn model_directory() -> PathBuf {
-        if let Ok(d) = crate::core::paths::cache_dir() {
-            return d.join("models");
-        }
-        PathBuf::from("models")
+    /// The models directory, under the cache directory. An error when the
+    /// cache directory cannot be resolved: a model is never looked for, or
+    /// downloaded, relative to the working directory.
+    pub fn model_directory() -> anyhow::Result<PathBuf> {
+        crate::core::paths::cache_dir()
+            .map(|d| d.join("models"))
+            .map_err(|e| anyhow::anyhow!(e))
     }
 
     /// Check if the model files are present and loadable.
     pub fn is_available() -> bool {
         let selected = model_registry::resolve_model();
-        model_files_present(&Self::model_directory().join(selected.storage_dir_name()))
+        Self::model_directory()
+            .is_ok_and(|dir| model_files_present(&dir.join(selected.storage_dir_name())))
     }
 
     /// Ensure the selected model's files exist on disk, downloading them from
@@ -362,7 +364,7 @@ impl EmbeddingEngine {
     /// one caller: nothing else downloads the model.
     pub fn ensure_downloaded() -> anyhow::Result<()> {
         let selected = model_registry::resolve_model();
-        let model_dir = Self::model_directory().join(selected.storage_dir_name());
+        let model_dir = Self::model_directory()?.join(selected.storage_dir_name());
         download::ensure_model(&model_dir, &selected)?;
         Ok(())
     }
@@ -838,7 +840,7 @@ mod tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let unique = "/tmp/sobre_test_embed_42xyz";
         crate::test_env::set_var("SOBRE_CACHE_DIR", unique);
-        let dir = EmbeddingEngine::model_directory();
+        let dir = EmbeddingEngine::model_directory().unwrap();
         assert_eq!(dir, std::path::Path::new(unique).join("models"));
         assert!(!EmbeddingEngine::is_available());
         crate::test_env::remove_var("SOBRE_CACHE_DIR");

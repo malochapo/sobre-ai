@@ -2,9 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::core::session::{
-    Decision, EvidenceRecord, FileTouched, Finding, SessionState, SessionStats, TaskInfo,
-};
+use crate::core::session::{Decision, FileTouched, Finding, SessionState, SessionStats, TaskInfo};
 
 const MAX_BUNDLE_BYTES: usize = 250_000;
 
@@ -19,7 +17,6 @@ pub struct CcpSessionBundleV1 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectIdentityV1 {
     pub project_root_hash: Option<String>,
-    pub project_identity_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,7 +31,6 @@ pub struct SessionExcerptV1 {
     pub findings: Vec<Finding>,
     pub decisions: Vec<Decision>,
     pub files_touched: Vec<FileTouched>,
-    pub evidence: Vec<EvidenceRecord>,
     pub stats: SessionStats,
     pub terse_mode: bool,
     pub compression_level: String,
@@ -46,16 +42,10 @@ pub fn build_bundle_v1(session: &SessionState) -> CcpSessionBundleV1 {
     // never applies it (settings come from the importer's config.toml).
     let export_level =
         crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
-    let (project_root_hash, project_identity_hash) =
-        session
-            .project_root
-            .as_deref()
-            .map_or((None, None), |root| {
-                let root_hash = crate::core::project_hash::hash_project_root(root);
-                let identity = crate::core::project_hash::project_identity(root);
-                let identity_hash = identity.as_deref().map(crate::core::hasher::hash_str);
-                (Some(root_hash), identity_hash)
-            });
+    let project_root_hash = session
+        .project_root
+        .as_deref()
+        .map(crate::core::project_hash::hash_project_root);
 
     let mut excerpt = SessionExcerptV1 {
         id: session.id.clone(),
@@ -68,7 +58,6 @@ pub fn build_bundle_v1(session: &SessionState) -> CcpSessionBundleV1 {
         findings: session.findings.clone(),
         decisions: session.decisions.clone(),
         files_touched: session.files_touched.clone(),
-        evidence: session.evidence.clone(),
         stats: session.stats.clone(),
         terse_mode: export_level.is_active(),
         compression_level: export_level.label().to_string(),
@@ -96,10 +85,7 @@ pub fn build_bundle_v1(session: &SessionState) -> CcpSessionBundleV1 {
     CcpSessionBundleV1 {
         schema_version: crate::core::contracts::CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION,
         exported_at: Utc::now(),
-        project: ProjectIdentityV1 {
-            project_root_hash,
-            project_identity_hash,
-        },
+        project: ProjectIdentityV1 { project_root_hash },
         session: excerpt,
     }
 }
@@ -108,7 +94,7 @@ pub fn serialize_bundle_v1_pretty(bundle: &CcpSessionBundleV1) -> Result<String,
     let json = serde_json::to_string_pretty(bundle).map_err(|e| e.to_string())?;
     if json.len() > MAX_BUNDLE_BYTES {
         return Err(format!(
-            "ERROR: bundle too large ({} bytes > max {}). Reduce the session evidence.",
+            "ERROR: bundle too large ({} bytes > max {}). Record fewer findings and files.",
             json.len(),
             MAX_BUNDLE_BYTES
         ));
@@ -188,7 +174,7 @@ pub fn import_bundle_v1_into_session(
         }
     }
 
-    *session = SessionState {
+    session.replace_record(SessionState {
         id: imported.id.clone(),
         version: imported.version,
         started_at: imported.started_at,
@@ -199,11 +185,10 @@ pub fn import_bundle_v1_into_session(
         findings: imported.findings.clone(),
         decisions: imported.decisions.clone(),
         files_touched: imported.files_touched.clone(),
-        evidence: imported.evidence.clone(),
         stats: imported.stats.clone(),
         extra_roots: Vec::new(),
         last_flush: None,
-    };
+    });
 
     ImportReportV1 {
         session_id: session.id.clone(),
@@ -244,9 +229,6 @@ fn redact_excerpt_in_place(ex: &mut SessionExcerptV1) {
             *r = crate::core::redaction::redact_text(r);
         }
     }
-    for ev in &mut ex.evidence {
-        ev.value = None;
-    }
 }
 
 fn strip_root_prefix(root: &str, path: &str) -> Option<String> {
@@ -267,14 +249,6 @@ fn candidate_path(root: &Path, stored_path: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn redacted_export_drops_evidence_values() {
-        let mut s = SessionState::new();
-        s.record_manual_evidence("k", Some("secret=abcdef0123456789abcdef0123456789"));
-        let b = build_bundle_v1(&s);
-        assert!(b.session.evidence.iter().all(|e| e.value.is_none()));
-    }
 
     #[test]
     fn serialize_respects_size_cap() {

@@ -3,8 +3,9 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
-/// Searches this project's knowledge facts and the findings and decisions of
-/// its saved sessions. Nothing from another project is read.
+/// Searches this project's current knowledge facts (superseded and archived
+/// ones are left out) and the findings and decisions of its saved sessions.
+/// Nothing from another project is read.
 pub(crate) fn handle_search(project_root: &str, query: Option<&str>) -> String {
     let Some(q) = query else {
         return "Error: query is required for search".to_string();
@@ -24,7 +25,7 @@ pub(crate) fn handle_search(project_root: &str, query: Option<&str>) -> String {
     let mut results: Vec<(String, String, String, f32, f32)> = Vec::new();
 
     if let Some(knowledge) = ProjectKnowledge::load(project_root) {
-        for fact in &knowledge.facts {
+        for fact in knowledge.facts.iter().filter(|f| f.is_current()) {
             let r = relevance(&format!("{} {} {}", fact.category, fact.key, fact.value));
             if r > 0.0 {
                 results.push((

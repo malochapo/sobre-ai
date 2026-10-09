@@ -88,6 +88,11 @@ pub(super) fn run_mcp_server() -> Result<()> {
         let server_handle = server.clone();
         let service = match server.serve(transport).await {
             Ok(s) => s,
+            // stdin closed before `initialize`: no client, nothing failed.
+            Err(rmcp::service::ServerInitializeError::ConnectionClosed(when)) => {
+                tracing::debug!("Client disconnected before init: {when}");
+                return Ok(());
+            }
             Err(e) => {
                 let msg = e.to_string();
                 if msg.contains("expect initialized")

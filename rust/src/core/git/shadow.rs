@@ -131,34 +131,29 @@ pub fn log(project: &Path, limit: usize) -> Result<Vec<Checkpoint>, String> {
         .collect())
 }
 
-/// Unified diff. Defaults to "working tree vs last checkpoint" when `from`/`to`
-/// are omitted.
+/// Unified diff from checkpoint `from` (default: the last one) to checkpoint
+/// `to` (default: the working tree).
 pub fn diff(project: &Path, from: Option<&str>, to: Option<&str>) -> Result<String, String> {
     let git_dir = shadow_git_dir(project)?;
     if !git_dir.join("HEAD").exists() {
         return Err("no checkpoints yet — run snapshot first".to_string());
     }
     let env = base_env(&git_dir, project);
-    let mut args: Vec<String> = vec!["diff".to_string()];
-    match (from, to) {
-        (Some(f), Some(t)) => {
-            args.push(f.to_string());
-            args.push(t.to_string());
-        }
-        (Some(f), None) => args.push(f.to_string()),
-        (None, _) => args.push("HEAD".to_string()),
-    }
-    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut arg_refs: Vec<&str> = vec!["diff", from.unwrap_or("HEAD")];
+    arg_refs.extend(to);
     git(&arg_refs, project, Duration::from_secs(30), &env)?.ok_stdout()
 }
 
-/// Restore tracked files from a checkpoint into the working tree. With `path`
-/// scoped to a file/dir; otherwise the whole tree (tracked files only).
+/// Restore files from a checkpoint into the working tree: `path` (a file or
+/// directory), or the whole tree. The tree as it is now — the user's own
+/// changes included — is snapshotted first, so a restore can itself be
+/// undone; the answer names that checkpoint and what was not restored.
 pub fn restore(project: &Path, git_ref: &str, path: Option<&str>) -> Result<String, String> {
     let git_dir = shadow_git_dir(project)?;
     if !git_dir.join("HEAD").exists() {
         return Err("no checkpoints yet — nothing to restore".to_string());
     }
+    let before = snapshot(project, &format!("before restoring {git_ref}"))?;
     let env = base_env(&git_dir, project);
     let target = path.unwrap_or(".");
     git(
@@ -168,7 +163,13 @@ pub fn restore(project: &Path, git_ref: &str, path: Option<&str>) -> Result<Stri
         &env,
     )?
     .ok_stdout()?;
-    Ok(format!("restored {target} from {git_ref}"))
+    Ok(format!(
+        "restored {target} from {git_ref}. The tree before the restore is checkpoint {}: \
+         restore it to undo this.\nNot restored: files a checkpoint never records \
+         ({}), and files created since {git_ref}, which are left in place.",
+        before.sha,
+        EXCLUDES.join(", ")
+    ))
 }
 
 // ── internals ──────────────────────────────────────────────────────────────
@@ -255,25 +256,27 @@ fn shadow_git_dir(project: &Path) -> Result<PathBuf, String> {
         .join("git"))
 }
 
-/// Stable per-project directory name (short BLAKE3 of the canonical path).
+/// The per-project directory name every store uses (decision 6).
 fn project_hash(project: &Path) -> String {
-    let canonical = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
-    crate::core::hasher::hash_short(&canonical.to_string_lossy())
+    crate::core::project_hash::hash_project_root(&project.to_string_lossy())
 }
+
+/// What a snapshot never records (keeps snapshots lean even without a
+/// project `.gitignore`), and so what a restore never brings back.
+const EXCLUDES: [&str; 8] = [
+    ".git/",
+    "target/",
+    "node_modules/",
+    "dist/",
+    "build/",
+    ".venv/",
+    "__pycache__/",
+    "*.lock",
+];
 
 fn write_excludes(git_dir: &Path) -> Result<PathBuf, String> {
     let path = git_dir.parent().unwrap_or(git_dir).join("sobre-excludes");
-    let defaults = "\
-# sobre shadow-history excludes (keeps snapshots lean even without a project .gitignore)
-.git/
-target/
-node_modules/
-dist/
-build/
-.venv/
-__pycache__/
-*.lock
-";
+    let defaults = format!("# sobre shadow-history excludes\n{}\n", EXCLUDES.join("\n"));
     std::fs::write(&path, defaults).map_err(|e| format!("cannot write excludes: {e}"))?;
     Ok(path)
 }
@@ -331,9 +334,21 @@ mod tests {
         assert!(entries.len() >= 2, "expected >=2 checkpoints");
 
         // Restore the first checkpoint and confirm the content reverts.
-        restore(&project, &c1.sha, Some("a.txt")).expect("restore");
+        // An unsaved change is checkpointed first, so the restore can be
+        // undone (J10).
+        std::fs::write(project.join("a.txt"), "v3, unsaved\n").unwrap();
+        let answer = restore(&project, &c1.sha, Some("a.txt")).expect("restore");
         let restored = std::fs::read_to_string(project.join("a.txt")).unwrap();
         assert_eq!(restored, "v1\n");
+        assert!(answer.contains("Not restored:"), "{answer}");
+        let before = log(&project, 1).expect("log")[0].clone();
+        assert!(before.message.starts_with("before restoring"), "{before:?}");
+        assert!(answer.contains(&before.sha[..7]), "{answer}");
+        restore(&project, &before.sha, Some("a.txt")).expect("undo");
+        assert_eq!(
+            std::fs::read_to_string(project.join("a.txt")).unwrap(),
+            "v3, unsaved\n"
+        );
 
         // The user's project must NOT have gained a .git directory.
         assert!(

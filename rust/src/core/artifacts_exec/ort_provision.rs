@@ -252,7 +252,8 @@ fn extract_zip_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// One-line status for doctor / `embeddings status`.
+/// One-line status for `embeddings status`.
+#[cfg(feature = "dense")]
 pub fn status_line() -> String {
     match managed_dylib_path() {
         Some(p) => format!("managed ONNX Runtime {ORT_VERSION}: {}", p.display()),

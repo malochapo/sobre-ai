@@ -367,7 +367,7 @@ fn cold_fallback_withheld_when_file_changed() {
     std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
 
     seed_cold_record(&p, "conv-a");
-    // Content changed during downtime → mtime/md5 mismatch → no stub.
+    // Content changed during downtime → mtime/hash mismatch → no stub.
     std::fs::write(&path, "fn main() { let x = 2; let y = 3; }\n").unwrap();
     let cold = SessionCache::new();
     let out = try_stub_hit_readonly_scoped(&cold, &p, Some("conv-a"));
@@ -443,11 +443,12 @@ fn delta_explicit_changed_lines_request_diverts_to_diff() {
     assert!(decision.note.is_some());
 }
 
+/// K1: a diff is read against the full content this conversation holds.
+/// After `full` then `map`, the agent's latest view is the map; a diff
+/// against the full source would be computed on content it may not have
+/// in view, so none is served. With `full` alone, the diff is exact.
 #[test]
-fn delta_explicit_diff_base_is_full_cached_content_not_compressed() {
-    // Fix #2 guard: the diff base must be the full source the cache stored, even
-    // when the most recent read of the file was a COMPRESSED view (map). If the
-    // base were the compressed view, the diff would be garbage.
+fn a_diff_needs_the_full_content_as_the_latest_view() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("big.rs");
@@ -458,36 +459,30 @@ fn delta_explicit_diff_base_is_full_cached_content_not_compressed() {
             "pub fn original_fn_{i}(x: i32) -> i32 {{ x + {i} }}\n"
         ));
     }
-    std::fs::write(&path, &content).unwrap();
-
-    let mut cache = SessionCache::new();
-    // Cache the full content, then read a compressed (map) view — last_mode=map,
-    // but the entry still stores the full source.
-    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
-    let _ = handle_with_task_resolved(&mut cache, &p, "map", CrpMode::Off, None);
-
-    // Change exactly one line on disk.
     let changed = content.replace(
         "pub fn original_fn_7(x: i32) -> i32 { x + 7 }",
         "pub fn original_fn_7(x: i32) -> i32 { x + 70707 }",
     );
-    crate::test_env::write_newer(&path, &changed);
 
+    std::fs::write(&path, &content).unwrap();
+    let mut cache = SessionCache::new();
+    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let _ = handle_with_task_resolved(&mut cache, &p, "map", CrpMode::Off, None);
+    crate::test_env::write_newer(&path, &changed);
     let out = handle_with_task_resolved(&mut cache, &p, "diff", CrpMode::Off, None);
     assert!(
-        out.content.contains("[diff]"),
-        "expected a diff: {}",
+        out.content.contains("nothing to diff against"),
+        "no diff after a map view: {}",
         out.content
     );
-    // The marker appears only if the diff compared against the FULL original
-    // source (a compressed map base would never contain this literal).
-    assert!(
-        out.content.contains("70707"),
-        "diff must be computed against full cached source, got: {}",
-        out.content
-    );
-    // And it must be a one-line edit, not a wholesale replacement of a
-    // compressed base against the full file.
+
+    std::fs::write(&path, &content).unwrap();
+    let mut cache = SessionCache::new();
+    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    crate::test_env::write_newer(&path, &changed);
+    let out = handle_with_task_resolved(&mut cache, &p, "diff", CrpMode::Off, None);
+    assert!(out.content.contains("[diff]"), "{}", out.content);
+    assert!(out.content.contains("70707"), "{}", out.content);
     assert!(
         out.content.contains("+1/-1") || out.content.contains("-1/+1"),
         "single-line change should diff as +1/-1: {}",
@@ -613,4 +608,55 @@ fn delta_explicit_decision_is_byte_stable() {
         d1, d2,
         "delta-explicit decision drifted between identical calls"
     );
+}
+
+/// K1: `signatures`, an edit, then an explicit `full`: the agent never had
+/// the full content, so it gets the file, not a diff against it.
+#[test]
+fn a_full_read_after_a_partial_view_is_the_file_not_a_diff() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("k1.rs");
+    let p = path.to_string_lossy().to_string();
+    let content: String = (0..40)
+        .map(|i| format!("pub fn f{i}(x: i32) -> i32 {{ x + {i} }}\n"))
+        .collect::<Vec<_>>()
+        .concat();
+    std::fs::write(&path, &content).unwrap();
+
+    let mut cache = SessionCache::new();
+    let _ = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
+    crate::test_env::write_newer(&path, content.replace("x + 7 }", "x + 777 }"));
+
+    let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, false);
+    assert_eq!(decision.mode, "full", "no diff without a full read first");
+    let out = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    assert!(!out.content.contains("[auto-delta]"), "{}", out.content);
+    assert!(out.content.contains("x + 777"), "{}", out.content);
+    assert!(
+        out.content.contains("fn f39"),
+        "the whole file: {}",
+        out.content
+    );
+}
+
+/// K3: a file that starts with a UTF-8 BOM is not "changed" on every
+/// re-read: the cache checks it against the same BOM-less view it stored.
+#[test]
+fn a_bom_file_reread_is_unchanged() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bom.rs");
+    let p = path.to_string_lossy().to_string();
+    std::fs::write(&path, "\u{feff}fn a() {}\nfn b() {}\n").unwrap();
+    let mut cache = SessionCache::new();
+    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let entry = cache.get(&p).unwrap();
+    assert!(!crate::core::cache::is_cache_entry_stale_verified(
+        &p,
+        entry.stored_mtime,
+        &entry.hash
+    ));
+    let decision = resolve_explicit_delta_mode(&cache, &p, "lines:1-2", true, false);
+    assert_ne!(decision.mode, "diff", "an unchanged BOM file is not a diff");
 }

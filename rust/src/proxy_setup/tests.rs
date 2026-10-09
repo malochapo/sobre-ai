@@ -86,6 +86,7 @@ fn subscription_guard_skips_redirect_without_key() {
     if env_provides_anthropic_key() || claude_dir_overridden() {
         return;
     }
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let home = tempfile::tempdir().unwrap();
     // No settings file → subscription mode, empty current URL → nothing to repair.
     install_claude_env_inner(home.path(), 4444, true, false);
@@ -101,12 +102,14 @@ fn subscription_guard_repairs_stale_local_redirect() {
     if env_provides_anthropic_key() || claude_dir_overridden() {
         return;
     }
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let home = tempfile::tempdir().unwrap();
+    let port = default_port();
     let path = write_claude_settings(
         home.path(),
-        r#"{"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:4444"}}"#,
+        &format!(r#"{{"env": {{"ANTHROPIC_BASE_URL": "http://127.0.0.1:{port}"}}}}"#),
     );
-    install_claude_env_inner(home.path(), 4444, true, false);
+    install_claude_env_inner(home.path(), port, true, false);
     let after = std::fs::read_to_string(&path).unwrap();
     let doc: serde_json::Value = crate::core::jsonc::parse_jsonc(&after).unwrap();
     let base = doc
@@ -115,7 +118,7 @@ fn subscription_guard_repairs_stale_local_redirect() {
         .and_then(|v| v.as_str())
         .unwrap_or("");
     assert!(
-        !is_local_sobre_url(base),
+        base.is_empty(),
         "stale local redirect must be repaired in subscription mode, got {base:?}"
     );
 }
@@ -128,6 +131,7 @@ fn install_redirects_claude_when_api_key_present() {
     if claude_dir_overridden() {
         return;
     }
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let home = tempfile::tempdir().unwrap();
     // API-key mode declared in settings.json → deterministic regardless of env.
     write_claude_settings(home.path(), r#"{"env": {"ANTHROPIC_API_KEY": "sk-test"}}"#);
@@ -153,6 +157,7 @@ fn install_redirects_claude_when_api_key_present() {
 /// Codex CLI config: a fresh install writes the `/v1`-suffixed proxy URL.
 #[test]
 fn codex_env_writes_v1_suffixed_url() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     let codex_dir = dir.path().join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
@@ -179,6 +184,7 @@ fn codex_env_writes_v1_suffixed_url() {
 /// Codex CLI config: a custom non-local `openai_base_url` is never rewritten.
 #[test]
 fn codex_env_preserves_custom_remote_endpoint() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     let codex_dir = dir.path().join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
@@ -204,6 +210,7 @@ fn codex_env_preserves_custom_remote_endpoint() {
 /// scope/hide history), no `chatgpt_base_url`, no provider block, no proxy URL.
 #[test]
 fn codex_env_chatgpt_mode_optout_writes_nothing() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     let codex_dir = dir.path().join(".codex");
     std::fs::create_dir_all(&codex_dir).unwrap();
@@ -381,4 +388,82 @@ fn uninstall_leaves_an_endpoint_the_user_set() {
         anthropic_base_url(home.path()).as_deref(),
         Some("https://gateway.example.com")
     );
+}
+
+/// H2: a local endpoint of the user's (Ollama, LiteLLM) is not the proxy:
+/// `init`'s wiring leaves it without `--force`, and neither the cleanup nor
+/// `uninstall` removes it.
+#[test]
+fn a_local_endpoint_of_the_users_is_never_taken_for_the_proxy() {
+    if claude_dir_overridden() {
+        return;
+    }
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let home = tempfile::tempdir().unwrap();
+    write_claude_settings(
+        home.path(),
+        r#"{"env": {"ANTHROPIC_API_KEY": "sk-test", "ANTHROPIC_BASE_URL": "http://localhost:11434"}}"#,
+    );
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    install_claude_env_inner(home.path(), port, true, false);
+    assert_eq!(
+        anthropic_base_url(home.path()).as_deref(),
+        Some("http://localhost:11434")
+    );
+    assert_eq!(cleanup_stale_proxy_env(home.path()), 0);
+    uninstall_claude_env(home.path(), true);
+    assert_eq!(
+        anthropic_base_url(home.path()).as_deref(),
+        Some("http://localhost:11434")
+    );
+}
+
+/// H3: an upstream configured for the proxy is not what Claude Code had:
+/// undoing the wiring removes sobre's URL and writes nothing in its place.
+#[test]
+fn undoing_the_wiring_never_writes_the_configured_upstream() {
+    if claude_dir_overridden() {
+        return;
+    }
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    crate::core::config::Config::update_global(|c| {
+        c.proxy.upstreams.insert(
+            "anthropic".to_string(),
+            "http://127.0.0.1:11434".to_string(),
+        );
+    })
+    .unwrap();
+    let home = tempfile::tempdir().unwrap();
+    write_claude_settings(home.path(), r#"{"env": {"ANTHROPIC_API_KEY": "sk-test"}}"#);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    install_claude_env_inner(home.path(), port, true, false);
+    assert_eq!(
+        anthropic_base_url(home.path()),
+        Some(format!("http://127.0.0.1:{port}"))
+    );
+    assert!(uninstall_claude_env(home.path(), true));
+    assert_eq!(anthropic_base_url(home.path()), None);
+}
+
+/// H2 for Codex: a local `openai_base_url` of the user's is kept by the
+/// wiring and by its removal.
+#[test]
+fn codex_keeps_a_local_endpoint_of_the_users() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let codex_dir = dir.path().join(".codex");
+    std::fs::create_dir_all(&codex_dir).unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let original = "openai_base_url = \"http://localhost:4000/v1\"\n";
+    std::fs::write(codex_dir.join("config.toml"), original).unwrap();
+
+    install_codex_env_at(&codex_dir, port, true);
+    let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
+    assert_eq!(cfg, original);
+    assert!(!codex_config_has_local_proxy_entry(&cfg));
 }

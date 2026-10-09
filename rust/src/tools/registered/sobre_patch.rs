@@ -3,9 +3,10 @@ use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, require_resolved_path,
+    McpTool, ToolContext, ToolOutput, get_bool, get_str, require_resolved_path,
 };
 use crate::tool_defs::tool_def;
+use crate::tools::impl_edit::CacheEffect;
 
 pub struct SobrePatchTool;
 
@@ -20,18 +21,16 @@ impl McpTool for SobrePatchTool {
         true
     }
 
-    // Schema diet (pattern): the advertised surface carries only the
-    // functional teaching (anchor source, op routing, batch atomicity).
-    // Handler-only params stay supported but unadvertised: expected_hash,
-    // backup, backup_path, validate_syntax, evidence, diff_max_lines,
-    // allow_lossy_utf8 — same hidden-params contract as sobre_edit.
     fn tool_def(&self) -> Tool {
         tool_def(
             "sobre_patch",
             "Safe file edit. Anchored ops use line+hash from sobre_read(mode=\"anchored\"); \
-             CONFLICT means re-read. replace_unique(path,old_text,new_text) is a no-read, \
-             exact unique replacement. replace_symbol/create/replace_all and cross-file ops[] \
-             (incl. replace_unique) supported. dry_run=true shows the diff and writes nothing.",
+             CONFLICT means those lines changed: the current ones come back with fresh anchors. \
+             replace_unique(path,old_text,new_text) is a no-read, exact unique replacement. \
+             replace_symbol/create/replace_all supported. ops[] runs in order, across files: \
+             one file's anchored ops apply all-or-nothing, and the batch stops at the first \
+             failure, saying what was not applied. A syntax error an edit introduces is \
+             reported, not refused. dry_run=true shows the diff and writes nothing.",
             json!({
                 "type": "object",
                 "properties": {
@@ -109,53 +108,55 @@ impl McpTool for SobrePatchTool {
     }
 }
 
+/// Whether an edit's own result reports a failure (a success starts with `✓`
+/// or `DRY RUN`).
+fn is_failure(text: &str) -> bool {
+    text.starts_with("ERROR") || text.starts_with("CONFLICT")
+}
+
+/// The line that ends a batch at its first failure.
+fn stopped(not_applied: usize) -> String {
+    format!("ERROR: stopped here; {not_applied} later op(s) or file(s) were not applied")
+}
+
 /// Anchored pipeline: a single anchored op or an ops[] batch of anchored edits
-/// (grouped per file, batch-atomic per file). Split out of `handle` so the
+/// (grouped per file, all-or-nothing per file). Split out of `handle` so the
 /// mixed-batch path can reuse it per anchored run.
 fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
+    Ok(ToolOutput::simple(run_anchored(args, ctx)?.0))
+}
+
+/// [`handle_anchored`]'s text, and whether it stopped at a failure.
+fn run_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<(String, bool), ErrorData> {
     let dry_run = get_bool(args, "dry_run").unwrap_or(false);
-    let expected_hash = get_str(args, "expected_hash");
-    let backup = get_bool(args, "backup").unwrap_or(false);
-    let backup_path = get_str(args, "backup_path")
-        .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p));
-    let evidence = get_bool(args, "evidence").unwrap_or(true);
-    let diff_max_lines = get_int(args, "diff_max_lines")
-        .and_then(|v| usize::try_from(v.max(0)).ok())
-        .unwrap_or(200);
-    let allow_lossy_utf8 = get_bool(args, "allow_lossy_utf8").unwrap_or(false);
-    let validate_syntax = get_bool(args, "validate_syntax").unwrap_or(true);
 
     // A batch (`ops[]`) groups its ops by each op's own `path`, so a
     // batch may span files and needs no top-level `path`. A single op still
     // requires the top-level `path`.
     let groups = plan_groups(args, ctx)?;
-    validate_cross_file_options(args, groups.len())?;
+    let total = groups.len();
 
-    let mut texts = Vec::with_capacity(groups.len());
-    for (path, ops) in groups {
+    let mut texts = Vec::with_capacity(total);
+    for (i, (path, ops)) in groups.into_iter().enumerate() {
         let patch_params = crate::tools::sobre_patch::PatchParams {
             path: path.clone(),
             ops,
-            expected_hash: expected_hash.clone(),
-            backup,
-            backup_path: backup_path.clone(),
-            evidence,
-            diff_max_lines,
-            allow_lossy_utf8,
-            validate_syntax,
             dry_run,
         };
         let output = apply_one(ctx, &patch_params)?;
+        let failed = is_failure(&output);
         texts.push(format!("[{path}]\n{output}"));
+        // Each file's ops apply all-or-nothing; the files after a failed one
+        // are left alone, and the result says so.
+        if failed {
+            if i + 1 < total {
+                texts.push(stopped(total - i - 1));
+            }
+            return Ok((texts.join("\n\n"), true));
+        }
     }
 
-    Ok(ToolOutput {
-        text: texts.join("\n\n"),
-        original_tokens: 0,
-        saved_tokens: 0,
-        shell_outcome: None,
-        content_blocks: None,
-    })
+    Ok((texts.join("\n\n"), false))
 }
 
 /// `Some(op)` when a batch op must be dispatched through its own single-op
@@ -170,7 +171,8 @@ fn delegated_op_kind(v: &Value) -> Option<&str> {
 /// strictly in the order given, as if issued as separate calls: consecutive
 /// anchored ops flush as one shared-preimage batch; each delegated op is
 /// dispatched through the same delegate as its top-level form, evaluated
-/// against the file state left by the preceding ops.
+/// against the file state left by the preceding ops. The batch stops at the
+/// first failure and says how many ops were not applied.
 fn handle_mixed_batch(
     args: &Map<String, Value>,
     arr: &[Value],
@@ -186,7 +188,10 @@ fn handle_mixed_batch(
             run.push(v.clone());
             continue;
         };
-        flush_anchored_run(args, ctx, &mut run, &mut texts)?;
+        if flush_anchored_run(args, ctx, &mut run, &mut texts)? {
+            texts.push(stopped(arr.len() - i));
+            return Ok(ToolOutput::simple(texts.join("\n\n")));
+        }
 
         let (sub_args, sub_ctx) = delegated_op_call(args, obj, ctx, i, kind)?;
         let out = if kind == "replace_unique" {
@@ -203,27 +208,36 @@ fn handle_mixed_batch(
             ErrorData::invalid_params(format!("ops[{i}] ({kind}): {}{applied}", e.message), None)
         })?;
         let label = get_str(&sub_args, "path").unwrap_or_else(|| kind.to_string());
+        let failed = is_failure(&out.text);
         texts.push(format!("[{label}]\n{}", out.text));
+        if failed {
+            if i + 1 < arr.len() {
+                texts.push(stopped(arr.len() - i - 1));
+            }
+            return Ok(ToolOutput::simple(texts.join("\n\n")));
+        }
     }
     flush_anchored_run(args, ctx, &mut run, &mut texts)?;
 
     Ok(ToolOutput::simple(texts.join("\n\n")))
 }
 
-/// Flush buffered anchored ops through the anchored pipeline as one batch.
+/// Flush buffered anchored ops through the anchored pipeline as one batch;
+/// true when it stopped at a failure.
 fn flush_anchored_run(
     args: &Map<String, Value>,
     ctx: &ToolContext,
     run: &mut Vec<Value>,
     texts: &mut Vec<String>,
-) -> Result<(), ErrorData> {
+) -> Result<bool, ErrorData> {
     if run.is_empty() {
-        return Ok(());
+        return Ok(false);
     }
     let mut sub = args.clone();
     sub.insert("ops".into(), Value::Array(std::mem::take(run)));
-    texts.push(handle_anchored(&sub, ctx)?.text);
-    Ok(())
+    let (text, failed) = run_anchored(&sub, ctx)?;
+    texts.push(text);
+    Ok(failed)
 }
 
 /// Build the (args, ctx) for one delegated batch op: the op object inherits the
@@ -269,57 +283,51 @@ fn delegated_op_call(
     Ok((sub, sub_ctx))
 }
 
-/// One-shot content-anchored edit. Delegate to sobre_edit's audited
-/// unique-replacement path so ambiguity checks, TOCTOU guards, atomic writes,
-/// cache invalidation, evidence and session tracking remain single-sourced.
+/// One-shot content-anchored edit: exactly one match of `old_text` becomes
+/// `new_text`.
 fn delegate_replace_unique(
     args: &Map<String, Value>,
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ErrorData> {
-    let edit_args =
-        build_unique_edit_args(args).map_err(|message| ErrorData::invalid_params(message, None))?;
-    crate::tools::registered::impl_edit::SobreEditTool.handle(&edit_args, ctx)
+    let (old_text, new_text) =
+        unique_texts(args).map_err(|message| ErrorData::invalid_params(message, None))?;
+    replace_text(args, ctx, old_text, new_text, false)
 }
 
-fn build_unique_edit_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
+fn unique_texts(args: &Map<String, Value>) -> Result<(String, String), String> {
     let old_text = get_str(args, "old_text")
-        .or_else(|| get_str(args, "old_string"))
         .filter(|text| !text.is_empty())
-        .ok_or_else(|| {
-            "replace_unique requires non-empty old_text (old_string also accepted)".to_string()
-        })?;
-    let new_text = get_str(args, "new_text")
-        .or_else(|| get_str(args, "new_string"))
-        .ok_or_else(|| "replace_unique requires new_text (new_string also accepted)".to_string())?;
-
-    let mut edit_args = args.clone();
-    edit_args.insert("old_string".into(), Value::String(old_text));
-    edit_args.insert("new_string".into(), Value::String(new_text));
-    edit_args.insert("replace_all".into(), Value::Bool(false));
-    edit_args.remove("old_text");
-    edit_args.remove("op");
-    Ok(edit_args)
+        .ok_or_else(|| "replace_unique requires non-empty old_text".to_string())?;
+    let new_text =
+        get_str(args, "new_text").ok_or_else(|| "replace_unique requires new_text".to_string())?;
+    Ok((old_text, new_text))
 }
 
-/// Options with one top-level value cannot be applied safely to multiple files:
-/// one digest cannot describe several preimages, and one explicit backup path
-/// would be overwritten by the second file. Reject before any write occurs.
-fn validate_cross_file_options(
+/// `replace_unique` and `replace_all` share one write path: per-file lock,
+/// preimage guard, permission-preserving atomic write, session and cache
+/// bookkeeping.
+fn replace_text(
     args: &Map<String, Value>,
-    file_count: usize,
-) -> Result<(), ErrorData> {
-    if file_count <= 1 {
-        return Ok(());
-    }
-    for key in ["expected_hash", "backup_path"] {
-        if args.contains_key(key) {
-            return Err(ErrorData::invalid_params(
-                format!("cross-file sobre_patch batches do not support top-level '{key}'"),
-                None,
-            ));
-        }
-    }
-    Ok(())
+    ctx: &ToolContext,
+    old_text: String,
+    new_text: String,
+    replace_all: bool,
+) -> Result<ToolOutput, ErrorData> {
+    let params = crate::tools::impl_edit::EditParams {
+        path: require_resolved_path(ctx, args, "path")?,
+        old_text,
+        new_text,
+        replace_all,
+        dry_run: get_bool(args, "dry_run").unwrap_or(false),
+    };
+    let text = locked_edit(ctx, &params.path, |last_mode| {
+        let (output, effect) = crate::tools::impl_edit::run_io(&params, last_mode);
+        // Quality loop: feed success/old_text-miss back into per-(ext × mode)
+        // stats and the one-shot read escalation.
+        crate::tools::impl_edit::record_outcome(&params, last_mode, &output, &effect);
+        (output, effect)
+    })?;
+    Ok(ToolOutput::simple(text))
 }
 
 /// Build the per-file work list. A single op targets the top-level `path`
@@ -395,15 +403,28 @@ fn group_ops_by_path(
         .collect())
 }
 
-/// Apply one file's anchored patch: acquire the per-file lock, run the I/O off
-/// the global cache lock, then fold the resulting cache effect and session mark.
-/// Returns the rendered patch/CONFLICT text. Shared by the single-op and the
-/// per-file batch paths.
+/// Apply one file's anchored patch through [`locked_edit`]. Returns the
+/// rendered patch/CONFLICT text. Shared by the single-op and the per-file
+/// batch paths.
 fn apply_one(
     ctx: &ToolContext,
     params: &crate::tools::sobre_patch::PatchParams,
 ) -> Result<String, ErrorData> {
-    let path = params.path.clone();
+    locked_edit(ctx, &params.path, |last_mode| {
+        let (output, effect) = crate::tools::sobre_patch::run_io(params, last_mode);
+        crate::tools::sobre_patch::record_outcome(params, last_mode, &output, &effect);
+        (output, effect)
+    })
+}
+
+/// Runs one file edit: takes the per-file lock, reads the file's last read
+/// mode, runs `edit` (the disk I/O) without the global cache lock, then
+/// applies its cache effect and marks the file modified in the session.
+fn locked_edit(
+    ctx: &ToolContext,
+    path: &str,
+    edit: impl FnOnce(&str) -> (String, CacheEffect),
+) -> Result<String, ErrorData> {
     tokio::task::block_in_place(|| {
         let cache_lock = ctx
             .cache
@@ -412,10 +433,10 @@ fn apply_one(
         let rt = tokio::runtime::Handle::current();
 
         // Serialize edits to the SAME file via the shared per-file lock (the same
-        // registry sobre_edit/sobre_read use), so anchored and str_replace edits of
-        // one file never interleave. Correctness across processes
-        // still rests on the TOCTOU preimage guard + atomic rename.
-        let file_lock = crate::core::path_locks::per_file_lock(&path);
+        // registry sobre_read uses), so anchored and text edits of one file
+        // never interleave. Correctness across processes still rests on the
+        // TOCTOU preimage guard + atomic rename.
+        let file_lock = crate::core::path_locks::per_file_lock(path);
         let _file_guard = {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
             loop {
@@ -434,30 +455,30 @@ fn apply_one(
             }
         };
 
+        // Brief shared lock: the recorded read mode, for auto-escalation and
+        // the quality loop. On contention, skip it rather than block the I/O.
         let last_mode = match rt.block_on(tokio::time::timeout(
             std::time::Duration::from_secs(5),
             cache_lock.read(),
         )) {
             Ok(cache) => cache
-                .get(&path)
+                .get(path)
                 .map(|e| e.last_mode.clone())
                 .unwrap_or_default(),
             Err(_) => String::new(),
         };
 
         // Heavy disk I/O — no global cache lock held here.
-        let (output, effect) = crate::tools::sobre_patch::run_io(params, &last_mode);
+        let (output, effect) = edit(&last_mode);
+        let wrote = matches!(effect, CacheEffect::Invalidate);
 
-        crate::tools::sobre_patch::record_outcome(params, &last_mode, &output, &effect);
-        let wrote = matches!(effect, crate::tools::impl_edit::CacheEffect::Invalidate);
-
-        if !matches!(effect, crate::tools::impl_edit::CacheEffect::None) {
+        if !matches!(effect, CacheEffect::None) {
             match rt.block_on(tokio::time::timeout(
                 std::time::Duration::from_secs(5),
                 cache_lock.write(),
             )) {
                 Ok(mut cache) => {
-                    crate::tools::impl_edit::apply_cache_effect(&mut cache, &path, effect);
+                    crate::tools::impl_edit::apply_cache_effect(&mut cache, path, effect);
                 }
                 Err(_) => {
                     tracing::warn!(
@@ -473,7 +494,7 @@ fn apply_one(
                 session_lock.write(),
             ));
             if let Ok(mut session) = guard {
-                session.mark_modified(&path);
+                session.mark_modified(path);
             }
         }
 
@@ -515,21 +536,18 @@ fn delegate_replace_symbol(
 }
 
 /// Resolve `find`/`replace` for replace_all, failing *closed* on the
-/// destructive path. Historically a missing `replace` defaulted to "" — so a
-/// typo'd replacement key (`new_string=`/`new_text=` carried over from the other
-/// ops) meant "delete every match" and still reported success. Now: reject
-/// replacement keys that belong to other ops, and require `replace` to be
-/// present. An empty deletion must be opted into explicitly with `replace=""`.
+/// destructive path: a missing `replace` is an error, not "delete every
+/// match", and a key of the other ops is named. An empty deletion must be
+/// opted into explicitly with `replace=""`.
 fn resolve_find_replace(args: &Map<String, Value>) -> Result<(String, String), String> {
     let find = get_str(args, "find")
         .filter(|s| !s.is_empty())
         .ok_or("replace_all requires non-empty 'find'")?;
 
-    for foreign in ["new_text", "new_string", "old_string"] {
+    for foreign in ["new_text", "old_text"] {
         if args.contains_key(foreign) {
             return Err(format!(
-                "replace_all names its replacement 'replace', not '{foreign}' — rename it \
-                 (an unrecognized replacement key would silently delete every match)"
+                "replace_all takes 'find' and 'replace', not '{foreign}'"
             ));
         }
     }
@@ -546,25 +564,14 @@ fn resolve_find_replace(args: &Map<String, Value>) -> Result<(String, String), S
     Ok((find, replace))
 }
 
-/// Bulk literal find-and-replace — no anchors needed. It goes through
-/// the same edit path as `replace_unique`: per-file lock, preimage guard,
-/// permission-preserving atomic write, session and cache bookkeeping.
+/// Bulk literal find-and-replace — no anchors needed.
 fn handle_replace_all(
     args: &Map<String, Value>,
     ctx: &ToolContext,
 ) -> Result<ToolOutput, ErrorData> {
     let (find, replace) =
         resolve_find_replace(args).map_err(|e| ErrorData::invalid_params(e, None))?;
-    let mut edit_args = Map::new();
-    for key in ["path", "dry_run"] {
-        if let Some(v) = args.get(key) {
-            edit_args.insert(key.to_string(), v.clone());
-        }
-    }
-    edit_args.insert("old_string".into(), Value::String(find));
-    edit_args.insert("new_string".into(), Value::String(replace));
-    edit_args.insert("replace_all".into(), Value::Bool(true));
-    crate::tools::registered::impl_edit::SobreEditTool.handle(&edit_args, ctx)
+    replace_text(args, ctx, find, replace, true)
 }
 
 #[cfg(test)]
@@ -599,7 +606,7 @@ mod replace_all_tests {
 
     #[test]
     fn foreign_replacement_key_is_rejected() {
-        for key in ["new_string", "new_text", "old_string"] {
+        for key in ["new_text", "old_text"] {
             let err = resolve_find_replace(&obj(json!({"find": "a", key: "b"}))).unwrap_err();
             assert!(
                 err.contains(key),
@@ -659,34 +666,15 @@ mod batch_grouping_tests {
     }
 
     #[test]
-    fn cross_file_rejects_single_value_preimage_and_backup_options() {
-        for key in ["expected_hash", "backup_path"] {
-            let args = Map::from_iter([(key.to_string(), json!("one-value"))]);
-            assert!(validate_cross_file_options(&args, 2).is_err());
-            assert!(validate_cross_file_options(&args, 1).is_ok());
-        }
-    }
-
-    #[test]
-    fn replace_unique_maps_to_a_single_safe_ctx_edit_replacement() {
-        let args = Map::from_iter([
-            ("path".into(), json!("a.rs")),
-            ("op".into(), json!("replace_unique")),
-            ("old_text".into(), json!("old")),
-            ("new_text".into(), json!("new")),
-        ]);
-        let mapped = build_unique_edit_args(&args).expect("valid mapping");
-        assert_eq!(mapped.get("old_string"), Some(&json!("old")));
-        assert_eq!(mapped.get("new_string"), Some(&json!("new")));
-        assert_eq!(mapped.get("replace_all"), Some(&json!(false)));
-        assert!(!mapped.contains_key("op"));
-        assert!(!mapped.contains_key("old_text"));
-    }
-
-    #[test]
     fn replace_unique_requires_explicit_old_and_new_text() {
-        assert!(build_unique_edit_args(&Map::new()).is_err());
+        assert!(unique_texts(&Map::new()).is_err());
         let only_old = Map::from_iter([("old_text".into(), json!("old"))]);
-        assert!(build_unique_edit_args(&only_old).is_err());
+        assert!(unique_texts(&only_old).is_err());
+        // The other tools' names are not aliases.
+        let aliases = Map::from_iter([
+            ("old_string".into(), json!("old")),
+            ("new_string".into(), json!("new")),
+        ]);
+        assert!(unique_texts(&aliases).is_err());
     }
 }

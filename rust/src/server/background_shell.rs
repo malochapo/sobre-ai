@@ -87,23 +87,14 @@ pub fn start(
     extra_env: std::collections::HashMap<String, String>,
     timeout_ms: Option<u64>,
 ) -> String {
-    // IDs are content-addressed so tool responses stay deterministic.
-    // An identical in-flight launch coalesces onto the same job instead of
-    // creating duplicate expensive builds/tests.
-    let mut env_entries: Vec<_> = extra_env.iter().collect();
-    env_entries.sort_unstable_by(|a, b| a.0.cmp(b.0));
-    let env_key = env_entries
-        .into_iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect::<Vec<_>>()
-        .join("\0");
-    let material = format!(
-        "{command}\0{cwd}\0{}\0{env_key}",
-        timeout_ms.unwrap_or_default()
-    );
+    // One id per launch: starting the same command again while the first
+    // run is going is a second run, and a foreground run of it never touches
+    // a background job's result.
+    static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let id = format!(
-        "shell_{}",
-        &blake3::hash(material.as_bytes()).to_hex()[..16]
+        "shell_{}_{}",
+        std::process::id(),
+        NEXT_ID.fetch_add(1, Ordering::Relaxed)
     );
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = Arc::clone(&cancel);
@@ -112,9 +103,6 @@ pub fn start(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         prune_finished_jobs(&mut jobs, Instant::now());
-        if matches!(jobs.get(&id).map(|job| &job.state), Some(JobState::Running)) {
-            return id;
-        }
         jobs.insert(
             id.clone(),
             Job {
@@ -337,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn foreground_run_finishing_within_cap_returns_inline() {
         let result = run_foreground_or_detach(
             "printf FG_OK".to_string(),
@@ -357,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn foreground_run_exceeding_cap_detaches_to_pollable_job() {
         let result = run_foreground_or_detach(
             "sleep 5; printf SLOW_OK".to_string(),
@@ -381,7 +369,7 @@ mod tests {
     /// what stranded results behind an unresolvable task id; the caller must
     /// still get a real `shell_*` job id at the cap.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn large_timeout_ms_still_detaches_at_the_soft_cap() {
         let result = run_foreground_or_detach(
             "sleep 5; printf NEVER_INLINE".to_string(),
@@ -402,7 +390,7 @@ mod tests {
     /// command is distinguishable from a hang. Deliberately slower than the
     /// other tests here — it has to outlive one real [`TICK`].
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn foreground_run_reports_progress_while_waiting() {
         let ticks = std::sync::atomic::AtomicUsize::new(0);
         let tick = |elapsed: Duration| {
@@ -429,7 +417,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn background_job_runs_past_request_and_can_be_observed() {
         let id = start(
             "sleep 0.1; printf BG_JOB_OK".to_string(),
@@ -449,8 +437,25 @@ mod tests {
         panic!("background job did not complete");
     }
 
+    /// J9: the same command started twice is two jobs.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
+    fn each_launch_gets_its_own_job() {
+        let launch = || {
+            start(
+                "sleep 5".to_string(),
+                ".".to_string(),
+                std::collections::HashMap::default(),
+                Some(10_000),
+            )
+        };
+        let (a, b) = (launch(), launch());
+        assert_ne!(a, b);
+        let _ = (cancel(&a), cancel(&b));
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn cancelling_background_job_returns_cancelled_state() {
         let id = start(
             "sleep 5".to_string(),

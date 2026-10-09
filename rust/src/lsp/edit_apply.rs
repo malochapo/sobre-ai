@@ -47,7 +47,7 @@ pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let cap = crate::core::limits::max_read_bytes();
-    let pre = crate::tools::edit_io::read_preimage(path, cap, false).map_err(strip_error)?;
+    let pre = crate::tools::edit_io::read_preimage(path, cap).map_err(strip_error)?;
     let content = pre.text.as_str();
 
     let start = offset_of(content, edit.range.start_line, edit.range.start_char)?;

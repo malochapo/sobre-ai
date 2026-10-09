@@ -95,7 +95,6 @@ pub(super) const BUILTIN_PASSTHROUGH: &[&str] = &[
     "btop",
     "watch ",
     "tail -f",
-    "tail -f ",
     "journalctl -f",
     "journalctl --follow",
     "dmesg -w",

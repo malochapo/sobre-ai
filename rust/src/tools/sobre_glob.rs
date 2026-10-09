@@ -39,14 +39,15 @@ pub fn handle(
 
     let max = max_results.min(MAX_RESULTS);
 
-    // Support both simple (`*.rs`) and recursive (`**/*.ts`) patterns.
-    let glob_matcher = match glob::Pattern::new(pattern) {
+    // `*.rs` names a file at any depth; `src/*.rs` is a path from the root.
+    let glob_matcher = match crate::tools::sobre_search::compile_glob(pattern) {
         Ok(m) => m,
         Err(e) => return (format!("ERROR: invalid glob pattern '{pattern}': {e}"), 0),
     };
 
     let mut matches = Vec::new();
     let mut files_walked = 0u32;
+    let mut stopped_at_cap = false;
 
     // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
     // disabling gitignore is the escape hatch to look inside them.
@@ -68,6 +69,7 @@ pub fn handle(
 
     for entry in walker.filter_map(std::result::Result::ok) {
         if matches.len() >= max {
+            stopped_at_cap = true;
             break;
         }
 
@@ -86,20 +88,18 @@ pub fn handle(
         let rel_path = path.strip_prefix(root).unwrap_or(path);
         let rel_str = rel_path.to_string_lossy();
 
-        if glob_matcher.matches(&rel_str) {
+        if crate::tools::sobre_search::glob_matches(&glob_matcher, &rel_str) {
             let short_path =
                 protocol::shorten_path_relative(&path.to_string_lossy(), &root.to_string_lossy());
             matches.push(short_path);
         }
     }
 
+    let not_walked = crate::tools::sobre_search::not_searched_note(respect_gitignore)
+        .replace("not searched", "not walked");
     if matches.is_empty() {
         return (
-            format!(
-                "0 files matched '{pattern}' in {files_walked} files walked (not walked: \
-                 hidden files, symlinks, .gitignore'd paths and node_modules; \
-                 ignore_gitignore=true includes the last two)"
-            ),
+            format!("0 files matched '{pattern}' in {files_walked} files walked ({not_walked})"),
             0,
         );
     }
@@ -111,10 +111,17 @@ pub fn handle(
     let output = matches.join("\n");
     let raw_tokens = count_tokens(&output);
 
-    let footer = format!(
+    let mut footer = format!(
         "\n\n{} files matched (walked {files_walked})",
         matches.len()
     );
+    if stopped_at_cap {
+        footer.push_str(&format!(
+            "\n(stopped at max_results={max}: more files may match — raise max_results \
+             or narrow the pattern)"
+        ));
+    }
+    footer.push_str(&format!("\n({not_walked})"));
     let full_output = format!("{output}{footer}");
 
     // A plain file list carries no compression overhead, so the original token
@@ -125,6 +132,43 @@ pub fn handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// G12: a glob that stops at `max_results` says so.
+    #[test]
+    fn stopping_at_max_results_is_said() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..6 {
+            std::fs::write(dir.path().join(format!("f{i}.txt")), "x").unwrap();
+        }
+        let (capped, _) = handle("*.txt", &dir.path().to_string_lossy(), true, 3);
+        assert!(capped.contains("stopped at max_results=3"), "{capped}");
+        assert!(capped.contains("not walked: hidden files"), "{capped}");
+        let (all, _) = handle("*.txt", &dir.path().to_string_lossy(), true, 100);
+        assert!(all.contains("6 files matched"), "{all}");
+        assert!(!all.contains("stopped at max_results"), "{all}");
+    }
+
+    /// K14: `*` stays within one directory; a glob without `/` names a file
+    /// at any depth.
+    #[test]
+    fn star_does_not_cross_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/a/b")).unwrap();
+        std::fs::write(dir.path().join("src/top.ts"), "x").unwrap();
+        std::fs::write(dir.path().join("src/a/b/deep.ts"), "x").unwrap();
+        let root = dir.path().to_string_lossy();
+
+        let (one_level, _) = handle("src/*.ts", &root, true, 100);
+        assert!(one_level.contains("top.ts"), "{one_level}");
+        assert!(!one_level.contains("deep.ts"), "{one_level}");
+
+        let (any_depth, _) = handle("*.ts", &root, true, 100);
+        assert!(any_depth.contains("top.ts"), "{any_depth}");
+        assert!(any_depth.contains("deep.ts"), "{any_depth}");
+
+        let (recursive, _) = handle("src/**/*.ts", &root, true, 100);
+        assert!(recursive.contains("deep.ts"), "{recursive}");
+    }
 
     #[test]
     fn glob_results_are_deterministically_ordered() {

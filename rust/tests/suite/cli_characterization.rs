@@ -173,7 +173,7 @@ fn config_rejects_removed_subcommands() {
         let out = run(&["config", sub]);
         assert_eq!(exit_code(&out), 2, "config {sub}");
         assert!(
-            stderr(&out).contains("Usage"),
+            stderr(&out).contains("usage:"),
             "config {sub}: {}",
             stderr(&out)
         );
@@ -294,21 +294,6 @@ fn proxy_status_exits_cleanly() {
     assert!(
         code == 0 || code == 1,
         "proxy status should not crash, got {code}"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// Uninstall (dry-run only — safe)
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn uninstall_dry_run_exits_zero() {
-    let out = run(&["uninstall", "--dry-run"]);
-    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
-    let s = stdout(&out);
-    assert!(
-        s.contains("dry") || s.contains("Would") || s.contains("sobre") || !s.is_empty(),
-        "uninstall --dry-run should describe what it would do"
     );
 }
 

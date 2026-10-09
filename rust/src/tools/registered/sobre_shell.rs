@@ -29,7 +29,7 @@ impl McpTool for SobreShellTool {
                     "command": { "type": "string", "description": "Shell command" },
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
-                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms." },
+                    "timeout_ms": { "type": "integer", "description": "Stop the command once it has printed nothing for this long, in ms (max 3600000); a command runs at most 1 hour. NOT the inline wait: a command still running at the ~110s foreground cap detaches to a pollable shell_* job." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
                     "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background sobre_shell job." },
@@ -179,13 +179,6 @@ impl McpTool for SobreShellTool {
             let crp_mode = ctx.crp_mode;
             let cmd_clone = command.clone();
             let cwd_clone = effective_cwd;
-            let proactive_block = if raw {
-                None
-            } else {
-                crate::core::relevance_tracker::proactive_context(&format!(
-                    "sobre_shell command={cmd_clone} cwd={cwd_clone}"
-                ))
-            };
 
             let auto_background = should_auto_background(&cmd_clone, timeout_ms);
             if get_bool(args, "run_in_background").unwrap_or(false) || auto_background {
@@ -270,6 +263,11 @@ impl McpTool for SobreShellTool {
             } else {
                 let result =
                     crate::tools::sobre_shell::handle(&cmd_clone, &output, exit_code, crp_mode);
+                let result = crate::server::post_process::condense_shell_output(
+                    &cmd_clone,
+                    result,
+                    &crate::core::config::Config::load(),
+                );
                 let original = crate::core::tokens::count_tokens(&output);
                 let sent = crate::core::tokens::count_tokens(&result);
                 let saved = original.saturating_sub(sent);
@@ -313,11 +311,6 @@ impl McpTool for SobreShellTool {
             };
             let nudge = if raw { "" } else { search_tool_nudge(&command) };
             let final_out = format!("{result_out}{tee_hint}{shell_mismatch}{nudge}{exit_suffix}");
-            let final_out = if let Some(block) = proactive_block {
-                format!("{final_out}{block}")
-            } else {
-                final_out
-            };
 
             Ok(ToolOutput {
                 text: final_out,

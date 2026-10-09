@@ -49,19 +49,6 @@ pub struct CallGraphInputs {
 }
 
 impl CallGraphInputs {
-    /// Open (or build) the property graph and materialize call-graph inputs.
-    /// Returns empty inputs (rooted at `project_root`) when no graph is
-    /// available.
-    pub fn open(project_root: &str) -> Self {
-        match crate::core::graph_provider::open_or_build(project_root) {
-            Some(open) => Self::from_provider(project_root, &open),
-            None => Self {
-                project_root: normalize_project_root(project_root),
-                ..Default::default()
-            },
-        }
-    }
-
     /// Materialize the builder inputs from a [`GraphProvider`] facade.
     pub fn from_provider(project_root: &str, provider: &GraphProvider) -> Self {
         let symbols = provider
@@ -459,11 +446,10 @@ fn resolve_path(relative: &str, project_root: &str) -> String {
     joined.to_string_lossy().to_string()
 }
 
+/// A file's content hash, saved with the call graph and compared on the next
+/// load: stable across Rust toolchains.
 fn simple_hash(content: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    crate::core::hasher::hash_short(content)
 }
 
 #[cfg(test)]

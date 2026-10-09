@@ -659,8 +659,11 @@ fn extract_imports_rust(root: Node, src: &str) -> Vec<ImportInfo> {
                 let full_path = node_text(arg, src).to_string();
 
                 let (source, names) = if full_path.contains('{') {
-                    let parts: Vec<&str> = full_path.splitn(2, "::").collect();
-                    let base = parts[0].to_string();
+                    // `a::b::{c, d}` imports from `a::b`.
+                    let base = full_path
+                        .split_once("::{")
+                        .map_or(full_path.as_str(), |(base, _)| base)
+                        .to_string();
                     let items: Vec<String> = full_path
                         .split('{')
                         .nth(1)

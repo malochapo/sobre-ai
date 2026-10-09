@@ -1,11 +1,10 @@
 //! Re-entrancy marker that stops nested `sobre` invocations from
 //! double-compressing.
 //!
-//! [`WRAP_MARKER`] (`SOBRE_WRAPPED`) is set ONLY by sobre on the children
-//! it spawns, so its presence reliably means "a parent sobre already owns
-//! compression of this command tree" and a nested `sobre -c` must pass
-//! through. Because sobre is the only writer, an agent cannot trigger it by
-//! leaking an env var.
+//! sobre sets [`WRAP_MARKER`] (`SOBRE_WRAPPED`) on the children it spawns,
+//! so a nested `sobre -c` sees that a parent sobre already owns compression
+//! of this command tree and passes through. Any process can set the variable
+//! too: a command run with it set is passed through uncompressed.
 
 use std::process::Command;
 

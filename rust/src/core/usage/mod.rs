@@ -46,6 +46,8 @@ pub enum Surface {
     Hook,
     /// The API proxy, on tool results inside a request.
     Proxy,
+    /// `sobre call`: one MCP tool run from the command line.
+    Call,
 }
 
 impl Surface {
@@ -56,6 +58,7 @@ impl Surface {
             Self::Shell => "shell",
             Self::Hook => "hook",
             Self::Proxy => "proxy",
+            Self::Call => "call",
         }
     }
 }

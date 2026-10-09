@@ -436,24 +436,17 @@ pub fn run_cli(args: &[String]) -> i32 {
         _ => ("", args),
     };
 
+    crate::cli::spec::check_or_exit(
+        &if sub.is_empty() {
+            "doctor".to_string()
+        } else {
+            format!("doctor {sub}")
+        },
+        rest,
+    );
     let fix = rest.iter().any(|a| a == "--fix");
     let json = rest.iter().any(|a| a == "--json");
     let gate = rest.iter().any(|a| a == "--gate");
-    let help = rest.iter().any(|a| a == "--help" || a == "-h");
-
-    if help {
-        crate::outln!("Usage:");
-        crate::outln!("  sobre doctor");
-        crate::outln!(
-            "  sobre doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over the 8000-token budget)"
-        );
-        crate::outln!(
-            "  sobre doctor lint-context [--json]   Lint injected context for low-signal/dup lines"
-        );
-        crate::outln!("  sobre doctor integrations [--json]");
-        crate::outln!("  sobre doctor --fix [--json]");
-        return 0;
-    }
 
     if sub == "overhead" {
         return overhead::run_overhead(json, gate);
@@ -480,7 +473,7 @@ pub fn run_cli(args: &[String]) -> i32 {
         Ok(code) => code,
         Err(e) => {
             tracing::error!("doctor --fix failed: {e}");
-            2
+            1
         }
     }
 }
@@ -514,7 +507,7 @@ pub fn compact_score() -> (u32, u32) {
 
 pub(super) fn print_compact_status(passed: u32, total: u32) {
     let status = if passed == total {
-        format!("{GREEN}✓ All {total} checks passed{RST}")
+        format!("{GREEN}✓ {total} quick checks passed{RST} {DIM}(sobre doctor runs them all){RST}")
     } else {
         format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}sobre doctor{RST} for details")
     };

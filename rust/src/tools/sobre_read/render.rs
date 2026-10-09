@@ -82,21 +82,6 @@ pub(crate) fn format_full_output(
     (output, sent)
 }
 
-/// Headerless, trailing-whitespace-stripped output (`full-compact` mode).
-///
-/// No framing header (offset/limit stay correct) and trailing
-/// whitespace is stripped per line for modest compression without breaking
-/// line structure or edit round-trips.
-pub(crate) fn format_full_compact_output(content: &str) -> (String, usize) {
-    let output: String = content
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n");
-    let sent = count_tokens(&output);
-    (output, sent)
-}
-
 /// Render `content` with per-line `N:hh|` hash anchors for `sobre_patch`
 /// (mode=anchored). The body is verbatim source prefixed with a
 /// stable, self-describing one-line legend so a vanilla agent can read the
@@ -233,7 +218,7 @@ pub(crate) fn process_mode_tuned(
             // auto-resolver picks the mode.
             let chosen = tuning
                 .auto_density_mode()
-                .unwrap_or_else(|| resolve_auto_mode(None, file_path, original_tokens, task));
+                .unwrap_or_else(|| resolve_auto_mode(None, file_path, original_tokens));
             process_mode_tuned(
                 content,
                 &chosen,
@@ -247,7 +232,6 @@ pub(crate) fn process_mode_tuned(
             )
         }
         "full" => format_full_output(short, ext, content, line_count, task),
-        "full-compact" => format_full_compact_output(content),
         "anchored" => format_anchored_output(short, content, line_count),
         mode if mode.starts_with("anchored:") => {
             let range_str = &mode[9..];
@@ -448,18 +432,19 @@ pub(crate) fn extract_line_range(content: &str, range_str: &str) -> String {
     }
 }
 
-/// Parses a single `"start-end"` (or bare `"start"`, meaning "to EOF") window
-/// payload for `anchored:N-M`. Single-span only — unlike `lines:`,
-/// an anchored window feeds `sobre_patch`, which edits one contiguous region at
-/// a time, so comma multi-select isn't needed here.
+/// Parses a single `"start-end"`, `"start-"` (to the end) or bare `"start"`
+/// (that one line, as `lines:N`) window payload for `anchored:N-M`.
+/// Single-span only — unlike `lines:`, an anchored window feeds
+/// `sobre_patch`, which edits one contiguous region at a time, so comma
+/// multi-select isn't needed here.
 fn parse_anchored_range(range_str: &str, total: usize) -> (usize, usize) {
     if let Some((s, e)) = range_str.split_once('-') {
         let start = s.trim().parse::<usize>().unwrap_or(1).max(1);
         let end = e.trim().parse::<usize>().unwrap_or(total).min(total);
         (start, end)
     } else {
-        let start = range_str.trim().parse::<usize>().unwrap_or(1).max(1);
-        (start, total)
+        let line = range_str.trim().parse::<usize>().unwrap_or(1).max(1);
+        (line, line.min(total))
     }
 }
 

@@ -33,17 +33,17 @@ impl McpTool for SobreRefactorTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "rename|references|definition|implementations|replace_symbol_body|insert_before_symbol|insert_after_symbol"
+                        "enum": ["rename", "references", "definition", "implementations", "replace_symbol_body", "insert_before_symbol", "insert_after_symbol"]
                     },
                     "path": { "type": "string", "description": "File; for symbol edits, the file name_path is looked up in" },
-                    "line": { "type": "integer", "description": "1-indexed line" },
+                    "line": { "type": "integer", "description": "1-indexed line; for symbol edits without name_path, the symbol around this line in path" },
                     "column": { "type": "integer", "description": "0-indexed column" },
                     "new_name": { "type": "string", "description": "New symbol name (rename preview)" },
                     "name_path": { "type": "string", "description": "Symbol path for body edits (qualified or bare)" },
                     "new_text": { "type": "string", "description": "Full replacement declaration text (replace_symbol_body)" },
                     "text": { "type": "string", "description": "Sibling text to insert (auto-indented)" },
-                    "end_line": { "type": "integer", "description": "1-based last line (path+line fallback)" },
-                    "expected_hash": { "type": "string", "description": "BLAKE3 hex of current range (TOCTOU guard)" }
+                    "expected_hash": { "type": "string", "description": "BLAKE3 hex of current range (TOCTOU guard)" },
+                    "dry_run": { "type": "boolean", "description": "Symbol edits: show the diff, write nothing" }
                 },
                 "allOf": [
                     {

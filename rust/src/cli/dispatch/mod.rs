@@ -107,16 +107,16 @@ pub fn run() {
                 return;
             }
             "uninstall" => {
-                // Safety: `--help`/`-h` must NEVER fall through to a real
-                // uninstall. Short-circuit before any removal.
-                if rest.iter().any(|a| a == "--help" || a == "-h") {
-                    uninstall::print_help();
-                    return;
+                // Safety: `--help` and any argument the table does not list
+                // stop here, before any removal.
+                crate::cli::spec::check_or_exit("uninstall", &rest);
+                match uninstall::parse_args(&rest) {
+                    Ok(options) => uninstall::run(&options),
+                    Err(e) => {
+                        eprintln!("{e}");
+                        std::process::exit(2);
+                    }
                 }
-                let dry_run = rest.iter().any(|a| a == "--dry-run");
-                let keep_config = rest.iter().any(|a| a == "--keep-config");
-                let keep_binary = rest.iter().any(|a| a == "--keep-binary");
-                uninstall::run(dry_run, keep_config, keep_binary);
                 return;
             }
             // `raw` runs the command with its output passed through unchanged.
@@ -126,17 +126,18 @@ pub fn run() {
                 return;
             }
             "help" | "--help" | "-h" => {
-                if rest
-                    .iter()
-                    .any(|a| matches!(a.as_str(), "all" | "full" | "--all" | "-a"))
-                {
-                    print_help();
-                } else {
-                    print_help_concise();
+                crate::cli::spec::check_or_exit("help", &rest);
+                match rest.first().map(String::as_str) {
+                    None => print_help_concise(),
+                    Some("all") => print_help(),
+                    Some(other) => {
+                        eprintln!("sobre help: unknown topic '{other}' (try `sobre help all`)");
+                        std::process::exit(2);
+                    }
                 }
                 return;
             }
-            "mcp" => {}
+            "mcp" => crate::cli::spec::check_or_exit("mcp", &rest),
             _ => {
                 let unknown = &args[1];
                 eprintln!("sobre: unknown command '{unknown}'");

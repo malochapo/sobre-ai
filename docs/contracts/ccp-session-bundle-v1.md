@@ -1,14 +1,13 @@
 # CCP Session Bundle v1 (CcpSessionBundleV1)
 
 CCP session bundles standardise **export/import** of session excerpts for
-replayability: task, findings, decisions, evidence (tool receipts and manual
-keys).
+replayability: task, findings, decisions and touched files.
 
 ## Goals
 
 - **Deterministic**: the same session gives the same bundle (except `exported_at`).
 - **Bounded**: fixed caps (counts and bytes).
-- **Replayable**: carries the project identity hash.
+- **Replayable**: carries the hash of the project's canonical root.
 - **Redacted**: exports never contain secret-like content.
 
 ## Bundle format (JSON)
@@ -17,15 +16,16 @@ Top-level fields:
 
 - `schema_version`: `1`
 - `exported_at`: RFC3339 timestamp
-- `project`: project hashes (root + identity)
-- `session`: bounded excerpt (task, findings, decisions, files, evidence,
-  stats, `terse_mode`, `compression_level`). The last two record the exporting
+- `project`: `project_root_hash`, the key every store uses for the project
+- `session`: bounded excerpt (task, findings, decisions, files, stats,
+  `terse_mode`, `compression_level`). The last two record the exporting
   machine's `compression_level` setting; importing a bundle never applies them.
 
 ## Privacy
 
-Exports are always redacted: evidence `value`s are dropped and strings go
-through `redaction::redact_text`. There is no unredacted export.
+Exports are always redacted: strings go through `redaction::redact_text`,
+and the project is named by its hash, never its path. There is no unredacted
+export.
 
 ## Where a bundle is written
 
@@ -38,8 +38,9 @@ unless `path=` points there.
 
 - Import sets the session excerpt fields (bounded) and marks missing or stale
   file paths.
-- A project identity mismatch is reported as a warning; import still proceeds
-  (provenance is kept).
+- A bundle from another project root is reported as a warning; import still
+  proceeds (provenance is kept). Paths are read against the importing
+  session's root.
 
 ## Boundedness
 

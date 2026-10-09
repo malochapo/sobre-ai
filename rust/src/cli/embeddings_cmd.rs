@@ -6,6 +6,7 @@
 //! Nothing here runs implicitly — the policy is "no silent
 //! download at first tool call, ever".
 
+#[cfg(feature = "dense")]
 use crate::core::artifacts_exec::ort_provision;
 
 /// Download everything local embeddings need: the official ONNX Runtime and
@@ -42,38 +43,43 @@ pub(crate) fn provision(force: bool) -> Result<(), String> {
 }
 
 pub(crate) fn cmd_embeddings(rest: &[String]) {
+    let args = rest.get(1..).unwrap_or_default();
     match rest.first().map(String::as_str) {
         Some("provision") => {
-            if let Err(e) = provision(rest.iter().any(|a| a == "--force")) {
+            crate::cli::spec::check_or_exit("embeddings provision", args);
+            if let Err(e) = provision(args.iter().any(|a| a == "--force")) {
                 eprintln!("Provisioning failed: {e}");
                 std::process::exit(1);
             }
         }
+        Some("--help" | "-h") => print!("{}", crate::cli::spec::group_text("embeddings")),
         Some("status") | None => {
-            println!("{}", ort_provision::status_line());
-            #[cfg(feature = "dense")]
-            println!(
-                "This build requires ONNX Runtime >= 1.{}.x (ort api level).",
-                ort::MINOR_VERSION
-            );
+            crate::cli::spec::check_or_exit("embeddings status", args);
+            // Nothing to provision here, so nothing to report but that.
             #[cfg(not(feature = "dense"))]
             println!(
-                "This build has no local embeddings: the managed runtime serves the \
-                 sobre-dense release build (or a build with --features dense)."
+                "This build has no local embeddings: they come with the sobre-dense \
+                 release build, or a build with --features dense."
             );
-            if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
-                println!("ORT_DYLIB_PATH override active: {p}");
+            #[cfg(feature = "dense")]
+            {
+                println!("{}", ort_provision::status_line());
+                println!(
+                    "This build requires ONNX Runtime >= 1.{}.x (ort api level).",
+                    ort::MINOR_VERSION
+                );
+                if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
+                    println!("ORT_DYLIB_PATH override active: {p}");
+                }
+                println!(
+                    "{}",
+                    crate::core::ort_execution_providers::execution_provider_status()
+                );
+                println!(
+                    "{}",
+                    crate::core::ort_execution_providers::execution_provider_help()
+                );
             }
-            #[cfg(feature = "dense")]
-            println!(
-                "{}",
-                crate::core::ort_execution_providers::execution_provider_status()
-            );
-            #[cfg(feature = "dense")]
-            println!(
-                "{}",
-                crate::core::ort_execution_providers::execution_provider_help()
-            );
         }
         Some(other) => {
             eprintln!(

@@ -28,6 +28,7 @@ mod hn_hardening_scenarios;
 mod home_dotdir_firewall;
 mod http_server_streamable;
 mod init_doctor_clean;
+mod init_uninstall_round_trip;
 mod integration_tests;
 mod io_health_scenarios;
 mod live_smoke_client_instructions;
@@ -46,6 +47,7 @@ mod property_graph_reproducibility_contract;
 mod proxy_smoke;
 mod read_fidelity;
 mod reference_docs_drift;
+#[cfg(feature = "dense")]
 mod reranking_scenarios;
 mod retrieval_eval;
 mod ro_config_sandbox;

@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 
-/// The copy of an agent config as it was before sobre first edited it.
-/// `uninstall` deletes it once sobre's entries are gone from the original.
+/// The copy of an agent config as it was before sobre first edited it,
+/// empty when the file did not exist: `uninstall` then deletes a file that
+/// holds nothing but sobre's entries. `uninstall` deletes the copy once
+/// sobre's entries are gone from the original.
 pub fn backup_path_for(path: &Path) -> PathBuf {
     let filename = path.file_name().unwrap_or_default().to_string_lossy();
     path.with_file_name(format!("{filename}.sobre.bak"))
@@ -12,7 +14,9 @@ pub fn backup_path_for(path: &Path) -> PathBuf {
 /// - Content identical to what is on disk writes nothing.
 /// - The first edit of an existing file keeps a copy of it as
 ///   [`backup_path_for`]; later edits leave that copy alone, so it stays the
-///   file the user had before sobre.
+///   file the user had before sobre. Creating the file leaves an empty copy:
+///   the next `init` then knows sobre made it, and does not keep sobre's own
+///   entries as the user's.
 /// - The write is recorded in the [`journal`]; while the journal previews
 ///   (`init --check`), nothing is written.
 pub fn write_atomic_with_backup(path: &Path, content: &str) -> Result<(), String> {
@@ -31,13 +35,17 @@ pub fn write_atomic_with_backup(path: &Path, content: &str) -> Result<(), String
     if journal::dry_run() {
         return Ok(());
     }
+    let bak = backup_path_for(path);
     if existed {
-        let bak = backup_path_for(path);
         if !bak.exists() {
             let _ = std::fs::copy(path, &bak);
         }
+        return write_atomic(path, content);
     }
-    write_atomic(path, content)
+    // After the write, which creates the parent directories.
+    write_atomic(path, content)?;
+    let _ = std::fs::write(&bak, "");
+    Ok(())
 }
 
 /// Writes a file sobre owns entirely (the skill, the OpenCode plugin): journaled
@@ -193,8 +201,8 @@ pub mod journal {
         JOURNAL.with(|j| j.borrow().as_ref().is_some_and(|j| j.dry_run))
     }
 
-    /// Records a change made outside this module (`claude mcp add-json`).
-    pub(crate) fn record(path: &Path, change: Change) {
+    /// Records a change about to be made.
+    pub(super) fn record(path: &Path, change: Change) {
         JOURNAL.with(|j| {
             if let Some(j) = j.borrow_mut().as_mut() {
                 j.entries.push((path.to_path_buf(), change));

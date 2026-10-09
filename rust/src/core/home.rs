@@ -45,10 +45,11 @@ pub fn resolve_home_dir() -> Option<PathBuf> {
             }
         }
 
-        if let (Ok(drive), Ok(path)) = (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH")) {
-            if !drive.trim().is_empty() && !path.trim().is_empty() {
-                return Some(PathBuf::from(format!("{}{}", drive.trim(), path.trim())));
-            }
+        if let (Ok(drive), Ok(path)) = (std::env::var("HOMEDRIVE"), std::env::var("HOMEPATH"))
+            && !drive.trim().is_empty()
+            && !path.trim().is_empty()
+        {
+            return Some(PathBuf::from(format!("{}{}", drive.trim(), path.trim())));
         }
     }
 

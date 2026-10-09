@@ -78,7 +78,6 @@ pub fn handle(
         "lifecycle_report" => handle_lifecycle_report(project_root),
         "remove" => handle_remove(project_root, category, key),
         "export" => handle_export(project_root, None),
-        "consolidate" => handle_consolidate(project_root),
         "restore" => handle_restore(project_root, category, query, None),
         "timeline" => handle_timeline(project_root, category),
         "rooms" => handle_rooms(project_root),
@@ -610,13 +609,6 @@ fn handle_import_okf(
     out
 }
 
-fn handle_consolidate(project_root: &str) -> String {
-    match consolidate_project_knowledge(project_root) {
-        Ok(report) => format_consolidation_report(&report),
-        Err(e) => e,
-    }
-}
-
 /// Explicit cross-store restore from archive (Phase 6). `store` selects a
 /// single store (all when `None`); `query` filters by substring; `limit` caps
 /// the total restored (default [`DEFAULT_RESTORE_LIMIT`]).
@@ -630,7 +622,7 @@ fn handle_restore(
         Some(s) => match crate::core::memory_archive::MemoryStore::parse(s) {
             Some(ms) => Some(ms),
             None => {
-                return format!("Unknown store: {s}. Use: facts, history, patterns");
+                return format!("ERROR: unknown store: {s}. Use: facts, history, patterns");
             }
         },
         None => None,

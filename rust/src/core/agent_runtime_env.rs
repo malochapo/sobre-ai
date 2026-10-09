@@ -8,7 +8,7 @@
 //!
 //! Short-lived sobre processes that *do* run inside the agent environment —
 //! the hook handlers (`sobre hook …`) and the `sobre -c` shell wrapper —
-//! [`capture`] the relevant variables into a small file in the data dir. The MCP
+//! [`capture`] the relevant variables into a small file in the state dir. The MCP
 //! server then [`load`]s them when constructing the child environment for
 //! `sobre_shell` (see `crate::server::execute`).
 
@@ -109,8 +109,9 @@ fn read_store(path: &Path) -> Option<(BTreeMap<String, String>, u64)> {
 ///
 /// No-op when the current environment carries no forwardable variables — this
 /// prevents a process with a stripped environment (e.g. the MCP server itself)
-/// from clobbering a good capture. The file is only rewritten when the variable
-/// set actually changes, keeping the cost of capturing on every shell command low.
+/// from clobbering a good capture. The file is rewritten when the variable set
+/// changes, and when the same set's capture is a quarter of the TTL old, so a
+/// session that keeps running commands never sees its capture expire.
 pub fn capture() {
     let vars = collect_from_process();
     if vars.is_empty() {
@@ -119,13 +120,14 @@ pub fn capture() {
     let Some(path) = store_path() else {
         return;
     };
-    if let Some((existing, _)) = read_store(&path)
+    let now = crate::core::clock::now_unix();
+    if let Some((existing, captured_at)) = read_store(&path)
         && existing == vars
+        && now.saturating_sub(captured_at) < TTL_SECS / 4
     {
         return;
     }
-    let payload =
-        serde_json::json!({ "vars": vars, "captured_at": crate::core::clock::now_unix() });
+    let payload = serde_json::json!({ "vars": vars, "captured_at": now });
     let Ok(json) = serde_json::to_string_pretty(&payload) else {
         return;
     };
@@ -313,6 +315,27 @@ mod tests {
         let loaded = load();
 
         assert!(loaded.is_empty(), "expired capture must not be loaded");
+    }
+
+    /// J14: capturing the same variables again keeps the capture alive.
+    #[test]
+    fn an_old_capture_of_the_same_vars_is_refreshed() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        for (key, _) in collect_from_process() {
+            crate::test_env::remove_var(key);
+        }
+        crate::test_env::set_var("CODEX_THREAD_ID", "same");
+        let path = store_path().unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let old = crate::core::clock::now_unix().saturating_sub(TTL_SECS - 60);
+        let payload =
+            serde_json::json!({ "vars": { "CODEX_THREAD_ID": "same" }, "captured_at": old });
+        std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
+
+        capture();
+        let (_, captured_at) = read_store(&path).unwrap();
+        crate::test_env::remove_var("CODEX_THREAD_ID");
+        assert!(captured_at > old, "the capture must be refreshed");
     }
 
     #[cfg(unix)]

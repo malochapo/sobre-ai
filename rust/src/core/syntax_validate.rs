@@ -1,11 +1,11 @@
-//! Post-edit syntax gate: a tree-sitter parse check used to reject an
-//! edit that turns a *cleanly parsing* file into a broken one.
+//! Post-edit syntax report: a tree-sitter parse check that tells the agent
+//! when an edit turned a *cleanly parsing* file into a broken one.
 //!
-//! Principle (plan Säule 3): only the *clean → broken* transition is a real
-//! regression. We never reject when the pre-edit file already had parse errors
-//! (the model may be fixing them), and we skip entirely for languages without a
-//! grammar — so the gate is a safety net, never an obstacle. The decision logic
-//! lives in [`gate_edit`]; [`check_syntax`] is the raw parse probe.
+//! The edit is always written (invariant 5: the agent decides); the report
+//! says what broke. Only the *clean → broken* transition is reported: a file
+//! that already had parse errors may be mid-fix, and a language without a
+//! grammar gets no opinion. The decision lives in [`syntax_notice`];
+//! [`check_syntax`] is the raw parse probe.
 
 /// Outcome of a tree-sitter parse probe.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,13 +77,11 @@ fn first_error_line(node: tree_sitter::Node) -> Option<usize> {
     None
 }
 
-/// The post-edit gate decision. Returns `Some(reason)` only for the
-/// clean → broken regression — the single case worth blocking — and `None`
-/// (allow the write) for every other situation:
-/// unsupported language, tree-sitter off, an already-broken pre-edit file, or a
-/// post-edit file that still parses.
+/// The notice for an edit that broke a cleanly parsing file; `None` for every
+/// other case: unsupported language, tree-sitter off, an already-broken
+/// pre-edit file, or a post-edit file that still parses.
 #[must_use]
-pub fn gate_edit(ext: &str, old_content: &str, new_content: &str) -> Option<String> {
+pub fn syntax_notice(ext: &str, old_content: &str, new_content: &str) -> Option<String> {
     // Pre-edit must parse cleanly for a regression to be meaningful.
     let pre = check_syntax(old_content, ext)?;
     if pre.has_error {
@@ -97,10 +95,8 @@ pub fn gate_edit(ext: &str, old_content: &str, new_content: &str) -> Option<Stri
         .first_error_line
         .map_or_else(String::new, |l| format!(" near line {l}"));
     Some(format!(
-        "ERROR: edit rejected — it introduces a syntax error{loc} (.{ext}). \
-         The current file on disk parses cleanly, but the proposed edit \
-         would break it. No write was made. Fix the snippet and retry, \
-         or pass validate_syntax=false to override."
+        "⚠ syntax: this edit leaves a syntax error{loc} (.{ext}); the file parsed \
+         cleanly before it."
     ))
 }
 
@@ -129,39 +125,38 @@ mod tests {
     }
 
     #[test]
-    fn gate_blocks_clean_to_broken() {
+    fn clean_to_broken_is_reported() {
         let old = "fn main() {}\n";
         let new = "fn main() {\n"; // unbalanced brace
-        let reason = gate_edit("rs", old, new).expect("clean→broken must be gated");
-        assert!(reason.contains("syntax error"));
-        assert!(reason.contains("validate_syntax=false"));
+        let notice = syntax_notice("rs", old, new).expect("clean→broken must be reported");
+        assert!(notice.contains("syntax error near line"), "{notice}");
     }
 
     #[test]
-    fn gate_allows_broken_to_broken() {
+    fn no_notice_for_broken_to_broken() {
         // Pre-edit already broken → never our regression to block (model may fix).
         let old = "fn main() {\n"; // broken
         let new = "fn main( {\n"; // still broken
-        assert!(gate_edit("rs", old, new).is_none());
+        assert!(syntax_notice("rs", old, new).is_none());
     }
 
     #[test]
-    fn gate_allows_clean_to_clean() {
+    fn no_notice_for_clean_to_clean() {
         let old = "fn main() {}\n";
         let new = "fn main() { let x = 1; }\n";
-        assert!(gate_edit("rs", old, new).is_none());
+        assert!(syntax_notice("rs", old, new).is_none());
     }
 
     #[test]
-    fn gate_skips_unsupported_language() {
+    fn no_notice_for_unsupported_language() {
         // No grammar → no opinion, always allow.
-        assert!(gate_edit("unknownext", "valid", "{[(").is_none());
+        assert!(syntax_notice("unknownext", "valid", "{[(").is_none());
     }
 
     #[test]
-    fn gate_allows_broken_being_fixed() {
+    fn no_notice_for_broken_being_fixed() {
         let old = "fn main() {\n"; // broken
         let new = "fn main() {}\n"; // fixed
-        assert!(gate_edit("rs", old, new).is_none());
+        assert!(syntax_notice("rs", old, new).is_none());
     }
 }

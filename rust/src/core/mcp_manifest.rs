@@ -39,13 +39,13 @@ fn normalize_tool_entry(tool_json: &Value) -> Value {
         .cloned()
         .unwrap_or(Value::Null);
     let schema_str = serde_json::to_string(&schema).unwrap_or_default();
-    let schema_md5 = crate::core::hasher::hash_str(&schema_str);
+    let schema_hash = crate::core::hasher::hash_str(&schema_str);
 
     json!({
         "name": name,
         "description": description,
         "input_schema": schema,
-        "schema_md5": schema_md5
+        "schema_hash": schema_hash
     })
 }
 

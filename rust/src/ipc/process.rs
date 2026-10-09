@@ -114,7 +114,7 @@ pub fn is_alive(pid: u32) -> bool {
                 return true;
             }
             let mut exit_code: u32 = 0;
-            GetExitCodeProcess(handle, &mut exit_code);
+            GetExitCodeProcess(handle, &raw mut exit_code);
             CloseHandle(handle);
             exit_code == STILL_ACTIVE as u32
         }
@@ -288,10 +288,10 @@ pub fn find_pids_by_name(name: &str) -> Vec<u32> {
                 let parts: Vec<&str> = line.split(',').collect();
                 if parts.len() >= 2 {
                     let pid_str = parts[1].trim().trim_matches('"');
-                    if let Ok(pid) = pid_str.parse::<u32>() {
-                        if !protected.contains(&pid) {
-                            pids.push(pid);
-                        }
+                    if let Ok(pid) = pid_str.parse::<u32>()
+                        && !protected.contains(&pid)
+                    {
+                        pids.push(pid);
                     }
                 }
             }

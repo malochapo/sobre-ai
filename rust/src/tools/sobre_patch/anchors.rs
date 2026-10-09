@@ -41,8 +41,8 @@ pub enum AnchorOp {
         end_hash: String,
     },
     /// Create a NEW file with `new_text` as its content. No anchors — the file
-    /// must not exist yet (strict, unlike `sobre_edit create=true` which
-    /// overwrites). Handled before the preimage read; cannot be mixed with
+    /// must not exist yet (never an overwrite). Handled before the preimage
+    /// read; cannot be mixed with
     /// anchored ops in one call (a batch shares a single existing preimage).
     Create { new_text: String },
 }
@@ -88,7 +88,9 @@ pub(crate) fn parse_ops(args: &Map<String, Value>) -> Result<Vec<AnchorOp>, Stri
 
 fn parse_one(obj: &Map<String, Value>) -> Result<AnchorOp, String> {
     let op = get_str(obj, "op").ok_or_else(|| {
-        "missing 'op' (one of: set_line, replace_lines, insert_after, delete, create)".to_string()
+        "missing 'op' (one of: set_line, replace_lines, insert_after, delete, create, \
+         replace_unique, replace_symbol, replace_all)"
+            .to_string()
     })?;
     match op.as_str() {
         "set_line" => Ok(AnchorOp::SetLine {

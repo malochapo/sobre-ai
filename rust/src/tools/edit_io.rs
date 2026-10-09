@@ -1,8 +1,8 @@
 //! Shared low-level file-edit I/O primitives.
 //!
-//! Extracted from `sobre_edit` so the anchored editor (`sobre_patch`) reuses the
-//! *exact same* TOCTOU-safe read→verify→atomic-write path instead of growing a
-//! second, drifting copy of this security-critical code:
+//! Every `sobre_patch` write — anchored ops and text replacements alike — goes
+//! through the *exact same* TOCTOU-safe read→verify→atomic-write path instead
+//! of a second, drifting copy of this security-critical code:
 //!
 //! * symlink rejection (`reject_symlink` + `O_NOFOLLOW`): an atomic rename
 //!   would otherwise replace the link with a plain file,
@@ -12,15 +12,14 @@
 //! * permission-preserving crash-atomic `rename`, with the read-only-directory
 //!   in-place fallback.
 //!
-//! One implementation = one audited boundary. `sobre_edit` (`str_replace`) and
-//! `sobre_patch` (anchored) both apply through these functions, so a fix here
-//! protects both tools at once.
+//! One implementation = one audited boundary: a fix here protects every edit
+//! path at once.
 //!
 //! **Known limitation:** the TOCTOU guard is a point-in-time check,
 //! not a held lock — see [`ensure_preimage_still_matches`] for the residual
 //! window between that check and the atomic write it gates.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Size + mtime + content hash of a file, used as a TOCTOU fingerprint.
@@ -31,13 +30,12 @@ pub(crate) struct FileFingerprint {
     pub(crate) hash: String,
 }
 
-/// A file read for editing: its fingerprint, permissions, raw bytes, decoded
-/// text and whether it uses CRLF line endings.
+/// A file read for editing: its fingerprint, permissions, decoded text and
+/// whether it uses CRLF line endings.
 #[derive(Clone, Debug)]
 pub(crate) struct FilePreimage {
     pub(crate) fp: FileFingerprint,
     pub(crate) permissions: std::fs::Permissions,
-    pub(crate) bytes: Vec<u8>,
     pub(crate) text: String,
     pub(crate) uses_crlf: bool,
 }
@@ -129,31 +127,23 @@ pub(crate) fn fingerprint_from_bytes(bytes: &[u8], meta: &std::fs::Metadata) -> 
     }
 }
 
-pub(crate) fn read_preimage(
-    path: &Path,
-    cap: usize,
-    allow_lossy_utf8: bool,
-) -> Result<FilePreimage, String> {
+pub(crate) fn read_preimage(path: &Path, cap: usize) -> Result<FilePreimage, String> {
     let (bytes, meta) = read_file_bytes_limited(path, cap)?;
     let permissions = meta.permissions();
     let fp = fingerprint_from_bytes(&bytes, &meta);
 
-    let text = if allow_lossy_utf8 {
-        String::from_utf8_lossy(&bytes).into_owned()
-    } else {
-        String::from_utf8(bytes.clone()).map_err(|_| {
-            format!(
-                "ERROR: file is not valid UTF-8 (binary/encoding). Refusing to edit: {}",
-                path.display()
-            )
-        })?
-    };
+    let text = String::from_utf8(bytes).map_err(|_| {
+        format!(
+            "ERROR: {} is not valid UTF-8; sobre_patch edits text files only, and \
+             rewriting this one would replace its undecodable bytes",
+            path.display()
+        )
+    })?;
     let uses_crlf = text.contains("\r\n");
 
     Ok(FilePreimage {
         fp,
         permissions,
-        bytes,
         text,
         uses_crlf,
     })
@@ -197,16 +187,6 @@ pub(crate) fn ensure_preimage_still_matches(
     Ok(())
 }
 
-pub(crate) fn default_backup_path(path: &Path) -> Option<PathBuf> {
-    let parent = path.parent()?;
-    let filename = path.file_name()?.to_string_lossy();
-    let pid = std::process::id();
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_nanos());
-    Some(parent.join(format!("{filename}.sobre.bak.{pid}.{nanos}")))
-}
-
 pub(crate) fn write_atomic_bytes_with_permissions(
     path: &Path,
     bytes: &[u8],
@@ -240,22 +220,20 @@ mod tests {
         let path = dir.path().join("toctou.txt");
         std::fs::write(&path, "aaa\n").unwrap();
         let cap = crate::core::limits::max_read_bytes();
-        let pre = read_preimage(&path, cap, false).unwrap();
+        let pre = read_preimage(&path, cap).unwrap();
         std::fs::write(&path, "bbb\n").unwrap();
         let err = ensure_preimage_still_matches(&path, &pre.fp, cap).unwrap_err();
         assert!(err.contains("TOCTOU guard"), "unexpected error: {err}");
     }
 
     #[test]
-    fn read_preimage_rejects_invalid_utf8_by_default() {
+    fn read_preimage_rejects_invalid_utf8() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("bin.dat");
         std::fs::write(&path, [0xff, 0xfe, 0xfd]).unwrap();
         let cap = crate::core::limits::max_read_bytes();
-        let err = read_preimage(&path, cap, false).unwrap_err();
+        let err = read_preimage(&path, cap).unwrap_err();
         assert!(err.contains("not valid UTF-8"), "got: {err}");
-        // Lossy mode tolerates it.
-        assert!(read_preimage(&path, cap, true).is_ok());
     }
 
     #[test]
@@ -264,8 +242,8 @@ mod tests {
         let path = dir.path().join("fp.txt");
         std::fs::write(&path, "hello\n").unwrap();
         let cap = crate::core::limits::max_read_bytes();
-        let a = read_preimage(&path, cap, false).unwrap().fp;
-        let b = read_preimage(&path, cap, false).unwrap().fp;
+        let a = read_preimage(&path, cap).unwrap().fp;
+        let b = read_preimage(&path, cap).unwrap().fp;
         assert_eq!(a, b, "same bytes → same fingerprint");
         assert_eq!(a.hash, crate::core::hasher::hash_hex(b"hello\n"));
     }

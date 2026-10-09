@@ -40,7 +40,6 @@ accessor function.
 | L92 | `ACTIVE` | `core/gotcha_tracker/runtime.rs` | `OnceLock<Mutex<Option<Active>>>` | Active per-project gotcha store, kept in memory so pending errors survive across shell calls; independent leaf lock |
 | L93 | `MAP` | `core/index_progress.rs` (fn-local) | `OnceLock<Mutex<ProgressMap>>` | Index build progress snapshots per `(root, component)`; independent leaf lock |
 | L94 | `G` | `core/read_stub_index.rs` (fn-local) | `OnceLock<RwLock<ReadStubIndex>>` | Persistent, conversation-scoped index of fully delivered file reads (bookkeeping only, never content) used to serve the `[unchanged]` stub across restarts; independent leaf lock |
-| L95 | `TRACKER` (relevance) | `core/relevance_tracker.rs` | `LazyLock<Mutex<RelevanceTracker>>` | Bounded relevance-tracking entries (keywords, age, token budget); independent leaf lock |
 
 ### Test / Environment Locks (serialise env-var and cwd mutations)
 
@@ -65,6 +64,7 @@ Fields of `SobreServer` in `tools/server.rs`:
 | `client_name` | `Arc<RwLock<String>>` | Connected client name |
 | `refetch_signals` | `Arc<RwLock<RefetchSignals>>` | Re-reads, re-runs and expansions that tell compression it went too far |
 | `peer` | `Arc<RwLock<Option<Peer<RoleServer>>>>` | MCP client peer handle |
+| `roots_gate` | `Arc<tokio::sync::Mutex<()>>` | Serializes the first-call project-root resolution (MCP `roots/list`, then the cwd) so concurrent first calls resolve it once; taken before `peer` and `session`, released once the root is set, never held across a tool call |
 | `bm25_cache` | `Arc<std::sync::Mutex<Option<Bm25CacheEntry>>>` | Session BM25 index cache (`core/bm25_cache.rs`, `SharedBm25Cache`); a **`std::sync::Mutex`**, not tokio — never held across `.await` |
 
 Apart from `bm25_cache`, these are **`tokio::sync::RwLock`** and are scoped to a single

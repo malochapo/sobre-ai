@@ -153,7 +153,10 @@ mod tests {
     fn completeness_single_file() {
         let files = vec![("src/core/entropy.rs".to_string(), 200)];
         let briefing = build_briefing("add a function", &files);
-        matches!(briefing.completeness_signal, CompletenessSignal::SingleFile);
+        assert!(matches!(
+            briefing.completeness_signal,
+            CompletenessSignal::SingleFile
+        ));
     }
 
     #[test]
@@ -165,10 +168,10 @@ mod tests {
             ("tests/integration.rs".to_string(), 100),
         ];
         let briefing = build_briefing("refactor compression pipeline", &files);
-        matches!(
+        assert!(matches!(
             briefing.completeness_signal,
             CompletenessSignal::CrossModule
-        );
+        ));
     }
 
     #[test]

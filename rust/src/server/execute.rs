@@ -437,7 +437,7 @@ mod tests {
     /// outlive the wall-clock budget — the cap protects against runaway output,
     /// not against a long-lived monitor. Wall-clock mode still kills it.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn idle_keyed_timeout_survives_a_trickling_loop() {
         let _lock = crate::core::data_dir::test_env_lock();
         let env = std::collections::HashMap::new();
@@ -461,7 +461,7 @@ mod tests {
     /// A timed-out pipeline names the segment that was still running,
     /// so the caller fixes that part instead of re-running everything.
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn timeout_names_the_still_running_segment() {
         let _lock = crate::core::data_dir::test_env_lock();
         let env = std::collections::HashMap::new();
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn utf8_bytes_survive_shell_roundtrip() {
         let (output, code) = execute_command_in(
             "printf '\\xD0\\x9F\\xD1\\x80\\xD0\\xB8\\xD0\\xB2\\xD0\\xB5\\xD1\\x82'",
@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)] // ReadToEnd() blocks indefinitely on Windows CI
+    #[cfg_attr(windows, ignore = "ReadToEnd() blocks indefinitely on Windows")]
     fn execute_command_closes_stdin() {
         let command = "sh -c 'if read -t 1 line; then echo 67890; else echo 12345; fi'";
         let (output, code) = execute_command_in(command, ".");
@@ -536,7 +536,7 @@ mod tests {
     /// everything on the reader timeout; now the captured prefix survives and
     /// the still-draining reader is flagged instead of returning a bare exit.
     #[test]
-    #[cfg_attr(windows, ignore)] // POSIX backgrounding (`&`) + sleep
+    #[cfg_attr(windows, ignore = "POSIX backgrounding (`&`) and sleep")]
     fn background_pipe_holder_keeps_foreground_output() {
         let (output, code) = execute_command_in("echo REPRO_CANARY_945; sleep 4 &", ".");
         assert_eq!(code, 0, "command should succeed: {output:?}");
@@ -551,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore)]
+    #[cfg_attr(windows, ignore = "POSIX shell commands")]
     fn forwards_captured_agent_runtime_env() {
         // The MCP server process lacks CODEX_THREAD_ID; a hook captured it
         // from the agent shell. sobre_shell must still forward it to the child.
@@ -583,7 +583,7 @@ mod tests {
     /// Bytes emitted before a timeout remain visible; a timeout notice is
     /// additive rather than a replacement for useful subprocess output.
     #[test]
-    #[cfg_attr(windows, ignore)] // POSIX sleep
+    #[cfg_attr(windows, ignore = "POSIX sleep")]
     fn per_call_timeout_preserves_partial_output() {
         let (output, code) = super::execute_command_with_env(
             "printf TIMEOUT_PARTIAL_995; sleep 3",

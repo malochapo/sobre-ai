@@ -44,7 +44,7 @@ fn is_sobre_command_for(hook: &serde_json::Value, action: &str) -> bool {
     let Some(cmd) = hook.get("command").and_then(|c| c.as_str()) else {
         return false;
     };
-    if !cmd.contains("sobre") {
+    if !crate::hooks::is_sobre_hook_command(cmd) {
         return false;
     }
     cmd.trim_end().ends_with(action)

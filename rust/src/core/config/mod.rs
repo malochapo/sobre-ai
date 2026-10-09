@@ -40,13 +40,6 @@ pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 /// is checked against this in `doctor overhead` and `gain`.
 pub const CONTEXT_BUDGET_TOKENS: usize = 8000;
 
-/// Proactive CCR expansion: maximum archive content injected per tool response.
-pub const PROACTIVE_EXPANSION_BUDGET_TOKENS: usize = 2000;
-/// Proactive CCR expansion: minimum normalized BM25 score for an injection.
-pub const PROACTIVE_EXPANSION_THRESHOLD: f64 = 0.6;
-/// Proactive CCR expansion: archived content older than this is ignored.
-pub const PROACTIVE_EXPANSION_MAX_AGE_SECS: u64 = 3600;
-
 /// Graph indexes untouched for longer than this are purged.
 pub const GRAPH_INDEX_MAX_AGE_HOURS: u64 = 48;
 
@@ -71,58 +64,39 @@ pub fn is_default_compression_level_value(v: f64) -> bool {
 }
 
 /// sobre configuration, loaded from the single `config.toml`.
+///
+/// What each key means for the user is written once, in `schema/`, which
+/// `config init`, `config show` and `config-keys.md` print. The comments here
+/// say only what the code needs to know.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub passthrough_commands: Vec<String>,
     #[serde(default)]
     pub proxy: ProxyConfig,
-    /// Compression intensity, `0.0` (none) to `1.0` (densest), clamped;
-    /// [`DEFAULT_COMPRESSION_LEVEL`] when the file does not set it. Picks the
-    /// prose, shell-output and CRP style by band (`CompressionLevel::from_value`).
-    /// File reads choose their mode per file; a call can ask for denser reads
-    /// with its own `aggressiveness`.
+    /// Clamped to 0–1; [`DEFAULT_COMPRESSION_LEVEL`] when unset. Read through
+    /// `CompressionLevel::effective`, which applies the session degrade.
     #[serde(
         default = "serde_defaults::default_compression_level",
         deserialize_with = "serde_defaults::deserialize_compression_level",
         skip_serializing_if = "serde_defaults::is_default_compression_level"
     )]
     pub compression_level: f64,
-    /// Extra directories searched alongside the project root, as the other
-    /// roots of a multi-root workspace (absolute, `~`/`$HOME` expanded).
+    /// As written: readers expand `~`/`$HOME` with `pathutil::expand_user_path`.
     #[serde(default)]
     pub search_roots: Vec<String>,
-    /// Opt-in: write a human-readable debug log of MCP tool calls and of the
-    /// native tool calls hooks changed (with reasons) to
-    /// `<state_dir>/logs/debug.log`.
     #[serde(default)]
     pub debug_log: bool,
-    /// Verbatim binary path/expression for generated agent-hook commands.
-    /// Users who sync agent settings (`~/.claude/settings.json`, …)
-    /// across machines with different usernames need an env-based form like
-    /// `$HOME/.local/bin/sobre` — agent hosts run hook commands through a
-    /// shell, which expands it. When set, every hook writer emits the value verbatim instead of
-    /// the machine-absolute exe path, so `init`/`doctor --fix` stop
-    /// rewriting synced files into sync ping-pong. Autostart plists/services
-    /// and daemon spawns are NOT affected — launchd/systemd do not expand
-    /// shell variables, so those keep the real absolute path. Empty (default)
-    /// = automatic absolute-path resolution.
+    /// Emitted verbatim into hook commands, which a shell expands; never into
+    /// launchd/systemd units, which do not.
     #[serde(default)]
     pub hook_binary: Option<String>,
-    /// Timeout in seconds for shell commands. `None` resolves to the built-in
-    /// 2-minute default. Heavy builds and tests, which sobre recognises, always
-    /// get at least the 10-minute heavy ceiling.
+    /// `None` resolves to the 2-minute default in `shell::exec`.
     #[serde(default)]
     pub shell_timeout_secs: Option<u64>,
-    /// Globs for files kept out of the index and of project walks, on top of
-    /// `.gitignore` (always respected).
     #[serde(default)]
     pub ignore: Vec<String>,
-    /// Embedding model for semantic search (`dense` builds): `minilm`
-    /// (default), `nomic`, or any HuggingFace repo shipping an ONNX export
-    /// and a `tokenizer.json`, as `org/repo[@revision]`. Pooling and
-    /// query/document prompts come from the repo's sentence-transformers
-    /// metadata. Changing it re-indexes on the next semantic search.
+    /// `None` is `minilm`; aliases resolve in `embeddings::model_registry`.
     #[serde(default)]
     pub embedding_model: Option<String>,
 }
@@ -168,7 +142,7 @@ impl Config {
                 super::error::SobreError::Config(
                     format!(
                         "refusing to modify an unparseable config.toml ({e}); fix it \
-                     manually or run `sobre doctor --fix`, then retry"
+                     by hand, then retry"
                     )
                     .into(),
                 )
@@ -209,15 +183,5 @@ impl Config {
         crate::config_io::write_toml_preserving_minimal(path, &content, &defaults)
             .map_err(|e| super::error::SobreError::Config(e.into()))?;
         Ok(())
-    }
-
-    /// Formats the current config as a human-readable string with file paths.
-    pub fn show(&self) -> String {
-        let global_path = Self::path().map_or_else(
-            || "(config dir unresolved)".to_string(),
-            |p| p.to_string_lossy().to_string(),
-        );
-        let content = toml::to_string_pretty(self).unwrap_or_default();
-        format!("Config: {global_path}\n\n{content}")
     }
 }

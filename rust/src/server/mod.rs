@@ -2,7 +2,7 @@ pub mod background_shell;
 pub mod bounded_lock;
 pub mod compaction_sync;
 pub mod context_gate;
-mod dispatch;
+pub(crate) mod dispatch;
 pub(crate) mod execute;
 pub mod helpers;
 pub mod multi_path;
@@ -25,7 +25,7 @@ use rmcp::service::{RequestContext, RoleServer};
 use crate::tools::SobreServer;
 mod call_tool;
 mod post_dispatch;
-mod post_process;
+pub(crate) mod post_process;
 mod server_handler;
 
 fn is_home_or_agent_dir(dir: &std::path::Path) -> bool {

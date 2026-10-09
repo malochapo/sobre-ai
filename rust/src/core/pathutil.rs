@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 ///
 /// On non-Windows platforms this is equivalent to `std::fs::canonicalize`.
 pub fn safe_canonicalize(path: &Path) -> std::io::Result<PathBuf> {
-    // TCC choke-point: a launchd-standalone process (daemon/proxy/auto-
-    // updater, ppid 1) must never realpath a path under ~/Documents, ~/Desktop
+    // TCC choke-point: a launchd-standalone process (the proxy, ppid 1) must
+    // never realpath a path under ~/Documents, ~/Desktop
     // or ~/Downloads — the `stat` trips the macOS privacy prompt in sobre's
     // own name, and every release re-invalidates the grant (new cdhash), so it
     // re-prompts forever. Heuristic call sites (project-root detection, session
@@ -269,7 +269,7 @@ pub const PROJECT_MARKERS: &[&str] = &[
 
 /// Returns `true` if `dir` contains at least one known project marker.
 ///
-/// TCC guard: a launchd-owned process (daemon/proxy/auto-updater) must
+/// TCC guard: a launchd-owned process (the proxy) must
 /// not stat marker files under `~/Documents` & co. — the probe itself pops the
 /// macOS privacy prompt. For those processes this conservatively reports
 /// "no marker" without touching the filesystem.
@@ -295,7 +295,7 @@ pub fn is_symlink_or_reparse(meta: &std::fs::Metadata) -> bool {
     {
         use std::os::windows::fs::MetadataExt;
         const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
-        return meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
     }
     #[cfg(not(windows))]
     false
@@ -374,10 +374,9 @@ pub fn process_is_tcc_standalone() -> bool {
         // A process carrying the deny-~/Documents seatbelt sentinel is, by
         // construction, a launchd-standalone descendant: the sentinel is set
         // only by the LaunchAgent plist env and the self re-exec, and child
-        // processes inherit it. This catches a daemon the long-lived standalone
-        // proxy spawned via `start_daemon` (ppid = proxy, not 1), whose code-side
-        // path guards would otherwise stay off because `getppid()` is no longer
-        // 1.
+        // processes inherit it. This catches a process the standalone proxy
+        // spawned (ppid = proxy, not 1), whose code-side path guards would
+        // otherwise stay off because `getppid()` is no longer 1.
         if std::env::var_os(crate::core::tcc_guard_sandbox::SEATBELT_SENTINEL).is_some() {
             return true;
         }

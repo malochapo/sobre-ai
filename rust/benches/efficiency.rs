@@ -102,10 +102,8 @@ fn main() {
 
     println!("# sobre_search efficiency bench ({n_files} files, {ITERS} iters)\n");
 
-    // --- Walk path (legacy): force index off so numbers are uncontaminated ---
-    // SAFETY: single-threaded bench `main()`; runs before any worker threads start.
-    unsafe { std::env::set_var("SOBRE_DISABLE_SEARCH_INDEX", "1") };
-    println!("## Walk path (legacy)\n");
+    // --- Walk path: measured before the resident index is warmed below ---
+    println!("## Walk path\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");
     let mut walk_out = Vec::new();
@@ -116,8 +114,6 @@ fn main() {
     }
 
     // --- Resident index path: warm synchronously, then measure ---
-    // SAFETY: single-threaded bench `main()`; runs before any worker threads start.
-    unsafe { std::env::remove_var("SOBRE_DISABLE_SEARCH_INDEX") };
     let warmed = sobre::core::search_index::warm_blocking(&corpus_str, true);
     println!("\n## Resident index path (warm={warmed})\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");

@@ -44,7 +44,7 @@ environment override for it, so the values below are fixed.
 | `prune_unretrieved_after_days` | 90 |
 | `reclaim_headroom_pct` | 0.25 (a full store settles at 75%) |
 
-`MemoryPolicy` also holds embeddings, gotcha and admission sub-policies;
+`MemoryPolicy` also holds embeddings and admission sub-policies;
 their defaults are in the same file. None of it is configurable.
 
 ## Semantics (MUST)
@@ -87,7 +87,7 @@ deterministic and bounded (`rust/src/core/memory_lifecycle.rs`), parameterised
 by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
 `similarity_threshold` and `max_facts`.
 
-### Lossless eviction (MUST, #995)
+### Lossless eviction (MUST)
 
 - **No hard drop.** Every store (facts, history, patterns) evicts
   only through the capacity manager

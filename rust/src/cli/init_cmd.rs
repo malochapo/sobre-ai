@@ -8,40 +8,36 @@
 /// turning it on is a real decision. Everything else takes a safe default and
 /// is changed afterwards through `sobre config`.
 pub fn cmd_init(args: &[String]) {
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        print_init_help();
-        return;
-    }
-
     // An unknown flag must never fall through to a run that rewrites agent
-    // configs.
-    const KNOWN: &[&str] = &["--agent", "--check", "--dry-run", "--repair", "--json"];
-    if let Some(unknown) = args
-        .iter()
-        .find(|a| a.starts_with('-') && !KNOWN.contains(&a.as_str()))
-    {
-        crate::errln!("init: unknown flag '{unknown}'\n");
-        print_init_help();
-        std::process::exit(2);
-    }
+    // configs; `--agent` without its value neither.
+    crate::cli::spec::check_or_exit("init", args);
 
-    // `init <agent>…` and `init --agent <agent>`: any other positional (a
-    // typo) is an error, since falling through would connect every agent.
+    // `init <agent>…`, `init --agent <agent>` and `init --agent=<agent>`:
+    // anything else (a typo) is an error, since falling through would connect
+    // every agent.
     let mut named: Vec<&'static str> = Vec::new();
-    for arg in args.iter().filter(|a| !a.starts_with('-')) {
+    let positionals = args
+        .iter()
+        .filter(|a| !a.starts_with('-'))
+        .map(String::as_str)
+        .chain(args.iter().filter_map(|a| a.strip_prefix("--agent=")));
+    for arg in positionals {
         match crate::setup::agent_key(arg) {
             Some(key) if !named.contains(&key) => named.push(key),
             Some(_) => {}
             None => {
-                crate::errln!("init: unknown agent '{arg}'\n");
-                print_init_help();
+                crate::errln!("init: unknown agent '{arg}'");
+                crate::errln!(
+                    "usage: {}",
+                    crate::cli::spec::usage(crate::cli::spec::command("init"))
+                );
                 std::process::exit(2);
             }
         }
     }
 
     let json = args.iter().any(|a| a == "--json");
-    let check = args.iter().any(|a| a == "--check" || a == "--dry-run");
+    let check = args.iter().any(|a| a == "--check");
     let repair = args.iter().any(|a| a == "--repair");
     let _quiet = json.then(crate::core::runtime_flags::scoped_quiet);
 
@@ -99,21 +95,38 @@ fn ask_about_proxy() {
     let _ = std::io::stdin().read_line(&mut input);
     let yes = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
 
-    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(yes)) {
+    if !yes {
+        if let Err(e) =
+            crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(false))
+        {
+            tracing::warn!("could not persist the proxy choice: {e}");
+        }
+        crate::outln!("  Skipped. Turn it on later with `sobre proxy enable`.");
+        return;
+    }
+    // Same path as `sobre proxy enable`: nothing is recorded unless the
+    // proxy actually runs.
+    let port = crate::proxy_setup::default_port();
+    let started = if crate::proxy_autostart::is_supported() {
+        crate::proxy_autostart::install(port, false)
+    } else {
+        crate::proxy_setup::is_proxy_reachable(port)
+    };
+    if !started {
+        crate::outln!(
+            "  The proxy could not be started, so it stays off. Start it by hand with\n  `sobre proxy start -d`, then run `sobre proxy enable`."
+        );
+        return;
+    }
+    if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true)) {
         tracing::warn!("could not persist the proxy choice: {e}");
         return;
     }
-    if yes {
-        let port = crate::proxy_setup::default_port();
-        crate::proxy_autostart::install(port, false);
-        std::thread::sleep(std::time::Duration::from_millis(500));
-        if let Some(home) = dirs::home_dir() {
-            crate::proxy_setup::install_proxy_env(&home, port, false);
-        }
-        crate::outln!("  Proxy enabled.");
-    } else {
-        crate::outln!("  Skipped. Turn it on later with `sobre proxy enable`.");
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    if let Some(home) = dirs::home_dir() {
+        crate::proxy_setup::install_proxy_env(&home, port, false);
     }
+    crate::outln!("  Proxy enabled.");
 }
 
 /// Semantic search needs a local model. It is downloaded only with consent:
@@ -147,31 +160,4 @@ fn ask_about_embeddings() {
             crate::outln!("  Skipped. Download later with `sobre embeddings provision`.");
         }
     }
-}
-
-fn print_init_help() {
-    crate::outln!(
-        "Usage: sobre init [<agent>...] [options]
-
-  sobre init                 Connect every installed agent: its MCP entry,
-                             hooks and skill. Asks once about the proxy and,
-                             in a build with embeddings, about downloading
-                             the model. Never edits your shell rc files.
-  sobre init <agent>...      Only the named agents, installed or not, with
-                             no question: claude, codex, copilot, cursor,
-                             gemini, opencode, vscode, windsurf, zed
-
-Options:
-  --check, --dry-run         List the files init would create or change,
-                             and write nothing
-  --repair                   Ask no question (for scripts and CI)
-  --json                     Machine-readable report; asks no question
-  --agent <name>             Same as naming the agent, repeatable
-
-init exits non-zero when an agent could not be connected.
-
-Edits keep your comments and key order; a file sobre edits for the first
-time is copied to <file>.sobre.bak.
-Undo it all: sobre uninstall"
-    );
 }

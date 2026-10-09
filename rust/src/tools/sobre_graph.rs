@@ -6,13 +6,10 @@ use crate::core::graph_provider::{self, GraphProvider};
 use crate::core::index_paths;
 use crate::core::tokens::count_tokens;
 
-#[allow(clippy::too_many_arguments)]
 pub fn handle(
     action: &str,
     path: Option<&str>,
     root: &str,
-    cache: &mut crate::core::cache::SessionCache,
-    crp_mode: crate::tools::CrpMode,
     depth: Option<usize>,
     kind: Option<&str>,
     to: Option<&str>,
@@ -21,7 +18,7 @@ pub fn handle(
     match action {
         "build" => handle_build(root),
         "related" => handle_related(path, root),
-        "symbol" => handle_symbol(path, root, cache, crp_mode),
+        "symbol" => handle_symbol(path, root),
         "status" => handle_status(root),
         "diagram" => crate::tools::sobre_graph_diagram::handle(path, depth, kind, root),
         "neighbors" => crate::tools::sobre_graph_primitives::neighbors(path, root, depth, format),
@@ -91,7 +88,7 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
     };
 
     let Some(open) = graph_provider::open_or_build(root) else {
-        return "No graph index found. Run sobre_graph with action='build' first.".to_string();
+        return graph_provider::GRAPH_UNAVAILABLE.to_string();
     };
 
     let rel_target = index_paths::graph_relative_key(target, root);
@@ -100,43 +97,44 @@ fn handle_related(path: Option<&str>, root: &str) -> String {
     if related.is_empty() {
         return format!(
             "No related files found for {}",
-            crate::core::protocol::shorten_path(target)
+            crate::core::protocol::display_path(&rel_target)
         );
     }
 
     let mut result = format!(
         "Files related to {} ({}):\n",
-        crate::core::protocol::shorten_path(target),
+        crate::core::protocol::display_path(&rel_target),
         related.len()
     );
     for r in &related {
-        result.push_str(&format!("  {}\n", crate::core::protocol::shorten_path(r)));
+        result.push_str(&format!("  {}\n", crate::core::protocol::display_path(r)));
     }
 
     let tokens = count_tokens(&result);
     format!("{result}[sobre_graph related: {tokens} tok]")
 }
 
-fn handle_symbol(
-    path: Option<&str>,
-    root: &str,
-    cache: &mut crate::core::cache::SessionCache,
-    crp_mode: crate::tools::CrpMode,
-) -> String {
+fn handle_symbol(path: Option<&str>, root: &str) -> String {
     let Some(spec) = path else {
         return "ERROR: a symbol is required for 'symbol' action (a bare <symbol> name, or <file>::<symbol>)".to_string();
     };
 
     let Some(open) = graph_provider::open_or_build(root) else {
-        return "No graph index found. Run sobre_graph with action='build' first.".to_string();
+        return graph_provider::GRAPH_UNAVAILABLE.to_string();
     };
 
-    // Bare symbol name (no `::`): resolve against the symbol table so GDScript
-    // (and every other language) symbols are reachable without a file qualifier.
-    let Some((file_part, symbol_name)) = spec.split_once("::") else {
-        return resolve_bare_symbol(&open, spec, root, cache, crp_mode);
+    // `<file>::<symbol>` when the part before `::` names a file; otherwise
+    // the spec is a symbol, bare or path-qualified (`Config::load`), looked
+    // up by its last segment as symbols are stored.
+    let file_spec = spec
+        .split_once("::")
+        .filter(|(file, _)| looks_like_file(file));
+    let Some((file_part, symbol_name)) = file_spec else {
+        let name = spec.rsplit("::").next().unwrap_or(spec);
+        return resolve_bare_symbol(&open, name, root);
     };
 
+    let symbol_name = symbol_name.rsplit("::").next().unwrap_or(symbol_name);
     let rel_file = index_paths::graph_relative_key(file_part, root);
 
     let key = format!("{rel_file}::{symbol_name}");
@@ -167,19 +165,19 @@ fn handle_symbol(
             .to_string()
     };
 
-    render_symbol_snippet(&symbol, &abs_path, &rel_file, cache, crp_mode)
+    render_symbol_snippet(&symbol, &abs_path, &rel_file)
 }
 
 /// Resolve a bare symbol name (no `<file>::` qualifier) against the symbol table.
 /// One unambiguous hit renders the snippet; otherwise the candidates are listed
 /// so the caller can disambiguate with `<file>::<symbol>`.
-fn resolve_bare_symbol(
-    provider: &GraphProvider,
-    name: &str,
-    root: &str,
-    cache: &mut crate::core::cache::SessionCache,
-    crp_mode: crate::tools::CrpMode,
-) -> String {
+/// Whether `spec` names a file (`src/lib.rs`, `lib.rs`) rather than a type
+/// or module (`Config`, `util`).
+fn looks_like_file(spec: &str) -> bool {
+    spec.contains(['/', '\\']) || Path::new(spec).extension().is_some_and(|e| !e.is_empty())
+}
+
+fn resolve_bare_symbol(provider: &GraphProvider, name: &str, root: &str) -> String {
     let matches = provider.find_symbols(name, None, None);
     if matches.is_empty() {
         return format!(
@@ -198,7 +196,7 @@ fn resolve_bare_symbol(
             .join(only.file.trim_start_matches(['/', '\\']))
             .to_string_lossy()
             .to_string();
-        return render_symbol_snippet(only, &abs_path, &only.file, cache, crp_mode);
+        return render_symbol_snippet(only, &abs_path, &only.file);
     }
 
     // Several identically-named symbols, or only substring hits → list them.
@@ -214,7 +212,7 @@ fn resolve_bare_symbol(
     for s in shortlist.iter().take(15) {
         lines.push(format!(
             "  {}::{} ({}, {}:{})",
-            crate::core::protocol::shorten_path(&s.file),
+            crate::core::protocol::display_path(&s.file),
             s.name,
             s.kind,
             s.start_line,
@@ -230,8 +228,6 @@ fn render_symbol_snippet(
     symbol: &graph_provider::SymbolInfo,
     abs_path: &str,
     rel_display: &str,
-    cache: &mut crate::core::cache::SessionCache,
-    crp_mode: crate::tools::CrpMode,
 ) -> String {
     let content = match std::fs::read_to_string(abs_path) {
         Ok(c) => c,
@@ -243,12 +239,19 @@ fn render_symbol_snippet(
     let end = symbol.end_line.min(lines.len());
 
     if start >= lines.len() {
-        return crate::tools::sobre_read::handle(cache, abs_path, "full", crp_mode);
+        return format!(
+            "ERROR: {} is at lines {}-{} of {rel_display}, which has {} lines: the graph \
+             is out of date. Run sobre_graph action=build.",
+            symbol.name,
+            symbol.start_line,
+            symbol.end_line,
+            lines.len()
+        );
     }
 
     let mut result = format!(
         "{}::{} ({}:{}-{})\n",
-        crate::core::protocol::shorten_path(rel_display),
+        crate::core::protocol::display_path(rel_display),
         symbol.name,
         symbol.kind,
         symbol.start_line,
@@ -385,13 +388,7 @@ mod gdscript_p0_tests {
         let _lock = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = godot_fixture();
         let _ = handle_build(&root);
-        let mut cache = crate::core::cache::SessionCache::new();
-        let out = handle_symbol(
-            Some("_ready"),
-            &root,
-            &mut cache,
-            crate::tools::CrpMode::Off,
-        );
+        let out = handle_symbol(Some("_ready"), &root);
         // Four `_ready` defs → a disambiguation list (or a snippet), never the
         // the old "Invalid symbol spec" / "not found" errors.
         assert!(out.contains("_ready"), "bare symbol should resolve: {out}");

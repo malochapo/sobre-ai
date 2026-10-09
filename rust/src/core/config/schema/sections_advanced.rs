@@ -20,17 +20,22 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u16?",
             serde_json::json!(null),
-            "Port the proxy listens on (default: 4444 on Windows and for system users; 4444 + (uid - 1000) mod 1000 for other Unix users)",
+            "Port the proxy listens on (default: 4444 + uid mod 1000 on Unix, 4444 on Windows)",
         ),
     );
     for id in crate::core::config::upstream_ids() {
+        let default = if id == "anthropic" {
+            "https://api.anthropic.com"
+        } else {
+            "https://api.openai.com"
+        };
         proxy.insert(
             format!("upstreams.{id}"),
             key(
                 "string?",
                 serde_json::json!(null),
                 &format!(
-                    "Upstream URL for the {id} provider (unset = its default). Writing a URL is the opt-in for a custom or plaintext host"
+                    "Upstream URL for the {id} provider (unset = {default}). Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)"
                 ),
             ),
         );
@@ -38,7 +43,10 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     sections.insert(
         "proxy".into(),
         SectionSchema {
-            description: "The local API proxy: switch, port and upstream URLs".into(),
+            description: "The local API proxy: switch, port and upstream URLs. Built in: \
+                          the proxy never compresses the results of tools whose name \
+                          contains `serena`, whose code reads it would otherwise cut."
+                .into(),
             keys: proxy,
         },
     );

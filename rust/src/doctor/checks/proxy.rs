@@ -120,18 +120,8 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
         return None;
     }
 
-    let settings_path = crate::core::editor_registry::claude_state_dir(&home).join("settings.json");
-    let content = std::fs::read_to_string(&settings_path).ok()?;
-    let doc: serde_json::Value = crate::core::jsonc::parse_jsonc(&content).ok()?;
-
-    let base_url = doc
-        .get("env")
-        .and_then(|e| e.get("ANTHROPIC_BASE_URL"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    // No local redirect → nothing to warn about.
-    if !crate::proxy_setup::is_local_sobre_url(base_url) {
+    // No redirect of sobre's → nothing to warn about.
+    if !crate::proxy_setup::claude_points_at_proxy(&home) {
         return None;
     }
 
@@ -169,14 +159,27 @@ pub(super) fn upstream_outcome(
         (
             "Anthropic",
             "proxy.upstreams.anthropic",
-            proxy.resolve_upstream(ProxyProvider::Anthropic),
+            proxy.resolve_upstream_checked(ProxyProvider::Anthropic),
         ),
         (
             "OpenAI",
             "proxy.upstreams.openai",
-            proxy.resolve_upstream(ProxyProvider::OpenAi),
+            proxy.resolve_upstream_checked(ProxyProvider::OpenAi),
         ),
     ];
+    // A configured value the proxy cannot use: it falls back to the
+    // provider's default, so requests meant elsewhere go to the provider.
+    for (label, key, resolved) in &checks {
+        if let Err(e) = resolved {
+            return Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Proxy upstream{RST}  {RED}invalid {label} upstream, the proxy uses the provider default: {e}{RST}  {YELLOW}set {key} to an http(s) URL{RST}"
+                ),
+            };
+        }
+    }
+    let checks = checks.map(|(label, key, resolved)| (label, key, resolved.unwrap_or_default()));
 
     let mut custom = Vec::new();
     let mut plaintext = Vec::new();
