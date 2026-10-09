@@ -121,14 +121,10 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     false
 }
 
+/// Installs and starts the autostart unit running `sobre proxy start` on
+/// `port`. False when the service manager did not start it, or there is none.
 pub fn install(port: u16, quiet: bool) -> bool {
-    let binary = find_binary();
-    if binary.is_empty() {
-        if !quiet {
-            tracing::error!("Cannot find sobre binary for autostart");
-        }
-        return false;
-    }
+    let binary = crate::core::portable_binary::resolve_portable_binary();
 
     #[cfg(target_os = "macos")]
     {
@@ -559,10 +555,6 @@ fn uninstall_systemd(quiet: bool) {
     if !quiet {
         println!("  Removed systemd service: {SYSTEMD_SERVICE}");
     }
-}
-
-pub fn find_binary() -> String {
-    crate::core::portable_binary::resolve_portable_binary()
 }
 
 #[cfg(test)]
