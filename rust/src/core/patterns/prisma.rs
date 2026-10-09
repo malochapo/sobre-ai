@@ -1,3 +1,4 @@
+use crate::core::compressor::strip_ansi;
 use crate::core::patterns::compact_lines;
 
 pub fn compress(cmd: &str, output: &str) -> Option<String> {
@@ -107,8 +108,4 @@ fn strip_noise(output: &str) -> String {
         .filter(|l| !l.is_empty() && !l.contains("████") && !l.contains("▀") && !l.contains("━"))
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn strip_ansi(s: &str) -> String {
-    crate::core::compressor::strip_ansi(s)
 }

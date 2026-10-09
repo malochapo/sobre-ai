@@ -1,3 +1,5 @@
+use crate::core::compressor::strip_ansi;
+
 pub fn compress(output: &str) -> Option<String> {
     if let Some(r) = try_cargo_test(output) {
         return Some(r);
@@ -383,10 +385,6 @@ fn try_vitest(output: &str) -> Option<String> {
     }
 
     Some(result)
-}
-
-fn strip_ansi(s: &str) -> String {
-    crate::core::compressor::strip_ansi(s)
 }
 
 fn try_rspec(output: &str) -> Option<String> {

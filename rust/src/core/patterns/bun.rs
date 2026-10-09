@@ -1,3 +1,4 @@
+use crate::core::compressor::strip_ansi;
 use crate::core::patterns::compact_lines;
 
 pub fn compress(cmd: &str, output: &str) -> Option<String> {
@@ -132,8 +133,4 @@ fn compress_build(output: &str) -> String {
         return result;
     }
     compact_lines(output, 10)
-}
-
-fn strip_ansi(s: &str) -> String {
-    crate::core::compressor::strip_ansi(s)
 }

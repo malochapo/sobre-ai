@@ -117,12 +117,15 @@ serde = { version = "1.0", features = ["derive"] }
 # preserve_order: agent configs are edited in place, and their keys must keep
 # the order the user wrote them in.
 serde_json = { version = "1.0", features = ["preserve_order"] }
-# Edits agent JSON/JSONC configs while keeping comments and formatting.
-jsonc-parser = { version = "0.34", default-features = false, features = ["cst", "serde_json"] }
+# Reads agent JSON/JSONC configs and edits them while keeping comments and
+# formatting.
+jsonc-parser = { version = "0.34", default-features = false, features = ["cst", "serde", "serde_json"] }
 subtle = "2.6"
 anyhow = "1.0"
 regex = "1.12"
 ignore = "0.4"
+# `sobre_search` and `sobre_glob` globs, with `{a,b}` alternation.
+globset = "0.4.19"
 lru = "0.18.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -205,6 +208,8 @@ base64 = "0.22"
 sha2 = "0.11"
 glob = "0.3"
 urlencoding = "2.1"
+strsim = "0.11.1"
+strip-ansi-escapes = "0.2.1"
 getrandom = "0.4"
 reqwest = { version = "0.13", default-features = false, features = [
   "rustls",

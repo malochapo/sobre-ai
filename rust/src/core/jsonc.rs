@@ -1,15 +1,28 @@
 use serde_json::Value;
 
-/// Strip `//` line comments, `/* */` block comments and trailing commas from
-/// JSONC, then parse with serde_json. String contents are preserved verbatim.
-///
-/// This makes sobre tolerant of the JSONC dialect that editors like VS Code
-/// use for `settings.json` / `mcp.json` (comments + trailing commas are valid
-/// there but rejected by strict JSON).
+/// The JSONC dialect editors like VS Code use for `settings.json` / `mcp.json`:
+/// JSON plus `//` and `/* */` comments and trailing commas. Everything else
+/// stays strict JSON.
+const JSONC: jsonc_parser::ParseOptions = jsonc_parser::ParseOptions {
+    allow_comments: true,
+    allow_trailing_commas: true,
+    allow_loose_object_property_names: false,
+    allow_missing_commas: false,
+    allow_single_quoted_strings: false,
+    allow_hexadecimal_numbers: false,
+    allow_unary_plus_numbers: false,
+    allow_bare_decimal_point_numbers: false,
+    allow_non_finite_numbers: false,
+    allow_extended_string_escapes: false,
+};
+
+/// Parses JSONC: JSON with comments and trailing commas. A text that holds no
+/// value (empty, or only comments) is an error.
 pub fn parse_jsonc(input: &str) -> Result<Value, serde_json::Error> {
-    let stripped = strip_json_comments(input);
-    let cleaned = strip_trailing_commas(&stripped);
-    serde_json::from_str(&cleaned)
+    use serde::de::Error;
+    jsonc_parser::parse_to_serde_value::<Option<Value>>(input, &JSONC)
+        .map_err(serde_json::Error::custom)?
+        .ok_or_else(|| serde_json::Error::custom("no JSON value"))
 }
 
 /// Renders `new` as an edit of `original`: properties and elements that did
@@ -107,111 +120,6 @@ fn to_input(value: &Value) -> jsonc_parser::cst::CstInputValue {
     }
 }
 
-fn strip_json_comments(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let len = bytes.len();
-    let mut out = String::with_capacity(len);
-    let mut i = 0;
-    let mut seg = 0;
-
-    while i < len {
-        let b = bytes[i];
-
-        if b == b'"' {
-            i += 1;
-            while i < len {
-                let c = bytes[i];
-                i += 1;
-                if c == b'\\' && i < len {
-                    i += 1;
-                } else if c == b'"' {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        if b == b'/' && i + 1 < len {
-            if bytes[i + 1] == b'/' {
-                out.push_str(&input[seg..i]);
-                i += 2;
-                while i < len && bytes[i] != b'\n' {
-                    i += 1;
-                }
-                seg = i;
-                continue;
-            }
-            if bytes[i + 1] == b'*' {
-                out.push_str(&input[seg..i]);
-                i += 2;
-                while i + 1 < len {
-                    if bytes[i] == b'*' && bytes[i + 1] == b'/' {
-                        i += 2;
-                        break;
-                    }
-                    i += 1;
-                }
-                seg = i;
-                continue;
-            }
-        }
-
-        i += 1;
-    }
-
-    out.push_str(&input[seg..]);
-    out
-}
-
-/// Remove trailing commas that appear before a closing `}` or `]`.
-/// String contents are preserved verbatim (commas inside strings are ignored).
-///
-/// Operates on already comment-stripped input. Uses byte-segment copying so
-/// multi-byte UTF-8 sequences are never split (all decision bytes are ASCII).
-fn strip_trailing_commas(input: &str) -> String {
-    let bytes = input.as_bytes();
-    let len = bytes.len();
-    let mut out = String::with_capacity(len);
-    let mut i = 0;
-    let mut seg = 0;
-
-    while i < len {
-        let b = bytes[i];
-
-        if b == b'"' {
-            i += 1;
-            while i < len {
-                let c = bytes[i];
-                i += 1;
-                if c == b'\\' && i < len {
-                    i += 1;
-                } else if c == b'"' {
-                    break;
-                }
-            }
-            continue;
-        }
-
-        if b == b',' {
-            let mut j = i + 1;
-            while j < len && bytes[j].is_ascii_whitespace() {
-                j += 1;
-            }
-            if j < len && (bytes[j] == b'}' || bytes[j] == b']') {
-                out.push_str(&input[seg..i]);
-                i += 1;
-                seg = i;
-                continue;
-            }
-        }
-
-        i += 1;
-    }
-
-    out.push_str(&input[seg..]);
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,6 +182,15 @@ mod tests {
     #[test]
     fn empty_input() {
         assert!(parse_jsonc("").is_err());
+        assert!(parse_jsonc("// nothing\n/* here */").is_err());
+    }
+
+    /// Comments and trailing commas are the only additions to JSON.
+    #[test]
+    fn json5_extensions_stay_rejected() {
+        for text in ["{'a': 1}", "{a: 1}", "[0x10]", "[+1]", "[.5]", "[1 2]"] {
+            assert!(parse_jsonc(text).is_err(), "{text} must not parse");
+        }
     }
 
     // --- trailing comma support (VS Code / JSONC dialect) ---
