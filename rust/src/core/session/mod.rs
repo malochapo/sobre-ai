@@ -113,6 +113,17 @@ mod tests {
         }
     }
 
+    /// A long file summary is cut on a character boundary.
+    #[test]
+    fn file_summary_truncates_multibyte_text() {
+        let mut session = SessionState::new();
+        session.touch_file("src/a.rs", None, "full", 10);
+        session.set_file_summary("src/a.rs", &"я".repeat(60));
+        let summary = session.files_touched[0].summary.clone().unwrap();
+        assert!(summary.ends_with('…'));
+        assert!(summary.len() <= 80 + '…'.len_utf8());
+    }
+
     #[test]
     fn extract_cd_with_semicolon() {
         let result = extract_cd_target("cd /tmp; ls", "/home/user");

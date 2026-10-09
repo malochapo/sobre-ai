@@ -167,7 +167,7 @@ impl SessionState {
     pub fn set_file_summary(&mut self, path: &str, summary: &str) {
         if let Some(existing) = self.files_touched.iter_mut().find(|f| f.path == path) {
             let truncated = if summary.len() > 80 {
-                format!("{}…", &summary[..79])
+                format!("{}…", &summary[..summary.floor_char_boundary(79)])
             } else {
                 summary.to_string()
             };
