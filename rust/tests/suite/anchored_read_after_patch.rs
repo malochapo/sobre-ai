@@ -17,7 +17,6 @@ fn ctx_for(root: &std::path::Path, file: &str) -> ToolContext {
     resolved_paths.insert("path".to_string(), file.to_string());
     ToolContext {
         project_root: root.to_string_lossy().to_string(),
-        extra_roots: Vec::new(),
         resolved_paths,
         crp_mode: sobre::tools::CrpMode::Off,
         cache: Some(cache),
@@ -88,15 +87,8 @@ async fn anchored_window_survives_ctx_patch() {
     let after = tokio::task::block_in_place(|| SobreReadTool.handle(&read_args, &ctx)).unwrap();
     assert!(
         after.text.lines().count() < 8,
-        "post-edit anchored window LEAKED the whole file: {} lines (mode={:?})\n{}",
+        "post-edit anchored window LEAKED the whole file: {} lines\n{}",
         after.text.lines().count(),
-        after.mode,
         after.text
-    );
-    assert_eq!(
-        after.mode.as_deref(),
-        Some("anchored:5-7"),
-        "post-edit read must stay a windowed anchored read, got mode={:?}",
-        after.mode
     );
 }

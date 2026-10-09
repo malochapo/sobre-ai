@@ -23,7 +23,6 @@ use super::types::{ConsolidatedInsight, KnowledgeFact, ProjectKnowledge, Project
 /// for outbound renderings (ctxpkg, OKF).
 #[derive(Debug, Clone)]
 pub struct KnowledgeSnapshot {
-    pub project_root: String,
     pub project_hash: String,
     /// All facts, including superseded ones (ctxpkg keeps the history).
     pub facts: Vec<KnowledgeFact>,
@@ -51,7 +50,6 @@ impl KnowledgeSnapshot {
     /// already hold the knowledge (e.g. inside a lock).
     pub fn from_project(knowledge: &ProjectKnowledge, relations: Vec<KnowledgeEdge>) -> Self {
         Self {
-            project_root: knowledge.project_root.clone(),
             project_hash: knowledge.project_hash.clone(),
             facts: knowledge.facts.clone(),
             patterns: knowledge.patterns.clone(),

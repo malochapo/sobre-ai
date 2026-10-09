@@ -17,7 +17,6 @@ fn recent_sessions_line_names_each_workspace_once_with_age() {
     let now = chrono::Utc::now();
     let mk = |root: Option<&str>, mins_ago: i64| SessionSummary {
         id: format!("s{mins_ago}"),
-        started_at: now - chrono::Duration::minutes(mins_ago + 5),
         updated_at: now - chrono::Duration::minutes(mins_ago),
         version: 1,
         task: None,

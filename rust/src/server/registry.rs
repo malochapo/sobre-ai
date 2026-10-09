@@ -37,10 +37,6 @@ impl ToolRegistry {
         self.tools.get(name).cloned()
     }
 
-    pub fn contains(&self, name: &str) -> bool {
-        self.tools.contains_key(name)
-    }
-
     /// Returns MCP Tool definitions for all registered tools.
     /// Used by `list_tools` to expose schemas to clients.
     /// Applies MCP `ToolAnnotations` (readOnlyHint, destructiveHint) so clients
@@ -51,12 +47,8 @@ impl ToolRegistry {
         crate::tool_defs::apply_tool_annotations(defs)
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.tools.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.tools.is_empty()
     }
 
     pub fn names(&self) -> Vec<&'static str> {

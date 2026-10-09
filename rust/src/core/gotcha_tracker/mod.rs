@@ -3,9 +3,7 @@ mod model;
 mod persist;
 mod runtime;
 
-pub use detect::{
-    DetectedError, detect_error_pattern, is_correlatable_command, normalize_error_signature,
-};
+pub use detect::{detect_error_pattern, normalize_error_signature};
 pub use model::{
     ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStore,
     PendingError, SessionErrorLog,
@@ -493,10 +491,13 @@ mod tests {
             "docker build .",
             "git rebase main",
         ] {
-            assert!(is_correlatable_command(cmd), "should correlate: {cmd}");
+            assert!(
+                detect::is_correlatable_command(cmd),
+                "should correlate: {cmd}"
+            );
         }
         for cmd in ["ls -la", "cat README.md", "echo hi", "cd rust", "pwd"] {
-            assert!(!is_correlatable_command(cmd), "should skip: {cmd}");
+            assert!(!detect::is_correlatable_command(cmd), "should skip: {cmd}");
         }
     }
 }

@@ -128,7 +128,6 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     debug_log::log_hook_decision(
         "read-dedup",
         "Read",
-        Route::Sobre,
         &path,
         "re-read of unchanged file → dedup stub",
     );

@@ -44,7 +44,6 @@ pub struct CacheEntry {
     pub line_count: usize,
     pub original_tokens: usize,
     read_count: AtomicU32,
-    pub path: String,
     last_access: AtomicU64,
     pub stored_mtime: Option<SystemTime>,
     /// Mode-specific compressed outputs (e.g. "map", "signatures") cached to avoid re-parsing.
@@ -80,7 +79,6 @@ impl CacheEntry {
         hash: String,
         line_count: usize,
         original_tokens: usize,
-        path: String,
         stored_mtime: Option<SystemTime>,
     ) -> Self {
         let compressed_content = zstd_compress(content);
@@ -90,7 +88,6 @@ impl CacheEntry {
             line_count,
             original_tokens,
             read_count: AtomicU32::new(1),
-            path,
             last_access: AtomicU64::new(encode_instant(Instant::now())),
             stored_mtime,
             compressed_outputs: HashMap::new(),
@@ -106,8 +103,8 @@ impl CacheEntry {
     }
 
     /// Atomically increments the read count and returns the new value (lock-free).
-    pub fn bump_read_count(&self) -> u32 {
-        self.read_count.fetch_add(1, Ordering::Relaxed) + 1
+    pub fn bump_read_count(&self) {
+        self.read_count.fetch_add(1, Ordering::Relaxed);
     }
 
     #[cfg(test)]
@@ -142,11 +139,6 @@ impl CacheEntry {
     pub fn set_content(&mut self, content: &str) {
         self.compressed_content = zstd_compress(content);
     }
-
-    /// Approximate RAM usage of the compressed content in bytes.
-    pub fn compressed_size(&self) -> usize {
-        self.compressed_content.len()
-    }
 }
 
 /// Result of a cache store operation, indicating whether it was a hit or new entry.
@@ -154,10 +146,7 @@ impl CacheEntry {
 pub struct StoreResult {
     pub line_count: usize,
     pub original_tokens: usize,
-    pub read_count: u32,
     pub was_hit: bool,
-    /// Whether full content was previously delivered for this cache entry.
-    pub full_content_delivered: bool,
 }
 
 impl CacheEntry {
@@ -310,8 +299,8 @@ impl SessionCache {
         }
     }
 
-    /// Close the current co-access burst so its associations are committed.
-    /// Call at the end of a logical tool call (post-dispatch).
+    /// Commit the pending co-access burst now (tests; production commits it
+    /// on the first access after the burst window).
     #[cfg(test)]
     pub fn flush_co_access(&mut self) {
         self.co_access.end_burst();
@@ -410,13 +399,11 @@ impl SessionCache {
                 existing.stored_mtime = stored_mtime;
             }
             if existing.hash == hash {
-                let new_count = existing.bump_read_count();
+                existing.bump_read_count();
                 return StoreResult {
                     line_count: existing.line_count,
                     original_tokens: existing.original_tokens,
-                    read_count: new_count,
                     was_hit: true,
-                    full_content_delivered: existing.full_content_delivered,
                 };
             }
             existing.compressed_outputs.clear();
@@ -424,7 +411,7 @@ impl SessionCache {
             existing.hash = hash;
             existing.line_count = line_count;
             existing.original_tokens = original_tokens;
-            let new_count = existing.bump_read_count();
+            existing.bump_read_count();
             existing.full_content_delivered = false;
             existing.delivered_conversation = None;
             if stored_mtime.is_some() {
@@ -433,31 +420,20 @@ impl SessionCache {
             return StoreResult {
                 line_count,
                 original_tokens,
-                read_count: new_count,
                 was_hit: false,
-                full_content_delivered: false,
             };
         }
 
         self.evict_if_needed(original_tokens);
         self.get_file_ref(&key);
 
-        let entry = CacheEntry::new(
-            content,
-            hash,
-            line_count,
-            original_tokens,
-            key.clone(),
-            stored_mtime,
-        );
+        let entry = CacheEntry::new(content, hash, line_count, original_tokens, stored_mtime);
 
         self.entries.insert(key, entry);
         StoreResult {
             line_count,
             original_tokens,
-            read_count: 1,
             was_hit: false,
-            full_content_delivered: false,
         }
     }
 
@@ -881,8 +857,8 @@ mod tests {
         let key_b = "b.rs".to_string();
         // Construct entries first so the global instant base is initialized,
         // then assign access times relative to a post-init reference.
-        let recent = CacheEntry::new("a", "h1".to_string(), 1, 10, "/a.rs".to_string(), None);
-        let old = CacheEntry::new("b", "h2".to_string(), 1, 10, "/b.rs".to_string(), None);
+        let recent = CacheEntry::new("a", "h1".to_string(), 1, 10, None);
+        let old = CacheEntry::new("b", "h2".to_string(), 1, 10, None);
         let t_old = Instant::now();
         std::thread::sleep(std::time::Duration::from_millis(10));
         let t_recent = Instant::now();
@@ -905,11 +881,11 @@ mod tests {
         let key_a = "a.rs".to_string();
         let key_b = "b.rs".to_string();
         let frequent = {
-            let e = CacheEntry::new("a", "h1".to_string(), 1, 10, "/a.rs".to_string(), None);
+            let e = CacheEntry::new("a", "h1".to_string(), 1, 10, None);
             e.set_read_count(20);
             e
         };
-        let rare = CacheEntry::new("b", "h2".to_string(), 1, 10, "/b.rs".to_string(), None);
+        let rare = CacheEntry::new("b", "h2".to_string(), 1, 10, None);
         let entries: Vec<(&String, &CacheEntry)> = vec![(&key_a, &frequent), (&key_b, &rare)];
         let scores = eviction_scores_rrf(&entries, now);
         let score_a = scores.iter().find(|(p, _)| p == "a.rs").unwrap().1;

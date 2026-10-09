@@ -320,6 +320,7 @@ pub fn handle_with_task(
 }
 
 /// Like `handle_with_task`, also returns the resolved mode name and pre-counted tokens.
+#[cfg(any(test, feature = "test-support"))]
 pub fn handle_with_task_resolved(
     cache: &mut SessionCache,
     path: &str,

@@ -201,7 +201,6 @@ impl SessionState {
                 {
                     summaries.push(SessionSummary {
                         id: session.id,
-                        started_at: session.started_at,
                         updated_at: session.updated_at,
                         version: session.version,
                         task: session.task.as_ref().map(|t| t.description.clone()),

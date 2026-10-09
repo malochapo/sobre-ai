@@ -55,11 +55,7 @@ impl SobreServer {
             return Ok(result);
         }
 
-        let is_raw_shell = name == "sobre_shell" && {
-            let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
-            let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
-            arg_raw || arg_bypass
-        };
+        let is_raw_shell = name == "sobre_shell" && helpers::get_bool(args, "raw").unwrap_or(false);
 
         let pre_terse_len = result_text.len();
         let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;

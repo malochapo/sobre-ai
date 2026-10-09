@@ -123,14 +123,6 @@ impl DiagnosticsStore {
         found
     }
 
-    pub fn for_path(&self, path: &str) -> Vec<&Diagnostic> {
-        let norm = crate::core::pathutil::normalize_tool_path(path);
-        self.diagnostics
-            .iter()
-            .filter(|d| norm.ends_with(&d.path) || d.path.ends_with(&norm))
-            .collect()
-    }
-
     pub fn save(&self) -> std::io::Result<()> {
         let path = store_path().ok_or_else(|| std::io::Error::other("no data dir"))?;
         if let Some(parent) = path.parent() {
@@ -193,19 +185,6 @@ pub fn snapshot() -> Vec<(String, Severity)> {
             s.diagnostics
                 .iter()
                 .map(|d| (d.path.clone(), d.severity))
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-/// Diagnostics for one path: `(line, severity, message)` triples.
-pub fn details_for(path: &str) -> Vec<(Option<u32>, Severity, String)> {
-    global()
-        .lock()
-        .map(|s| {
-            s.for_path(path)
-                .into_iter()
-                .map(|d| (d.line, d.severity, d.message.clone()))
                 .collect()
         })
         .unwrap_or_default()

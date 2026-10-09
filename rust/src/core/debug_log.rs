@@ -6,11 +6,8 @@
 //! 1. **MCP tool calls** handled by the sobre server (`sobre_*`) — tool name, a
 //!    redacted argument summary, a one-line result preview, byte size, token
 //!    savings and wall time.
-//! 2. **Hook routing decisions** — for every native tool call sobre *can*
-//!    intercept (shell / Read / Grep), whether it was routed to `sobre` or
-//!    left to the editor's **native** tool, and *why*. This is the core ask:
-//!    explain why one call used sobre and the next fell back to the native
-//!    Read/Grep tool.
+//! 2. **Hook actions** — each native tool call a hook changed (a wrapped shell
+//!    command, a re-read replaced by a stub), with the reason.
 //!
 //! All writes are best-effort and never panic — logging must never break a hook
 //! subprocess or a tool call. Secrets in arguments/commands/results are scrubbed
@@ -30,24 +27,6 @@ const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 /// result cannot dominate the file (or leak a large blob). Bytes; clamped on a
 /// UTF-8 char boundary.
 const FIELD_CLAMP: usize = 200;
-
-/// Where a hook sent an intercepted native tool call.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Route {
-    /// Rewritten / redirected through sobre (compression + caching).
-    Sobre,
-    /// Left to the editor's native tool.
-    Native,
-}
-
-impl Route {
-    fn label(self) -> &'static str {
-        match self {
-            Route::Sobre => "sobre",
-            Route::Native => "native",
-        }
-    }
-}
 
 /// Whether the opt-in debug log is active.
 /// Set by the `debug_log` config key, which hook subprocesses read too.
@@ -97,17 +76,16 @@ pub fn log_mcp_error(tool: &str, args: Option<&Map<String, Value>>, error: &str)
     ));
 }
 
-/// Record a hook routing decision for an intercepted native tool call.
+/// Record a native tool call a hook changed.
 ///
-/// `subject` is the command / path / pattern that was inspected; `reason`
-/// explains the choice (e.g. `"rewritable shell command"`, `"sensitive path"`).
-pub fn log_hook_decision(event: &str, tool: &str, route: Route, subject: &str, reason: &str) {
+/// `subject` is the command or path it changed; `reason` says why (e.g.
+/// `"wrapped"`).
+pub fn log_hook_decision(event: &str, tool: &str, subject: &str, reason: &str) {
     if !is_enabled() {
         return;
     }
     append(&format!(
-        "hook {event} {tool} -> {} ({reason}): {}",
-        route.label(),
+        "hook {event} {tool} ({reason}): {}",
         clamp(&redact(subject))
     ));
 }
@@ -251,22 +229,14 @@ mod tests {
     }
 
     #[test]
-    fn hook_decision_records_route_and_reason() {
+    fn hook_decision_records_reason() {
         let iso = crate::core::data_dir::isolated_data_dir();
         enable(&iso);
 
-        log_hook_decision("rewrite", "Bash", Route::Sobre, "cat foo.rs", "rewritable");
-        log_hook_decision(
-            "redirect",
-            "Read",
-            Route::Native,
-            "/etc/passwd",
-            "sensitive path",
-        );
+        log_hook_decision("rewrite", "Bash", "cat foo.rs", "wrapped");
 
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
-        assert!(content.contains("hook rewrite Bash -> sobre (rewritable): cat foo.rs"));
-        assert!(content.contains("hook redirect Read -> native (sensitive path): /etc/passwd"));
+        assert!(content.contains("hook rewrite Bash (wrapped): cat foo.rs"));
     }
 
     #[test]

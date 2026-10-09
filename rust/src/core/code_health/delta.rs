@@ -18,11 +18,6 @@ pub struct CognitiveDelta {
 }
 
 impl CognitiveDelta {
-    /// Signed change (positive = got more complex).
-    pub fn increase(&self) -> i64 {
-        i64::from(self.after) - i64::from(self.before)
-    }
-
     #[cfg(test)]
     /// True when the edit pushed a previously-acceptable function over
     /// `threshold` (the case `gate="block"` refuses).
@@ -107,7 +102,6 @@ mod tests {
         assert_eq!(deltas[0].name, "f");
         assert_eq!(deltas[0].before, 1);
         assert_eq!(deltas[0].after, 3);
-        assert_eq!(deltas[0].increase(), 2);
     }
 
     #[test]

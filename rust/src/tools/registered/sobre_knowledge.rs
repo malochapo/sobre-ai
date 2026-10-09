@@ -131,7 +131,6 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
 
             if trigger.is_empty() || resolution.is_empty() {
                 return Ok(text_output(
-                    &action,
                     "ERROR: trigger and resolution are required for gotcha action".to_string(),
                 ));
             }
@@ -149,7 +148,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 }
             };
             let _ = store.save(&project_root);
-            return Ok(text_output(&action, msg));
+            return Ok(text_output(msg));
         }
 
         // Restore (Phase 6): explicit cross-store undo from archive. Handled
@@ -160,10 +159,9 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 Some(s) => match crate::core::memory_archive::MemoryStore::parse(s) {
                     Some(ms) => Some(ms),
                     None => {
-                        return Ok(text_output(
-                            &action,
-                            format!("Unknown store: {s}. Use: facts, history, patterns"),
-                        ));
+                        return Ok(text_output(format!(
+                            "Unknown store: {s}. Use: facts, history, patterns"
+                        )));
                     }
                 },
                 None => None,
@@ -178,7 +176,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 Ok(report) => crate::tools::sobre_knowledge::format_restore_report(&report),
                 Err(e) => e,
             };
-            return Ok(text_output(&action, text));
+            return Ok(text_output(text));
         }
 
         // Dry-run consolidate: preview imports + reclaim with no writes.
@@ -194,7 +192,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                 Ok(report) => crate::tools::sobre_knowledge::format_consolidation_report(&report),
                 Err(e) => e,
             };
-            return Ok(text_output(&action, text));
+            return Ok(text_output(text));
         }
 
         // Export/import handled inline so `format`/`path`/`merge` stay off the
@@ -211,27 +209,23 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             } else {
                 crate::tools::sobre_knowledge::handle_export(&project_root, io_path.as_deref())
             };
-            return Ok(text_output(&action, text));
+            return Ok(text_output(text));
         }
         if action == "import" {
             let Some(path) = io_path.or_else(|| query.clone()) else {
                 return Ok(text_output(
-                    &action,
                     "ERROR: import requires `path` (a file or an OKF directory)".to_string(),
                 ));
             };
             let merge = get_str(args, "merge")
                 .and_then(|s| crate::core::knowledge::ImportMerge::parse(&s))
                 .unwrap_or(crate::core::knowledge::ImportMerge::SkipExisting);
-            return Ok(text_output(
-                &action,
-                crate::tools::sobre_knowledge::handle_import(
-                    &project_root,
-                    &path,
-                    merge,
-                    &session_id,
-                ),
-            ));
+            return Ok(text_output(crate::tools::sobre_knowledge::handle_import(
+                &project_root,
+                &path,
+                merge,
+                &session_id,
+            )));
         }
 
         let result = crate::tools::sobre_knowledge::handle(
@@ -249,19 +243,17 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
             as_of.as_deref(),
         );
 
-        Ok(text_output(&action, result))
+        Ok(text_output(result))
     }
 }
 
-/// A plain text `ToolOutput` tagged with the action as its mode. `sobre_knowledge`
-/// results are already compressed prose, so token accounting is left at zero.
-fn text_output(action: &str, text: String) -> ToolOutput {
+/// A plain text `ToolOutput`. `sobre_knowledge` results are already
+/// compressed prose, so token accounting is left at zero.
+fn text_output(text: String) -> ToolOutput {
     ToolOutput {
         text,
         original_tokens: 0,
         saved_tokens: 0,
-        mode: Some(action.to_string()),
-        path: None,
         shell_outcome: None,
         content_blocks: None,
     }

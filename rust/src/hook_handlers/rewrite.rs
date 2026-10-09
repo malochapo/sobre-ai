@@ -21,7 +21,7 @@ use super::{
     is_shell_tool, payload, read_stdin_with_timeout, resolve_binary,
 };
 use crate::compound_lexer;
-use crate::core::debug_log::{self, Route};
+use crate::core::debug_log;
 
 pub fn handle_cursor() {
     emit_gating_decision(HOOK_GATING_TIMEOUT, || compute(Host::Cursor));
@@ -56,7 +56,7 @@ fn compute(host: Host) -> String {
         let binary = resolve_binary();
         match rewrite_for(host, &cmd, &binary, &cwd) {
             Some(wrapped) => {
-                debug_log::log_hook_decision("rewrite", &tool, Route::Sobre, &cmd, "wrapped");
+                debug_log::log_hook_decision("rewrite", &tool, &cmd, "wrapped");
                 reply(host, args.as_ref(), &wrapped)
             }
             None => build_passthrough_output(),

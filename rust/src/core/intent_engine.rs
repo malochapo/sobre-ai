@@ -28,30 +28,6 @@ impl TaskType {
         }
     }
 
-    /// All task types in declaration order.
-    pub fn all() -> &'static [TaskType] {
-        &[
-            Self::Generate,
-            Self::FixBug,
-            Self::Refactor,
-            Self::Explore,
-            Self::Test,
-            Self::Debug,
-            Self::Config,
-            Self::Deploy,
-            Self::Review,
-        ]
-    }
-
-    pub fn thinking_budget(&self) -> ThinkingBudget {
-        match self {
-            Self::Generate | Self::FixBug | Self::Test | Self::Config | Self::Deploy => {
-                ThinkingBudget::Minimal
-            }
-            Self::Refactor | Self::Explore | Self::Debug | Self::Review => ThinkingBudget::Medium,
-        }
-    }
-
     pub fn output_format(&self) -> OutputFormat {
         match self {
             Self::Generate | Self::Test | Self::Config => OutputFormat::CodeOnly,
@@ -59,31 +35,6 @@ impl TaskType {
             Self::Explore | Self::Review => OutputFormat::ExplainConcise,
             Self::Debug => OutputFormat::Trace,
             Self::Deploy => OutputFormat::StepList,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ThinkingBudget {
-    Minimal,
-    Medium,
-    Trace,
-    Deep,
-}
-
-impl ThinkingBudget {
-    pub fn instruction(&self) -> &'static str {
-        match self {
-            Self::Minimal => "THINKING: Skip analysis. The task is clear — generate code directly.",
-            Self::Medium => {
-                "THINKING: 2-3 step analysis max. Identify what to change, then act. Do not over-analyze."
-            }
-            Self::Trace => {
-                "THINKING: Short trace only. Identify root cause in 3 steps max, then generate fix."
-            }
-            Self::Deep => {
-                "THINKING: Analyze structure and dependencies. Summarize findings concisely."
-            }
         }
     }
 }
@@ -413,12 +364,14 @@ fn extract_keywords(query: &str, lang: intent_lang::QueryLang) -> Vec<String> {
         .collect()
 }
 
-pub fn classify_complexity(
-    query: &str,
-    classification: &TaskClassification,
-) -> super::adaptive::TaskComplexity {
-    use super::adaptive::TaskComplexity;
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskComplexity {
+    Mechanical,
+    Standard,
+    Architectural,
+}
 
+pub fn classify_complexity(query: &str, classification: &TaskClassification) -> TaskComplexity {
     let q = query.to_lowercase();
     let word_count = q.split_whitespace().count();
     let target_count = classification.targets.len();
@@ -445,30 +398,6 @@ pub fn classify_complexity(
     } else {
         TaskComplexity::Standard
     }
-}
-
-pub fn detect_multi_intent(query: &str) -> Vec<TaskClassification> {
-    let delimiters = [" and then ", " then ", " also ", " + ", ". "];
-
-    let mut parts: Vec<&str> = vec![query];
-    for delim in &delimiters {
-        let mut new_parts = Vec::new();
-        for part in &parts {
-            for sub in part.split(delim) {
-                let trimmed = sub.trim();
-                if !trimmed.is_empty() {
-                    new_parts.push(trimmed);
-                }
-            }
-        }
-        parts = new_parts;
-    }
-
-    if parts.len() <= 1 {
-        return vec![classify(query)];
-    }
-
-    parts.iter().map(|part| classify(part)).collect()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -501,15 +430,15 @@ impl StructuredIntent {
             .filter(|t| t.contains('.') || t.contains('/'))
             .count();
         let scope = match complexity {
-            super::adaptive::TaskComplexity::Mechanical => IntentScope::SingleFile,
-            super::adaptive::TaskComplexity::Standard => {
+            TaskComplexity::Mechanical => IntentScope::SingleFile,
+            TaskComplexity::Standard => {
                 if file_targets > 1 {
                     IntentScope::MultiFile
                 } else {
                     IntentScope::SingleFile
                 }
             }
-            super::adaptive::TaskComplexity::Architectural => {
+            TaskComplexity::Architectural => {
                 let q = query.to_lowercase();
                 if q.contains("all files") || q.contains("everywhere") || q.contains("migration") {
                     IntentScope::ProjectWide
@@ -533,100 +462,6 @@ impl StructuredIntent {
             urgency,
             action_verb,
         }
-    }
-
-    pub fn from_file_patterns(touched_files: &[String]) -> Self {
-        if touched_files.is_empty() {
-            return Self {
-                task_type: TaskType::Explore,
-                confidence: 0.3,
-                targets: Vec::new(),
-                keywords: Vec::new(),
-                scope: IntentScope::SingleFile,
-                language_hint: None,
-                urgency: 0.0,
-                action_verb: None,
-            };
-        }
-
-        let has_tests = touched_files
-            .iter()
-            .any(|f| f.contains("test") || f.contains("spec"));
-        let has_config = touched_files.iter().any(|f| {
-            let p = std::path::Path::new(f.as_str());
-            let is_config_ext = p.extension().is_some_and(|e| {
-                e.eq_ignore_ascii_case("toml")
-                    || e.eq_ignore_ascii_case("yaml")
-                    || e.eq_ignore_ascii_case("yml")
-                    || e.eq_ignore_ascii_case("json")
-            });
-            is_config_ext || f.contains("config") || f.contains(".env")
-        });
-
-        let dirs: std::collections::HashSet<&str> = touched_files
-            .iter()
-            .filter_map(|f| std::path::Path::new(f).parent()?.to_str())
-            .collect();
-
-        let task_type = if has_tests && touched_files.len() <= 3 {
-            TaskType::Test
-        } else if has_config && touched_files.len() <= 2 {
-            TaskType::Config
-        } else if dirs.len() > 3 {
-            TaskType::Refactor
-        } else {
-            TaskType::Explore
-        };
-
-        let scope = match touched_files.len() {
-            1 => IntentScope::SingleFile,
-            2..=4 => IntentScope::MultiFile,
-            _ => IntentScope::CrossModule,
-        };
-
-        let language_hint = detect_language_from_files(touched_files);
-
-        Self {
-            task_type,
-            confidence: 0.5,
-            targets: touched_files.to_vec(),
-            keywords: Vec::new(),
-            scope,
-            language_hint,
-            urgency: 0.0,
-            action_verb: None,
-        }
-    }
-
-    pub fn from_query_with_session(query: &str, touched_files: &[String]) -> Self {
-        let mut intent = Self::from_query(query);
-
-        // Text signals too weak (unknown wording or language)? Behavioral
-        // signals from the session outrank a blind Explore fallback.
-        if intent.confidence < 0.5 && !touched_files.is_empty() {
-            let behavioral = Self::from_file_patterns(touched_files);
-            if behavioral.confidence > intent.confidence {
-                intent.task_type = behavioral.task_type;
-                intent.confidence = behavioral.confidence;
-                intent.scope = behavioral.scope;
-            }
-        }
-
-        if intent.language_hint.is_none() && !touched_files.is_empty() {
-            intent.language_hint = detect_language_from_files(touched_files);
-        }
-
-        if intent.scope == IntentScope::SingleFile && touched_files.len() > 3 {
-            let dirs: std::collections::HashSet<&str> = touched_files
-                .iter()
-                .filter_map(|f| std::path::Path::new(f).parent()?.to_str())
-                .collect();
-            if dirs.len() > 2 {
-                intent.scope = IntentScope::MultiFile;
-            }
-        }
-
-        intent
     }
 
     #[cfg(test)]
@@ -686,31 +521,6 @@ fn detect_language_hint(query: &str, targets: &[String]) -> Option<String> {
     }
 
     None
-}
-
-fn detect_language_from_files(files: &[String]) -> Option<String> {
-    let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-    for f in files {
-        let ext = std::path::Path::new(f)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        let lang = match ext {
-            "rs" => "rust",
-            "ts" | "tsx" => "typescript",
-            "js" | "jsx" => "javascript",
-            "py" => "python",
-            "go" => "go",
-            "rb" => "ruby",
-            "java" => "java",
-            _ => continue,
-        };
-        *counts.entry(lang).or_insert(0) += 1;
-    }
-    counts
-        .into_iter()
-        .max_by_key(|(_, c)| *c)
-        .map(|(l, _)| l.to_string())
 }
 
 fn detect_urgency(query: &str) -> f64 {
@@ -829,7 +639,7 @@ pub fn route_intent(query: &str, classification: &TaskClassification) -> IntentR
 
     let complexity = classify_complexity(query, classification);
     let tier = match complexity {
-        super::adaptive::TaskComplexity::Architectural => {
+        TaskComplexity::Architectural => {
             if base_tier == ModelTier::Fast {
                 ModelTier::Standard
             } else {
@@ -850,9 +660,9 @@ pub fn route_intent(query: &str, classification: &TaskClassification) -> IntentR
         classification.task_type.as_str(),
         base_dimension.as_str(),
         match complexity {
-            super::adaptive::TaskComplexity::Mechanical => "low ",
-            super::adaptive::TaskComplexity::Standard => "",
-            super::adaptive::TaskComplexity::Architectural => "high ",
+            TaskComplexity::Mechanical => "low ",
+            TaskComplexity::Standard => "",
+            TaskComplexity::Architectural => "high ",
         },
         tier.as_str()
     );
@@ -929,25 +739,10 @@ mod tests {
     }
 
     #[test]
-    fn multi_intent_detection() {
-        let results = detect_multi_intent("fix the bug in auth.rs and then write unit tests");
-        assert!(results.len() >= 2);
-        assert_eq!(results[0].task_type, TaskType::FixBug);
-        assert_eq!(results[1].task_type, TaskType::Test);
-    }
-
-    #[test]
-    fn single_intent_no_split() {
-        let results = detect_multi_intent("fix the bug in auth.rs");
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].task_type, TaskType::FixBug);
-    }
-
-    #[test]
     fn complexity_mechanical() {
         let r = classify("add a comment");
         let c = classify_complexity("add a comment", &r);
-        assert_eq!(c, super::super::adaptive::TaskComplexity::Mechanical);
+        assert_eq!(c, super::TaskComplexity::Mechanical);
     }
 
     #[test]
@@ -957,7 +752,7 @@ mod tests {
             "refactor auth across all files and update the migration",
             &r,
         );
-        assert_eq!(c, super::super::adaptive::TaskComplexity::Architectural);
+        assert_eq!(c, super::TaskComplexity::Architectural);
     }
 
     #[test]
@@ -1121,19 +916,6 @@ mod tests {
         assert!(intent.urgency > 0.5);
         assert_eq!(intent.task_type, TaskType::FixBug);
         assert!(intent.format_header().contains("URGENT"));
-    }
-
-    /// With weak text confidence, session file patterns outrank the
-    /// blind Explore fallback.
-    #[test]
-    fn behavioral_signals_beat_low_confidence_text() {
-        let touched = vec![
-            "tests/foo_test.rs".to_string(),
-            "tests/bar_test.rs".to_string(),
-        ];
-        let intent = StructuredIntent::from_query_with_session("xyz qqq bbb", &touched);
-        assert_eq!(intent.task_type, TaskType::Test);
-        assert!((intent.confidence - 0.5).abs() < f64::EPSILON);
     }
 
     #[test]

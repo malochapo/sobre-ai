@@ -10,7 +10,6 @@ mod codex_proxy;
 mod dual_process_rehydrate;
 mod index_scoping_scenarios;
 mod intensive_benchmarks;
-mod ledger_reset;
 mod memory_benchmark_suite;
 mod multi_read_cap_scenarios;
 mod output_contracts_knowledge;

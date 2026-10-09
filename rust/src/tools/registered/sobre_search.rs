@@ -283,8 +283,6 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
         text: final_out,
         original_tokens: total_observed,
         saved_tokens: saved,
-        mode: None,
-        path: None,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -375,8 +373,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
             text: result,
             original_tokens: original,
             saved_tokens: original.saturating_sub(sent),
-            mode: Some("handle".to_string()),
-            path: None,
             shell_outcome: None,
             content_blocks: None,
         });
@@ -395,8 +391,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
         text: result,
         original_tokens: original,
         saved_tokens: original.saturating_sub(sent),
-        mode: kind,
-        path: file,
         shell_outcome: None,
         content_blocks: None,
     })
@@ -450,8 +444,6 @@ fn semantic_output(text: String) -> ToolOutput {
         text,
         original_tokens: 0,
         saved_tokens: 0,
-        mode: Some("semantic".to_string()),
-        path: None,
         shell_outcome: None,
         content_blocks: None,
     }
@@ -515,8 +507,6 @@ fn search_single(
         text: final_out,
         original_tokens: observed,
         saved_tokens: saved,
-        mode: None,
-        path: Some(path.to_string()),
         shell_outcome: None,
         content_blocks: None,
     })
@@ -631,8 +621,6 @@ fn handle_batch_queries(
         text: final_out,
         original_tokens: total_observed,
         saved_tokens: saved,
-        mode: None,
-        path: None,
         shell_outcome: None,
         content_blocks: None,
     })

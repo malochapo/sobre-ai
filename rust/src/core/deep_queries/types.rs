@@ -23,8 +23,6 @@ pub enum ImportKind {
 pub struct CallSite {
     pub callee: String,
     pub line: usize,
-    pub col: usize,
-    pub receiver: Option<String>,
     pub is_method: bool,
 }
 

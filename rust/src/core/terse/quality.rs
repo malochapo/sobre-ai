@@ -7,20 +7,7 @@
 
 use std::collections::HashSet;
 
-#[derive(Debug, Clone)]
-pub struct QualityReport {
-    pub passed: bool,
-    pub savings_pct: f32,
-    pub paths_preserved: bool,
-    pub identifiers_preserved: bool,
-    pub paths_total: usize,
-    pub paths_found: usize,
-    pub identifiers_total: usize,
-    pub identifiers_found: usize,
-}
-
 pub struct QualityConfig {
-    pub min_savings_pct: f32,
     pub min_path_preservation: f32,
     pub min_identifier_preservation: f32,
     pub min_identifier_len: usize,
@@ -29,7 +16,6 @@ pub struct QualityConfig {
 impl Default for QualityConfig {
     fn default() -> Self {
         Self {
-            min_savings_pct: 3.0,
             min_path_preservation: 1.0,
             min_identifier_preservation: 0.90,
             min_identifier_len: 6,
@@ -37,20 +23,9 @@ impl Default for QualityConfig {
     }
 }
 
-/// Checks whether a compression result meets quality thresholds.
-pub fn check(
-    original: &str,
-    compressed: &str,
-    tokens_before: u32,
-    tokens_after: u32,
-    config: &QualityConfig,
-) -> QualityReport {
-    let savings_pct = if tokens_before > 0 && tokens_before >= tokens_after {
-        ((tokens_before - tokens_after) as f32 / tokens_before as f32) * 100.0
-    } else {
-        0.0
-    };
-
+/// Whether `compressed` keeps enough of the paths and identifiers in
+/// `original` to pass the quality gate.
+pub fn check(original: &str, compressed: &str, config: &QualityConfig) -> bool {
     let orig_paths = extract_paths(original);
     let comp_paths = extract_paths(compressed);
     let paths_found = orig_paths
@@ -73,18 +48,7 @@ pub fn check(
     let identifiers_preserved = orig_idents.is_empty()
         || (idents_found as f32 / orig_idents.len() as f32) >= config.min_identifier_preservation;
 
-    let passed = paths_preserved && identifiers_preserved;
-
-    QualityReport {
-        passed,
-        savings_pct,
-        paths_preserved,
-        identifiers_preserved,
-        paths_total: orig_paths.len(),
-        paths_found,
-        identifiers_total: orig_idents.len(),
-        identifiers_found: idents_found,
-    }
+    paths_preserved && identifiers_preserved
 }
 
 fn extract_paths(text: &str) -> HashSet<String> {
@@ -163,20 +127,14 @@ mod tests {
         let original =
             "src/main.rs: error[E0308]: mismatched types\nlong description here that is verbose";
         let compressed = "src/main.rs: err[E0308]: mismatched types";
-        let report = check(original, compressed, 100, 60, &QualityConfig::default());
-        assert!(report.paths_preserved);
+        assert!(check(original, compressed, &QualityConfig::default()));
     }
 
     #[test]
     fn quality_passes_when_identifiers_preserved() {
-        let report = check("hello", "hello", 100, 98, &QualityConfig::default());
         assert!(
-            report.passed,
+            check("hello", "hello", &QualityConfig::default()),
             "should pass when paths and identifiers are preserved"
-        );
-        assert!(
-            report.savings_pct < 3.0,
-            "savings should still be tracked as low"
         );
     }
 
@@ -184,8 +142,7 @@ mod tests {
     fn quality_fails_missing_path() {
         let original = "error in src/config.rs";
         let compressed = "error occurred";
-        let report = check(original, compressed, 100, 50, &QualityConfig::default());
-        assert!(!report.paths_preserved);
+        assert!(!check(original, compressed, &QualityConfig::default()));
     }
 
     /// A pure-digit, hex-shaped blob (e.g. an all-numeric slice of a
@@ -197,9 +154,8 @@ mod tests {
         let blob = "1".repeat(9) + &"2".repeat(9) + &"3".repeat(9);
         let original = format!("commit hash: {blob}");
         let compressed = "commit hash:";
-        let report = check(&original, compressed, 100, 10, &QualityConfig::default());
         assert!(
-            !report.identifiers_preserved,
+            !check(&original, compressed, &QualityConfig::default()),
             "dropping a pure-digit hash-shaped blob must fail the identifier gate"
         );
     }

@@ -18,7 +18,6 @@ use super::ProjectKnowledge;
 /// A knowledge store whose recorded `project_root` no longer exists on disk.
 #[derive(Debug, Clone)]
 pub struct OrphanedStore {
-    pub project_root: String,
     pub dir: PathBuf,
     pub size_bytes: u64,
 }
@@ -85,11 +84,7 @@ pub fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
         }
 
         let size_bytes = dir_size(&dir);
-        orphans.push(OrphanedStore {
-            project_root: store.project_root,
-            dir,
-            size_bytes,
-        });
+        orphans.push(OrphanedStore { dir, size_bytes });
     }
     orphans
 }

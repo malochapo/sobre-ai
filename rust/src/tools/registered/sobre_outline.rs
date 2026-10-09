@@ -66,8 +66,6 @@ impl McpTool for SobreOutlineTool {
             text: result,
             original_tokens: original,
             saved_tokens: saved,
-            mode: kind,
-            path: Some(path),
             shell_outcome: None,
             content_blocks: None,
         })

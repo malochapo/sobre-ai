@@ -13,8 +13,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // process entry to the completed MCP initialize handshake.
     let started_at = std::time::Instant::now();
 
-    crate::core::runtime_flags::enable_mcp_server();
-
     crate::core::startup_guard::crash_loop_backoff(crate::core::startup_guard::MCP_PROCESS_NAME);
 
     // Concurrency hardening:

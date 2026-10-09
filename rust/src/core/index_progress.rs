@@ -27,14 +27,6 @@ impl ProgressSnapshot {
     pub fn is_determinate(&self) -> bool {
         self.total > 0
     }
-
-    pub fn percent(&self) -> Option<u8> {
-        if self.total == 0 {
-            return None;
-        }
-        let pct = (self.done.saturating_mul(100)) / self.total;
-        Some(pct.min(100) as u8)
-    }
 }
 
 /// Clears the component counter when dropped (including panic unwind).
@@ -126,7 +118,6 @@ mod tests {
         let s = get(root, IndexComponent::Bm25);
         assert_eq!(s.done, 3);
         assert_eq!(s.total, 10);
-        assert_eq!(s.percent(), Some(30));
         assert!(s.is_determinate());
         clear(root, IndexComponent::Bm25);
         assert_eq!(get(root, IndexComponent::Bm25), ProgressSnapshot::default());
@@ -139,16 +130,6 @@ mod tests {
         report(root, IndexComponent::Graph, 0, 0);
         let s = get(root, IndexComponent::Graph);
         assert!(!s.is_determinate());
-        assert_eq!(s.percent(), None);
-        clear_root(root);
-    }
-
-    #[test]
-    fn percent_caps_at_100() {
-        let root = "__test_index_progress_pct__";
-        clear_root(root);
-        report(root, IndexComponent::Semantic, 15, 10);
-        assert_eq!(get(root, IndexComponent::Semantic).percent(), Some(100));
         clear_root(root);
     }
 

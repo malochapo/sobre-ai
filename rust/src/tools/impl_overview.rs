@@ -59,34 +59,12 @@ pub(crate) fn handle(
         let low: Vec<&_> = relevance.iter().filter(|r| r.score < 0.3).collect();
 
         if !high.is_empty() {
-            use crate::core::context_field::{ContextItemId, ContextKind, ViewCosts};
-            use crate::core::context_handles::HandleRegistry;
-
-            let mut handle_reg = HandleRegistry::new();
             output.push("▸ DIRECTLY RELEVANT (use sobre_read):".to_string());
             for r in &high {
-                let line_count = file_line_count(&r.path);
-                let item_id = ContextItemId::from_file(&r.path);
-                let view_costs = ViewCosts::from_full_tokens(line_count * 5);
-                let handle = handle_reg.register(
-                    item_id,
-                    ContextKind::File,
-                    &r.path,
-                    &format!(
-                        "{} {}L score={:.1}",
-                        short_path(&r.path),
-                        line_count,
-                        r.score
-                    ),
-                    &view_costs,
-                    r.score,
-                    false,
-                );
                 output.push(format!(
-                    "  @{} {} {}L  phi={:.2}  mode={}",
-                    handle.ref_label,
+                    "  {} {}L  score={:.2}  mode={}",
                     short_path(&r.path),
-                    line_count,
+                    file_line_count(&r.path),
                     r.score,
                     r.recommended_mode
                 ));

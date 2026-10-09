@@ -294,7 +294,7 @@ pub(crate) fn process_mode_tuned(
             // Quality gate — reject density output that breaks AST/symbols.
             // Use density-specific guard that only checks AST/identifiers,
             // not line count — density mode *intentionally* reduces lines.
-            let (guarded_output, _q) =
+            let guarded_output =
                 crate::core::quality::guard_density(content, &result.output, ext, target);
             let guarded_tokens = count_tokens(&guarded_output);
             let actual = if result.original_tokens > 0 {
@@ -810,7 +810,7 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
             tuning.protect,
         ),
     };
-    let avg_h = entropy::analyze_entropy(content).avg_entropy;
+    let avg_h = entropy::average_line_entropy(content);
     let header = build_header(short, ext, content, line_count, false);
     let output = format!(
         "{header} H̄={avg_h:.1}{}\n{}",

@@ -223,21 +223,6 @@ impl BM25Index {
         chunks_size + inverted_size + files_size + freqs_size
     }
 
-    /// Drops all in-memory data, effectively freeing heap. Index can be re-loaded from disk.
-    pub fn unload(&mut self) {
-        let usage = self.memory_usage_bytes();
-        self.chunks = Vec::new();
-        self.inverted = HashMap::new();
-        self.doc_freqs = HashMap::new();
-        self.files = HashMap::new();
-        self.avg_doc_len = 0.0;
-        self.doc_count = 0;
-        tracing::info!(
-            "[bm25] unloaded index, freed ~{:.1}MB",
-            usage as f64 / 1_048_576.0
-        );
-    }
-
     /// Shrinks each resident chunk's `content` to its first `keep_lines` lines,
     /// reclaiming the RAM held by the full source bodies once the embedding pass
     /// has already consumed them. The search path only ever reads

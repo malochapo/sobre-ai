@@ -224,39 +224,6 @@ impl EmbeddingIndex {
         self.dimensions != engine_dimensions && !self.entries.is_empty()
     }
 
-    /// Approximate heap memory used by this index in bytes.
-    pub fn memory_usage_bytes(&self) -> usize {
-        let entries_size: usize = self
-            .entries
-            .iter()
-            .map(|e| {
-                e.file_path.len()
-                    + e.symbol_name.len()
-                    + e.content_hash.len()
-                    + e.quant.code.len()
-                    + 4
-                    + 48
-            })
-            .sum();
-        let hashes_size: usize = self
-            .file_hashes
-            .iter()
-            .map(|(k, v)| k.len() + v.len() + 32)
-            .sum();
-        entries_size + hashes_size
-    }
-
-    /// Drops all in-memory data to free heap. Index can be re-loaded from disk.
-    pub fn unload(&mut self) {
-        let usage = self.memory_usage_bytes();
-        self.entries = Vec::new();
-        self.file_hashes = HashMap::new();
-        tracing::info!(
-            "[embeddings] unloaded index, freed ~{:.1}MB",
-            usage as f64 / 1_048_576.0
-        );
-    }
-
     /// Determine which files need re-embedding based on content hashes.
     ///
     /// When the index is empty (no prior embeddings), skips hash computation

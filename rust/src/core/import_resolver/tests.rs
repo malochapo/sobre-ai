@@ -4,14 +4,13 @@ use crate::core::deep_queries::{ImportInfo, ImportKind};
 fn make_ctx(files: &[&str]) -> ResolverContext {
     let file_paths: Vec<String> = files.iter().map(std::string::ToString::to_string).collect();
     ResolverContext {
-        project_root: PathBuf::from("/project"),
         file_paths: file_paths.clone(),
         tsconfig_paths: HashMap::new(),
         go_module: None,
         dart_package: None,
         file_set: file_paths.iter().cloned().collect(),
         csharp_ns_index: build_csharp_namespace_index(
-            &PathBuf::from("/project"),
+            &std::path::PathBuf::from("/project"),
             &file_paths,
             &HashMap::new(),
         ),

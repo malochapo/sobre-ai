@@ -62,11 +62,8 @@ Fields of `SobreServer` in `tools/server.rs`:
 | `cache` | `Arc<RwLock<SessionCache>>` | File content cache |
 | `session` | `Arc<RwLock<SessionState>>` | Session metadata |
 | `last_call` | `Arc<RwLock<Instant>>` | Idle-timeout tracking |
-| `agent_id` | `Arc<RwLock<Option<String>>>` | Current agent identifier |
-| `presence_agent_id` | `Arc<RwLock<Option<String>>>` | Agent id registered for this MCP process; used for presence heartbeats |
 | `client_name` | `Arc<RwLock<String>>` | Connected client name |
 | `refetch_signals` | `Arc<RwLock<RefetchSignals>>` | Re-reads, re-runs and expansions that tell compression it went too far |
-| `ledger` | `Arc<RwLock<ContextLedger>>` | Context ledger |
 | `peer` | `Arc<RwLock<Option<Peer<RoleServer>>>>` | MCP client peer handle |
 | `bm25_cache` | `Arc<std::sync::Mutex<Option<Bm25CacheEntry>>>` | Session BM25 index cache (`core/bm25_cache.rs`, `SharedBm25Cache`); a **`std::sync::Mutex`**, not tokio — never held across `.await` |
 

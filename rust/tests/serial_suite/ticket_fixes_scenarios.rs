@@ -253,15 +253,7 @@ fn ls_mixed_suffix_variants() {
 
 #[test]
 fn crash_hardening_no_remaining_unwrap_on_ctx_fields() {
-    const FIELDS: &[&str] = &[
-        "cache",
-        "session",
-        "workflow",
-        "agent_id",
-        "client_name",
-        "tool_calls",
-        "ledger",
-    ];
+    const FIELDS: &[&str] = &["cache", "session", "workflow", "client_name", "tool_calls"];
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools/registered");
     let mut scanned = 0;
     let mut hits = Vec::new();

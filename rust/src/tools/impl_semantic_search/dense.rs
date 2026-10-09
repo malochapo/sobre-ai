@@ -101,22 +101,18 @@ pub(crate) fn hybrid_ranked(
             }
             (results, 0.0, Some(dense_build_hint(pending, true)))
         } else {
-            let (aligned, coverage, changed_files) =
-                ensure_embeddings(root, index, engine, &mut embed_idx)?;
+            let (aligned, coverage) = ensure_embeddings(root, index, engine, &mut embed_idx)?;
             let pred = filter_pred(filter);
             let results = crate::core::dense_backend::hybrid_results(
-                crate::core::dense_backend::DenseBackendKind::Local,
-                root,
                 index,
                 engine,
                 &aligned,
-                &changed_files,
                 query,
                 candidate_k,
                 cfg,
                 filter.is_active().then_some(&pred as &dyn Fn(&str) -> bool),
                 graph_ranks.as_ref(),
-            )?;
+            );
             (results, coverage, None)
         };
 
@@ -146,16 +142,12 @@ pub(crate) fn dense_ranked(
     if let Some(pending) = cold_start_embed_guard(&embed_idx, index) {
         return Err(dense_build_hint(pending, true));
     }
-    let (aligned, coverage, changed_files) =
-        ensure_embeddings(root, index, engine, &mut embed_idx)?;
+    let (aligned, coverage) = ensure_embeddings(root, index, engine, &mut embed_idx)?;
     let pred = filter_pred(filter);
     let mut results = crate::core::dense_backend::dense_results_as_hybrid(
-        crate::core::dense_backend::DenseBackendKind::Local,
-        root,
         index,
         engine,
         &aligned,
-        &changed_files,
         query,
         filtered_candidate_k(top_k, filter.is_active()),
         filter.is_active().then_some(&pred as &dyn Fn(&str) -> bool),
@@ -251,10 +243,10 @@ pub(crate) fn load_engine_and_index(
 }
 
 /// Aligned embedding corpus as a single contiguous [`FlatEmbeddings`] allocation,
-/// plus coverage and the list of files re-embedded this call. The flat row-major
+/// plus coverage. The flat row-major
 /// layout gives sequential memory access during dot-product scoring — one
 /// dereference instead of the two-level indirection of `Arc<[Vec<f32>]>`.
-pub(crate) type AlignedEmbeddings = (FlatEmbeddings, f64, Vec<String>);
+pub(crate) type AlignedEmbeddings = (FlatEmbeddings, f64);
 
 pub(crate) fn ensure_embeddings(
     root: &Path,
@@ -278,7 +270,7 @@ pub(crate) fn ensure_embeddings(
                 .to_string()
         })?;
         let coverage = embed_idx.coverage(index.chunks.len());
-        return Ok((aligned, coverage, Vec::new()));
+        return Ok((aligned, coverage));
     }
 
     let mut changed_files = embed_idx.files_needing_update(&index.chunks);
@@ -316,7 +308,7 @@ pub(crate) fn ensure_embeddings(
 
     if let Some(aligned) = embed_idx.get_aligned_flat(&index.chunks) {
         let coverage = embed_idx.coverage(index.chunks.len());
-        return Ok((aligned, coverage, changed_files));
+        return Ok((aligned, coverage));
     }
 
     // Alignment missing: rebuild everything once via batched inference.
@@ -341,5 +333,5 @@ pub(crate) fn ensure_embeddings(
         .get_aligned_flat(&index.chunks)
         .ok_or_else(|| "embedding alignment failed after full rebuild".to_string())?;
     let coverage = embed_idx.coverage(index.chunks.len());
-    Ok((aligned, coverage, all_files))
+    Ok((aligned, coverage))
 }

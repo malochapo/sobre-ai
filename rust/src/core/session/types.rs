@@ -64,7 +64,6 @@ pub struct FileTouched {
     pub last_mode: String,
     pub tokens: usize,
     pub stale: bool,
-    pub context_item_id: Option<String>,
     /// One-line summary of file purpose/content (max 80 chars)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
@@ -87,7 +86,6 @@ pub struct EvidenceRecord {
     pub tool: Option<String>,
     pub input_hash: Option<String>,
     pub output_hash: Option<String>,
-    pub agent_id: Option<String>,
     pub client_name: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
@@ -124,7 +122,6 @@ pub struct PreparedSave {
 #[derive(Debug, Clone)]
 pub struct SessionSummary {
     pub id: String,
-    pub started_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub version: u32,
     pub task: Option<String>,
