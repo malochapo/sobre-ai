@@ -86,7 +86,7 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
   the capacity manager (`rust/src/core/memory_capacity.rs::reclaim_store`),
   which archives the evicted tail **before** removing it: when the archive
   cannot be written, nothing is removed.
-- **Lifecycle compaction** (`rust/src/core/memory_lifecycle.rs::compact`)
+- **Lifecycle compaction** (`rust/src/core/memory_lifecycle.rs::run_lifecycle`)
   removes facts of low confidence, stale facts, and facts never retrieved for
   `prune_unretrieved_after_days`, then archives them; a failed archive write
   is ignored.
