@@ -68,36 +68,11 @@ pub(super) fn print_check(outcome: &Outcome) {
 }
 
 pub(super) fn path_in_path_env() -> bool {
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            if dir.join("sobre").is_file() {
-                return true;
-            }
-            if cfg!(windows) && dir.join("sobre.exe").is_file() {
-                return true;
-            }
-        }
-    }
-    false
+    resolve_sobre_binary().is_some()
 }
 
 pub(super) fn resolve_sobre_binary() -> Option<PathBuf> {
-    if let Ok(path) = std::env::var("PATH") {
-        for dir in std::env::split_paths(&path) {
-            if cfg!(windows) {
-                let exe = dir.join("sobre.exe");
-                if exe.is_file() {
-                    return Some(exe);
-                }
-            } else {
-                let bin = dir.join("sobre");
-                if bin.is_file() {
-                    return Some(bin);
-                }
-            }
-        }
-    }
-    None
+    which::which("sobre").ok()
 }
 
 pub(super) fn sobre_version_from_path() -> Outcome {
@@ -324,21 +299,10 @@ pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String)> {
     ))
 }
 
+/// `claude` on PATH; on Windows that includes npm's `claude.cmd` shim, through
+/// PATHEXT.
 pub(super) fn claude_binary_exists() -> bool {
-    #[cfg(unix)]
-    {
-        std::process::Command::new("which")
-            .arg("claude")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
-    #[cfg(windows)]
-    {
-        std::process::Command::new("where")
-            .arg("claude")
-            .output()
-            .is_ok_and(|o| o.status.success())
-    }
+    which::which("claude").is_ok()
 }
 
 #[cfg(test)]

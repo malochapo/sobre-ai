@@ -222,7 +222,16 @@ moka = { version = "0.12", features = ["sync"] }
 postcard = { version = "1.1", features = ["use-std"] }
 zstd = "0.13"
 lsp-types = "0.97"
-fs2 = "0.4"
+# Content-Length framing and JSON-RPC message types for the language-server
+# client (`lsp/client.rs`); the crate serves clients as well as servers.
+lsp-server = "0.10"
+# File paths to percent-encoded `file://` URIs for the language-server client.
+# Already in the tree through reqwest.
+url = "2.5.8"
+# PATH lookup with the executable bit on Unix and PATHEXT on Windows.
+which = "8.0"
+# Process RSS and system RAM for the memory guard, on Linux, macOS and Windows.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 yaml_serde = "0.10.4"
 
 [lints.rust]
@@ -303,7 +312,6 @@ windows-sys = { version = "0.61", features = [
   "Win32_System_Threading",
   "Win32_Security",
   "Win32_System_Pipes",
-  "Win32_Storage_FileSystem",
 ] }
 
 [target.'cfg(not(windows))'.dependencies]

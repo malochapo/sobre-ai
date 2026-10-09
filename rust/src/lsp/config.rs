@@ -100,23 +100,6 @@ pub fn language_for_extension(ext: &str) -> Option<&'static str> {
     }
 }
 
-pub fn find_binary_in_path(binary: &str) -> Option<PathBuf> {
-    let path_var = std::env::var("PATH").ok()?;
-    for dir in std::env::split_paths(&path_var) {
-        let candidate = dir.join(binary);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        if cfg!(windows) {
-            let exe = dir.join(format!("{binary}.exe"));
-            if exe.is_file() {
-                return Some(exe);
-            }
-        }
-    }
-    None
-}
-
 pub fn install_hint_for_language(language: &str) -> &'static str {
     for info in KNOWN_SERVERS {
         if info.language == language {
@@ -132,7 +115,7 @@ pub fn check_server_available(language: &str) -> Result<PathBuf, String> {
         .get(language)
         .ok_or_else(|| format!("No LSP server configured for '{language}'"))?;
 
-    find_binary_in_path(&config.command).ok_or_else(|| {
+    which::which(&config.command).map_err(|_| {
         let hint = install_hint_for_language(language);
         format!(
             "Language server '{}' not found in PATH.\n\

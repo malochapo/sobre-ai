@@ -21,7 +21,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let startup_lock = crate::core::startup_guard::try_acquire_lock(
         "mcp-startup",
         std::time::Duration::from_secs(3),
-        std::time::Duration::from_secs(30),
     );
 
     let parallelism = std::thread::available_parallelism().map_or(2, std::num::NonZeroUsize::get);

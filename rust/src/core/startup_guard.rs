@@ -14,54 +14,13 @@ pub fn crash_loop_log_path(process_name: &str) -> Option<PathBuf> {
         .map(|dir| dir.join(format!(".{}-starts.log", sanitize_lock_name(process_name))))
 }
 
+/// A held cross-process lock: an OS advisory lock (`flock` on Unix,
+/// `LockFileEx` on Windows) on `.<name>.lock` in the data directory. The OS
+/// releases it when the guard drops or when its process dies, so no lock ever
+/// outlives its holder. The lock file itself stays, empty: deleting it while
+/// another process waits on it would let two holders lock two different files.
 pub struct StartupLockGuard {
-    path: PathBuf,
-}
-
-impl StartupLockGuard {
-    pub fn touch(&self) {
-        // Refresh the lock's mtime so stale eviction doesn't reclaim an active
-        // long-running holder, while preserving the owner PID line so a crashed
-        // holder can still be detected as dead by other processes.
-        if let Ok(mut f) = std::fs::OpenOptions::new()
-            .write(true)
-            .truncate(true)
-            .open(&self.path)
-        {
-            let _ = writeln!(f, "{}", std::process::id());
-        }
-    }
-}
-
-/// Decides whether a currently-held lock file can be reclaimed by a waiter.
-///
-/// A lock whose recorded owner PID is no longer alive is reclaimed immediately —
-/// this is what stops a crashed/killed holder's lock from lingering until
-/// `stale_after` elapses (the cause of the stale `.graph-idx-*.lock` build-up).
-/// If the owner is alive or no PID is readable (e.g. a crash between create and
-/// write), we fall back to the mtime staleness check.
-fn lock_is_reclaimable(path: &std::path::Path, stale_after: Duration) -> bool {
-    if let Ok(content) = std::fs::read_to_string(path)
-        && let Some(pid) = content
-            .lines()
-            .next()
-            .and_then(|l| l.trim().parse::<u32>().ok())
-        && !crate::ipc::process::is_alive(pid)
-    {
-        return true;
-    }
-    if let Ok(meta) = std::fs::metadata(path)
-        && let Ok(modified) = meta.modified()
-    {
-        return modified.elapsed().unwrap_or_default() > stale_after;
-    }
-    false
-}
-
-impl Drop for StartupLockGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-    }
+    _file: std::fs::File,
 }
 
 fn sanitize_lock_name(name: &str) -> String {
@@ -76,48 +35,41 @@ fn sanitize_lock_name(name: &str) -> String {
         .collect()
 }
 
-/// Best-effort cross-process lock (create_new + stale eviction).
+/// Takes the cross-process lock `name`, waiting up to `wait` for its holder to
+/// release it.
 ///
-/// Returns `None` if the data dir can't be resolved or if the lock can't be acquired
-/// within `timeout`.
-pub fn try_acquire_lock(
-    name: &str,
-    timeout: Duration,
-    stale_after: Duration,
-) -> Option<StartupLockGuard> {
+/// Returns `None` if the data dir can't be resolved, the lock file can't be
+/// opened, or the lock is still held after `wait`.
+pub fn try_acquire_lock(name: &str, wait: Duration) -> Option<StartupLockGuard> {
     let dir = crate::core::data_dir::sobre_data_dir().ok()?;
     let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join(format!(".{}.lock", sanitize_lock_name(name)));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .ok()?;
 
-    let name = sanitize_lock_name(name);
-    let path = dir.join(format!(".{name}.lock"));
-
-    let deadline = std::time::Instant::now().checked_add(timeout)?;
+    let deadline = std::time::Instant::now().checked_add(wait)?;
     let mut sleep_ms: u64 = 10;
-
+    // std has no timed lock: poll `try_lock` until the deadline.
     loop {
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-        {
-            Ok(mut f) => {
-                // Record the owner PID so a crashed holder's lock can be
-                // reclaimed immediately instead of waiting out `stale_after`.
-                let _ = writeln!(f, "{}", std::process::id());
-                return Some(StartupLockGuard { path });
-            }
-            Err(_) => {
-                if lock_is_reclaimable(&path, stale_after) {
-                    let _ = std::fs::remove_file(&path);
-                }
+        match file.try_lock() {
+            Ok(()) => return Some(StartupLockGuard { _file: file }),
+            Err(std::fs::TryLockError::WouldBlock) => {}
+            // A filesystem without advisory locks: run unguarded rather than
+            // never building.
+            Err(std::fs::TryLockError::Error(e)) => {
+                tracing::debug!("[startup_guard: cannot lock {}: {e}]", path.display());
+                return Some(StartupLockGuard { _file: file });
             }
         }
-
-        if std::time::Instant::now() >= deadline {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        if remaining.is_zero() {
             return None;
         }
-
-        std::thread::sleep(Duration::from_millis(sleep_ms));
+        std::thread::sleep(Duration::from_millis(sleep_ms).min(remaining));
         sleep_ms = (sleep_ms.saturating_mul(2)).min(120);
     }
 }
@@ -210,18 +162,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
-        let g = try_acquire_lock(
-            "unit-test",
-            Duration::from_millis(200),
-            Duration::from_secs(30),
-        );
+        let g = try_acquire_lock("unit-test", Duration::from_millis(200));
         assert!(g.is_some());
-
-        let lock_path = dir.path().join(".unit-test.lock");
-        assert!(lock_path.exists());
+        assert!(dir.path().join(".unit-test.lock").exists());
 
         drop(g);
-        assert!(!lock_path.exists());
+        assert!(
+            try_acquire_lock("unit-test", Duration::ZERO).is_some(),
+            "a dropped guard releases the lock"
+        );
     }
 
     #[test]
@@ -230,49 +179,44 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
-        let g1 = try_acquire_lock(
-            "unit-test-2",
-            Duration::from_millis(200),
-            Duration::from_secs(30),
-        )
-        .expect("first lock should acquire");
-        let g2 = try_acquire_lock(
-            "unit-test-2",
-            Duration::from_millis(60),
-            Duration::from_secs(30),
-        );
+        let g1 = try_acquire_lock("unit-test-2", Duration::from_millis(200))
+            .expect("first lock should acquire");
+        let g2 = try_acquire_lock("unit-test-2", Duration::from_millis(60));
         assert!(g2.is_none());
 
         drop(g1);
-        let g3 = try_acquire_lock(
-            "unit-test-2",
-            Duration::from_millis(200),
-            Duration::from_secs(30),
-        );
+        let g3 = try_acquire_lock("unit-test-2", Duration::from_millis(200));
         assert!(g3.is_some());
     }
 
     #[test]
-    fn dead_owner_lock_is_reclaimed_immediately() {
+    fn waiter_gets_the_lock_once_the_holder_releases_it() {
         let _env = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().unwrap();
         let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
 
-        // Pre-seed a held lock owned by a PID that cannot be alive.
-        let lock_path = dir.path().join(".dead-owner.lock");
-        std::fs::write(&lock_path, "4294967294\n").unwrap();
-
-        // The lock's mtime is fresh (just written), so the mtime safety valve
-        // would NOT reclaim it within stale_after — only the dead-PID check can.
-        let g = try_acquire_lock(
-            "dead-owner",
-            Duration::from_millis(300),
-            Duration::from_secs(30),
-        );
+        let held = try_acquire_lock("unit-test-3", Duration::ZERO).expect("first lock");
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(held);
+        });
         assert!(
-            g.is_some(),
-            "lock with a dead owner PID must be reclaimable"
+            try_acquire_lock("unit-test-3", Duration::from_secs(10)).is_some(),
+            "a waiter must take the lock once its holder releases it"
         );
+        releaser.join().unwrap();
+    }
+
+    #[test]
+    fn leftover_lock_file_does_not_block() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = EnvVarGuard::set("SOBRE_DATA_DIR", dir.path());
+
+        // A lock file whose holder has gone: the file is there, the OS lock
+        // is not.
+        std::fs::write(dir.path().join(".leftover.lock"), "").unwrap();
+        assert!(try_acquire_lock("leftover", Duration::ZERO).is_some());
     }
 
     #[test]
