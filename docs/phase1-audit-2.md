@@ -75,8 +75,8 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#PRNUM) |
-| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#PRNUM) |
+| G | Regressions and half-done phase-1 fixes | in progress (#51) |
+| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
@@ -84,7 +84,7 @@ was added.
 | P | CI and release | open |
 | N | Documentation: complete reference and architecture, written last | open |
 
-Three findings went first, in their own PR (#PRNUM): H12 (a local user
+Three findings went first, in their own PR (#51): H12 (a local user
 could get commands run through the hooks' shared `/tmp` directory), H1
 (`uninstall --dryrun` uninstalled) and G1 (`uninstall` left debris), with
 G15 (`uninstall` left a proxy running), which sat in the same code.
@@ -143,7 +143,7 @@ documented:
 
 ## Lot G — regressions and half-done fixes
 
-- [x] **G1 `uninstall` leaves debris again after a second `init`.** (#PRNUM)
+- [x] **G1 `uninstall` leaves debris again after a second `init`.** (#51)
   *Regression: A4.*
   - `config_io::write_atomic_with_backup` (`config_io.rs:18-41`) keeps a
     `.sobre.bak` of any file it rewrites, including one sobre created on the
@@ -266,7 +266,7 @@ documented:
     `<tmp>/sobre` when the state dir cannot be resolved
     (`proxy_autostart.rs:285`, `cli/dispatch/network/proxy.rs:325`).
 - [x] **G15 `uninstall` leaves a proxy running on a port other than the
-  default.** (#PRNUM) *Regression: C12 left this path.* `uninstall` stops the proxy
+  default.** (#51) *Regression: C12 left this path.* `uninstall` stops the proxy
   on `default_port()` (`uninstall/binary.rs:13-24`), not on the port
   recorded in `proxy.port` that `proxy stop` reads
   (`cli/dispatch/network/proxy.rs:28-52`), then deletes that file with the
@@ -277,7 +277,7 @@ documented:
 
 ## Lot H — the user's machine
 
-- [x] **H1 `uninstall` ignores arguments it does not know.** (#PRNUM)
+- [x] **H1 `uninstall` ignores arguments it does not know.** (#51)
   - `sobre uninstall --dryrun`, `-n`, `uninstall claude` or any typo runs a
     real uninstall and exits 0 (`cli/dispatch/mod.rs:109-120`).
   - `doctor bogus` and `doctor --bogus` run the full doctor and exit 0
@@ -384,7 +384,7 @@ documented:
   - `sobre` with stdin closed before `initialize` exits 1 with an ERROR
     line.
 - [x] **H12 The hooks trust a shared directory in `/tmp`.** *Security.*
-  (#PRNUM)
+  (#51)
   - The Cursor and Gemini rewrite dedup and the read dedup keep their state
     in `<tmp>/sobre-hook/` (`hook_handlers/dedup.rs:146`,
     `hook_handlers/read_dedup.rs:286-291`). `create_dir_all` succeeds on a
