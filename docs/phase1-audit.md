@@ -54,7 +54,7 @@ The lots run in this order:
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
 | D | Dead code, stale files, stale comments, duplicates; decision 7 | done (#41, #42, #43, #44, #45, #46) |
-| F | Release: publish a `dense` binary (decision 8) | done (#PR_FD) |
+| F | Release: publish a `dense` binary (decision 8) | done (#47) |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
 ## What already works
