@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Duration;
 
 use rayon::prelude::*;
 
@@ -402,14 +403,28 @@ pub fn load_or_build(project_root: &str) -> ProjectIndex {
 }
 
 fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
-    if index.files.is_empty() {
+    let paths: Vec<&String> = index.files.keys().collect();
+    is_stale(root_abs, &index.last_scan, &paths, |rel| {
+        index.files.get(rel).map(|f| f.hash.clone())
+    })
+}
+
+/// Whether a built index no longer matches the source: older than the TTL,
+/// built from a too-broad root, a listed file gone, or a source file edited or
+/// added since. `paths` are the indexed files; `hash_of` gives one's stored
+/// content hash (`None` when it is not indexed).
+pub(crate) fn is_stale(
+    root_abs: &str,
+    last_scan: &str,
+    paths: &[&String],
+    hash_of: impl Fn(&str) -> Option<String>,
+) -> bool {
+    if paths.is_empty() {
         return true;
     }
 
     // TTL check: rebuild if index is older than configured max_age_hours
-    if let Ok(scan_time) =
-        chrono::NaiveDateTime::parse_from_str(&index.last_scan, "%Y-%m-%d %H:%M:%S")
-    {
+    if let Ok(scan_time) = chrono::NaiveDateTime::parse_from_str(last_scan, "%Y-%m-%d %H:%M:%S") {
         let effective_hours = crate::core::config::GRAPH_INDEX_MAX_AGE_HOURS;
         let max_age = chrono::Duration::hours(effective_hours as i64);
         let now = chrono::Local::now().naive_local();
@@ -436,7 +451,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
         ".cache/",
         "snap/",
     ];
-    let contaminated = index.files.keys().take(200).any(|rel| {
+    let contaminated = paths.iter().take(200).any(|rel| {
         CONTAMINATION_MARKERS
             .iter()
             .any(|m| rel.starts_with(m) || rel.contains(&format!("/{m}")))
@@ -451,8 +466,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
 
     let root_path = Path::new(root_abs);
     // Sample up to 20 files for existence check (avoid scanning all files in large indices)
-    let sample_size = index.files.len().min(20);
-    for rel in index.files.keys().take(sample_size) {
+    for rel in paths.iter().take(20) {
         let rel = rel.trim_start_matches(['/', '\\']);
         if rel.is_empty() {
             continue;
@@ -467,7 +481,7 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
     // changed. mtime is a cheap prefilter; the change is then confirmed against
     // the stored content hash so a `touch`/checkout/format that leaves bytes
     // unchanged never forces a needless rescan (covers edits and new files).
-    if source_content_changed_since_index(index, root_abs) {
+    if source_content_changed_since_index(root_abs, &hash_of) {
         tracing::info!("[graph_index: source content changed since last scan — marking stale]");
         return true;
     }
@@ -504,7 +518,10 @@ fn index_file_mtime(root_abs: &str) -> Option<std::time::SystemTime> {
 /// Both the traversal and the number of confirming reads are capped: exceeding
 /// the read cap returns `true` (conservatively stale) instead of reading an
 /// unbounded amount. Removed files are handled by the earlier existence check.
-fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> bool {
+fn source_content_changed_since_index(
+    root_abs: &str,
+    hash_of: &impl Fn(&str) -> Option<String>,
+) -> bool {
     let Some(index_mtime) = index_file_mtime(root_abs) else {
         // No persisted index yet — the existence/TTL checks above already decided.
         return false;
@@ -548,7 +565,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         if index_filter.is_excluded(&rel.replace('\\', "/")) {
             continue;
         }
-        let Some(file_entry) = index.files.get(&rel) else {
+        let Some(stored_hash) = hash_of(&rel) else {
             // A newly added indexable file is genuinely new content.
             return true;
         };
@@ -559,7 +576,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         }
         match std::fs::read_to_string(path) {
             // Bytes unchanged despite a newer mtime → not a real change.
-            Ok(content) if compute_hash(&content) == file_entry.hash => {}
+            Ok(content) if compute_hash(&content) == stored_hash => {}
             // Edited content, or no longer readable as it was at scan time.
             _ => return true,
         }
@@ -585,6 +602,9 @@ pub fn purge_index(project_root: &str) {
     }
 }
 
+/// How long a scan waits for another scan of the same project to finish.
+const SCAN_LOCK_WAIT: Duration = Duration::from_mins(2);
+
 pub fn scan(project_root: &str) -> ProjectIndex {
     scan_inner(project_root).0
 }
@@ -605,19 +625,37 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         "graph-idx-{}",
         &crate::core::index_namespace::namespace_hash(Path::new(&project_root))[..8]
     );
-    let _lock = crate::core::startup_guard::try_acquire_lock(
-        &lock_name,
-        std::time::Duration::from_millis(800),
-        std::time::Duration::from_mins(3),
-    );
+    // Another scan of this project (the background warm-up, another
+    // process) is waited for, and its result used when it is current: a
+    // second scan never answers with an empty index while the first runs.
+    let stale_after = Duration::from_mins(3);
+    let (_lock, waited) =
+        match crate::core::startup_guard::try_acquire_lock(&lock_name, Duration::ZERO, stale_after)
+        {
+            Some(lock) => (Some(lock), false),
+            None => (
+                crate::core::startup_guard::try_acquire_lock(
+                    &lock_name,
+                    SCAN_LOCK_WAIT,
+                    stale_after,
+                ),
+                true,
+            ),
+        };
     if _lock.is_none() {
         tracing::info!(
-            "[graph_index: another process is scanning {project_root} — returning cached or empty]"
+            "[graph_index: another scan of {project_root} still runs — returning the last index]"
         );
         return (
             ProjectIndex::load(&project_root).unwrap_or_else(|| ProjectIndex::new(&project_root)),
             HashMap::new(),
         );
+    }
+    if waited
+        && let Some(done) = ProjectIndex::load(&project_root)
+        && !index_looks_stale(&done, &project_root)
+    {
+        return (done, HashMap::new());
     }
 
     let existing = ProjectIndex::load(&project_root);

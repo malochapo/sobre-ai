@@ -125,9 +125,6 @@ bytes: {}\n",
                     if let Some(h) = bundle.project.project_root_hash {
                         out.push_str(&format!("project_root_hash: {h}\n"));
                     }
-                    if let Some(h) = bundle.project.project_identity_hash {
-                        out.push_str(&format!("project_identity_hash: {h}\n"));
-                    }
                     out
                 }
                 _ => {
@@ -170,11 +167,8 @@ bytes: {}\n",
                 Err(e) => return format!("ERROR: import failed: {e}"),
             };
 
-            // Replayability hint: compare project identity hashes (best-effort).
+            // Replayability hint: the bundle names the project it came from.
             let current_root_hash = crate::core::project_hash::hash_project_root(&root);
-            let current_identity_hash = crate::core::project_hash::project_identity(&root)
-                .as_deref()
-                .map(crate::core::hasher::hash_str);
 
             let mut warning: Option<String> = None;
             if let Some(ref exported) = bundle.project.project_root_hash
@@ -184,13 +178,6 @@ bytes: {}\n",
                     "WARNING: project_root_hash mismatch (importing into different project root)."
                         .to_string(),
                 );
-            }
-            if let (Some(exported), Some(current)) = (
-                bundle.project.project_identity_hash.as_ref(),
-                current_identity_hash.as_ref(),
-            ) && exported != current
-            {
-                warning = Some("WARNING: project_identity_hash mismatch (importing into different project identity).".to_string());
             }
 
             if let Err(e) = save_if_recorded(session) {

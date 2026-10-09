@@ -17,7 +17,6 @@ pub struct CcpSessionBundleV1 {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectIdentityV1 {
     pub project_root_hash: Option<String>,
-    pub project_identity_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,16 +42,10 @@ pub fn build_bundle_v1(session: &SessionState) -> CcpSessionBundleV1 {
     // never applies it (settings come from the importer's config.toml).
     let export_level =
         crate::core::config::CompressionLevel::effective(&crate::core::config::Config::load());
-    let (project_root_hash, project_identity_hash) =
-        session
-            .project_root
-            .as_deref()
-            .map_or((None, None), |root| {
-                let root_hash = crate::core::project_hash::hash_project_root(root);
-                let identity = crate::core::project_hash::project_identity(root);
-                let identity_hash = identity.as_deref().map(crate::core::hasher::hash_str);
-                (Some(root_hash), identity_hash)
-            });
+    let project_root_hash = session
+        .project_root
+        .as_deref()
+        .map(crate::core::project_hash::hash_project_root);
 
     let mut excerpt = SessionExcerptV1 {
         id: session.id.clone(),
@@ -92,10 +85,7 @@ pub fn build_bundle_v1(session: &SessionState) -> CcpSessionBundleV1 {
     CcpSessionBundleV1 {
         schema_version: crate::core::contracts::CCP_SESSION_BUNDLE_V1_SCHEMA_VERSION,
         exported_at: Utc::now(),
-        project: ProjectIdentityV1 {
-            project_root_hash,
-            project_identity_hash,
-        },
+        project: ProjectIdentityV1 { project_root_hash },
         session: excerpt,
     }
 }

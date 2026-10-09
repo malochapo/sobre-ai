@@ -267,9 +267,7 @@ fn reconstruct(prev: &HashMap<String, String>, from: &str, to: &str) -> Vec<Stri
 }
 
 fn open_graph(root: &str) -> Result<graph_provider::GraphProvider, String> {
-    graph_provider::open_or_build(root).ok_or_else(|| {
-        "No graph index found. Run sobre_graph with action='build' first.".to_string()
-    })
+    graph_provider::open_or_build(root).ok_or_else(|| graph_provider::GRAPH_UNAVAILABLE.to_string())
 }
 
 fn is_json(format: Option<&str>) -> bool {

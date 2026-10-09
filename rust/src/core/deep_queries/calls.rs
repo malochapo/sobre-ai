@@ -282,21 +282,33 @@ fn parse_call_ts(node: Node, src: &str) -> Option<CallSite> {
     }
 }
 
+/// A Rust call's callee, by the bare name symbols are stored under:
+/// `util::helper(…)` and `Config::load(…)` call `helper` and `load`, and
+/// `parse::<T>(…)` calls `parse`.
 #[cfg(feature = "tree-sitter")]
 fn parse_call_rust(node: Node, src: &str) -> Option<CallSite> {
-    let func = node.child(0)?;
+    let mut func = node.child(0)?;
+    if func.kind() == "generic_function" {
+        func = func.child_by_field_name("function")?;
+    }
+    let line = node.start_position().row + 1;
     match func.kind() {
         "field_expression" => {
             let field = find_child_by_kind(func, "field_identifier")?;
             Some(CallSite {
                 callee: node_text(field, src).to_string(),
-                line: node.start_position().row + 1,
+                line,
                 is_method: true,
             })
         }
-        "scoped_identifier" | "identifier" => Some(CallSite {
+        "scoped_identifier" => Some(CallSite {
+            callee: node_text(func.child_by_field_name("name")?, src).to_string(),
+            line,
+            is_method: false,
+        }),
+        "identifier" => Some(CallSite {
             callee: node_text(func, src).to_string(),
-            line: node.start_position().row + 1,
+            line,
             is_method: false,
         }),
         _ => None,

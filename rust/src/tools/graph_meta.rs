@@ -6,18 +6,14 @@ use std::path::Path;
 
 use crate::core::git_util::{git_dirty, git_out};
 
-/// Stable project identity + current git state, used as the `"project"` block
-/// of a tool's JSON envelope.
+/// The project's key + current git state, used as the `"project"` block of a
+/// tool's JSON envelope.
 pub(crate) fn project_meta(root: &str) -> Value {
     let root_hash = crate::core::project_hash::hash_project_root(root);
-    let identity_hash = crate::core::project_hash::project_identity(root)
-        .as_deref()
-        .map(crate::core::hasher::hash_str);
 
     let root_path = Path::new(root);
     json!({
         "project_root_hash": root_hash,
-        "project_identity_hash": identity_hash,
         "git": {
             "head": git_out(root_path, &["rev-parse", "--short", "HEAD"]),
             "branch": git_out(root_path, &["rev-parse", "--abbrev-ref", "HEAD"]),

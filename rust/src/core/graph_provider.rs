@@ -342,7 +342,26 @@ impl GraphProvider {
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
         graph_index::ProjectIndex::index_dir(project_root)
     }
+
+    /// Whether the source changed since this graph was built: older than the
+    /// TTL, or a file removed, edited or added since.
+    pub fn is_stale(&self) -> bool {
+        let paths = self.file_paths();
+        let refs: Vec<&String> = paths.iter().collect();
+        let root = super::index_paths::normalize_project_root(&self.project_root);
+        graph_index::is_stale(&root, &self.last_scan(), &refs, |rel| {
+            self.graph
+                .get_file_catalog(rel)
+                .ok()
+                .flatten()
+                .map(|e| e.hash)
+        })
+    }
 }
+
+/// What a tool says when [`open_or_build`] has no graph to give.
+pub const GRAPH_UNAVAILABLE: &str = "ERROR: no code graph yet: a build is still running, \
+     or the project has no supported source files. Retry in a moment.";
 
 /// Open the built graph, or `None` when there is none yet. Never builds:
 /// callers whose answer only improves with a graph (the `sobre_read` context
@@ -365,17 +384,35 @@ const BUILD_TIMEOUT_SECS: u64 = 30;
 static BUILD_GATE: std::sync::LazyLock<std::sync::Mutex<()>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
 
-/// Open the graph, building it first when there is none. `None` when the build
-/// is already running elsewhere, timed out, or found no files.
+/// Open the graph, building it first when there is none and refreshing it
+/// when the source changed since it was built, so no answer comes from stale
+/// data. `None` when the build did not finish within `BUILD_TIMEOUT_SECS`
+/// (it goes on in the background) or found no files.
 pub fn open_or_build(project_root: &str) -> Option<GraphProvider> {
-    if let Some(p) = open_best_effort(project_root) {
+    if let Some(p) = open_best_effort(project_root)
+        && !p.is_stale()
+    {
         return Some(p);
     }
 
-    let Ok(_gate) = BUILD_GATE.try_lock() else {
-        tracing::info!("open_or_build: another build in progress for {project_root}");
-        return None;
+    // A build already running in this process is waited for, not skipped.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(BUILD_TIMEOUT_SECS);
+    let _gate = loop {
+        if let Ok(gate) = BUILD_GATE.try_lock() {
+            break gate;
+        }
+        if std::time::Instant::now() >= deadline {
+            tracing::info!("open_or_build: a build is still running for {project_root}");
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
     };
+    // The build just waited for may have refreshed the graph.
+    if let Some(p) = open_best_effort(project_root)
+        && !p.is_stale()
+    {
+        return Some(p);
+    }
 
     let root_owned = project_root.to_string();
     let (tx, rx) = std::sync::mpsc::sync_channel(1);

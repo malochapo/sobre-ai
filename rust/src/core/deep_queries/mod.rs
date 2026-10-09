@@ -344,6 +344,33 @@ fn main() {
         assert!(fns.contains(&"calculate"));
     }
 
+    /// L1: a path-qualified call is stored under the bare name symbols use.
+    #[test]
+    fn rust_path_calls_use_the_last_segment() {
+        let src = r"
+fn main() {
+    util::helper(1);
+    Config::load();
+    demo::util::helper(3);
+    parse::<u32>(s);
+}
+";
+        let analysis = analyze(src, "rs");
+        let callees: Vec<&str> = analysis.calls.iter().map(|c| c.callee.as_str()).collect();
+        assert_eq!(callees, ["helper", "load", "helper", "parse"]);
+    }
+
+    /// L1: `use a::b::{c, d}` imports from `a::b`, not from `a`.
+    #[test]
+    fn rust_brace_use_keeps_its_full_base() {
+        let analysis = analyze(
+            "use crate::core::{session, cache};\nuse demo::{add, Counter};\n",
+            "rs",
+        );
+        let sources: Vec<&str> = analysis.imports.iter().map(|i| i.source.as_str()).collect();
+        assert_eq!(sources, ["crate::core", "demo"]);
+    }
+
     #[test]
     fn python_imports() {
         let src = r"

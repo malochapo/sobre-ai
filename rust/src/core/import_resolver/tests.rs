@@ -14,6 +14,7 @@ fn make_ctx(files: &[&str]) -> ResolverContext {
             &file_paths,
             &HashMap::new(),
         ),
+        rust_crates: HashMap::new(),
     }
 }
 
@@ -155,6 +156,24 @@ fn rust_symbol_in_module() {
         results[0].resolved_path.as_deref(),
         Some("src/core/session.rs")
     );
+}
+
+/// L1: `use my_crate::…` from a binary or a test of the same project
+/// resolves inside that crate.
+#[test]
+fn rust_own_crate_name_resolves_inside_the_crate() {
+    let mut ctx = make_ctx(&["src/lib.rs", "src/util.rs", "src/main.rs"]);
+    ctx.rust_crates
+        .insert("demo".to_string(), "src/".to_string());
+    let results = resolve_imports(
+        &[make_import("demo"), make_import("demo::util::helper")],
+        "src/main.rs",
+        "rs",
+        &ctx,
+    );
+    assert_eq!(results[0].resolved_path.as_deref(), Some("src/lib.rs"));
+    assert_eq!(results[1].resolved_path.as_deref(), Some("src/util.rs"));
+    assert!(!results[0].is_external && !results[1].is_external);
 }
 
 // --- Python ---

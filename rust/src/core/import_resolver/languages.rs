@@ -143,6 +143,21 @@ pub(super) fn resolve_rust(
         return (None, true);
     }
 
+    // `use my_crate::…` from a binary, a test or an example of the same
+    // project: the path inside that crate, or its `lib.rs` for an item
+    // defined there.
+    if let Some(src_dir) = ctx.rust_crate_src(parts[0]) {
+        let rest = parts[1..].join("/");
+        let found = (!rest.is_empty())
+            .then(|| try_rust_paths(&format!("{src_dir}{rest}"), ctx))
+            .flatten()
+            .or_else(|| {
+                let lib = format!("{src_dir}lib.rs");
+                ctx.file_exists(&lib).then_some(lib)
+            });
+        return (found, false);
+    }
+
     let is_external = !source.starts_with("crate")
         && !source.starts_with("super")
         && !source.starts_with("self")

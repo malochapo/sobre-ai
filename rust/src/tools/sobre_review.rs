@@ -14,7 +14,7 @@ const SHOWN_FUNCTIONS: usize = 15;
 pub fn handle(action: &str, path: Option<&str>, root: &str, depth: Option<usize>) -> String {
     match action {
         "review" => handle_review(path, root, depth.unwrap_or(3)),
-        "diff-review" => handle_diff_review(path, root),
+        "diff-review" => handle_diff_review(path, root, depth.unwrap_or(2)),
         "checklist" => handle_checklist(path, root, depth.unwrap_or(3)),
         _ => "Unknown action. Use: review, diff-review, checklist".to_string(),
     }
@@ -33,29 +33,64 @@ fn review_sections(target: &str, root: &str, depth: usize) -> Vec<String> {
     let rel = crate::core::index_paths::graph_relative_key(target, root);
     let mut sections = vec![format!("## Review: {rel}\n")];
 
-    sections.push(impact_section(target, root, depth));
+    let affected = crate::tools::sobre_graph_impact::affected_files(target, root, depth);
+    sections.push(impact_section(target, affected.as_deref(), depth));
     if let Some(callers) = callers_section(&rel, root) {
         sections.push(callers);
     }
 
-    let tests = find_related_tests(&rel, root);
+    let tests = related_tests(&rel, root, affected.as_deref());
     sections.push("### Related tests".to_string());
     if tests.is_empty() {
-        sections.push("  (no test files found by name)".to_string());
+        sections.push("  (no test file is named after it or depends on it)".to_string());
     } else {
         sections.extend(tests.iter().map(|t| format!("  - {t}")));
     }
     sections
 }
 
+/// Test files named after `rel` (`foo_test.rs`, `foo.spec.ts`, …) and the
+/// test files among its dependents (`tests/basic.rs` using the crate).
+fn related_tests(rel: &str, root: &str, affected: Option<&[String]>) -> Vec<String> {
+    let mut tests = find_related_tests(rel, root);
+    tests.extend(
+        affected
+            .unwrap_or_default()
+            .iter()
+            .filter(|f| is_test_path(f))
+            .cloned(),
+    );
+    tests.sort();
+    tests.dedup();
+    tests
+}
+
+/// A test file by its place (`tests/`, `test/`, `__tests__/`) or its name
+/// (`*_test.*`, `*.test.*`, `*.spec.*`, `test_*`).
+fn is_test_path(path: &str) -> bool {
+    let path = path.replace('\\', "/");
+    let in_test_dir = path
+        .split('/')
+        .rev()
+        .skip(1)
+        .any(|dir| matches!(dir, "tests" | "test" | "__tests__" | "spec"));
+    let name = path.rsplit('/').next().unwrap_or(&path);
+    in_test_dir
+        || name.starts_with("test_")
+        || name.contains("_test.")
+        || name.contains("_tests.")
+        || name.contains(".test.")
+        || name.contains(".spec.")
+}
+
 /// The files that depend on `target`, up to `depth` hops.
-fn impact_section(target: &str, root: &str, depth: usize) -> String {
-    match crate::tools::sobre_graph_impact::affected_files(target, root, depth) {
+fn impact_section(target: &str, affected: Option<&[String]>, depth: usize) -> String {
+    match affected {
         None => format!(
             "### Impact\n  '{target}' is not an indexed file or a known type, so its \
              dependents are unknown."
         ),
-        Some(files) if files.is_empty() => {
+        Some([]) => {
             format!("### Impact (depth {depth})\n  no file depends on it.")
         }
         Some(files) => {
@@ -87,7 +122,7 @@ fn callers_section(rel: &str, root: &str) -> Option<String> {
         return None;
     }
 
-    let calls = crate::tools::sobre_graph_calls::load(root);
+    let calls = crate::tools::sobre_graph_calls::load(root)?;
     let mut lines = Vec::new();
     for name in &names {
         let mut sites: Vec<String> = calls
@@ -125,7 +160,7 @@ fn callers_section(rel: &str, root: &str) -> Option<String> {
 
 /// Review every changed file: the files named in `diff_text` (git diff
 /// output), or the uncommitted changes when no diff is given.
-fn handle_diff_review(diff_input: Option<&str>, root: &str) -> String {
+fn handle_diff_review(diff_input: Option<&str>, root: &str, depth: usize) -> String {
     let changed_files = match diff_input {
         Some(diff_text) => extract_changed_files(diff_text),
         None => crate::tools::sobre_graph_impact::git_changed_files(root),
@@ -144,7 +179,7 @@ fn handle_diff_review(diff_input: Option<&str>, root: &str) -> String {
     )];
     for file in &changed_files {
         sections.push("---".to_string());
-        sections.extend(review_sections(file, root, 2));
+        sections.extend(review_sections(file, root, depth));
     }
 
     let output = sections.join("\n");
@@ -157,14 +192,15 @@ fn handle_checklist(path: Option<&str>, root: &str, depth: usize) -> String {
         return "ERROR: path is required for 'checklist' action".to_string();
     };
 
+    let rel = crate::core::index_paths::graph_relative_key(target, root);
     let mut questions = Vec::new();
 
     questions.push(format!(
-        "- [ ] Are all public API changes in `{target}` backward-compatible?"
+        "- [ ] Are all public API changes in `{rel}` backward-compatible?"
     ));
 
-    let affected = crate::tools::sobre_graph_impact::affected_files(target, root, depth)
-        .map_or(0, |files| files.len());
+    let affected_files = crate::tools::sobre_graph_impact::affected_files(target, root, depth);
+    let affected = affected_files.as_ref().map_or(0, Vec::len);
     if affected > 0 {
         questions.push(format!(
             "- [ ] {affected} downstream file(s) affected — have they been reviewed?"
@@ -174,10 +210,10 @@ fn handle_checklist(path: Option<&str>, root: &str, depth: usize) -> String {
         );
     }
 
-    let tests = find_related_tests(target, root);
+    let tests = related_tests(&rel, root, affected_files.as_deref());
     if tests.is_empty() {
         questions.push(format!(
-            "- [ ] No tests found for `{target}` — should tests be added?"
+            "- [ ] No tests found for `{rel}` — should tests be added?"
         ));
     } else {
         questions.push(format!(
@@ -192,7 +228,7 @@ fn handle_checklist(path: Option<&str>, root: &str, depth: usize) -> String {
     questions.push("- [ ] Are error paths handled gracefully?".to_string());
     questions.push("- [ ] Is logging/telemetry appropriate (no sensitive data)?".to_string());
 
-    let output = format!("## Review Checklist: {target}\n\n{}", questions.join("\n"));
+    let output = format!("## Review Checklist: {rel}\n\n{}", questions.join("\n"));
     let tok = count_tokens(&output);
     format!("{output}\n\n[{tok} tok]")
 }
