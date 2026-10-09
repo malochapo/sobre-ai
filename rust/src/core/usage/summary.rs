@@ -11,8 +11,8 @@
 //!   read had shortened, so it takes back that read's saving and charges what
 //!   the read sent. A compression that sent more than it read (a search whose
 //!   output frames its matches) counts against the total. Priced once at the
-//!   model's uncached input rate, which is a lower bound: a removed tool result
-//!   would also have been re-sent (mostly as cache reads) on every later turn.
+//!   model's uncached input rate, an estimate: a removed tool result would
+//!   also have been re-sent on later turns, mostly as cheaper cache reads.
 //!
 //! The counterfactual cost is the real cost plus the saved tokens' price.
 

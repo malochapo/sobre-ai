@@ -1,4 +1,4 @@
-//! Advanced config sections (proxy, memory subsystems, setup, llm).
+//! The `[proxy]` section.
 //! Split out of `schema/mod.rs`; `use super::*` re-imports helpers + `SectionSchema`.
 
 #[allow(clippy::wildcard_imports)]
@@ -32,10 +32,10 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         proxy.insert(
             format!("upstreams.{id}"),
             key(
-                "string?",
-                serde_json::json!(null),
+                "string",
+                serde_json::json!(default),
                 &format!(
-                    "Upstream URL for the {id} provider (unset = {default}). Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)"
+                    "Upstream URL for the {id} provider. Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)"
                 ),
             ),
         );

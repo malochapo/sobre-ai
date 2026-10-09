@@ -22,8 +22,8 @@ const HEADER: &str = "\
 # commented out — remove the `# ` to set it.
 #
 # A key left at its default may be deleted — sobre falls back to the documented
-# default. Edits apply on the next tool call; the proxy reads them on
-# `sobre proxy restart`.
+# default. Edits apply on the next tool call. A running proxy re-reads its
+# upstream URLs every 5 s; its port changes on `sobre proxy restart`.
 
 ";
 
