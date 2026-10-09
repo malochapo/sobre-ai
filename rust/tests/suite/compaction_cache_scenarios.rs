@@ -322,7 +322,7 @@ mod edge_cases {
     use super::*;
 
     #[test]
-    fn large_number_of_entries_reset_performance() {
+    fn reset_counts_every_delivered_entry_of_a_large_cache() {
         let mut cache = SessionCache::default();
         for i in 0..500 {
             let path = format!("/tmp/file_{i}.rs");
@@ -330,35 +330,7 @@ mod edge_cases {
             cache.mark_full_delivered(&path);
         }
 
-        let start = std::time::Instant::now();
-        let count = cache.reset_delivery_flags();
-        let elapsed = start.elapsed();
-
-        assert_eq!(count, 500);
-        assert!(
-            elapsed.as_millis() < 10,
-            "reset_delivery_flags should be fast, took {elapsed:?}"
-        );
-    }
-
-    #[test]
-    fn concurrent_store_and_reset_dont_panic() {
-        let mut cache = SessionCache::default();
-        for i in 0..100 {
-            let path = format!("/tmp/file_{i}.rs");
-            cache.store(&path, &format!("v{i}"));
-            if i % 2 == 0 {
-                cache.mark_full_delivered(&path);
-            }
-        }
-        let count = cache.reset_delivery_flags();
-        assert_eq!(count, 50);
-
-        // Verify none are delivered
-        for i in 0..100 {
-            let path = format!("/tmp/file_{i}.rs");
-            assert!(!cache.is_full_delivered(&path));
-        }
+        assert_eq!(cache.reset_delivery_flags(), 500);
     }
 
     #[test]

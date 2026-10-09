@@ -1,16 +1,16 @@
-//! RO-config sandbox gate (brought forward).
+//! A read-only config dir stays untouched.
 //!
 //! With the config dir read-only and the data/state/cache categories split out
 //! via `SOBRE_*_DIR`, a full sobre shell cycle must run without writing
-//! anything into the config dir. This is the exact acceptance criterion
-//! (`--ro $XDG_CONFIG_HOME/sobre`).
+//! anything into the config dir. The config dir can then
+//! be mounted read-only (`--ro $XDG_CONFIG_HOME/sobre`).
 //!
 //! `config_dir()` resets its own perms to `0o700` on access, so `chmod 0o500` is
 //! a best-effort RO simulation only — the real gate is the assertion that the
 //! config dir's contents are byte-identical afterwards: any stray write (e.g. a
 //! `stats.json` landing next to `config.toml`) fails the test. A captured agent
 //! session id is additionally asserted to land in the state dir at `0o600`, while
-//! a credential-shaped var (an API key) must never be persisted (finding 2).
+//! a credential-shaped var (an API key) must never be persisted.
 #![cfg(unix)]
 
 use std::collections::BTreeMap;
@@ -75,8 +75,8 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         .env("HOME", root.path())
         // Forwardable session id → captured into the state dir (proof writes
         // land there). A credential-shaped var is also set and must NOT be
-        // captured: forwarding API keys was the exfiltration risk fixed in
-        // finding 2, so `is_forwardable` rejects anything credential-shaped.
+        // captured: `is_forwardable` rejects anything credential-shaped, so no
+        // API key is ever written to disk.
         .env("CODEX_THREAD_ID", "ro-sandbox-session")
         .env("GEMINI_API_KEY", "ro-sandbox-secret")
         .output()
@@ -121,8 +121,8 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         captured.contains("CODEX_THREAD_ID"),
         "the forwardable session id must be captured; got:\n{captured}"
     );
-    // Finding 2: credential-shaped vars must never be persisted, even when they
-    // match a forwardable prefix (GEMINI_ here).
+    // Credential-shaped vars are never persisted, even when they match a
+    // forwardable prefix (GEMINI_ here).
     assert!(
         !captured.contains("ro-sandbox-secret") && !captured.contains("GEMINI_API_KEY"),
         "credential-shaped vars must never be written to disk; got:\n{captured}"

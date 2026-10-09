@@ -21,11 +21,9 @@ async fn context_engine_call_tool_text_reads_file() {
     assert!(out.contains("hello-engine"));
 }
 
-/// Regression: many concurrent reads must all return through the
-/// `spawn_blocking` dispatch path without starving the core workers or hanging.
-/// Before the dispatch watchdog, a single hung handler could swallow its
-/// response (client crash: "Cannot read properties of undefined (reading
-/// 'invoke')"); this exercises the path under real concurrency.
+/// Many concurrent reads all return through the `spawn_blocking` dispatch
+/// path, without starving the core workers or hanging: a response is never
+/// swallowed under real concurrency.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn context_engine_handles_concurrent_reads_without_hang() {
     let dir = tempfile::tempdir().expect("tempdir");

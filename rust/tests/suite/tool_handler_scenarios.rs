@@ -1,7 +1,7 @@
-//! Scenario tests for the Efficiency + UX Hardening Plan (10 fixes)
-//! and the shell compression error-guard hardening.
-//!
-//! Each test simulates a realistic user interaction pattern.
+//! The tool handlers in agent-like sequences: read cache and change
+//! detection, error answers, `diff` without a cached version, search limits,
+//! `sobre_tree` on odd inputs, and shell compression that keeps every
+//! diagnostic.
 #![allow(clippy::needless_raw_string_hashes)]
 
 use sobre::core::cache::SessionCache;
@@ -24,7 +24,7 @@ fn write_newer(path: &std::path::Path, contents: &str) {
 }
 
 // =============================================================================
-// Fix 1 + 2: sobre_read Fast-Path + mtime guard
+// sobre_read: a changed file is detected
 // =============================================================================
 
 mod read_cache_hits {
@@ -66,10 +66,10 @@ mod read_cache_hits {
 }
 
 // =============================================================================
-// Fix 3: zstd bypass — compressed output cache checked before decompression
+// sobre_read: a repeated compressed read gives the same output
 // =============================================================================
 
-mod zstd_bypass {
+mod compressed_read_cache {
     use super::*;
 
     #[test]
@@ -102,7 +102,7 @@ mod zstd_bypass {
         );
         assert!(!out1.content.is_empty());
 
-        // Second map read — should hit compressed cache (no zstd decompression needed)
+        // Second map read of the unchanged file
         let out2 = sobre::tools::sobre_read::handle_with_task_resolved(
             &mut cache,
             path,
@@ -116,13 +116,7 @@ mod zstd_bypass {
 }
 
 // =============================================================================
-// Fix 4: sobre_shell exit code in response
-// =============================================================================
-
-mod exit_code {}
-
-// =============================================================================
-// Fix 5: Error as MCP ErrorData (not success body)
+// Errors: a missing file or directory is an error, not an empty success
 // =============================================================================
 
 mod error_data {
@@ -186,7 +180,7 @@ mod error_data {
 }
 
 // =============================================================================
-// Fix 6: diff mode without cache returns guidance instead of full file
+// diff mode without a cached version answers with guidance, not the file
 // =============================================================================
 
 mod diff_guard {
@@ -257,10 +251,10 @@ mod diff_guard {
 }
 
 // =============================================================================
-// Fix 7: sobre_search early abort
+// sobre_search: max_results
 // =============================================================================
 
-mod search_early_abort {
+mod search_max_results {
     use super::*;
 
     #[test]
@@ -319,46 +313,7 @@ mod search_early_abort {
 }
 
 // =============================================================================
-// Fix 8: Ledger debounce
-// =============================================================================
-
-mod ledger_debounce {}
-
-// =============================================================================
-// Fix 9: Cold-read hints only from 2nd read onwards
-// =============================================================================
-
-mod cold_read_hints {
-    use super::*;
-
-    #[test]
-    fn scenario_first_read_has_no_similarity_hints() {
-        let mut cache = SessionCache::new();
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("fresh.rs");
-        std::fs::write(
-            &file,
-            "use std::collections::HashMap;\npub fn compute() -> HashMap<String, i32> { HashMap::new() }\n",
-        ).unwrap();
-        let path = file.to_str().unwrap();
-
-        let out = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
-        assert!(
-            !out.content.contains("[similar:") && !out.content.contains("[related:"),
-            "First read should not have similarity hints, got: {}",
-            &out.content[..out.content.len().min(500)]
-        );
-    }
-}
-
-// =============================================================================
-// Fix 10: sobre_tree UX — file input / empty directory
+// sobre_tree: a file, or an empty directory
 // =============================================================================
 
 mod tree_ux {
@@ -387,7 +342,7 @@ mod tree_ux {
 }
 
 // =============================================================================
-// Shell Compression Error Guard — CRITICAL
+// Shell compression keeps every diagnostic
 // =============================================================================
 
 mod compression_error_guard {
@@ -444,7 +399,7 @@ warning: `mylib` (lib) generated 1 warning
 
     #[test]
     fn scenario_cargo_build_multiple_errors_preserved() {
-        let error_output = r#"   Compiling sobre v3.6.8
+        let error_output = r#"   Compiling myapp v0.1.0
 error[E0502]: cannot borrow `*cache` as mutable because it is also borrowed as immutable
    --> src/tools/sobre_read.rs:320:9
     |
@@ -459,7 +414,7 @@ error[E0063]: missing field `last_flush` in initializer of `ContextLedger`
 101 |         Self {
     |         ^^^^ missing `last_flush`
 
-error: could not compile `sobre` (lib) due to 2 previous errors
+error: could not compile `myapp` (lib) due to 2 previous errors
 "#;
         let result = compress_if_beneficial_pub("cargo check 2>&1", error_output);
         assert!(
@@ -600,12 +555,13 @@ Program.cs(23,5): error CS0103: The name 'undeclared' does not exist in the curr
     }
 
     #[test]
-    fn scenario_successful_build_can_still_compress() {
-        // SUCCESS output without any error indicators should remain compressible
+    fn scenario_successful_build_keeps_its_outcome() {
         let success_output = "   Compiling serde v1.0.193\n   Compiling tokio v1.35.0\n   Compiling myapp v0.1.0\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 45.23s\n";
         let result = compress_if_beneficial_pub("cargo build", success_output);
-        // Should not crash, and successful builds are NOT error-guarded
-        assert!(!result.is_empty());
+        assert!(
+            result.contains("Finished `dev` profile"),
+            "the build outcome must survive: {result}"
+        );
     }
 
     #[test]

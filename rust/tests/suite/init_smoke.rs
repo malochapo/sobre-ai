@@ -1,3 +1,6 @@
+//! `init` and `doctor` on an isolated HOME: the JSON reports, where the
+//! Claude Code entry lands, the skill, and the agent files left alone.
+
 use std::process::Command;
 
 use sobre::core::setup_report::SetupReport;
@@ -52,7 +55,7 @@ fn write_exe(path: &std::path::Path, content: &str) {
     windows,
     ignore = "Windows handle inheritance causes subprocess hangs in CI"
 )]
-fn setup_bootstrap_doctor_json_smoke() {
+fn init_and_doctor_json_reports_and_wiring() {
     let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
@@ -125,12 +128,12 @@ fn setup_bootstrap_doctor_json_smoke() {
         "init --check must write nothing"
     );
 
-    // bootstrap --json returns clean JSON (SetupReport)
+    // init --repair --json returns clean JSON (SetupReport)
     let (code, out) = run_json(bin, &["init", "--repair", "--json"], &envs);
-    assert_eq!(code, 0, "bootstrap exit code");
+    assert_eq!(code, 0, "init --repair exit code");
     let setup: SetupReport = serde_json::from_str(&out).unwrap_or_else(|e| {
         panic!(
-            "bootstrap JSON parse: {e}\nstdout[{}]=<<<{out}>>>",
+            "init --repair JSON parse: {e}\nstdout[{}]=<<<{out}>>>",
             out.len()
         )
     });
@@ -255,7 +258,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     // `doctor` is a health gate: it exits non-zero whenever *any* check
     // needs attention, and this sandbox legitimately fails several unrelated
     // ones (no sobre on PATH, no shell profile, a fake `claude` that exits 1)
-    // — the same reason the bootstrap smoke test tolerates a non-zero code. The
+    // — the same reason the JSON smoke test above tolerates a non-zero code. The
     // contract under test is the `.claude.json` fallback *detection*, which is
     // printed to stdout regardless of the gate, so assert on the report and only
     // guard the exit code against a hard error (panic/crash → not 0/1).

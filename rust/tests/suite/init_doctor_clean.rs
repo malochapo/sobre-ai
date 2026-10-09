@@ -1,11 +1,6 @@
-//! Golden-path contract (zero-config excellence): `sobre init --repair` on a
-//! fresh machine with detected-but-unconfigured agents must leave `doctor` fully
-//! green — no "run: sobre setup" follow-ups, no dead loops.
-//!
-//! This is the Rust twin of the manual fresh-install E2E journey: it caught
-//! three real bugs (SKILL.md never installed on the golden path, pipe-guard
-//! false positive under SOBRE_CONFIG_DIR, Claude state-dir detection
-//! mismatch between doctor and setup).
+//! `sobre init --repair` on a fresh machine with detected but unconfigured
+//! agents leaves `doctor` fully green: no check sends the user back to
+//! `sobre init` right after it ran.
 
 use std::process::Command;
 
@@ -25,7 +20,7 @@ fn init_repair_leaves_doctor_fully_green() {
     std::fs::create_dir_all(proj.join(".git")).unwrap();
 
     // Agents that exist but were never wired to sobre. A bare state dir is
-    // exactly what doctor/rules/skills treat as "installed" — setup must agree.
+    // exactly what doctor treats as "installed" — init must agree.
     std::fs::create_dir_all(home.join(".cursor")).unwrap();
     std::fs::create_dir_all(home.join(".claude")).unwrap();
     std::fs::create_dir_all(home.join(".codex")).unwrap();
@@ -63,7 +58,7 @@ fn init_repair_leaves_doctor_fully_green() {
         .expect("init spawn");
     assert!(
         init.status.success(),
-        "onboard --yes must exit 0; stderr:\n{}",
+        "init --repair must exit 0; stderr:\n{}",
         String::from_utf8_lossy(&init.stderr)
     );
 
@@ -76,16 +71,15 @@ fn init_repair_leaves_doctor_fully_green() {
         .expect("doctor spawn");
     let stdout = String::from_utf8_lossy(&doctor.stdout);
 
-    // The check that historically dead-looped ("run: sobre setup" right
-    // after init already ran): the sobre skill.
+    // No check may send the user back to init right after it ran.
     assert!(
-        !stdout.contains("run: sobre setup"),
-        "doctor must never point back to setup right after onboard ran; doctor said:\n{stdout}"
+        !stdout.contains("run: sobre init"),
+        "doctor must not point back to init right after it ran; doctor said:\n{stdout}"
     );
 
     // doctor is a health gate: exit 0 == every counted check green.
     assert!(
         doctor.status.success(),
-        "doctor must be fully green right after onboard --yes; output:\n{stdout}"
+        "doctor must be fully green right after init --repair; output:\n{stdout}"
     );
 }

@@ -1,3 +1,5 @@
+//! Each tool called through the full MCP request pipeline of a
+//! `ContextEngine`, on a small Rust project in a private data dir.
 #![allow(clippy::await_holding_lock)]
 
 use serde_json::json;
@@ -94,10 +96,10 @@ edition = "2021"
     (dir, engine)
 }
 
-// ── Phase 1: Setup & Orientation ───────────────────────────
+// ── Tree ──
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase1_tree_depth() {
+async fn tree_depth() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -117,10 +119,10 @@ async fn phase1_tree_depth() {
     }
 }
 
-// ── Phase 2: Codebase Research (Read Modes) ────────────────
+// ── Read modes ──
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase2_read_full_and_cache_stub() {
+async fn read_full_and_cache_stub() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -147,10 +149,8 @@ async fn phase2_read_full_and_cache_stub() {
         .await
         .expect("full read 2");
     assert!(
-        full2.len() <= full1.len(),
-        "re-read should be stub or same size (full1={}, full2={})",
-        full1.len(),
-        full2.len()
+        full2.contains("[unchanged"),
+        "an unchanged re-read is a stub: {full2}"
     );
 
     // SAFETY: serialized by `test_env_lock()`.
@@ -160,7 +160,7 @@ async fn phase2_read_full_and_cache_stub() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase2_read_signatures() {
+async fn read_signatures() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -186,7 +186,7 @@ async fn phase2_read_signatures() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase2_read_map() {
+async fn read_map() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -197,7 +197,10 @@ async fn phase2_read_map() {
         .call_tool_text("sobre_read", Some(json!({"path": lib_path, "mode": "map"})))
         .await
         .expect("map read");
-    assert!(!map.is_empty(), "map should not be empty");
+    assert!(
+        map.contains("greet") && map.contains("add"),
+        "map should list the public functions: {map}"
+    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
@@ -206,7 +209,7 @@ async fn phase2_read_map() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase2_read_lines_range() {
+async fn read_lines_range() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -232,7 +235,7 @@ async fn phase2_read_lines_range() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase2_read_auto() {
+async fn read_auto() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -246,7 +249,7 @@ async fn phase2_read_auto() {
         )
         .await
         .expect("auto read");
-    assert!(!auto.is_empty(), "auto mode should return content");
+    assert!(auto.contains("load_config"), "auto read: {auto}");
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
@@ -255,7 +258,7 @@ async fn phase2_read_auto() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase2_read_aggressive() {
+async fn read_aggressive() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -270,8 +273,8 @@ async fn phase2_read_aggressive() {
         .await
         .expect("aggressive read");
     assert!(
-        !aggressive.is_empty(),
-        "aggressive mode should return content"
+        aggressive.contains("load_config"),
+        "aggressive read: {aggressive}"
     );
 
     // SAFETY: serialized by `test_env_lock()`.
@@ -281,7 +284,7 @@ async fn phase2_read_aggressive() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase2_read_diff_after_edit() {
+async fn read_diff_after_edit() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -308,10 +311,7 @@ async fn phase2_read_diff_after_edit() {
         .await
         .expect("diff read");
     assert!(
-        diff.contains("debug")
-            || diff.contains("changed")
-            || diff.contains("modified")
-            || diff.contains("true"),
+        diff.contains("debug: true"),
         "diff should show changes: {diff}"
     );
 
@@ -321,10 +321,10 @@ async fn phase2_read_diff_after_edit() {
     }
 }
 
-// ── Phase 3: Code Search ───────────────────────────────────
+// ── Search ──
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase3_search_regex() {
+async fn search_regex() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -344,7 +344,7 @@ async fn phase3_search_regex() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase3_search_with_path_filter() {
+async fn search_with_path_filter() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -366,10 +366,10 @@ async fn phase3_search_with_path_filter() {
     }
 }
 
-// ── Phase 4: Shell & Execution ─────────────────────────────
+// ── Shell ──
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase4_shell_echo() {
+async fn shell_echo() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -392,7 +392,7 @@ async fn phase4_shell_echo() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase4_shell_raw_mode() {
+async fn shell_raw_mode() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -414,14 +414,10 @@ async fn phase4_shell_raw_mode() {
     }
 }
 
-// ── Phase 5: Edit & Iteration ──────────────────────────────
-
-// ── Phase 6: Context Management ────────────────────────────
-
-// ── Phase 7: Knowledge & Session ───────────────────────────
+// ── Knowledge and session ──
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase7_knowledge_remember_and_recall() {
+async fn knowledge_remember_and_recall() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -458,7 +454,7 @@ async fn phase7_knowledge_remember_and_recall() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase7_knowledge_status_lists_categories() {
+async fn knowledge_status_lists_categories() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -491,7 +487,7 @@ async fn phase7_knowledge_status_lists_categories() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase7_session_finding_and_decision() {
+async fn session_finding_and_decision() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -519,18 +515,25 @@ async fn phase7_session_finding_and_decision() {
         .expect("session decision");
     assert!(!decision.is_empty(), "decision should return confirmation");
 
+    let resume = engine
+        .call_tool_text("sobre_session", Some(json!({"action": "resume"})))
+        .await
+        .expect("session resume");
+    assert!(
+        resume.contains("Use builder pattern for Config validation"),
+        "the resume block carries the decision: {resume}"
+    );
+
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
         std::env::remove_var("SOBRE_DATA_DIR");
     }
 }
 
-// ── Phase 8: Multi-Agent Coordination ──────────────────────
-
-// ── Phase 9: Metrics & Verification ────────────────────────
+// ── Session status ──
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase9_session_status_shows_the_task() {
+async fn session_status_shows_the_task() {
     let _lock = sobre::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 

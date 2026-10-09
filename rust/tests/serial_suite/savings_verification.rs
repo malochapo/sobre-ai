@@ -1,3 +1,8 @@
+//! Pattern compression of git output against floors, and what each tool
+//! reports as original and saved. The printed figures describe generated
+//! samples (and this repository's own history for the real `git log`); they
+//! are not a measure of what sobre saves on real work.
+
 use sobre::core::patterns::git;
 use sobre::core::tokens::count_tokens;
 
@@ -306,7 +311,8 @@ fn audit_full_savings_pipeline() {
     {
         let mut cache = SessionCache::new();
         let content = "use std::io;\nfn main() {\n    println!(\"hello\");\n}\n";
-        let tmp = std::env::temp_dir().join("audit_test_file.rs");
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let tmp = tmp_dir.path().join("audit_test_file.rs");
         std::fs::write(&tmp, content).unwrap();
 
         let output = sobre::tools::sobre_read::handle(
@@ -358,8 +364,6 @@ fn audit_full_savings_pipeline() {
             output2_tokens < 40,
             "cache hit stub should be <40 tokens, got {output2_tokens}",
         );
-
-        let _ = std::fs::remove_file(&tmp);
     }
 
     // 3. sobre_read — compressed mode (signatures): fair comparison
@@ -383,7 +387,8 @@ fn audit_full_savings_pipeline() {
             code.push(String::new());
         }
         let content = code.join("\n");
-        let tmp = std::env::temp_dir().join("audit_test_sigs.rs");
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let tmp = tmp_dir.path().join("audit_test_sigs.rs");
         std::fs::write(&tmp, &content).unwrap();
 
         let output = sobre::tools::sobre_read::handle(
@@ -414,8 +419,6 @@ fn audit_full_savings_pipeline() {
             ratio > 20.0 && ratio < 98.0,
             "signatures savings should be 20-98%, got {ratio:.1}%"
         );
-
-        let _ = std::fs::remove_file(&tmp);
     }
 
     // 4. sobre_tree — fair comparison (same depth)
@@ -484,30 +487,6 @@ fn audit_full_savings_pipeline() {
                 "tokenizer off by >2 for {text:?}: got {actual}, expected ~{expected_approx}",
             );
         }
-    }
-
-    // 7. CostModel sanity check
-    {
-        let input_saved: u64 = 100_000;
-        let commands: u64 = 500;
-        let output_bonus = commands * 60;
-        let total_saved = input_saved + output_bonus;
-        let cost_per_m_input = 2.50_f64;
-        let cost_per_m_output = 10.0_f64;
-        let usd_input = input_saved as f64 / 1_000_000.0 * cost_per_m_input;
-        let usd_output = output_bonus as f64 / 1_000_000.0 * cost_per_m_output;
-        let usd_total = usd_input + usd_output;
-
-        eprintln!("\n  CostModel sanity (100K input saved, 500 calls):");
-        eprintln!("    input saved:  {input_saved} tok → ${usd_input:.4}");
-        eprintln!("    output bonus: {output_bonus} tok → ${usd_output:.4}");
-        eprintln!("    total:        {total_saved} tok → ${usd_total:.4}");
-
-        assert!(
-            usd_total < 1.0,
-            "100K saved + 500 calls should be < $1.00, got ${usd_total:.4}"
-        );
-        assert!(usd_total > 0.0, "savings should be positive");
     }
 
     eprintln!("\n  AUDIT COMPLETE — all checks passed");

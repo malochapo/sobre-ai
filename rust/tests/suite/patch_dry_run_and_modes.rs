@@ -1,5 +1,5 @@
 //! `sobre_patch` writes keep the file's mode, and a dry run checks everything
-//! and writes nothing (audit B9, B10, B24).
+//! and writes nothing.
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;

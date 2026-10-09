@@ -1,5 +1,5 @@
-//! Integration tests merged into one binary (tests/main.rs) so target/
-//! holds one linked test artifact instead of ~100 (was 17-25 GB of disk).
+//! Integration tests merged into one binary (tests/main.rs), so target/
+//! holds one linked test artifact instead of one per file.
 //! Add new integration tests as modules here, NOT as new tests/*.rs files.
 //! A test that mutates process env (set_var) or process-global state (Config
 //! cache, stats buffer) goes in tests/serial_suite/ instead, which runs one
@@ -8,44 +8,46 @@
 //! tests/*.rs binary.
 
 mod adversarial_compression;
+mod agent_config_files;
 mod anchored_read_after_patch;
 mod batch_replace_unique;
+mod broad_project_roots;
 mod cli_anti_inflation;
 mod cli_characterization;
 mod compaction_cache_scenarios;
 mod compaction_survival_tests;
-mod compression_improvements;
+mod compression_properties;
 mod config_path_parity;
 mod contracts_frozen;
 mod edit_reliability;
-mod efficiency_ux_scenarios;
-mod embeddings_shared_engine;
 mod end_to_end_smoke;
 mod engine_call;
 mod entrypoints_wired;
+mod git_command_fidelity;
 mod hardening_ir_traits;
-mod hn_hardening_scenarios;
 mod home_dotdir_firewall;
 mod init_doctor_clean;
+mod init_smoke;
+mod init_symlinked_configs;
 mod init_uninstall_round_trip;
 mod integration_tests;
 mod io_health_scenarios;
 mod live_smoke_client_instructions;
 mod lock_contention_hardening;
 mod lock_ordering_check;
+mod ls_and_grep_patterns;
 mod lsp_integration;
 mod mcp_fast_initialize;
 mod outline_machine_readable_e2e;
 mod patch_dry_run_and_modes;
 mod pattern_snapshots;
 mod performance_stress;
-mod powershell_scenarios;
-mod project_data_dir_scenarios;
 mod property_compression;
 mod property_graph_reproducibility_contract;
 mod proxy_smoke;
 mod read_fidelity;
 mod reference_docs_drift;
+mod refetch_signals;
 #[cfg(feature = "dense")]
 mod reranking_scenarios;
 mod retrieval_eval;
@@ -56,12 +58,9 @@ mod security_hardening;
 mod security_resolve_path_guard;
 mod sensitivity_floor;
 mod session_lock_timeout_scenarios;
-mod setup_ci_smoke;
-mod setup_symlink;
 mod shell_and_agent_tests;
 mod shell_hook_wrapper;
-mod sobre_read_lmd_md_raw;
-mod terse_eval;
+mod test_runner_output;
+mod tool_handler_scenarios;
 mod tool_schema_strictness;
 mod uninstall_help_safety;
-mod utf8_safety_scenarios;

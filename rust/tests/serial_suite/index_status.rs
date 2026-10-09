@@ -1,4 +1,4 @@
-// ===== Group B: Index Status =====
+//! `index status` for a project with no index on disk.
 
 #[test]
 fn disk_status_shows_exists_false_for_nonexistent_project() {

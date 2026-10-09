@@ -1,6 +1,41 @@
 use sobre::core::compressor::aggressive_compress;
+use sobre::core::config::CompressionLevel;
+use sobre::core::terse;
 use sobre::core::tokens::count_tokens;
 use sobre::shell::compress::compress_if_beneficial_pub;
+
+/// Tool output of several kinds, for the prose pipeline below.
+const PROSE_PIPELINE_SAMPLES: &[&str] = &[
+    "On branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n\tmodified:   src/config.rs\n\tmodified:   src/server.rs\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")",
+    "   Compiling myapp v0.1.0 (/home/dev/myapp)\nwarning: unused variable `result`\n  --> src/config.rs:42:9\n   |\n42 |     let result = compute();\n   |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_result`\n   |\n   = note: `#[warn(unused_variables)]` on by default\n\nwarning: `myapp` (lib) generated 1 warning\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.34s",
+    "npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory.\n\nadded 847 packages, and audited 848 packages in 12s\n\n142 packages are looking for funding\n  run `npm fund` for details\n\n3 moderate severity vulnerabilities\n\nTo address all issues, run:\n  npm audit fix\n\nRun `npm audit` for details.",
+    "{\n  \"status\": \"success\",\n  \"data\": {\n    \"users\": [\n      {\n        \"id\": 1,\n        \"name\": \"Alice\",\n        \"role\": \"admin\"\n      },\n      {\n        \"id\": 2,\n        \"name\": \"Bob\",\n        \"role\": \"user\"\n      }\n    ]\n  }\n}",
+    "# myapp\n\nA small web service.\n\n## Installation\n\nThe installation is described in the documentation. After the installation, the service automatically integrates with your configuration, and no manual configuration is needed.\n\n## Usage\n\nRun the service and open the dashboard. For more details, see the documentation.",
+];
+
+#[test]
+fn prose_pipeline_passes_its_quality_gate_and_max_compresses_at_least_as_much() {
+    let mut standard_total = 0.0f32;
+    let mut max_total = 0.0f32;
+    for sample in PROSE_PIPELINE_SAMPLES {
+        let standard = terse::pipeline::compress(sample, &CompressionLevel::Standard, None);
+        assert!(
+            standard.quality_passed,
+            "quality gate failed at Standard for:\n{sample}"
+        );
+        let max = terse::pipeline::compress(sample, &CompressionLevel::Max, None);
+        standard_total += standard.savings_pct;
+        max_total += max.savings_pct;
+    }
+    assert!(
+        standard_total > 0.0,
+        "Standard must compress some of these samples"
+    );
+    assert!(
+        max_total >= standard_total,
+        "Max must compress at least as much as Standard: {max_total:.1} < {standard_total:.1}"
+    );
+}
 
 #[test]
 fn markdown_aggressive_keeps_headings_and_saves_tokens() {

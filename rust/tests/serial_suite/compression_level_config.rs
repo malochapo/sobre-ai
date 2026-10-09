@@ -1,3 +1,6 @@
+//! `compression_level`: how the file value parses, which band it selects, and
+//! the output style the MCP instructions then ask of the model.
+
 use sobre::core::config::{CompressionLevel, Config};
 use sobre::instructions;
 
@@ -41,7 +44,7 @@ fn set_compression(value: f64) -> ConfigGuard {
     with_config(&format!("compression_level = {value}\n"))
 }
 
-// ── Unified `compression_level` config key ──
+// ── The output style the instructions ask for ──
 
 #[test]
 fn compression_level_lite_injects_concise() {

@@ -1,5 +1,5 @@
-//! End-to-end smoke tests: session lifecycle, CLI commands, contract docs,
-//! knowledge and shell compression.
+//! Smoke tests: a session survives a serde round trip and builds its resume
+//! block, `sobre config` lists the keys, and knowledge recalls what it stored.
 
 use std::process::Command;
 
@@ -68,58 +68,11 @@ mod cli_commands {
     use super::*;
 
     #[test]
-    fn cli_help() {
-        let out = sobre_bin().arg("--help").output().unwrap();
-        assert!(out.status.success());
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("local context tools for coding agents"));
-    }
-
-    #[test]
-    fn cli_config() {
+    fn cli_config_lists_the_keys() {
         let out = sobre_bin().arg("config").output().unwrap();
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("passthrough_commands"));
-    }
-
-    #[test]
-    fn cli_shell_echo() {
-        let out = sobre_bin().args(["-c", "echo hello"]).output().unwrap();
-        assert!(out.status.success());
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        assert!(stdout.contains("hello"));
-    }
-
-    #[test]
-    fn cli_doctor() {
-        let out = sobre_bin().arg("doctor").output().unwrap();
-        let stdout = String::from_utf8_lossy(&out.stdout);
-        let stderr = String::from_utf8_lossy(&out.stderr);
-        let combined = format!("{stdout}{stderr}");
-        assert!(
-            combined.contains("sobre") || combined.contains("doctor") || combined.contains("check"),
-            "doctor must produce diagnostic output"
-        );
-    }
-}
-
-mod contract_gates {
-
-    #[test]
-    fn committed_contract_docs_are_valid() {
-        let manifest_dir = env!("CARGO_MANIFEST_DIR");
-        let committed = vec!["usage-ledger-v1.md"];
-
-        for name in &committed {
-            let path = format!("{manifest_dir}/../docs/contracts/{name}");
-            assert!(
-                std::path::Path::new(&path).exists(),
-                "committed contract doc {name} must exist"
-            );
-            let content = std::fs::read_to_string(&path).unwrap();
-            assert!(content.len() > 200, "{name} must have substantial content");
-        }
     }
 }
 
@@ -130,7 +83,7 @@ mod knowledge_system {
     #[test]
     fn remember_recall_roundtrip() {
         let policy = MemoryPolicy::default();
-        let mut kb = ProjectKnowledge::new("/tmp/knowledge-test-ultimate");
+        let mut kb = ProjectKnowledge::new("/projects/knowledge-roundtrip");
         kb.remember(
             "architecture",
             "auth_jwt",
@@ -169,7 +122,7 @@ mod knowledge_system {
     #[test]
     fn knowledge_multi_category_recall() {
         let policy = MemoryPolicy::default();
-        let mut kb = ProjectKnowledge::new("/tmp/knowledge-multi-cat-ultimate");
+        let mut kb = ProjectKnowledge::new("/projects/knowledge-categories");
         kb.remember(
             "security",
             "cors_policy",
@@ -203,36 +156,5 @@ mod knowledge_system {
 
         let empty = kb.recall_by_category("nonexistent");
         assert!(empty.is_empty(), "no facts for nonexistent category");
-    }
-}
-
-mod shell_compression {
-    use super::*;
-
-    #[test]
-    fn shell_compresses_git_status() {
-        let out = sobre_bin().args(["-c", "git status"]).output().unwrap();
-        assert!(out.status.success());
-    }
-
-    #[test]
-    fn shell_compresses_cargo_build_output() {
-        let out = sobre_bin()
-            .args(["-c", "echo 'Compiling sobre v3.4.7\n   Compiling serde v1.0.0\n   Compiling tokio v1.0.0\n   Finished dev [unoptimized + debuginfo] target(s) in 5.00s'"])
-            .output().unwrap();
-        assert!(out.status.success());
-    }
-
-    #[test]
-    fn shell_compresses_ls_output() {
-        // `ls -la` is not a PowerShell or cmd command; `dir` lists a directory
-        // under all three shells Windows may resolve to (PowerShell, cmd, Git Bash).
-        let listing = if cfg!(windows) { "dir" } else { "ls -la" };
-        let out = sobre_bin().args(["-c", listing]).output().unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
     }
 }

@@ -1,38 +1,41 @@
-// Integration tests: parallel MCP `remember` calls clobbered
-// each other (lost updates) and could leave `knowledge.json` with trailing
-// JSON garbage. The fix serializes the read-modify-write under a per-project
-// lock and writes the file atomically (temp + rename).
+//! Concurrent `remember` calls on one project lose no fact and leave
+//! `knowledge.json` valid: the read-modify-write runs under a per-project lock
+//! and the file is written atomically (temp file + rename).
 
 use sobre::core::knowledge::ProjectKnowledge;
 use sobre::core::memory_policy::MemoryPolicy;
 
-/// Sets an isolated data dir for this test binary so the real data dir is never
-/// touched.
-fn isolate_data_dir() -> tempfile::TempDir {
-    let dir = tempfile::tempdir().unwrap();
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
-    dir
+/// Points `SOBRE_DATA_DIR` at a fresh temp dir until dropped. Callers hold
+/// `test_env_lock()`.
+struct DataDir {
+    _dir: tempfile::TempDir,
 }
 
-// A single `#[test]` keeps the process-global `SOBRE_DATA_DIR` override
-// race-free (cargo runs test fns in this binary on parallel threads).
+impl DataDir {
+    fn new() -> Self {
+        let dir = tempfile::tempdir().unwrap();
+        // SAFETY: serialized by `test_env_lock()`.
+        unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
+        Self { _dir: dir }
+    }
+}
+
+impl Drop for DataDir {
+    fn drop(&mut self) {
+        // SAFETY: serialized by `test_env_lock()`.
+        unsafe { std::env::remove_var("SOBRE_DATA_DIR") };
+    }
+}
+
 #[test]
-fn parallel_writes_are_lossless_atomic_and_clean() {
-    let _data = isolate_data_dir();
-    parallel_remember_preserves_every_fact_and_valid_json();
-    save_is_atomic_and_leaves_no_temp_files();
-}
-
 fn parallel_remember_preserves_every_fact_and_valid_json() {
+    let _lock = sobre::core::data_dir::test_env_lock();
+    let _data = DataDir::new();
     // A real, unique project directory (no identity markers → stable hash).
     let project = tempfile::tempdir().unwrap();
     let root = project.path().to_string_lossy().to_string();
 
-    // Seven distinct facts written from seven threads at once — the exact
-    // scenario from the bug report.
+    // Seven distinct facts written from seven threads at once.
     let facts = [
         ("architecture", "project-purpose", "context layer"),
         ("architecture", "example-projects", "samples dir"),
@@ -88,7 +91,10 @@ fn parallel_remember_preserves_every_fact_and_valid_json() {
         .expect("knowledge.json must be valid JSON after concurrent writes");
 }
 
+#[test]
 fn save_is_atomic_and_leaves_no_temp_files() {
+    let _lock = sobre::core::data_dir::test_env_lock();
+    let _data = DataDir::new();
     let project = tempfile::tempdir().unwrap();
     let root = project.path().to_string_lossy().to_string();
 
