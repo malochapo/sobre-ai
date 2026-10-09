@@ -712,8 +712,12 @@ pub fn is_cache_entry_stale_verified(
         return false;
     }
     match std::fs::read(path) {
-        // Hash the same view of the bytes that `store()` hashed (lossy UTF-8).
-        Ok(bytes) => content_hash(&String::from_utf8_lossy(&bytes)) != cached_hash,
+        // Hash the same view of the bytes that `store()` hashed: lossy UTF-8,
+        // without a UTF-8 BOM (`read_file_lossy` strips it before storing).
+        Ok(bytes) => {
+            let text = String::from_utf8_lossy(&bytes);
+            content_hash(text.strip_prefix('\u{feff}').unwrap_or(&text)) != cached_hash
+        }
         Err(_) => true,
     }
 }

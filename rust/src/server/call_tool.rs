@@ -109,7 +109,13 @@ impl SobreServer {
             result_text.clone_from(&pre_compression);
         }
 
-        if let Some(note) = degrade_note {
+        // `raw` is the bytes on disk: nothing is appended to it.
+        let raw_read = name == "sobre_read"
+            && (helpers::get_bool(args, "raw") == Some(true)
+                || helpers::get_str(args, "mode").as_deref() == Some("raw"));
+        if let Some(note) = degrade_note
+            && !raw_read
+        {
             result_text = format!("{result_text}\n\n{note}");
         }
 

@@ -448,18 +448,19 @@ pub(crate) fn extract_line_range(content: &str, range_str: &str) -> String {
     }
 }
 
-/// Parses a single `"start-end"` (or bare `"start"`, meaning "to EOF") window
-/// payload for `anchored:N-M`. Single-span only — unlike `lines:`,
-/// an anchored window feeds `sobre_patch`, which edits one contiguous region at
-/// a time, so comma multi-select isn't needed here.
+/// Parses a single `"start-end"`, `"start-"` (to the end) or bare `"start"`
+/// (that one line, as `lines:N`) window payload for `anchored:N-M`.
+/// Single-span only — unlike `lines:`, an anchored window feeds
+/// `sobre_patch`, which edits one contiguous region at a time, so comma
+/// multi-select isn't needed here.
 fn parse_anchored_range(range_str: &str, total: usize) -> (usize, usize) {
     if let Some((s, e)) = range_str.split_once('-') {
         let start = s.trim().parse::<usize>().unwrap_or(1).max(1);
         let end = e.trim().parse::<usize>().unwrap_or(total).min(total);
         (start, end)
     } else {
-        let start = range_str.trim().parse::<usize>().unwrap_or(1).max(1);
-        (start, total)
+        let line = range_str.trim().parse::<usize>().unwrap_or(1).max(1);
+        (line, line.min(total))
     }
 }
 

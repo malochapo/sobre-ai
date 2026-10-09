@@ -51,21 +51,23 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     if let Some(cache) = ctx.cache
         && let Some(cached) = cache.get(ctx.path)
     {
-        if !file_unchanged(ctx.path, cached) {
-            return resolved("diff", "cache_changed");
-        }
-        // Unchanged. Resolving to "full" is only a *cheap* stub hit when full
+        // A diff is news only against the full content this conversation
+        // was given; otherwise a changed file gets a fresh view below.
+        //
+        // Unchanged: resolving to "full" is only a *cheap* stub hit when full
         // content was actually delivered before. If the first read was a
         // compressed mode (map/signatures), `full_content_delivered` is false,
         // so forcing "full" here re-delivers the entire file on the very next
         // read — a compression bounce that costs *more* tokens than the first
-        // read and collapses the cache hit rate: the 2nd read of every file
-        // blows up to full and stub hits only begin at the 3rd read (which
-        // agents rarely reach). Only short-circuit once full was delivered;
-        // otherwise fall through to the size heuristic, which deterministically
-        // reproduces the cached compressed mode and serves it from the
-        // compressed-output cache as a cheap, consistent hit.
-        if cache.is_full_delivered(ctx.path) {
+        // read and collapses the cache hit rate. Only short-circuit once full
+        // was delivered; otherwise fall through to the size heuristic, which
+        // deterministically reproduces the cached compressed mode and serves
+        // it from the compressed-output cache as a cheap, consistent hit.
+        if !file_unchanged(ctx.path, cached) {
+            if crate::tools::sobre_read::delivered_here(cache, ctx.path) {
+                return resolved("diff", "cache_changed");
+            }
+        } else if cache.is_full_delivered(ctx.path) {
             return resolved("full", "cache_hit");
         }
     }

@@ -211,6 +211,33 @@ fn read_line_ranges(
     Some((kept, total))
 }
 
+/// Lines `start..=end` (1-based) of `path` as they are on disk, line endings
+/// included (a UTF-8 BOM is not content), streamed: a file over the read
+/// limit is never buffered whole. The `raw` view of a line window.
+pub(crate) fn raw_line_window(path: &str, start: usize, end: usize) -> std::io::Result<String> {
+    use std::io::BufRead;
+    let mut reader = std::io::BufReader::new(open_with_retry(path)?);
+    let mut out = Vec::new();
+    let mut buf = Vec::new();
+    let mut n = 0usize;
+    while n < end {
+        buf.clear();
+        if reader.read_until(b'\n', &mut buf)? == 0 {
+            break;
+        }
+        n += 1;
+        if n >= start {
+            let line: &[u8] = if n == 1 {
+                buf.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&buf)
+            } else {
+                &buf
+            };
+            out.extend_from_slice(line);
+        }
+    }
+    Ok(String::from_utf8_lossy(&out).into_owned())
+}
+
 /// The single span `[start, end]` of `path`, streamed: the anchored-window
 /// counterpart to [`read_file_lossy`].
 fn read_line_window(path: &str, start: usize, end: usize) -> Option<LineWindow> {
@@ -378,29 +405,6 @@ pub fn handle_with_task_resolved(
     )
 }
 
-/// Like `handle_with_task_resolved` but with an explicit per-call
-/// aggressiveness (the `sobre_read` `aggressiveness` arg). `None` falls back
-/// to the config field.
-pub fn handle_with_task_resolved_tuned(
-    cache: &mut SessionCache,
-    path: &str,
-    mode: &str,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-    aggressiveness: Option<f64>,
-    protect: &[String],
-) -> ReadOutput {
-    handle_with_options_resolved(
-        cache,
-        path,
-        mode,
-        false,
-        crp_mode,
-        task,
-        ReadTuning::resolve(aggressiveness, protect),
-    )
-}
-
 /// Fresh read with task-aware filtering (invalidates cache first).
 pub fn handle_fresh_with_task(
     cache: &mut SessionCache,
@@ -429,27 +433,6 @@ pub fn handle_fresh_with_task_resolved(
         crp_mode,
         task,
         ReadTuning::resolve(None, &[]),
-    )
-}
-
-/// Fresh-read variant of [`handle_with_task_resolved_tuned`].
-pub fn handle_fresh_with_task_resolved_tuned(
-    cache: &mut SessionCache,
-    path: &str,
-    mode: &str,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-    aggressiveness: Option<f64>,
-    protect: &[String],
-) -> ReadOutput {
-    handle_with_options_resolved(
-        cache,
-        path,
-        mode,
-        true,
-        crp_mode,
-        task,
-        ReadTuning::resolve(aggressiveness, protect),
     )
 }
 
@@ -498,9 +481,122 @@ fn handle_with_options_resolved_preread(
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
     }
-    let mut result =
-        handle_with_options_inner(cache, path, mode, fresh, crp_mode, task, tuning, preread);
+    let result = match prepare(cache, path, mode, fresh, crp_mode, task, tuning, preread) {
+        Prepared::Done(out) => out,
+        Prepared::Render(job) => {
+            let rendered = render(&job, path, crp_mode, task, tuning);
+            finish(
+                cache,
+                path,
+                &job.resolved_mode,
+                rendered,
+                crp_mode,
+                task,
+                tuning,
+            )
+        }
+    };
+    settle(cache, path, result)
+}
 
+/// What a read still has to render once the cache lock is released: a view
+/// of `content` in `resolved_mode`. Rendering a compressed view (tree-sitter,
+/// entropy) can take seconds on a large file; no lock is held meanwhile.
+pub(crate) struct RenderJob {
+    pub(crate) content: String,
+    pub(crate) resolved_mode: String,
+    pub(crate) original_tokens: usize,
+}
+
+/// The cache's answer to a read: the output, or a view to render.
+pub(crate) enum Prepared {
+    Done(ReadOutput),
+    Render(RenderJob),
+}
+
+/// Renders `job` with no lock held: the view, capped to the raw file when
+/// the view would cost more.
+pub(crate) fn render(
+    job: &RenderJob,
+    path: &str,
+    crp_mode: CrpMode,
+    task: Option<&str>,
+    tuning: ReadTuning<'_>,
+) -> String {
+    let short = protocol::shorten_path(path);
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let (out, _) = process_mode_tuned(
+        &job.content,
+        &job.resolved_mode,
+        &short,
+        ext,
+        job.original_tokens,
+        crp_mode,
+        path,
+        task,
+        tuning,
+    );
+    // Anti-inflation for lossy whole-file summaries (auto OR explicit):
+    // map/signatures/… must never cost more than the raw file. Selection/delta
+    // views keep their exact shape (see mode_allows_raw_cap). Cap before
+    // caching so re-read hits serve the same capped, byte-stable body.
+    if mode_allows_raw_cap(&job.resolved_mode) {
+        let framed_tokens = count_tokens(&out);
+        cap_to_raw(
+            out,
+            framed_tokens,
+            &job.content,
+            job.original_tokens,
+            &job.resolved_mode,
+        )
+    } else {
+        out
+    }
+}
+
+/// Stores a rendered view in the cache (when its mode is cacheable) and
+/// returns it redacted.
+pub(crate) fn finish(
+    cache: &mut SessionCache,
+    path: &str,
+    resolved_mode: &str,
+    rendered: String,
+    crp_mode: CrpMode,
+    task: Option<&str>,
+    tuning: ReadTuning<'_>,
+) -> ReadOutput {
+    if is_cacheable_mode(resolved_mode) {
+        let cache_key = compressed_cache_key(
+            resolved_mode,
+            crp_mode,
+            task,
+            tuning.aggressiveness,
+            tuning.protect,
+        );
+        cache.set_compressed(path, &cache_key, rendered.clone());
+    }
+    // `raw` is the bytes on disk: no redaction either.
+    let out = if resolved_mode == "raw" {
+        rendered
+    } else {
+        crate::core::redaction::redact_text(&rendered)
+    };
+    let sent = count_tokens(&out);
+    ReadOutput {
+        content: out,
+        resolved_mode: resolved_mode.to_string(),
+        output_tokens: sent,
+        is_cache_hit: false,
+    }
+}
+
+/// What every read records once its output is known: the mode last served,
+/// whether the full content is what the agent now holds, the shared-block
+/// dedup of lossy summaries, and the read in the bounce tracker.
+pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutput) -> ReadOutput {
     if let Some(entry) = cache.get_mut(path) {
         entry.last_mode.clone_from(&result.resolved_mode);
         // A partial/filtered read means the model's most recent view is NOT
@@ -614,6 +710,19 @@ pub(crate) fn try_stub_hit_readonly_scoped(
     Some(render_unchanged_stub(&rec.file_ref, path, rec.line_count))
 }
 
+/// Whether this conversation received `path`'s full content: the only base
+/// a diff, an auto-delta or a collapsed window may be read against.
+pub(crate) fn delivered_here(cache: &SessionCache, path: &str) -> bool {
+    let Some(entry) = cache.get(path) else {
+        return false;
+    };
+    cache.is_full_delivered(path)
+        && crate::core::conversation::conversation_allows_stub(
+            crate::core::conversation::current_conversation_id_fresh().as_deref(),
+            entry.delivered_conversation.as_deref(),
+        )
+}
+
 /// Renders the `[unchanged …]` stub body shared by the warm and cold stub paths.
 ///
 /// Determinism: the stub is a pure function of (file_ref, path, line_count),
@@ -691,6 +800,12 @@ pub fn resolve_explicit_delta_mode(
     };
     let stale =
         crate::core::cache::is_cache_entry_stale_verified(path, entry.stored_mtime, &entry.hash);
+    // A diff or a collapsed window is read against the full content: only
+    // when this conversation received it (not a `signatures` view, not
+    // another conversation's read, not a read before `/clear`).
+    if !delivered_here(cache, path) {
+        return unchanged;
+    }
     if stale {
         // Only divert to a diff when full content is actually cached: the diff
         // base is that full content (see `handle_diff`), never a compressed
@@ -707,10 +822,10 @@ pub fn resolve_explicit_delta_mode(
         }
         return unchanged;
     }
-    // Unchanged on disk: a `lines:` window of a file already delivered in full
-    // re-emits text the model holds — collapse to the full-mode stub
+    // Unchanged on disk: a `lines:` window of a file this conversation holds
+    // in full re-emits text the model holds — collapse to the full-mode stub
     // (~15 tokens). A plain `full` re-read already hits that stub downstream.
-    if mode.starts_with("lines:") && cache.is_full_delivered(path) {
+    if mode.starts_with("lines:") {
         return DeltaExplicitDecision {
             mode: "full".to_string(),
             note: None,
@@ -719,7 +834,9 @@ pub fn resolve_explicit_delta_mode(
     unchanged
 }
 
-fn handle_with_options_inner(
+/// The part of a read that needs the cache: everything but rendering a
+/// compressed view, which [`Prepared::Render`] hands back to do unlocked.
+pub(crate) fn prepare(
     cache: &mut SessionCache,
     path: &str,
     mode: &str,
@@ -728,7 +845,26 @@ fn handle_with_options_inner(
     task: Option<&str>,
     tuning: ReadTuning<'_>,
     preread: Option<String>,
-) -> ReadOutput {
+) -> Prepared {
+    Prepared::Done(
+        match prepare_inner(cache, path, mode, fresh, crp_mode, task, tuning, preread) {
+            Ok(out) => out,
+            Err(job) => return Prepared::Render(job),
+        },
+    )
+}
+
+/// [`prepare`] with `Err` for a view to render.
+fn prepare_inner(
+    cache: &mut SessionCache,
+    path: &str,
+    mode: &str,
+    fresh: bool,
+    crp_mode: CrpMode,
+    task: Option<&str>,
+    tuning: ReadTuning<'_>,
+    preread: Option<String>,
+) -> Result<ReadOutput, RenderJob> {
     let file_ref = cache.get_file_ref(path);
     let short = protocol::shorten_path(path);
     let ext = Path::new(path)
@@ -739,12 +875,12 @@ fn handle_with_options_inner(
     if fresh {
         if mode == "diff" {
             let warning = "[warning] fresh+diff is redundant — fresh invalidates cache, no diff possible. Use mode=full with fresh=true instead.";
-            return ReadOutput {
+            return Ok(ReadOutput {
                 content: warning.to_string(),
                 resolved_mode: "diff".into(),
                 output_tokens: count_tokens(warning),
                 is_cache_hit: false,
-            };
+            });
         }
         cache.invalidate(path);
     }
@@ -753,19 +889,19 @@ fn handle_with_options_inner(
     // cache (fresh always bypasses it) or the whole file in memory — try the
     // disk-streaming short-circuit first.
     if let Some(out) = try_disk_anchored_window(path, mode, fresh, preread.is_none(), &short) {
-        return out;
+        return Ok(out);
     }
 
     if mode == "diff" {
         let (out, _) = handle_diff(cache, path, &file_ref);
         let out = crate::core::redaction::redact_text(&out);
         let sent = count_tokens(&out);
-        return ReadOutput {
+        return Ok(ReadOutput {
             content: out,
             resolved_mode: "diff".into(),
             output_tokens: sent,
             is_cache_hit: false,
-        };
+        });
     }
 
     if mode != "full"
@@ -808,40 +944,40 @@ fn handle_with_options_inner(
 
         if resolved_mode == "full" || resolved_mode == "full-compact" {
             if let Some(out) = try_stub_hit_readonly(cache, path) {
-                return out;
+                return Ok(out);
             }
             if resolved_mode == "full-compact" {
                 let content = match read_file_lossy(path) {
                     Ok(c) => c,
                     Err(e) => {
                         let msg = format!("ERROR: {e}");
-                        return ReadOutput {
+                        return Ok(ReadOutput {
                             content: msg,
                             resolved_mode: "error".into(),
                             output_tokens: 0,
                             is_cache_hit: false,
-                        };
+                        });
                     }
                 };
                 let (out, _) = format_full_compact_output(&content);
                 let out = crate::core::redaction::redact_text(&out);
                 let sent = count_tokens(&out);
-                return ReadOutput {
+                return Ok(ReadOutput {
                     content: out,
                     resolved_mode: "full-compact".into(),
                     output_tokens: sent,
                     is_cache_hit: false,
-                };
+                });
             }
             let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
             let out = crate::core::redaction::redact_text(&out);
             let sent = count_tokens(&out);
-            return ReadOutput {
+            return Ok(ReadOutput {
                 content: out,
                 resolved_mode: "full".into(),
                 output_tokens: sent,
                 is_cache_hit: false,
-            };
+            });
         }
 
         if is_cacheable_mode(&resolved_mode) {
@@ -857,62 +993,21 @@ fn handle_with_options_inner(
                 // get_compressed() already recorded the cache hit (stats + event)
                 let out = crate::core::redaction::redact_text(&cached_output);
                 let sent = count_tokens(&out);
-                return ReadOutput {
+                return Ok(ReadOutput {
                     content: out,
                     resolved_mode,
                     output_tokens: sent,
                     is_cache_hit: true,
-                };
+                });
             }
         }
 
         if let Some(content) = content_opt {
-            let (out, _) = process_mode_tuned(
-                &content,
-                &resolved_mode,
-                &short,
-                ext,
-                original_tokens,
-                crp_mode,
-                path,
-                task,
-                tuning,
-            );
-            // Anti-inflation for lossy whole-file summaries (auto OR
-            // explicit): map/signatures/… must never cost more than the raw file.
-            // Selection/delta views keep their exact shape (see
-            // mode_allows_raw_cap). Cap before caching so re-read hits serve the
-            // same capped, byte-stable body.
-            let out = if mode_allows_raw_cap(&resolved_mode) {
-                let framed_tokens = count_tokens(&out);
-                cap_to_raw(
-                    out,
-                    framed_tokens,
-                    &content,
-                    original_tokens,
-                    &resolved_mode,
-                )
-            } else {
-                out
-            };
-            if is_cacheable_mode(&resolved_mode) {
-                let cache_key = compressed_cache_key(
-                    &resolved_mode,
-                    crp_mode,
-                    task,
-                    tuning.aggressiveness,
-                    tuning.protect,
-                );
-                cache.set_compressed(path, &cache_key, out.clone());
-            }
-            let out = crate::core::redaction::redact_text(&out);
-            let sent = count_tokens(&out);
-            return ReadOutput {
-                content: out,
+            return Err(RenderJob {
+                content,
                 resolved_mode,
-                output_tokens: sent,
-                is_cache_hit: false,
-            };
+                original_tokens,
+            });
         }
         cache.invalidate(path);
     }
@@ -929,12 +1024,12 @@ fn handle_with_options_inner(
             Err(e) => {
                 let msg = format!("ERROR: {e}");
                 let tokens = count_tokens(&msg);
-                return ReadOutput {
+                return Ok(ReadOutput {
                     content: msg,
                     resolved_mode: "error".into(),
                     output_tokens: tokens,
                     is_cache_hit: false,
-                };
+                });
             }
         }
     };
@@ -955,12 +1050,12 @@ fn handle_with_options_inner(
             let (output, _) = format_full_compact_output(&content);
             let output = crate::core::redaction::redact_text(&output);
             let sent = count_tokens(&output);
-            return ReadOutput {
+            return Ok(ReadOutput {
                 content: output,
                 resolved_mode: "full-compact".into(),
                 output_tokens: sent,
                 is_cache_hit: false,
-            };
+            });
         }
 
         let (output, _) = format_full_output(&short, ext, &content, store_result.line_count, task);
@@ -974,12 +1069,12 @@ fn handle_with_options_inner(
         );
         let output = crate::core::redaction::redact_text(&output);
         let sent = count_tokens(&output);
-        return ReadOutput {
+        return Ok(ReadOutput {
             content: output,
             resolved_mode: "full".into(),
             output_tokens: sent,
             is_cache_hit: false,
-        };
+        });
     }
 
     let resolved_mode = if mode == "auto" {
@@ -990,52 +1085,11 @@ fn handle_with_options_inner(
         mode.to_string()
     };
 
-    let (output, _sent) = process_mode_tuned(
-        &content,
-        &resolved_mode,
-        &short,
-        ext,
-        store_result.original_tokens,
-        crp_mode,
-        path,
-        task,
-        tuning,
-    );
-    // Anti-inflation for lossy whole-file summaries (auto OR explicit);
-    // selection/delta views keep their exact shape (see mode_allows_raw_cap).
-    // Cap first, then cache the pure capped body so re-reads stay byte-stable
-    // — the optional, read-state-dependent navigation hints below are
-    // appended to the returned value only, never to the cached body.
-    let output = if mode_allows_raw_cap(&resolved_mode) {
-        let framed_tokens = count_tokens(&output);
-        cap_to_raw(
-            output,
-            framed_tokens,
-            &content,
-            store_result.original_tokens,
-            &resolved_mode,
-        )
-    } else {
-        output
-    };
-    if is_cacheable_mode(&resolved_mode) {
-        let cache_key = compressed_cache_key(
-            &resolved_mode,
-            crp_mode,
-            task,
-            tuning.aggressiveness,
-            tuning.protect,
-        );
-        cache.set_compressed(path, &cache_key, output.clone());
-    }
-    let output = crate::core::redaction::redact_text(&output);
-    let final_tokens = count_tokens(&output);
-    ReadOutput {
-        content: output,
+    Err(RenderJob {
+        content,
         resolved_mode,
-        output_tokens: final_tokens,
-        is_cache_hit: false,
-    }
+        original_tokens: store_result.original_tokens,
+    })
 }
 
 /// Anti-inflation invariant: a `sobre_read` must never cost more tokens than
@@ -1131,6 +1185,9 @@ fn handle_full_with_auto_delta(
         .get(path)
         .and_then(crate::core::cache::CacheEntry::content)
         .unwrap_or_default();
+    // The delta is against what this conversation was given in full; any
+    // other base would be news to the agent.
+    let delta_base = delivered_here(cache, path);
     let store_result = cache.store(path, &disk_content);
 
     if store_result.was_hit {
@@ -1149,7 +1206,10 @@ fn handle_full_with_auto_delta(
     let diff_tokens = count_tokens(&diff);
     let full_tokens = store_result.original_tokens;
 
-    if full_tokens > 0 && (diff_tokens as f64) < (full_tokens as f64 * AUTO_DELTA_THRESHOLD) {
+    if delta_base
+        && full_tokens > 0
+        && (diff_tokens as f64) < (full_tokens as f64 * AUTO_DELTA_THRESHOLD)
+    {
         let head = short.to_string();
         let out = format!(
             "{head} [auto-delta] ∆{}L\n{diff}",
@@ -1176,18 +1236,20 @@ fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String,
         }
     };
 
-    let diff_output = if let Some(old) = &old_content {
-        compressor::diff_content(old, &new_content)
-    } else {
-        // No previous version cached — store content for future diffs but
-        // return a short guidance message instead of dumping the full file.
-        cache.store(path, &new_content);
-        let msg = format!(
-            "{file_ref}={short} [no cached version for diff — use mode=full first, then diff on re-read]"
-        );
-        let sent = count_tokens(&msg);
-        return (msg, sent);
-    };
+    let diff_output =
+        if let Some(old) = old_content.as_ref().filter(|_| delivered_here(cache, path)) {
+            compressor::diff_content(old, &new_content)
+        } else {
+            // No previous version cached — store content for future diffs but
+            // return a short guidance message instead of dumping the full file.
+            cache.store(path, &new_content);
+            let msg = format!(
+                "{file_ref}={short} [nothing to diff against: this conversation has not read the \
+             whole file — use mode=full first, then diff on re-read]"
+            );
+            let sent = count_tokens(&msg);
+            return (msg, sent);
+        };
 
     cache.store(path, &new_content);
 

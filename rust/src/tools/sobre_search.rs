@@ -272,7 +272,10 @@ pub fn handle_filtered(
         // (never for non-matching files) and reused for every later hit here.
         let mut file_enclosing: Option<EnclosingIndex> = None;
 
-        for (i, line) in content.lines().enumerate() {
+        // A UTF-8 BOM is not part of line 1: an anchor hashed with it would
+        // never match what `sobre_read` and `sobre_patch` hash.
+        let body = content.strip_prefix('\u{feff}').unwrap_or(&content);
+        for (i, line) in body.lines().enumerate() {
             // `exclude_pattern` filters out matching lines (grep -v).
             if re.is_match(line) && !exclude_re.as_ref().is_some_and(|ex| ex.is_match(line)) {
                 let short_path =
@@ -723,6 +726,29 @@ mod tests {
             .text
         };
         assert_eq!(run(), run(), "search output must be deterministic");
+    }
+
+    /// K3: line 1 of a file with a UTF-8 BOM is anchored without the BOM,
+    /// as `sobre_read` and `sobre_patch` hash it.
+    #[test]
+    fn anchored_search_hashes_line_one_without_the_bom() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("b.rs"), "\u{feff}let needle = 1;\n").unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let out = handle_filtered(
+            "needle",
+            &root,
+            Some("*.rs"),
+            10,
+            CrpMode::Off,
+            true,
+            true,
+            None,
+            None,
+        )
+        .text;
+        let hh = crate::core::anchor::line_hash("let needle = 1;");
+        assert!(out.contains(&format!("b.rs:1:{hh} ")), "{out}");
     }
 
     /// Opt-in anchored search tags each hit with `:hh` (matching
