@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#51, #52) |
+| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #53) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -196,17 +196,22 @@ documented:
     `[proxy.upstreams]` is no longer written, by `config init` or `sobre
     config`. A test uncomments each listed key alone, with nothing set and
     with an upstream set, and checks the file parses and the key took.
-- [ ] **G4 The whitespace-insensitive fallback of `replace_unique` and
-  `replace_all` reports edits it did not make** (`tools/impl_edit.rs:257-276`,
+- [x] **G4 The whitespace-insensitive fallback of `replace_unique` and
+  `replace_all` reports edits it did not make** (#53) (`tools/impl_edit.rs:257-276`,
   `:403-425`, `:643-664`). *Regression: B9 added it to `replace_all`.*
   - On a CRLF file it answers "1 replacement" and changes nothing.
   - `replace_unique` accepts a match without checking that it is unique
     among the whitespace variants.
   - `replace_all` replaces some occurrences only.
   - Decision 2.
-- [ ] **G5 `sobre_patch` failures lose `isError` when the path holds a
+  - Done. The fallback is gone; only line endings are still matched
+    either way (an LF `old_string` on a CRLF file), which changes no
+    text. With no exact match, the error quotes the nearest line with its
+    whitespace (`"  let x = 1;  "`) and writes nothing.
+- [x] **G5 `sobre_patch` failures lose `isError` when the path holds a
   space.** *Regression: B29.* `is_section_label`
   (`server/tool_trait.rs:138-141`) rejects any label with a space.
+  (#53) Done: a `[path]` label may hold spaces.
 - [ ] **G6 Instruction files ignore `start_line`/`limit`.**
   *Regression: B3.* The window applied at `tools/registered/sobre_read.rs:182`
   is replaced by `full` at `:214`. `AGENTS.md start_line=3 limit=2` returns
@@ -228,13 +233,18 @@ documented:
   - `passthrough_commands` promises output "passed through uncompressed".
   - Fix: keep the full output whenever the text changes, and never touch a
     passthrough command's output.
-- [ ] **G9 A relative path follows a `cd` into another checkout.**
+- [x] **G9 A relative path follows a `cd` into another checkout.** (#53)
   *Regression: B37 extended it to `ops[]`.*
   - After `cd vendor/lib` in `sobre_shell` (a nested repository or a
     submodule), `sobre_patch path=src/lib.rs` edits `vendor/lib/src/lib.rs`
     (`core/path_resolve.rs:33-44,94-98`, `core/session/state.rs:277`).
   - Fix: follow the shell's directory only into a worktree of the same
     repository; print the resolved path in every edit result.
+  - Done. The shell's directory wins only when it is another worktree of
+    the project's repository: the same `.git` directory, or a `.git` file
+    whose `commondir` leads there. A nested repository or a submodule is
+    another repository, and relative paths stay in the project. (Edit
+    results already name the file; the path is not printed in full.)
 - [ ] **G10 `sobre_session restore` can return another project's snapshot.**
   *Regression: B38 missed this path.* It filters snapshots on a substring
   of the process's working directory (`core/session/compaction.rs:394-420`,

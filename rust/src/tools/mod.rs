@@ -342,6 +342,10 @@ mod resolve_path_tests {
         let root_value = create_git_root(&repo);
         let wt = repo.join(".claude/worktrees/wt");
         std::fs::create_dir_all(wt.join("src")).unwrap();
+        // As `git worktree add` lays it out: the worktree's entry under the
+        // main repository's .git, with a commondir leading back to it.
+        std::fs::create_dir_all(repo.join(".git/worktrees/wt")).unwrap();
+        std::fs::write(repo.join(".git/worktrees/wt/commondir"), "../..\n").unwrap();
         std::fs::write(wt.join(".git"), "gitdir: ../../../.git/worktrees/wt\n").unwrap();
         std::fs::create_dir_all(repo.join("src")).unwrap();
         std::fs::write(repo.join("src/lib.rs"), "stale").unwrap();
