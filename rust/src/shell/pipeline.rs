@@ -116,9 +116,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
         } else {
             String::new()
         };
-        if !crate::core::runtime_flags::quiet_enabled() {
-            eprintln!("[sobre: output compressed, {input_tokens} → {output_tokens} tokens{kept}]");
-        }
+        eprintln!("[sobre: output compressed, {input_tokens} → {output_tokens} tokens{kept}]");
     }
 
     exit_code

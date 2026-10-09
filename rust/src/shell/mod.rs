@@ -13,8 +13,8 @@ pub(crate) use exec::shell_timeout_with_override;
 pub use exec::{ExecMode, exec};
 pub(crate) use exec::{STDERR_LABEL, combine_streams};
 pub use platform::{
-    decode_output, is_non_interactive, join_command, join_command_for, resolve_carriage_returns,
-    shell_and_flag, shell_name,
+    decode_output, is_non_interactive, join_command, resolve_carriage_returns, shell_and_flag,
+    shell_name,
 };
 pub(crate) use redact::cleanup_old_tee_logs;
 pub use redact::save_tee;
