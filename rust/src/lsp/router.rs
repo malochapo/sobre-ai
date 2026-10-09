@@ -22,7 +22,6 @@ fn resolve_config_for_language(language: &str) -> LspServerConfig {
 
 /// Starts the language server for `language` found on PATH.
 fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBackend>, String> {
-    // Backing A: rust-analyzer (today's behavior).
     let config = resolve_config_for_language(language);
     if which::which(&config.command).is_err() && !Path::new(&config.command).is_file() {
         check_server_available(language)?;
@@ -61,6 +60,9 @@ where
     let key = backend_key(language, project_root);
     let mut backends = BACKENDS.lock().map_err(|e| e.to_string())?;
 
+    if backends.get_mut(&key).is_some_and(|b| !b.is_alive()) {
+        backends.remove(&key);
+    }
     if !backends.contains_key(&key) {
         let backend = select_backend(language, project_root)?;
         backends.insert(key.clone(), backend);

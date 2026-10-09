@@ -1,6 +1,6 @@
-//! Shared headless apply path for symbol-body edits (spec v2a §5.1).
+//! Shared headless apply path for symbol-body edits.
 //!
-//! `local_range_write` is the Trait-default for `replace_symbol_body` /
+//! `local_range_write` is the trait default for `replace_symbol_body` /
 //! `insert_before_symbol` / `insert_after_symbol`: it writes a resolved range
 //! to disk atomically, so edits work without any running language server.
 

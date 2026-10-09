@@ -44,6 +44,11 @@ pub struct EditResult {
 /// Code-intelligence backend. `Send` so instances can live in the global
 /// `BACKENDS` cache (`Mutex<HashMap<String, Box<dyn LspBackend>>>`).
 pub trait LspBackend: Send {
+    /// Whether the backend can still answer. A language server that exited
+    /// is dropped from the cache and started again on the next call.
+    fn is_alive(&mut self) -> bool {
+        true
+    }
     fn open_file(&mut self, uri: &Uri, language_id: &str, text: &str) -> Result<(), String>;
     fn references(&mut self, uri: &Uri, position: Position) -> Result<Vec<Location>, String>;
     fn definition(
