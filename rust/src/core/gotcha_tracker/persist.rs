@@ -10,10 +10,10 @@ impl GotchaStore {
         {
             store.apply_decay();
             store.cross_session_boost();
-            // Shell-ding: keep persisted pending errors so a fail→fix that
-            // spans two `sobre -c` processes still correlates — but drop
-            // expired ones (15-min TTL) and bound to the most recent MAX_PENDING
-            // so a stale file can never grow unbounded or resurrect old errors.
+            // Keep persisted pending errors so a fail→fix that spans two
+            // `sobre -c` processes still correlates, but drop expired ones
+            // (15-min TTL) and keep the most recent MAX_PENDING, so a stale
+            // file can never grow unbounded or resurrect old errors.
             store.pending_errors.retain(|p| !p.is_expired());
             if store.pending_errors.len() > MAX_PENDING {
                 let excess = store.pending_errors.len() - MAX_PENDING;
@@ -53,9 +53,9 @@ mod tests {
 
     #[test]
     fn pending_errors_persist_across_load_for_cross_process_correlation() {
-        // Shell-ding: in `sobre -c` mode every command is its own
-        // process, so the fix correlation can only work if pending errors are
-        // persisted. Simulate process 1 (failing build) → process 2 (green run).
+        // In `sobre -c` mode every command is its own process, so the fix
+        // correlation only works if pending errors are persisted. Simulate
+        // process 1 (failing build) → process 2 (green run).
         let _iso = crate::core::data_dir::isolated_data_dir();
         let root = "/tmp/sobre-gotcha-persist-test-xyzzy";
 
@@ -70,7 +70,7 @@ mod tests {
         assert_eq!(p1.pending_errors.len(), 1);
         p1.save(root).unwrap();
 
-        // Fresh process must SEE the persisted pending error (was cleared before).
+        // A fresh process must see the persisted pending error.
         let mut p2 = GotchaStore::load(root);
         assert_eq!(
             p2.pending_errors.len(),

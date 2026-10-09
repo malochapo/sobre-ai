@@ -66,7 +66,7 @@ impl Surface {
 /// One upstream LLM call, as the provider reported it.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct LlmCall {
-    /// `anthropic`, `openai`, `gcp.gemini`, … (GenAI `gen_ai.provider.name`).
+    /// `anthropic` or `openai` (GenAI `gen_ai.provider.name`).
     pub provider: String,
     /// The model the client asked for.
     pub request_model: String,
