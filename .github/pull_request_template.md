@@ -7,8 +7,10 @@ Does it add an MCP tool or a config key? Then name the one it replaces
 
 ## Test plan
 
-- [ ] `scripts/preflight.sh full` (fmt, clippy, rustdoc, generated docs, file
-      size, then the whole test suite — the same checks CI runs)
+- [ ] `scripts/preflight.sh full` (fmt, clippy on both builds, rustdoc,
+      generated docs, file size, then the whole test suite)
+- [ ] Platform-specific change (paths, shells, file locking): CI run on macOS
+      and Windows (Actions → CI → Run workflow)
 
 ## Notes for reviewers
 
