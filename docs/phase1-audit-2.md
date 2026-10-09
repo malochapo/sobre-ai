@@ -564,32 +564,42 @@ documented:
 
 ## Lot J — editing and shell tools
 
-- [ ] **J1 `insert_after` and an edit of the next line hit the wrong line.**
+- [x] **J1 `insert_after` and an edit of the next line hit the wrong line.** (#PRNUM)
   In one `ops[]`, `insert_after` line L plus `set_line`, `replace` or
   `delete` on L+1 edits a different line depending on the order
   (`tools/sobre_patch/apply.rs:373-379`). Fix: at equal positions,
   replacements before inserts.
-- [ ] **J2 A stale anchor is moved silently.** *Invariant 5.* When the
+  Done, with a test that both orders give the same file.
+- [x] **J2 A stale anchor is moved silently.** (#PRNUM) *Invariant 5.* When the
   anchored line changed, sobre searches the whole file for a unique line
   with the same 16-bit hash and edits there: no CONFLICT, no label
   (`tools/sobre_patch/apply.rs:86-97,167-174,301-312`). Decision 1.
-- [ ] **J3 `replace_symbol` and `sobre_refactor` edit a stale range.**
+  Done: a stale anchor is a CONFLICT for every op, with the current lines
+  and their fresh anchors; the relocation code is gone.
+- [x] **J3 `replace_symbol` and `sobre_refactor` edit a stale range.** (#PRNUM)
   They take the symbol's lines from the graph without checking it is
   current (`tools/sobre_refactor/mod.rs:189-252`,
   `core/graph_provider.rs:351` `open_best_effort`) and do not reindex
   after writing. After one edit, a second `replace_symbol` overwrites the
   wrong lines. Fix: resolve the symbol with tree-sitter at edit time.
-- [ ] **J4 `replace_symbol` with `path`+`line` replaces only `line` to
-  `end_line`** (`end_line` defaults to `line`), with no symbol lookup
+  Done: the index only names the candidate files; each is parsed again,
+  so the span is the file's own at edit time.
+- [x] **J4 `replace_symbol` with `path`+`line` replaces only `line` to
+  `end_line`** (#PRNUM) (`end_line` defaults to `line`), with no symbol lookup
   (`tools/sobre_refactor/mod.rs:268-281`). The schema says it resolves the
   symbol.
-- [ ] **J5 An anchored edit turns a mixed-EOL file into CRLF**
-  (`tools/sobre_patch/apply.rs:38-47`), unlabelled.
-- [ ] **J6 An escalated read is recorded as fully delivered.** When an edit
+  Done: `path`+`line` edits the innermost symbol around `line`; `end_line`
+  is gone from both schemas.
+- [x] **J5 An anchored edit turns a mixed-EOL file into CRLF**
+  (`tools/sobre_patch/apply.rs:38-47`), unlabelled. (#PRNUM)
+  Done: each line keeps its own ending; a new line takes its neighbour's.
+- [x] **J6 An escalated read is recorded as fully delivered.** (#PRNUM) When an edit
   escalates to a read, sobre sends 300 lines but records the whole file as
   delivered (`tools/impl_edit.rs:368-399`). The next full read returns
   the "unchanged" stub and the agent never sees the rest. `replace_all`
   reaches this since B9.
+  Done: only a complete escalation is recorded; a partial one says which
+  lines it shows.
 - [ ] **J7 Non-ASCII commands get ids `sobre_expand` refuses.** The id slug
   keeps Unicode letters (`shell/redact.rs:25-35`); the resolver accepts
   ASCII only (`proxy/ccr.rs:124-138`).
@@ -640,12 +650,16 @@ documented:
     inside single quotes gets expanded.
   - Fix: quote the binary in every hook and in the rewrite; parse quoted
     paths in `doctor`.
-- [ ] **J13 The syntax check blocks writes.** *Invariant 5.*
+- [x] **J13 The syntax check blocks writes.** (#PRNUM) *Invariant 5.*
   - An edit that leaves a syntax error is refused.
   - `validate_syntax=false` is not honoured by `replace_symbol` and
     `sobre_refactor` (`tools/sobre_refactor/mod.rs:391`,
     `tools/sobre_patch/symbol.rs`), and is undeclared for anchored ops.
   - Decision 3.
+  - Done: every write path (anchored ops, `replace_unique`, `replace_all`,
+    symbol edits, dry runs) writes, then reports "⚠ syntax: this edit
+    leaves a syntax error near line N". `validate_syntax` and the
+    brace-balance count are gone.
 - [ ] **J14 Smaller ones.**
   - `ops[]` batches are not atomic; the schema says "batch-atomic".
   - `timeout_ms` is described as the command's lifetime; it is enforced as
@@ -659,6 +673,17 @@ documented:
   - `sobre_patch`'s not-found error names `old_string` for the parameter
     `old_text`, and its list of ops leaves out `replace_unique`,
     `replace_symbol` and `replace_all` (`tools/sobre_patch/anchors.rs:91`).
+  - Done in #PRNUM for `sobre_patch` and `sobre_refactor`:
+    - `ops[]` runs in order and stops at the first failure, saying what
+      was not applied; one file's anchored ops stay all-or-nothing, and
+      the description says so;
+    - `allow_lossy_utf8` is gone: a file that is not UTF-8 is refused,
+      saying why;
+    - messages name `old_text`/`new_text` (`find`/`replace` for
+      `replace_all`);
+    - the op list is complete;
+    - an unknown `sobre_refactor` action is refused before any language
+      server starts.
 
 - [ ] **J15 Compressed `git log --stat` states wrong totals.** On this
   repository's `git log -n 40 --stat`, the hook prints `[40 commits,
@@ -897,14 +922,20 @@ documented:
   `:291`, `shell/platform.rs:291-293,322-324` (`collapsible_if`),
   `core/cloud_files.rs:23`, `core/home.rs:48`, `core/walk_filter.rs:34`.
   macOS is clean.
-- [ ] **M3 `SobreEditTool` still implements an MCP tool named
-  `sobre_edit`**, with a stale `tool_def`, never registered; only
+- [x] **M3 `SobreEditTool` still implements an MCP tool named
+  `sobre_edit`** (#PRNUM), with a stale `tool_def`, never registered; only
   `.handle()` is used (`tools/registered/impl_edit.rs:10-38`). Comments still
   name a `sobre_edit` tool (`tools/sobre_patch/mod.rs:13,45,268`,
   `tools/sobre_patch/anchors.rs:44`, `tools/edit_recovery.rs:1`). Fix: a plain function.
-- [ ] **M4 BLAKE3 hashes labelled MD5.** `sobre_patch` prints `md5=`
+  Done: `replace_unique` and `replace_all` call `impl_edit::run_io` with
+  typed parameters, through the same lock/cache/session path as the
+  anchored ops; the comments are fixed.
+- [x] **M4 BLAKE3 hashes labelled MD5.** (#PRNUM) `sobre_patch` prints `md5=`
   (`tools/sobre_patch/mod.rs:310-312,352,372-378`); `lsp/backend.rs:28`
   says "md5-hex"; the manifest has a `schema_md5`.
+  Done: the preimage/postimage lines are gone from `sobre_patch`'s
+  output (nothing reads them now that `expected_hash` is gone), and the
+  other labels say hash or BLAKE3.
 - [ ] **M5 `SOBRE_DISABLE_SEARCH_INDEX`** is set by `benches/efficiency.rs`
   and read nowhere.
 - [ ] **M6 Tests that assert nothing.** `core/task_briefing.rs:152-157,159-172`
@@ -1007,6 +1038,9 @@ down, in `.md` files in the repository.
     `diff_max_lines`, `validate_syntax`, `expected_size`,
     `expected_mtime_ms`, and the `old_string`/`new_string` aliases
     (`tools/registered/sobre_patch.rs:23-27,117-139,283-299`).
+    Removed in #PRNUM, with `allow_lossy_utf8`, `create` on
+    `replace_unique`, and `name_path`/`end_line`/`expected_hash` on
+    `replace_symbol`.
   - `sobre_review`: `project_root`, `root`. `sobre_read`: `full-compact`.
   - Decision 7.
 - [ ] **N4 About 30 environment variables are undocumented**; about 9 are.

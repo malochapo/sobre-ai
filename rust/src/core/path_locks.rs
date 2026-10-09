@@ -3,7 +3,7 @@
 //! These in-process mutexes serialize concurrent operations on the *same* file
 //! path while letting operations on *different* paths run fully in parallel.
 //!
-//! Why this exists: tools like `sobre_read` and `sobre_edit` would otherwise contend
+//! Why this exists: tools like `sobre_read` and `sobre_patch` would otherwise contend
 //! on the single global cache write-lock for the entire duration of their disk
 //! I/O. When several agents (or sub-agents) hammer files concurrently, that
 //! global lock becomes a bottleneck and edits can time out waiting for it.

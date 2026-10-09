@@ -3,7 +3,7 @@
 //!
 //! `BounceTracker`/`path_mode_memory` close the loop for *re-read* bounces,
 //! but an edit that fails because the file was last read in a compressed mode
-//! (`old_string` not found — the body simply wasn't in context) taught the
+//! (`old_text` not found — the body simply wasn't in context) taught the
 //! system nothing. This module records edit outcomes correlated with the last
 //! read mode and feeds two signals back into `auto_mode_resolver::resolve`:
 //!

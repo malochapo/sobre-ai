@@ -59,7 +59,7 @@ impl SobreServer {
         // Rehydrate the persistent stub index so the first unchanged
         // re-read after this restart can collapse to the `[unchanged]` stub
         // instead of re-delivering the whole file — gated by conversation +
-        // mtime/md5 so it can never serve a stale or cross-chat stub.
+        // mtime/hash so it can never serve a stale or cross-chat stub.
         crate::core::read_stub_index::load();
 
         let cache = Arc::new(RwLock::new(SessionCache::new()));

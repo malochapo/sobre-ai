@@ -23,15 +23,14 @@ pub(crate) fn is_replace_symbol(args: &Map<String, Value>) -> bool {
 /// `replace_symbol_body` argument object. Pure + validated so it is unit-testable
 /// without invoking the LSP layer.
 ///
-/// Field mapping: `name`/`name_path` → `name_path`; `new_text` → `new_text`;
-/// `path`+`line`(+`end_line`) and `expected_hash` pass through. `new_text` is the
-/// single replacement-field name across every sobre_patch op.
+/// Field mapping: `name` → `name_path`; `new_text` → `new_text`; `path` and
+/// `line` pass through (the symbol around `line` in `path`).
 pub(crate) fn build_refactor_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
     let new_text = str_field(args, "new_text").ok_or_else(|| {
         "replace_symbol requires 'new_text' (the full replacement declaration)".to_string()
     })?;
 
-    let name = str_field(args, "name").or_else(|| str_field(args, "name_path"));
+    let name = str_field(args, "name");
     let has_path = args.get("path").and_then(Value::as_str).is_some();
     if name.is_none() && !has_path {
         return Err("replace_symbol requires 'name' (symbol path) or 'path'+'line'".to_string());
@@ -46,19 +45,13 @@ pub(crate) fn build_refactor_args(args: &Map<String, Value>) -> Result<Map<Strin
         out.insert("name_path".to_string(), Value::String(n));
     }
     if has_path {
-        if let Some(p) = args.get("path") {
-            out.insert("path".to_string(), p.clone());
-        }
-        for key in ["line", "end_line"] {
+        for key in ["path", "line"] {
             if let Some(v) = args.get(key) {
                 out.insert(key.to_string(), v.clone());
             }
         }
     }
     out.insert("new_text".to_string(), Value::String(new_text));
-    if let Some(h) = str_field(args, "expected_hash") {
-        out.insert("expected_hash".to_string(), Value::String(h));
-    }
     if let Some(d) = args.get("dry_run").filter(|v| v.is_boolean()) {
         out.insert("dry_run".to_string(), d.clone());
     }
@@ -108,15 +101,13 @@ mod tests {
     #[test]
     fn maps_path_line_route() {
         let out = build_refactor_args(&obj(json!({
-            "op": "replace_symbol", "path": "src/a.rs", "line": 10, "end_line": 20,
-            "new_text": "fn a() {}", "expected_hash": "abcd"
+            "op": "replace_symbol", "path": "src/a.rs", "line": 10,
+            "new_text": "fn a() {}"
         })))
         .unwrap();
         assert_eq!(out["path"], json!("src/a.rs"));
         assert_eq!(out["line"], json!(10));
-        assert_eq!(out["end_line"], json!(20));
         assert_eq!(out["new_text"], json!("fn a() {}"));
-        assert_eq!(out["expected_hash"], json!("abcd"));
         assert!(!out.contains_key("name_path"));
     }
 

@@ -31,27 +31,31 @@ pub(crate) struct ResolvedEdit {
     hi: usize,
 }
 
-/// Split `content` into logical lines plus the framing needed to rebuild it
-/// byte-faithfully: the dominant line separator and whether a trailing newline
-/// is present. Mirrors [`str::lines`] so line numbers match
-/// `sobre_read(mode="anchored")`.
-pub(crate) fn split_lines(content: &str) -> (Vec<String>, &'static str, bool) {
-    let sep = if content.contains("\r\n") {
-        "\r\n"
-    } else {
-        "\n"
-    };
-    let trailing = content.ends_with('\n');
-    let lines = content.lines().map(String::from).collect();
-    (lines, sep, trailing)
+/// Split `content` into logical lines and each line's own terminator
+/// (`"\r\n"`, `"\n"`, or `""` for a last line without one), so a file with
+/// mixed line endings is rebuilt byte for byte. Lines mirror [`str::lines`]
+/// so line numbers match `sobre_read(mode="anchored")`.
+pub(crate) fn split_lines(content: &str) -> (Vec<String>, Vec<&'static str>) {
+    content
+        .split_inclusive('\n')
+        .map(|piece| {
+            if let Some(line) = piece.strip_suffix("\r\n") {
+                (line.to_string(), "\r\n")
+            } else if let Some(line) = piece.strip_suffix('\n') {
+                (line.to_string(), "\n")
+            } else {
+                (piece.to_string(), "")
+            }
+        })
+        .unzip()
 }
 
-/// Rebuild file content from logical `lines`, restoring the separator and the
-/// original trailing-newline state.
-pub(crate) fn join_lines(lines: &[String], sep: &str, trailing: bool) -> String {
-    let mut out = lines.join(sep);
-    if trailing && !lines.is_empty() {
-        out.push_str(sep);
+/// Rebuild file content from `lines` and their terminators.
+pub(crate) fn join_lines(lines: &[String], eols: &[&str]) -> String {
+    let mut out = String::new();
+    for (line, eol) in lines.iter().zip(eols) {
+        out.push_str(line);
+        out.push_str(eol);
     }
     out
 }
@@ -75,58 +79,11 @@ fn split_new_text(s: &str) -> Vec<String> {
         .collect()
 }
 
-/// When a line's content no longer matches its anchor because an
-/// earlier edit — possibly a prior *separate* `sobre_patch` call earlier in the
-/// same session, not necessarily this batch — shifted it, look for the same
-/// content elsewhere in the file before giving up. Only redirects on an
-/// unambiguous unique match: zero or 2+ matches fall through to a normal
-/// stale-anchor conflict rather than guess which one the model meant. Scoped
-/// to single-line anchors (`set_line`/`insert_after`); `replace_lines`/
-/// `delete` spans are left as an exact match only.
-fn find_unique_shifted_line(lines: &[String], hash: &str) -> Option<usize> {
-    let mut matches = lines
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| anchor::hash_matches(l, hash))
-        .map(|(i, _)| i);
-    let first = matches.next()?;
-    if matches.next().is_some() {
-        return None;
-    }
-    Some(first)
-}
-
-/// The two-endpoint sibling of [`find_unique_shifted_line`], for `replace_lines`/
-/// `delete` spans: when a prior edit shifted a multi-line block (insert/delete
-/// elsewhere moved it, but its own content is untouched), look for a position
-/// where BOTH the start and end anchors still match at the *original* span
-/// length (`end_line - start_line`) elsewhere in the file. Same unambiguous-
-/// match-only philosophy as single-line anchors — 0 or 2+ candidate positions fall through to
-/// a normal stale-anchor conflict rather than guessing. Only the two endpoints
-/// are re-checked (not every line in between), matching how the initial
-/// anchor check itself only validates the span's boundaries.
-fn find_unique_shifted_span(
-    lines: &[String],
-    start_hash: &str,
-    end_hash: &str,
-    span_len: usize,
-) -> Option<usize> {
-    let mut matches = (0..lines.len()).filter(|&i| {
-        anchor::hash_matches(&lines[i], start_hash)
-            && lines
-                .get(i + span_len)
-                .is_some_and(|l| anchor::hash_matches(l, end_hash))
-    });
-    let first = matches.next()?;
-    if matches.next().is_some() {
-        return None;
-    }
-    Some(first)
-}
-
 /// Validate every op's anchors against `lines` (the single preimage) and
 /// normalize them to splices. Collects *all* stale anchors before failing so the
-/// model gets the complete picture in one round-trip.
+/// model gets the complete picture in one round-trip. An anchor that no longer
+/// matches its line is a conflict, never moved to another line with the same
+/// hash: the agent sees the current lines and decides.
 pub(crate) fn resolve_ops(
     lines: &[String],
     ops: &[AnchorOp],
@@ -164,29 +121,16 @@ pub(crate) fn resolve_ops(
                         "line {line} is past end of file ({len} lines)"
                     )));
                 }
-                let resolved = if lines
-                    .get(*line - 1)
-                    .is_some_and(|cur| anchor::hash_matches(cur, hash))
-                {
-                    Some(*line - 1)
-                } else {
-                    find_unique_shifted_line(lines, hash)
-                };
-                match resolved {
-                    Some(idx) => edits.push(ResolvedEdit {
-                        start_idx: idx,
+                let before = misses.len();
+                check(*line, hash, &mut misses);
+                if misses.len() == before {
+                    edits.push(ResolvedEdit {
+                        start_idx: line - 1,
                         remove_count: 1,
                         new_lines: split_new_text(new_text),
-                        lo: idx + 1,
-                        hi: idx + 1,
-                    }),
-                    None => misses.push(AnchorMiss {
-                        line: *line,
-                        expected: hash.clone(),
-                        actual: lines
-                            .get(*line - 1)
-                            .map_or_else(|| "<eof>".to_string(), |cur| anchor::line_hash(cur)),
-                    }),
+                        lo: *line,
+                        hi: *line,
+                    });
                 }
             }
             AnchorOp::ReplaceLines {
@@ -199,38 +143,23 @@ pub(crate) fn resolve_ops(
                 if let Err(e) = check_range(*start_line, *end_line, len) {
                     return Err(ResolveError::Invalid(e));
                 }
-                let span_len = end_line - start_line;
                 // Empty hash = "no conflict check requested". This
                 // makes replace_lines usable without mode=anchored output.
-                let start_ok = start_hash.is_empty()
-                    || lines
-                        .get(*start_line - 1)
-                        .is_some_and(|cur| anchor::hash_matches(cur, start_hash));
-                let end_ok = end_hash.is_empty()
-                    || lines
-                        .get(*end_line - 1)
-                        .is_some_and(|cur| anchor::hash_matches(cur, end_hash));
-                if start_ok && end_ok {
+                let before = misses.len();
+                if !start_hash.is_empty() {
+                    check(*start_line, start_hash, &mut misses);
+                }
+                if !end_hash.is_empty() {
+                    check(*end_line, end_hash, &mut misses);
+                }
+                if misses.len() == before {
                     edits.push(ResolvedEdit {
                         start_idx: start_line - 1,
-                        remove_count: span_len + 1,
+                        remove_count: end_line - start_line + 1,
                         new_lines: split_new_text(new_text),
                         lo: *start_line,
                         hi: *end_line,
                     });
-                } else if let Some(idx) =
-                    find_unique_shifted_span(lines, start_hash, end_hash, span_len)
-                {
-                    edits.push(ResolvedEdit {
-                        start_idx: idx,
-                        remove_count: span_len + 1,
-                        new_lines: split_new_text(new_text),
-                        lo: idx + 1,
-                        hi: idx + 1 + span_len,
-                    });
-                } else {
-                    check(*start_line, start_hash, &mut misses);
-                    check(*end_line, end_hash, &mut misses);
                 }
             }
             AnchorOp::Delete {
@@ -242,34 +171,17 @@ pub(crate) fn resolve_ops(
                 if let Err(e) = check_range(*start_line, *end_line, len) {
                     return Err(ResolveError::Invalid(e));
                 }
-                let span_len = end_line - start_line;
-                let start_ok = lines
-                    .get(*start_line - 1)
-                    .is_some_and(|cur| anchor::hash_matches(cur, start_hash));
-                let end_ok = lines
-                    .get(*end_line - 1)
-                    .is_some_and(|cur| anchor::hash_matches(cur, end_hash));
-                if start_ok && end_ok {
+                let before = misses.len();
+                check(*start_line, start_hash, &mut misses);
+                check(*end_line, end_hash, &mut misses);
+                if misses.len() == before {
                     edits.push(ResolvedEdit {
                         start_idx: start_line - 1,
-                        remove_count: span_len + 1,
+                        remove_count: end_line - start_line + 1,
                         new_lines: Vec::new(),
                         lo: *start_line,
                         hi: *end_line,
                     });
-                } else if let Some(idx) =
-                    find_unique_shifted_span(lines, start_hash, end_hash, span_len)
-                {
-                    edits.push(ResolvedEdit {
-                        start_idx: idx,
-                        remove_count: span_len + 1,
-                        new_lines: Vec::new(),
-                        lo: idx + 1,
-                        hi: idx + 1 + span_len,
-                    });
-                } else {
-                    check(*start_line, start_hash, &mut misses);
-                    check(*end_line, end_hash, &mut misses);
                 }
             }
             // Handled by `run_io` before the preimage read; reaching the line
@@ -298,33 +210,20 @@ pub(crate) fn resolve_ops(
                             .to_string(),
                     ));
                 }
-                let resolved_line = match hash {
-                    None => Some(*line),
-                    Some(_) if *line == 0 => Some(*line),
-                    Some(h)
-                        if lines
-                            .get(*line - 1)
-                            .is_some_and(|cur| anchor::hash_matches(cur, h)) =>
-                    {
-                        Some(*line)
-                    }
-                    Some(h) => find_unique_shifted_line(lines, h).map(|idx| idx + 1),
-                };
-                match resolved_line {
-                    Some(l) => edits.push(ResolvedEdit {
-                        start_idx: l,
+                let before = misses.len();
+                if let Some(h) = hash
+                    && *line > 0
+                {
+                    check(*line, h, &mut misses);
+                }
+                if misses.len() == before {
+                    edits.push(ResolvedEdit {
+                        start_idx: *line,
                         remove_count: 0,
                         new_lines,
-                        lo: l,
-                        hi: l,
-                    }),
-                    None => misses.push(AnchorMiss {
-                        line: *line,
-                        expected: hash.clone().unwrap_or_default(),
-                        actual: lines
-                            .get(*line - 1)
-                            .map_or_else(|| "<eof>".to_string(), |cur| anchor::line_hash(cur)),
-                    }),
+                        lo: *line,
+                        hi: *line,
+                    });
                 }
             }
         }
@@ -367,16 +266,54 @@ fn first_overlap(edits: &[ResolvedEdit]) -> Option<String> {
     None
 }
 
-/// Apply validated `edits` to `lines`, bottom-up so earlier indices stay valid.
-/// Non-overlap is guaranteed by [`resolve_ops`], so descending order is exact.
+/// Apply validated `edits` to `lines` and their terminators `eols`, bottom-up
+/// so earlier indices stay valid. Non-overlap is guaranteed by
+/// [`resolve_ops`], so descending order is exact. At one index, an
+/// `insert_after` of the line above and an edit of the line below meet: the
+/// edit goes first, so the insert lands above it whatever the order of the
+/// ops.
+///
+/// Untouched lines keep their terminator. A new line takes the one of the
+/// first line it replaces, or of the line it follows, or the file's most
+/// common one; the file ends with a newline exactly when it did before.
 #[must_use]
-pub(crate) fn apply_edits(mut lines: Vec<String>, mut edits: Vec<ResolvedEdit>) -> Vec<String> {
-    edits.sort_by_key(|e| std::cmp::Reverse(e.start_idx));
+pub(crate) fn apply_edits(
+    mut lines: Vec<String>,
+    mut eols: Vec<&'static str>,
+    mut edits: Vec<ResolvedEdit>,
+) -> (Vec<String>, Vec<&'static str>) {
+    let crlf = eols.iter().filter(|e| **e == "\r\n").count();
+    let lf = eols.iter().filter(|e| **e == "\n").count();
+    let common = if crlf > lf { "\r\n" } else { "\n" };
+    let trailing = eols.last().is_none_or(|e| !e.is_empty());
+
+    edits.sort_by_key(|e| (std::cmp::Reverse(e.start_idx), e.remove_count == 0));
     for e in edits {
         let end = e.start_idx + e.remove_count;
+        let neighbour = if e.remove_count > 0 {
+            eols.get(e.start_idx)
+        } else {
+            e.start_idx.checked_sub(1).and_then(|i| eols.get(i))
+        };
+        let eol = neighbour
+            .copied()
+            .filter(|e| !e.is_empty())
+            .unwrap_or(common);
+        let added = vec![eol; e.new_lines.len()];
         lines.splice(e.start_idx..end, e.new_lines);
+        eols.splice(e.start_idx..end, added);
     }
-    lines
+    // Only the last line may lack a terminator: a line that was last and no
+    // longer is gets one, and the new last line follows the file's ending.
+    for eol in &mut eols {
+        if eol.is_empty() {
+            *eol = common;
+        }
+    }
+    if !trailing && let Some(last) = eols.last_mut() {
+        *last = "";
+    }
+    (lines, eols)
 }
 
 #[cfg(test)]
@@ -389,30 +326,54 @@ mod tests {
         anchor::line_hash(content)
     }
 
-    #[test]
-    fn split_and_join_round_trip_lf() {
-        let content = "a\nb\nc\n";
-        let (lines, sep, trailing) = split_lines(content);
-        assert_eq!(lines, vec!["a", "b", "c"]);
-        assert_eq!(sep, "\n");
-        assert!(trailing);
-        assert_eq!(join_lines(&lines, sep, trailing), content);
+    /// `apply_edits` on lines alone, every line ending in `\n`.
+    fn apply_lf(lines: Vec<String>, edits: Vec<ResolvedEdit>) -> Vec<String> {
+        let eols = vec!["\n"; lines.len()];
+        apply_edits(lines, eols, edits).0
     }
 
     #[test]
-    fn split_and_join_round_trip_no_trailing() {
-        let content = "a\nb";
-        let (lines, sep, trailing) = split_lines(content);
-        assert!(!trailing);
-        assert_eq!(join_lines(&lines, sep, trailing), content);
+    fn split_and_join_round_trip() {
+        for content in [
+            "a\nb\nc\n",
+            "a\nb",
+            "a\r\nb\r\n",
+            "a\r\nb\nc",
+            "",
+            "\n",
+            "x\ry\n",
+        ] {
+            let (lines, eols) = split_lines(content);
+            assert_eq!(
+                lines,
+                content.lines().map(String::from).collect::<Vec<_>>(),
+                "{content:?}"
+            );
+            assert_eq!(join_lines(&lines, &eols), content, "{content:?}");
+        }
     }
 
+    /// J5: an edit keeps every other line's ending; new lines take their
+    /// neighbour's, and the file's last-line ending stays as it was.
     #[test]
-    fn split_and_join_round_trip_crlf() {
-        let content = "a\r\nb\r\n";
-        let (lines, sep, trailing) = split_lines(content);
-        assert_eq!(sep, "\r\n");
-        assert_eq!(join_lines(&lines, sep, trailing), content);
+    fn mixed_line_endings_survive_an_edit() {
+        let content = "a\r\nb\nc\r\nd";
+        let (lines, eols) = split_lines(content);
+        let ops = vec![
+            AnchorOp::SetLine {
+                line: 2,
+                hash: anc(2, "b"),
+                new_text: "B1\nB2".into(),
+            },
+            AnchorOp::InsertAfter {
+                line: 4,
+                hash: Some(anc(4, "d")),
+                new_text: "e".into(),
+            },
+        ];
+        let edits = resolve_ops(&lines, &ops).ok().unwrap();
+        let (lines, eols) = apply_edits(lines, eols, edits);
+        assert_eq!(join_lines(&lines, &eols), "a\r\nB1\nB2\nc\r\nd\r\ne");
     }
 
     #[test]
@@ -434,7 +395,7 @@ mod tests {
             new_text: "B".to_string(),
         }];
         let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        let out = apply_edits(lines, edits);
+        let out = apply_lf(lines, edits);
         assert_eq!(out, vec!["a", "B", "c"]);
     }
 
@@ -447,7 +408,7 @@ mod tests {
             new_text: String::new(),
         }];
         let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(apply_edits(lines, edits), vec!["a", "c"]);
+        assert_eq!(apply_lf(lines, edits), vec!["a", "c"]);
     }
 
     #[test]
@@ -459,7 +420,7 @@ mod tests {
             new_text: "x\ny\nz".to_string(),
         }];
         let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(apply_edits(lines, edits), vec!["x", "y", "z", "b"]);
+        assert_eq!(apply_lf(lines, edits), vec!["x", "y", "z", "b"]);
     }
 
     #[test]
@@ -478,7 +439,7 @@ mod tests {
             new_text: "X".to_string(),
         }];
         let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(apply_edits(lines, edits), vec!["a", "X", "d"]);
+        assert_eq!(apply_lf(lines, edits), vec!["a", "X", "d"]);
     }
 
     #[test]
@@ -490,7 +451,7 @@ mod tests {
             new_text: "// top".to_string(),
         }];
         let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(apply_edits(lines, edits), vec!["// top", "a", "b"]);
+        assert_eq!(apply_lf(lines, edits), vec!["// top", "a", "b"]);
     }
 
     #[test]
@@ -502,7 +463,7 @@ mod tests {
             new_text: "c".to_string(),
         }];
         let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(apply_edits(lines, edits), vec!["a", "b", "c"]);
+        assert_eq!(apply_lf(lines, edits), vec!["a", "b", "c"]);
     }
 
     #[test]
@@ -609,13 +570,13 @@ mod tests {
             new_text: "C".into(),
         };
 
-        let forward = apply_edits(
+        let forward = apply_lf(
             lines.clone(),
             resolve_ops(&lines, &[a.clone(), b.clone(), c.clone()])
                 .ok()
                 .unwrap(),
         );
-        let reversed = apply_edits(lines.clone(), resolve_ops(&lines, &[c, b, a]).ok().unwrap());
+        let reversed = apply_lf(lines.clone(), resolve_ops(&lines, &[c, b, a]).ok().unwrap());
         assert_eq!(forward, reversed);
         assert_eq!(forward, vec!["A", "A2", "2", "B", "5", "C"]);
     }
@@ -646,163 +607,90 @@ mod tests {
             },
         ];
         let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(apply_edits(lines, edits), vec!["A", "3", "4", "E"]);
+        assert_eq!(apply_lf(lines, edits), vec!["A", "3", "4", "E"]);
     }
 
+    /// J2 (decision 1): an anchor whose line moved is a conflict, for every
+    /// op, even when the anchored text sits unchanged one line below.
     #[test]
-    fn set_line_recovers_when_content_shifted_to_a_different_unique_line() {
-        // The anchor for "target" was captured when it was line 2 (e.g.
-        // from an earlier, separate sobre_patch call that has since inserted a
-        // line above it). It now lives at line 3 unchanged — the edit should
-        // land there instead of hard-failing.
-        let lines = vec![
-            "intro".to_string(),
-            "filler".to_string(),
-            "target".to_string(),
-            "tail".to_string(),
+    fn a_shifted_anchor_is_a_conflict_never_a_move() {
+        let lines: Vec<String> = ["intro", "filler", "start", "end", "tail"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        // Each op still points at lines 2-3, where "start"/"end" were before
+        // a line was inserted above them.
+        let ops = [
+            AnchorOp::SetLine {
+                line: 2,
+                hash: anc(2, "start"),
+                new_text: "X".into(),
+            },
+            AnchorOp::InsertAfter {
+                line: 2,
+                hash: Some(anc(2, "start")),
+                new_text: "X".into(),
+            },
+            AnchorOp::ReplaceLines {
+                start_line: 2,
+                start_hash: anc(2, "start"),
+                end_line: 3,
+                end_hash: anc(3, "end"),
+                new_text: "X".into(),
+            },
+            AnchorOp::Delete {
+                start_line: 2,
+                start_hash: anc(2, "start"),
+                end_line: 3,
+                end_hash: anc(3, "end"),
+            },
         ];
-        let ops = vec![AnchorOp::SetLine {
-            line: 2, // stale: this used to be "target"'s line
-            hash: anc(2, "target"),
-            new_text: "TARGET".into(),
-        }];
-        let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(
-            apply_edits(lines, edits),
-            vec!["intro", "filler", "TARGET", "tail"]
-        );
+        for op in ops {
+            assert!(
+                matches!(
+                    resolve_ops(&lines, std::slice::from_ref(&op)),
+                    Err(ResolveError::Conflict(_))
+                ),
+                "{op:?} must be a conflict"
+            );
+        }
     }
 
+    /// J1: `insert_after` line L and an edit of line L+1 give the same file
+    /// whatever their order in `ops`.
     #[test]
-    fn set_line_recovery_declines_on_ambiguous_duplicate_content() {
-        // Two lines share the anchored content — redirecting would be a guess,
-        // so this must still report a stale-anchor conflict rather than pick
-        // one silently.
-        let lines = vec!["same".to_string(), "filler".to_string(), "same".to_string()];
-        let ops = vec![AnchorOp::SetLine {
+    fn insert_after_and_an_edit_below_commute() {
+        let lines: Vec<String> = ["a", "b", "c"].iter().map(ToString::to_string).collect();
+        let insert = AnchorOp::InsertAfter {
             line: 1,
-            hash: "ffff".to_string(), // wrong for line 1 as it stands today
-            new_text: "X".into(),
-        }];
-        match resolve_ops(&lines, &ops) {
-            Err(ResolveError::Conflict(misses)) => assert_eq!(misses.len(), 1),
-            _ => panic!("expected a conflict"),
-        }
-    }
-
-    #[test]
-    fn insert_after_recovers_when_anchor_line_shifted() {
-        let lines = vec![
-            "intro".to_string(),
-            "filler".to_string(),
-            "anchor".to_string(),
-            "tail".to_string(),
-        ];
-        let ops = vec![AnchorOp::InsertAfter {
-            line: 1, // stale: "anchor" used to be line 1
-            hash: Some(anc(1, "anchor")),
+            hash: Some(anc(1, "a")),
             new_text: "new".into(),
-        }];
-        let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(
-            apply_edits(lines, edits),
-            vec!["intro", "filler", "anchor", "new", "tail"]
-        );
-    }
-
-    #[test]
-    fn replace_lines_recovers_when_span_shifted_to_a_different_unique_position() {
-        // Extends unique matching to two-endpoint spans: "start"/"end" were originally
-        // lines 1-2 (from an earlier, separate sobre_patch call that has since
-        // inserted a line above them). They now live at lines 3-4 unchanged —
-        // the edit should land there instead of hard-failing.
-        let lines = vec![
-            "intro".to_string(),
-            "filler".to_string(),
-            "start".to_string(),
-            "end".to_string(),
-            "tail".to_string(),
-        ];
-        let ops = vec![AnchorOp::ReplaceLines {
-            start_line: 1, // stale: "start"/"end" used to be lines 1-2
-            start_hash: anc(1, "start"),
-            end_line: 2,
-            end_hash: anc(2, "end"),
-            new_text: "X".into(),
-        }];
-        let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(
-            apply_edits(lines, edits),
-            vec!["intro", "filler", "X", "tail"]
-        );
-    }
-
-    #[test]
-    fn delete_span_recovers_when_shifted_to_a_different_unique_position() {
-        let lines = vec![
-            "intro".to_string(),
-            "filler".to_string(),
-            "start".to_string(),
-            "end".to_string(),
-            "tail".to_string(),
-        ];
-        let ops = vec![AnchorOp::Delete {
-            start_line: 1, // stale: "start"/"end" used to be lines 1-2
-            start_hash: anc(1, "start"),
-            end_line: 2,
-            end_hash: anc(2, "end"),
-        }];
-        let edits = resolve_ops(&lines, &ops).ok().unwrap();
-        assert_eq!(apply_edits(lines, edits), vec!["intro", "filler", "tail"]);
-    }
-
-    #[test]
-    fn replace_lines_recovery_declines_on_ambiguous_duplicate_span() {
-        // The "start"/"end" pair appears twice — redirecting would be a guess,
-        // so this must still report a stale-anchor conflict rather than pick
-        // one silently.
-        let lines = vec![
-            "start".to_string(),
-            "end".to_string(),
-            "filler".to_string(),
-            "start".to_string(),
-            "end".to_string(),
-        ];
-        let ops = vec![AnchorOp::ReplaceLines {
-            start_line: 3, // "filler" — wrong hash, forces the fallback search
-            start_hash: anc(1, "start"),
-            end_line: 3,
-            end_hash: anc(2, "end"),
-            new_text: "X".into(),
-        }];
-        match resolve_ops(&lines, &ops) {
-            Err(ResolveError::Conflict(misses)) => assert_eq!(misses.len(), 2),
-            _ => panic!("expected a conflict"),
+        };
+        for below in [
+            AnchorOp::SetLine {
+                line: 2,
+                hash: anc(2, "b"),
+                new_text: "B".into(),
+            },
+            AnchorOp::Delete {
+                start_line: 2,
+                start_hash: anc(2, "b"),
+                end_line: 2,
+                end_hash: anc(2, "b"),
+            },
+        ] {
+            let expected = if matches!(below, AnchorOp::Delete { .. }) {
+                vec!["a", "new", "c"]
+            } else {
+                vec!["a", "new", "B", "c"]
+            };
+            for ops in [
+                vec![insert.clone(), below.clone()],
+                vec![below.clone(), insert.clone()],
+            ] {
+                let edits = resolve_ops(&lines, &ops).ok().unwrap();
+                assert_eq!(apply_lf(lines.clone(), edits), expected, "{ops:?}");
+            }
         }
-    }
-
-    #[test]
-    fn replace_lines_recovery_requires_both_endpoints_to_shift_together() {
-        // The start hash exists uniquely elsewhere, but not immediately followed
-        // by a line matching the end hash at the original span length — this is
-        // NOT a "the whole span moved" case, so it must still hard-fail rather
-        // than silently redirecting just the start.
-        let lines = vec![
-            "intro".to_string(),
-            "start".to_string(),
-            "unrelated".to_string(),
-            "end".to_string(),
-        ];
-        let ops = vec![AnchorOp::ReplaceLines {
-            start_line: 1, // stale
-            start_hash: anc(1, "start"),
-            end_line: 2, // stale
-            end_hash: anc(2, "end"),
-            new_text: "X".into(),
-        }];
-        assert!(matches!(
-            resolve_ops(&lines, &ops),
-            Err(ResolveError::Conflict(_))
-        ));
     }
 }

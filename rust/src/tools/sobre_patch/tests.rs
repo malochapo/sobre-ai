@@ -13,8 +13,8 @@ fn make_temp(content: &str) -> NamedTempFile {
     f
 }
 
-/// A temp file with a real `.rs` suffix so the tree-sitter syntax gate engages
-/// (the plain `make_temp` files have no recognized extension → gate skipped).
+/// A temp file with a real `.rs` suffix so the tree-sitter syntax check runs
+/// (the plain `make_temp` files have no recognized extension → no check).
 fn make_temp_rs(content: &str) -> NamedTempFile {
     let mut f = tempfile::Builder::new().suffix(".rs").tempfile().unwrap();
     f.write_all(content.as_bytes()).unwrap();
@@ -25,13 +25,6 @@ fn params(path: &std::path::Path, ops: Vec<AnchorOp>) -> PatchParams {
     PatchParams {
         path: path.to_string_lossy().to_string(),
         ops,
-        expected_hash: None,
-        backup: false,
-        backup_path: None,
-        evidence: false,
-        diff_max_lines: 200,
-        allow_lossy_utf8: false,
-        validate_syntax: true,
         dry_run: false,
     }
 }
@@ -301,24 +294,6 @@ fn overlapping_batch_is_rejected() {
 }
 
 #[test]
-fn expected_hash_guard_blocks_mismatch() {
-    let f = make_temp("aaa\n");
-    let mut p = params(
-        f.path(),
-        vec![AnchorOp::SetLine {
-            line: 1,
-            hash: line_hash("aaa"),
-            new_text: "bbb".to_string(),
-        }],
-    );
-    p.expected_hash = Some("deadbeef".to_string());
-    let (text, effect) = run_io(&p, "");
-    assert!(text.contains("preimage mismatch"), "{text}");
-    assert!(matches!(effect, CacheEffect::None));
-    assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "aaa\n");
-}
-
-#[test]
 fn crlf_file_keeps_crlf() {
     let f = make_temp("a\r\nb\r\nc\r\n");
     let (text, _) = run_io(
@@ -359,30 +334,9 @@ fn no_change_edit_is_rejected() {
 }
 
 #[test]
-fn backup_is_written_when_enabled() {
-    let f = make_temp("orig\n");
-    let mut p = params(
-        f.path(),
-        vec![AnchorOp::SetLine {
-            line: 1,
-            hash: line_hash("orig"),
-            new_text: "new".to_string(),
-        }],
-    );
-    p.backup = true;
-    let (text, _) = run_io(&p, "");
-    let bp = text
-        .lines()
-        .find_map(|l| l.strip_prefix("backup: "))
-        .expect("backup line");
-    assert_eq!(std::fs::read_to_string(bp).unwrap(), "orig\n");
-    assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "new\n");
-}
-
-#[test]
-fn evidence_diff_emitted_when_enabled() {
+fn evidence_diff_emitted() {
     let f = make_temp("line1\nline2\n");
-    let mut p = params(
+    let p = params(
         f.path(),
         vec![AnchorOp::SetLine {
             line: 2,
@@ -390,10 +344,8 @@ fn evidence_diff_emitted_when_enabled() {
             new_text: "changed2".to_string(),
         }],
     );
-    p.evidence = true;
     let (text, _) = run_io(&p, "");
     assert!(text.contains("```diff"), "{text}");
-    assert!(text.contains("postimage:"), "{text}");
 }
 
 #[test]
@@ -440,11 +392,10 @@ fn missing_file_reports_error() {
 
 #[cfg(feature = "tree-sitter")]
 #[test]
-fn syntax_gate_rejects_edit_that_breaks_a_clean_file() {
-    // Deleting the closing brace turns valid Rust into a parse error; the gate
-    // must reject and leave the file untouched.
-    let original = "fn main() {\n    let x = 1;\n}\n";
-    let f = make_temp_rs(original);
+fn an_edit_that_breaks_a_clean_file_is_written_and_reported() {
+    // Deleting the closing brace turns valid Rust into a parse error: the
+    // edit is written (decision 3) and the result says what broke.
+    let f = make_temp_rs("fn main() {\n    let x = 1;\n}\n");
     let (text, effect) = run_io(
         &params(
             f.path(),
@@ -456,31 +407,8 @@ fn syntax_gate_rejects_edit_that_breaks_a_clean_file() {
         ),
         "",
     );
-    assert!(text.contains("syntax error"), "{text}");
-    assert!(matches!(effect, CacheEffect::None));
-    assert_eq!(
-        std::fs::read_to_string(f.path()).unwrap(),
-        original,
-        "a syntax-breaking edit must not write"
-    );
-}
-
-#[cfg(feature = "tree-sitter")]
-#[test]
-fn validate_syntax_false_overrides_the_gate() {
-    let original = "fn main() {\n    let x = 1;\n}\n";
-    let f = make_temp_rs(original);
-    let mut p = params(
-        f.path(),
-        vec![AnchorOp::SetLine {
-            line: 3,
-            hash: line_hash("}"),
-            new_text: String::new(),
-        }],
-    );
-    p.validate_syntax = false;
-    let (text, effect) = run_io(&p, "");
-    assert!(text.contains('✓'), "override must allow the write: {text}");
+    assert!(text.contains('✓'), "the edit is written: {text}");
+    assert!(text.contains("⚠ syntax"), "{text}");
     assert!(matches!(effect, CacheEffect::Invalidate));
     assert_eq!(
         std::fs::read_to_string(f.path()).unwrap(),
@@ -490,7 +418,7 @@ fn validate_syntax_false_overrides_the_gate() {
 
 #[cfg(feature = "tree-sitter")]
 #[test]
-fn syntax_gate_allows_valid_edit() {
+fn a_valid_edit_has_no_syntax_notice() {
     let f = make_temp_rs("fn main() {\n    let x = 1;\n}\n");
     let (text, effect) = run_io(
         &params(
@@ -504,6 +432,7 @@ fn syntax_gate_allows_valid_edit() {
         "",
     );
     assert!(text.contains('✓'), "{text}");
+    assert!(!text.contains("⚠ syntax"), "{text}");
     assert!(matches!(effect, CacheEffect::Invalidate));
 }
 
@@ -521,15 +450,13 @@ fn create_writes_new_file_and_parent_dirs() {
         "",
     );
     assert!(text.contains("✓ created"), "{text}");
-    assert!(text.contains("postimage:"), "{text}");
     assert!(matches!(effect, CacheEffect::Invalidate));
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "fn hello() {}\n");
 }
 
 #[test]
 fn create_rejects_existing_file() {
-    // Strict by design: unlike `sobre_edit create=true` (which overwrites), a
-    // sobre_patch create on an existing file is an error — modification must go
+    // Strict by design: a create on an existing file is an error — modification must go
     // through anchors so the preimage is always verified.
     let f = make_temp("already here\n");
     let (text, effect) = run_io(

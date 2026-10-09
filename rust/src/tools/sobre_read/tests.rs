@@ -770,7 +770,7 @@ fn raw_mode_returns_exact_file_content() {
 /// reproduce every source line — including decorative separator comments
 /// (`// ————`, `// ----`) — so the content the model edits never diverges from
 /// disk. The original report saw these silently stripped, which then broke
-/// `sobre_edit` on a whitespace mismatch.
+/// a text replacement on a whitespace mismatch.
 #[test]
 fn verbatim_modes_preserve_decorative_comment_lines() {
     let _lock = crate::core::data_dir::test_env_lock();

@@ -16,6 +16,17 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
         return handle_symbol_edit(action, args, project_root);
     }
 
+    if !matches!(
+        action,
+        "rename" | "references" | "definition" | "implementations"
+    ) {
+        return format!(
+            "ERROR: Unknown action '{action}'. Available: rename (preview), references, \
+             definition, implementations, replace_symbol_body, insert_before_symbol, \
+             insert_after_symbol. For a file's symbols use sobre_outline."
+        );
+    }
+
     let line = args.get("line").and_then(Value::as_u64).unwrap_or(1) as u32;
     let column = args.get("column").and_then(Value::as_u64).unwrap_or(0) as u32;
 
@@ -30,12 +41,7 @@ pub fn handle(args: &Value, project_root: &str, abs_path: &str) -> String {
         "rename" => handle_rename(args, abs_path, project_root, &uri, position),
         "references" => handle_references(abs_path, project_root, &uri, position),
         "definition" => handle_definition(abs_path, project_root, &uri, position),
-        "implementations" => handle_implementations(abs_path, project_root, &uri, position),
-        _ => format!(
-            "ERROR: Unknown action '{action}'. Available: rename (preview), references, \
-             definition, implementations, replace_symbol_body, insert_before_symbol, \
-             insert_after_symbol. For a file's symbols use sobre_outline."
-        ),
+        _ => handle_implementations(abs_path, project_root, &uri, position),
     }
 }
 
@@ -181,74 +187,98 @@ fn container_matches_ancestor(name: &str, ancestor: &str) -> bool {
     }
 }
 
-/// Resolve a `name_path` (`Class/method` or bare `name`) to a single symbol via
-/// the tree-sitter index (spec v2a §3/§5.3). Disambiguates a qualified path by
-/// enclosing-range containment (ancestor symbol's line span contains the leaf's).
-/// `file_scope` (a project-relative path) narrows candidates to that
-/// file, preventing AMBIGUOUS_SYMBOL for common names like `Dispose`.
+/// Resolve a `name_path` (`Class/method` or bare `name`) to a single symbol,
+/// with its line span read from the file as it is now. The index only says
+/// which files define the name (`file_scope`, a project-relative path, narrows
+/// that to one file); each candidate file is parsed again, so an edit never
+/// lands on lines the index recorded before the file changed. A qualified
+/// path is disambiguated by containment: the ancestor's span holds the leaf's.
 pub(crate) fn resolve_name_path_scoped(
     name_path: &str,
     project_root: &str,
     file_scope: Option<&str>,
 ) -> Result<Resolved, String> {
-    use crate::core::graph_provider;
-    let open = graph_provider::open_or_build(project_root)
-        .ok_or_else(|| "NO_SYMBOL: no symbol index available".to_string())?;
-    let gp = &open;
-
     let segments: Vec<&str> = name_path.split('/').filter(|s| !s.is_empty()).collect();
     let leaf = *segments
         .last()
         .ok_or_else(|| "NO_SYMBOL: empty name_path".to_string())?;
+    let ancestor = segments.len().checked_sub(2).map(|i| segments[i]);
 
-    // Exact-name leaf candidates (case-sensitive — the index may substring-match).
-    // The file scope goes into the query itself, so a common name defined in
-    // many files cannot push the scoped one past the query's row limit.
-    let mut leaves: Vec<_> = gp
-        .find_symbols(leaf, file_scope, None)
-        .into_iter()
-        .filter(|s| s.name == leaf && file_scope.is_none_or(|f| s.file == f))
-        .collect();
-
-    if segments.len() >= 2 {
-        let ancestor = segments[segments.len() - 2];
-        let parents: Vec<_> = gp
-            .find_symbols(ancestor, None, None)
+    let files: Vec<String> = if let Some(f) = file_scope {
+        vec![f.to_string()]
+    } else {
+        let open = crate::core::graph_provider::open_or_build(project_root)
+            .ok_or_else(|| "NO_SYMBOL: no symbol index available".to_string())?;
+        let mut files: Vec<String> = open
+            .find_symbols(leaf, None, None)
             .into_iter()
-            .filter(|s| container_matches_ancestor(&s.name, ancestor))
+            .filter(|s| s.name == leaf)
+            .map(|s| s.file)
             .collect();
-        leaves.retain(|leaf_sym| {
-            parents.iter().any(|p| {
-                p.file == leaf_sym.file
-                    && p.start_line <= leaf_sym.start_line
-                    && leaf_sym.end_line <= p.end_line
-            })
-        });
+        files.sort();
+        files.dedup();
+        files
+    };
+
+    let mut found: Vec<(String, String, usize, usize)> = Vec::new();
+    for rel in files {
+        let abs = std::path::Path::new(project_root).join(&rel);
+        let Ok(content) = std::fs::read_to_string(&abs) else {
+            continue;
+        };
+        let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let spans = crate::core::graph_index::symbol_spans(&content, ext);
+        for (name, start, end) in &spans {
+            if name != leaf {
+                continue;
+            }
+            let contained = ancestor.is_none_or(|anc| {
+                spans.iter().any(|(parent, p_start, p_end)| {
+                    container_matches_ancestor(parent, anc) && p_start <= start && end <= p_end
+                })
+            });
+            if contained {
+                found.push((rel.clone(), name.clone(), *start, *end));
+            }
+        }
     }
 
-    match leaves.len() {
+    match found.len() {
         0 => Err(format!(
-            "NO_SYMBOL: '{name_path}' did not resolve to any indexed symbol"
+            "NO_SYMBOL: '{name_path}' did not resolve to any symbol{}",
+            if file_scope.is_some() {
+                " in that file"
+            } else {
+                " (a symbol added since the last index needs 'path')"
+            }
         )),
-        1 => Ok(Resolved {
-            rel_path: leaves[0].file.clone(),
-            start_line: leaves[0].start_line,
-            end_line: leaves[0].end_line,
-        }),
-        _ => {
-            let mut msg = format!(
-                "AMBIGUOUS_SYMBOL: '{name_path}' matches {} symbols; qualify it:\n",
-                leaves.len()
-            );
-            for s in leaves.iter().take(10) {
-                msg.push_str(&format!(
-                    "  {}:{} (L{}-{})\n",
-                    s.file, s.name, s.start_line, s.end_line
-                ));
+        1 => {
+            let (rel_path, _, start_line, end_line) = found.remove(0);
+            Ok(Resolved {
+                rel_path,
+                start_line,
+                end_line,
+            })
+        }
+        n => {
+            let mut msg =
+                format!("AMBIGUOUS_SYMBOL: '{name_path}' matches {n} symbols; qualify it:\n");
+            for (file, name, start, end) in found.iter().take(10) {
+                msg.push_str(&format!("  {file}:{name} (L{start}-{end})\n"));
             }
             Err(msg)
         }
     }
+}
+
+/// The innermost symbol of `content` whose span holds `line` (1-based), with
+/// its current span.
+fn symbol_at_line(content: &str, ext: &str, line: usize) -> Option<(usize, usize)> {
+    crate::core::graph_index::symbol_spans(content, ext)
+        .into_iter()
+        .filter(|(_, start, end)| *start <= line && line <= *end)
+        .min_by_key(|(_, start, end)| end - start)
+        .map(|(_, start, end)| (start, end))
 }
 
 fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String {
@@ -270,14 +300,28 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
             return "ERROR: provide 'name_path' or 'path'+'line' for symbol edits.".to_string();
         };
         let line = args.get("line").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let end = args
-            .get("end_line")
-            .and_then(Value::as_u64)
-            .unwrap_or(line as u64) as usize;
         if line == 0 {
-            return "ERROR: 'line' is required (1-based) when using the path fallback.".to_string();
+            return "ERROR: 'line' is required (1-based) with 'path' and no 'name_path'."
+                .to_string();
         }
-        (path.to_string(), line, end)
+        // The symbol around `line`, as the file is now.
+        let abs = match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, path)
+        {
+            Ok(p) => p,
+            Err(e) => return format!("ERROR: {e}"),
+        };
+        let content = match std::fs::read_to_string(&abs) {
+            Ok(c) => c,
+            Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs}: {e}"),
+        };
+        let ext = std::path::Path::new(&abs)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("");
+        let Some((start, end)) = symbol_at_line(&content, ext, line) else {
+            return format!("ERROR: NO_SYMBOL: no symbol spans line {line} of {path}");
+        };
+        (path.to_string(), start, end)
     };
 
     // 2) Resolve the path against the project root.
@@ -373,8 +417,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         expected_hash,
     };
 
-    // 4) Pre-write syntax gate: reject edits that would break a cleanly
-    //    parsing file. Build the hypothetical new content and check it.
+    // 4) The new content, for the syntax report and the dry run.
     let ext = std::path::Path::new(&edit.abs_path)
         .extension()
         .and_then(std::ffi::OsStr::to_str)
@@ -388,22 +431,27 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
     hypothetical.push_str(&content[..start_off]);
     hypothetical.push_str(&edit.text);
     hypothetical.push_str(&content[end_off..]);
-    if let Some(reason) = crate::core::syntax_validate::gate_edit(ext, &content, &hypothetical) {
-        return reason;
-    }
+    // A syntax error the edit introduces is reported; the edit is written
+    // either way (decision 3).
+    let syntax_notice = crate::core::syntax_validate::syntax_notice(ext, &content, &hypothetical);
 
     if args.get("dry_run").and_then(Value::as_bool) == Some(true) {
-        return crate::tools::impl_edit::dry_run_text(
+        let mut out = crate::tools::impl_edit::dry_run_text(
             std::path::Path::new(&edit.abs_path),
             &content,
             &hypothetical,
-            200,
         );
+        crate::tools::impl_edit::append_notice(&mut out, syntax_notice);
+        return out;
     }
 
     // 5) Write the range and format the result.
     match apply_symbol_edit(action, project_root, &edit) {
-        Ok(res) => format_edit_result(action, &edit.abs_path, &res),
+        Ok(res) => {
+            let mut out = format_edit_result(action, &edit.abs_path, &res);
+            crate::tools::impl_edit::append_notice(&mut out, syntax_notice);
+            out
+        }
         Err(e) => format!("ERROR: {e}"),
     }
 }

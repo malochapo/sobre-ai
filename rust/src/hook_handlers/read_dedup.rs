@@ -6,7 +6,7 @@
 //! real path:
 //!
 //! - First read of a file: no output → the host keeps the byte-identical native
-//!   result (edit safety: `old_string` always comes from real content, and the
+//!   result (edit safety: the native Edit's `old_string` always comes from real content, and the
 //!   guard has already recorded the real path).
 //! - Re-read of the same file, unchanged on disk, same session: the result the
 //!   model sees is replaced with a compact `[unchanged]` stub via the documented

@@ -76,7 +76,7 @@ Parameters: `format`, `kind`, `match`, `path`*
 
 ## `sobre_patch`
 
-Safe file edit. Anchored ops use line+hash from sobre_read(mode="anchored"); CONFLICT means re-read. replace_unique(path,old_text,new_text) is a no-read, exact unique replacement. replace_symbol/create/replace_all and cross-file ops[] (incl. replace_unique) supported. dry_run=true shows the diff and writes nothing.
+Safe file edit. Anchored ops use line+hash from sobre_read(mode="anchored"); CONFLICT means those lines changed: the current ones come back with fresh anchors. replace_unique(path,old_text,new_text) is a no-read, exact unique replacement. replace_symbol/create/replace_all supported. ops[] runs in order, across files: one file's anchored ops apply all-or-nothing, and the batch stops at the first failure, saying what was not applied. A syntax error an edit introduces is reported, not refused. dry_run=true shows the diff and writes nothing.
 
 Parameters: `dry_run`, `end_hash`, `end_line`, `find`, `hash`, `line`, `name`, `new_text`, `old_text`, `op`, `ops`, `path`, `replace`, `start_hash`, `start_line`
 
@@ -94,7 +94,7 @@ Symbol navigation via the language server: references, definition, implementatio
 Symbol edits work without one: replace_symbol_body, insert_before_symbol, insert_after_symbol resolve the target by name_path (in path's file when path is given) or by path+line.
 ANTIPATTERN: not for symbol discovery — use sobre_search action=symbol, sobre_outline for a file's symbols.
 
-Parameters: `action`*, `column`, `end_line`, `expected_hash`, `line`, `name_path`, `new_name`, `new_text`, `path`, `text`
+Parameters: `action`*, `column`, `expected_hash`, `line`, `name_path`, `new_name`, `new_text`, `path`, `text`
 
 ## `sobre_review`
 
