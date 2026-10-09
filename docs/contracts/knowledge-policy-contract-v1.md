@@ -2,12 +2,12 @@
 
 ## Purpose
 
-A versioned governance contract for project knowledge (facts, patterns,
-history, relations) that is:
+A versioned governance contract for project knowledge (facts and the
+history of consolidations) that is:
 
 - **bounded**: stores and outputs have fixed caps,
 - **deterministic**: stable ordering and stable semantics,
-- **replayable**: the fact timeline stays interpretable,
+- **replayable**: a replaced value stays reachable (`recall as_of`),
 - **safe**: no secret leakage; surfaces are policy-gated.
 
 ## Version
@@ -25,13 +25,9 @@ environment override for it, so the values below are fixed.
 | Field | Value |
 |---|---|
 | `max_facts` | 200 |
-| `max_patterns` | 50 |
 | `max_history` | 100 |
 | `contradiction_threshold` | 0.5 |
 | `recall_facts_limit` | 10 (`core/budgets.rs`) |
-| `rooms_limit` | 25 (`core/budgets.rs`) |
-| `timeline_limit` | 25 (`core/budgets.rs`) |
-| `relations_limit` | 40 |
 
 ### Lifecycle (`LifecyclePolicy`)
 
@@ -55,8 +51,8 @@ their defaults are in the same file. None of it is configurable.
 - Current vs archived:
   - current: `valid_until == None`
   - archived: `valid_until != None`
-- An update must not lose the previous state: the timeline returns the
-  archived versions plus the current one.
+- An update must not lose the previous state: `recall` with `as_of` returns
+  the version valid at that date, archived or current.
 
 ### Contradictions
 
@@ -74,9 +70,6 @@ Checked against the current fact with the same `(category, key)`
 ### Retrieval budgets (bounded, deterministic)
 
 - `recall_facts_limit`: max facts in recall outputs
-- `rooms_limit`: max rooms in `sobre_knowledge action=rooms`
-- `timeline_limit`: max entries in `sobre_knowledge action=timeline`
-- `relations_limit`: max edges in `sobre_knowledge action=relations|relations_diagram`
 
 Results are sorted with stable tie-breaks, then truncated.
 
@@ -89,11 +82,11 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
 
 ### Lossless eviction (MUST)
 
-- **No hard drop.** Every store (facts, history, patterns) evicts
+- **No hard drop.** Every store (facts, history) evicts
   only through the capacity manager
   (`rust/src/core/memory_capacity.rs::reclaim_store`). The evicted tail is
-  archived **before** removal and can be restored. Facts are archived at
-  `memory/archive/archive-*.json`; the other stores under
+  archived **before** removal. Facts are archived at
+  `memory/archive/archive-*.json`; history under
   `memory/archive/<store>/<project-hash>/archive-*.json`
   (`rust/src/core/memory_archive.rs`).
 - **One formula plus hysteresis.** `reclaim_target(max, reclaim_headroom_pct)`
@@ -101,24 +94,20 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
   target-size calculation. A reclaim triggers only when `len >= max` and then
   settles the store at `reclaim_target`, so there is no churn on every write.
 - **Retention ranking** per store is deterministic (stable sort tie-breaks):
-  facts by `is_current` then output ranking, history and patterns newest first.
+  facts by `is_current` then output ranking, history newest first.
 - **Archive reachability.** `ArchiveConfig::default()` sets both `max_files`
-  and `rehydrate_reach` to 16, so every retained archive is reachable for
-  recall and restore.
+  and `rehydrate_reach` to 16, so every retained facts archive is reachable:
+  a `recall` that matches no current fact brings matching archived facts
+  back.
 
 ## Tool surface
 
 - `sobre_knowledge` (MCP): `rust/src/tools/sobre_knowledge/`,
-  registered in `rust/src/tools/registered/sobre_knowledge.rs`
-  - `action=policy` with `value=show` (the default): prints the effective
-    knowledge and lifecycle values. Any other `value` returns an error.
-  - `action=consolidate` (with `dry_run=true` ⇒ preview without writes)
-  - `action=restore` (`store` = `facts|history|patterns`, `query`,
-    `limit`, default 50) ⇒ lossless undo from the archive
+  registered in `rust/src/tools/registered/sobre_knowledge.rs`. Its actions
+  are `remember`, `recall`, `search`, `status`, `remove`, `consolidate`
+  (with `dry_run=true` ⇒ preview without writes) and `gotcha`.
 - From a shell: `sobre call sobre_knowledge --project-root <path> --json
-  '{"action":"consolidate"}'` (or `restore`, with the same arguments)
-- Relations: `rust/src/tools/sobre_knowledge_relations.rs` (bounded,
-  deterministic outputs)
+  '{"action":"consolidate"}'`
 
 ## Security & privacy
 

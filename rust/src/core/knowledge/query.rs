@@ -77,16 +77,6 @@ impl ProjectKnowledge {
         results.into_iter().map(|(f, _)| f).collect()
     }
 
-    pub fn timeline(&self, category: &str) -> Vec<&KnowledgeFact> {
-        let mut facts: Vec<&KnowledgeFact> = self
-            .facts
-            .iter()
-            .filter(|f| f.category == category)
-            .collect();
-        facts.sort_by_key(|x| x.created_at);
-        facts
-    }
-
     pub fn list_rooms(&self) -> Vec<(String, usize)> {
         let mut categories: std::collections::BTreeMap<String, usize> =
             std::collections::BTreeMap::new();

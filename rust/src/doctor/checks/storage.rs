@@ -264,11 +264,6 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
                 policy.knowledge.max_facts,
             ));
             checks.push((
-                "patterns".to_string(),
-                k.patterns.len(),
-                policy.knowledge.max_patterns,
-            ));
-            checks.push((
                 "history".to_string(),
                 k.history.len(),
                 policy.knowledge.max_history,

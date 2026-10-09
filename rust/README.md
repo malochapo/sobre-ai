@@ -54,7 +54,7 @@ src/
 │                       output post-processing, background shell jobs
 ├─ tools/               the 15 MCP tools (registered/ holds their schemas)
 ├─ tool_defs/           tool definitions and their read-only/destructive hints
-├─ mcp_stdio.rs         the stdio transport the MCP server runs on
+├─ mcp_stdio.rs         the MCP stdio transport: rmcp's, with a 32 MiB line cap
 ├─ instructions.rs      the MCP server instructions — the one rules channel
 ├─ core/                the engine: config, paths, compression, read cache,
 │                       search and graph indexes, embeddings, session,

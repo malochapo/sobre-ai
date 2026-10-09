@@ -83,8 +83,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
             spawn_proxy_if_needed();
         });
 
-        let transport =
-            mcp_stdio::HybridStdioTransport::new_server(tokio::io::stdin(), tokio::io::stdout());
+        let transport = mcp_stdio::stdio_transport();
         let server_handle = server.clone();
         let service = match server.serve(transport).await {
             Ok(s) => s,

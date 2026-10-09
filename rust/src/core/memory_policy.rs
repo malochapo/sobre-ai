@@ -11,30 +11,19 @@ pub struct MemoryPolicy {
 #[derive(Debug, Clone)]
 pub struct KnowledgePolicy {
     pub max_facts: usize,
-    pub max_patterns: usize,
     pub max_history: usize,
     pub contradiction_threshold: f32,
     /// Maximum number of facts returned by recall operations.
     pub recall_facts_limit: usize,
-    /// Maximum number of rooms returned by `sobre_knowledge action=rooms`.
-    pub rooms_limit: usize,
-    /// Maximum number of timeline entries returned by `sobre_knowledge action=timeline`.
-    pub timeline_limit: usize,
-    /// Maximum number of relations/edges returned by relations queries/diagrams.
-    pub relations_limit: usize,
 }
 
 impl Default for KnowledgePolicy {
     fn default() -> Self {
         Self {
             max_facts: 200,
-            max_patterns: 50,
             max_history: 100,
             contradiction_threshold: 0.5,
             recall_facts_limit: crate::core::budgets::KNOWLEDGE_RECALL_FACTS_LIMIT,
-            rooms_limit: crate::core::budgets::KNOWLEDGE_ROOMS_LIMIT,
-            timeline_limit: crate::core::budgets::KNOWLEDGE_TIMELINE_LIMIT,
-            relations_limit: 40,
         }
     }
 }

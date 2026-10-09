@@ -71,13 +71,6 @@ Apart from `bm25_cache`, these are **`tokio::sync::RwLock`** and are scoped to a
 session — no cross-session nesting is expected. Tool handlers receive `cache`, `session` and
 `bm25_cache` through `ToolContext` (`server/tool_trait.rs`).
 
-### Other Arc-wrapped Locks
-
-| Lock | File | Type | Purpose |
-|------|------|------|---------|
-| `SharedProtocol` | `mcp_stdio.rs` | `Arc<Mutex<Option<WireProtocol>>>` | Detected MCP stdio wire protocol (std::sync) |
-| stdio transport `write` | `mcp_stdio.rs` | `Arc<tokio::sync::Mutex<Option<TransportWriter>>>` | MCP stdio framed writer; held across the async send of one message |
-
 ---
 
 ## 3. Lock Acquisition Order
@@ -190,8 +183,6 @@ directory. They must not be held across any other lock acquisition.
 - **Global statics** → all `std::sync::Mutex` / `std::sync::RwLock` (held briefly, no await)
 - **Session state** (`tools/server.rs`) → `tokio::sync::RwLock` (accessed from async tool
   handlers), except `bm25_cache`, which is a `std::sync::Mutex`
-- **MCP stdio writer** (`mcp_stdio.rs`) → `tokio::sync::Mutex` (held across the async write of
-  one framed message)
 
 ### Rules
 

@@ -325,11 +325,6 @@ pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String>
     crate::core::memory_archive::restore_items(std::path::Path::new(archive_path))
 }
 
-/// All facts archive files, sorted ascending (chronological).
-pub fn list_archives() -> Vec<PathBuf> {
-    crate::core::memory_archive::list_archives(MemoryStore::Facts, None)
-}
-
 /// The newest reachable facts archives for the recall-miss rehydrate path —
 /// bounded by [`ArchiveConfig::rehydrate_reach`] so every retained archive is
 /// reachable.

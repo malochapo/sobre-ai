@@ -14,7 +14,7 @@ fn server_capabilities() -> ServerCapabilities {
 }
 
 impl ServerHandler for SobreServer {
-    fn get_info(&self) -> ServerInfo {
+    fn get_info(&self) -> ServerConfig {
         let capabilities = server_capabilities();
 
         let instructions = crate::instructions::build_instructions();
@@ -22,6 +22,15 @@ impl ServerHandler for SobreServer {
         InitializeResult::new(capabilities)
             .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
             .with_instructions(instructions)
+    }
+
+    /// The session is set up in `initialize` (client name, project root, the
+    /// peer asked for `roots/list`), so only the protocol revisions that open
+    /// with that handshake are served.
+    fn supported_protocol_versions(&self) -> std::borrow::Cow<'static, [ProtocolVersion]> {
+        std::borrow::Cow::Borrowed(ProtocolVersion::known_up_to(
+            &ProtocolVersion::LATEST_WITH_INITIALIZE,
+        ))
     }
 
     async fn initialize(
@@ -113,7 +122,7 @@ impl ServerHandler for SobreServer {
                 std::time::Duration::from_mins(2),
             );
             if maintenance.is_some() {
-                // Prune accumulated quarantined BM25 indexes. Silent
+                // Prune quarantined BM25 indexes and week-old sessions. Silent
                 // (tracing only) so it never corrupts the MCP stdio protocol.
                 crate::core::storage_maintenance::run_quiet();
             }
@@ -165,21 +174,21 @@ impl ServerHandler for SobreServer {
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, ErrorData> {
+    ) -> Result<CallToolResponse, ErrorData> {
         use std::panic::AssertUnwindSafe;
 
-        // Progress belongs to this request: its token, its peer.
-        let progress = request
+        // Progress belongs to this request: its token, its peer. rmcp hands
+        // the request's `_meta` over in the context, not in the params.
+        let progress = context
             .meta
-            .as_ref()
-            .and_then(rmcp::model::Meta::get_progress_token)
+            .get_progress_token()
             .map(|token| crate::server::progress::ProgressSender::new(context.peer.clone(), token));
 
         match AssertUnwindSafe(self.call_tool_guarded(request, progress))
             .catch_unwind()
             .await
         {
-            Ok(result) => result,
+            Ok(result) => result.map(CallToolResponse::Complete),
             Err(panic_payload) => {
                 let detail = if let Some(s) = panic_payload.downcast_ref::<&str>() {
                     (*s).to_string()
@@ -194,7 +203,8 @@ impl ServerHandler for SobreServer {
                     "ERROR: sobre internal error. The MCP server is still running. \
                      Please retry or use a different approach."
                         .to_string(),
-                )]))
+                )])
+                .into())
             }
         }
     }

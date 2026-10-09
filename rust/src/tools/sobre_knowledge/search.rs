@@ -3,6 +3,9 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+#[cfg(feature = "dense")]
+use chrono::Utc;
+
 /// Searches this project's current knowledge facts (superseded and archived
 /// ones are left out) and the findings and decisions of its saved sessions.
 /// Nothing from another project is read.
@@ -186,10 +189,6 @@ pub(crate) fn format_facts_with_annotations(
         ));
     }
     out
-}
-
-pub(crate) fn short_hash(hash: &str) -> &str {
-    if hash.len() > 8 { &hash[..8] } else { hash }
 }
 
 #[cfg(test)]

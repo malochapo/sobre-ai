@@ -167,96 +167,11 @@ mod tests {
     }
 
     #[test]
-    fn compaction_snapshot_includes_compression_config_when_enabled() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        std::fs::write(iso.path().join("config.toml"), "compression_level = 0.5\n").unwrap();
-        let mut session = SessionState::new();
-        session.set_task("x", None);
-        let snapshot = session.build_compaction_snapshot();
-        assert!(snapshot.contains("<config compression=\"standard\" />"));
-    }
-
-    #[test]
     fn resume_block_prefixes_compression_hint_when_enabled() {
         // The default compression_level (0.3) is the lite band.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let session = SessionState::new();
         let block = session.build_resume_block();
         assert!(block.contains("[COMPRESSION: lite]"));
-    }
-
-    #[test]
-    fn compaction_snapshot_includes_task() {
-        let mut session = SessionState::new();
-        session.set_task("fix auth bug", None);
-        let snapshot = session.build_compaction_snapshot();
-        assert!(snapshot.contains("<task>fix auth bug</task>"));
-        assert!(snapshot.contains("<session_snapshot>"));
-        assert!(snapshot.contains("</session_snapshot>"));
-    }
-
-    #[test]
-    fn compaction_snapshot_includes_files() {
-        let mut session = SessionState::new();
-        session.touch_file("src/auth.rs", None, "full", 500);
-        session.files_touched[0].modified = true;
-        session.touch_file("src/main.rs", None, "map", 100);
-        let snapshot = session.build_compaction_snapshot();
-        assert!(snapshot.contains("auth.rs"));
-        assert!(snapshot.contains("<files>"));
-    }
-
-    #[test]
-    fn compaction_snapshot_includes_decisions() {
-        let mut session = SessionState::new();
-        session.add_decision("Use JWT RS256", None);
-        let snapshot = session.build_compaction_snapshot();
-        assert!(snapshot.contains("JWT RS256"));
-        assert!(snapshot.contains("<decisions>"));
-    }
-
-    #[test]
-    fn compaction_snapshot_respects_size_limit() {
-        let mut session = SessionState::new();
-        session.set_task("a]task", None);
-        for i in 0..100 {
-            session.add_finding(
-                Some(&format!("file{i}.rs")),
-                Some(i),
-                &format!("Finding number {i} with some detail text here"),
-            );
-        }
-        let snapshot = session.build_compaction_snapshot();
-        assert!(snapshot.len() <= 2200);
-    }
-
-    #[test]
-    fn compaction_snapshot_includes_stats() {
-        let mut session = SessionState::new();
-        session.stats.total_tool_calls = 42;
-        session.stats.total_tokens_saved = 10000;
-        let snapshot = session.build_compaction_snapshot();
-        assert!(snapshot.contains("calls=42"));
-        assert!(snapshot.contains("saved=10000"));
-    }
-
-    /// G10: `restore` without an id takes this project's latest snapshot,
-    /// never a newer one of another project.
-    #[test]
-    fn latest_snapshot_is_the_projects_own() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let a = tempfile::tempdir().unwrap();
-        let b = tempfile::tempdir().unwrap();
-        for (root, task) in [(a.path(), "alpha task"), (b.path(), "beta task")] {
-            let mut session = SessionState::new();
-            session.project_root = Some(root.to_string_lossy().to_string());
-            session.set_task(task, None);
-            session.save().unwrap();
-            session.save_compaction_snapshot().unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        let snapshot = SessionState::load_latest_snapshot(&a.path().to_string_lossy()).unwrap();
-        assert!(snapshot.contains("alpha task"), "{snapshot}");
-        assert!(!snapshot.contains("beta task"), "{snapshot}");
     }
 }

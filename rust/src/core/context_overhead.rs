@@ -94,13 +94,12 @@ mod tests {
     #[test]
     fn per_turn_prefix_stays_within_budget() {
         // Ratchet on the fixed per-turn prefix: the 15 tool schemas and the MCP
-        // instructions. Measured at 5109 tokens, 113 more than before every
-        // action became an enum with its required parameters (so a host can
-        // reject a malformed call before it runs); the budget leaves ~3% for
-        // small wording changes. A tool or a paragraph more fails here, which
-        // is the point — raise the budget only in the same commit that
+        // instructions. Measured at 4697 tokens once sobre_session and
+        // sobre_knowledge kept their 14 useful actions; the budget leaves ~3%
+        // for small wording changes. A tool or a paragraph more fails here,
+        // which is the point — raise the budget only in the same commit that
         // justifies the growth.
-        const PER_TURN_PREFIX_BUDGET_TOKENS: usize = 5260;
+        const PER_TURN_PREFIX_BUDGET_TOKENS: usize = 4840;
 
         let _iso = crate::core::data_dir::isolated_data_dir();
         let registered = crate::server::registry::build_registry().tool_defs().len();

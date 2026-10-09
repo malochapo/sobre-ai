@@ -96,7 +96,6 @@ pub struct ProjectKnowledge {
     pub project_root: String,
     pub project_hash: String,
     pub facts: Vec<KnowledgeFact>,
-    pub patterns: Vec<ProjectPattern>,
     pub history: Vec<ConsolidatedInsight>,
     pub updated_at: DateTime<Utc>,
 }
@@ -162,15 +161,6 @@ pub enum ContradictionSeverity {
     Low,
     Medium,
     High,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProjectPattern {
-    pub pattern_type: String,
-    pub description: String,
-    pub examples: Vec<String>,
-    pub source_session: String,
-    pub created_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
