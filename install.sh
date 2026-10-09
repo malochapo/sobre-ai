@@ -196,7 +196,7 @@ main() {
                 arm64 | aarch64) target=aarch64-apple-darwin ;;
                 x86_64)
                     [ "$dense" = 0 ] ||
-                        die "there is no dense build for Intel macOS (Microsoft ships no ONNX Runtime for it): install without --dense, or build from source"
+                        die "there is no dense build for Intel macOS (Microsoft ships no ONNX Runtime 1.24 for it): install without --dense, or build from source"
                     target=x86_64-apple-darwin
                     ;;
                 *) die "there is no sobre build for macOS on $arch" ;;

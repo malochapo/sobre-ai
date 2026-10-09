@@ -66,7 +66,8 @@ the `sobre.exe` it runs from: afterwards, delete
 ### By hand
 
 Each release has two builds per platform; `sobre-dense-…` adds local
-embeddings. `SHA256SUMS` lists every file's checksum:
+embeddings. Each archive holds the binary, `LICENSE`, `NOTICE` and
+`THIRD-PARTY-LICENSES.txt`. `SHA256SUMS` lists every file's checksum:
 `sha256sum --check --ignore-missing SHA256SUMS`.
 
 | Platform | Without embeddings | With embeddings |

@@ -10,7 +10,7 @@ name: Release
 # (`--features dense`: local embeddings). The dense build loads ONNX Runtime
 # at run time, which a static musl binary cannot do, so on Linux it targets
 # glibc 2.28 (the floor of Microsoft's own ONNX Runtime builds). Intel macOS
-# has no dense build: Microsoft ships no ONNX Runtime for it.
+# has no dense build: Microsoft ships no ONNX Runtime 1.24 for it.
 on:
   push:
     branches: [main]
@@ -76,9 +76,36 @@ jobs:
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
           fi
 
+  licenses:
+    name: Third-party licences
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain (rust/rust-toolchain.toml)
+        working-directory: rust
+        run: rustup toolchain install
+      # cargo-about writes the licence of every crate linked into sobre
+      # (rust/about.toml, rust/about.hbs); every archive ships the result.
+      - name: Install cargo-about
+        run: |
+          curl -fsSL -o cargo-about.tgz https://github.com/EmbarkStudios/cargo-about/releases/download/0.9.2/cargo-about-0.9.2-x86_64-unknown-linux-musl.tar.gz
+          echo "9099a59e820c38a68b9d65f300662a567d56562f9a10f6aa4c7e86c17c2566af  cargo-about.tgz" | sha256sum --check
+          tar xzf cargo-about.tgz --strip-components=1 -C "$RUNNER_TEMP" cargo-about-0.9.2-x86_64-unknown-linux-musl/cargo-about
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Write THIRD-PARTY-LICENSES.txt
+        working-directory: rust
+        run: cargo about generate --locked --all-features about.hbs -o ../THIRD-PARTY-LICENSES.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: third-party-licenses
+          path: THIRD-PARTY-LICENSES.txt
+
   build:
     name: Build ${{ matrix.name }}
-    needs: version
+    needs: [version, licenses]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -116,6 +143,9 @@ jobs:
         env:
           FEATURES: ${{ matrix.features }}
           ZIG_TARGET: ${{ matrix.zig_target || matrix.target }}
+          # Link the C runtime statically on Windows, so sobre.exe starts on a
+          # machine without the Visual C++ redistributable.
+          RUSTFLAGS: ${{ contains(matrix.target, 'windows-msvc') && '-C target-feature=+crt-static' || '' }}
         run: |
           flags=(--release --locked)
           [[ -n "$FEATURES" ]] && flags+=(--features "$FEATURES")
@@ -124,15 +154,20 @@ jobs:
           else
             cargo build "${flags[@]}" --target ${{ matrix.target }}
           fi
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: third-party-licenses
+      # Each archive holds the binary, the licence, the attribution notices
+      # and the licences of the crates built into it.
       - name: Package
         shell: bash
         run: |
           name="${{ matrix.name }}"
           dir="rust/target/${{ matrix.target }}/release"
           if [[ "$RUNNER_OS" == "Windows" ]]; then
-            7z a "$name.zip" "./$dir/sobre.exe"
+            7z a "$name.zip" "./$dir/sobre.exe" LICENSE NOTICE THIRD-PARTY-LICENSES.txt
           else
-            tar czf "$name.tar.gz" -C "$dir" sobre
+            tar czf "$name.tar.gz" -C "$dir" sobre -C "$GITHUB_WORKSPACE" LICENSE NOTICE THIRD-PARTY-LICENSES.txt
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
