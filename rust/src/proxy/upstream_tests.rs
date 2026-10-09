@@ -1,4 +1,4 @@
-//! Split from `proxy/mod.rs` (LOC gate): `upstream_tests`.
+//! The proxy's live upstreams: reloads from config.toml reach the handlers.
 
 use super::*;
 

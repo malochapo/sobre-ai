@@ -29,12 +29,10 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     // The Tokio caps above bound async work, but the CPU-heavy index build runs
     // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
-    // concurrent sessions still spikes the host on startup. Resolve the
-    // cap in three tiers:
-    //   1. if other sobre processes are running, split the cores fairly
-    //      across the fleet so N sessions use ~one core-count of index work
-    //      between them instead of N × all-cores;
-    //   2. a lone session keeps rayon's all-cores default untouched (0 = no cap).
+    // concurrent sessions still spikes the host on startup. When other sobre
+    // processes run, the cores are split across the fleet, so N sessions use
+    // about one core-count of index work between them instead of N × all
+    // cores; a lone session keeps rayon's all-cores default (0 = no cap).
     let index_threads = {
         // `find_pids_by_name` excludes us, so +1 counts this process too.
         let concurrent = crate::ipc::process::find_pids_by_name("sobre").len() + 1;
@@ -154,7 +152,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
 /// ~26 MB stdio-server process — on low-RAM machines that accumulation
 /// exhausted memory within a single session. Stragglers are abandoned
 /// after the grace period: their threads die with the process, which holds no
-/// client-visible state at this point (transport closed, telemetry flushed).
+/// client-visible state at this point (transport closed).
 fn shutdown_runtime_bounded(rt: tokio::runtime::Runtime) {
     rt.shutdown_timeout(std::time::Duration::from_secs(2));
 }
@@ -277,13 +275,11 @@ pub(super) fn resolve_worker_threads(parallelism: usize) -> usize {
     parallelism.clamp(1, 4)
 }
 
-/// Herd-aware default for the rayon index-build thread cap when the operator
-/// has not set one explicitly.
+/// The rayon index-build thread cap while other sobre processes run.
 ///
 /// Splits the machine's cores fairly across the sobre processes alive right
-/// now, so a single session indexes at full speed while a fleet of `concurrent`
-/// sessions collectively stays near *one* core-count of index work instead of
-/// `concurrent × all-cores` — the thundering herd the issue describes. Always
+/// now, so a fleet of `concurrent` sessions collectively stays near *one*
+/// core-count of index work instead of `concurrent × all-cores`. Always
 /// returns at least 1 (rayon rejects a zero-thread pool).
 ///
 /// `cores`: available parallelism. `concurrent`: sobre processes alive

@@ -133,10 +133,9 @@ fn show() -> String {
 /// file yields defaults, and an unparseable one is surfaced as an error so the
 /// caller can refuse to clobber it.
 ///
-/// This is the regression guard: `config init` once wrote
-/// `Config::default()`, and `Config::save()` overwrites any key present in both
-/// the incoming document and the file (see `config_io::merge_table`), which
-/// silently reset customized values like `search_roots` or `compression_level`.
+/// Writing `Config::default()` instead would reset every customized value:
+/// `Config::save()` overwrites any key present in both the incoming document
+/// and the file (see `config_io::merge_table`).
 fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
     match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
         Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),

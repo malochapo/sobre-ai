@@ -45,8 +45,7 @@ fn hook_binary_refs_empty_without_hook_invocation() {
 #[test]
 fn hook_binary_refs_handles_minified_json() {
     // `serde_json::to_string` emits no spaces around keys/values; the binary
-    // token must still be extracted cleanly. Regression: the whitespace-only
-    // split used to capture the entire JSON prefix as the "binary".
+    // token must still be extracted alone, not with the JSON before it.
     let content =
         r#"[{"hooks":[{"command":"sobre hook compress"},{"command":"sobre hook observe"}]}]"#;
     assert_eq!(hook_binary_refs(content), vec!["sobre", "sobre"]);

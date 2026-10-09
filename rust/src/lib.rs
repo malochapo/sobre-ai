@@ -2,9 +2,8 @@
 // Every `unsafe` block must carry a `// SAFETY:` comment justifying soundness.
 // Enforced so the (mostly libc/Win32 syscall) unsafe surface stays documented.
 #![warn(clippy::undocumented_unsafe_blocks)]
-// `[dependencies]` is a hand-written table nothing linked to its users: nine
-// crates stayed in it with no code using them. Flag the next one. Test builds
-// are exempt, as dev-dependencies serve the integration tests, not the lib.
+// Flag a `[dependencies]` entry no code uses. Test builds are exempt, as
+// dev-dependencies serve the integration tests, not the lib.
 #![cfg_attr(not(test), warn(unused_crate_dependencies))]
 
 #[cfg(all(feature = "jemalloc", not(windows)))]
