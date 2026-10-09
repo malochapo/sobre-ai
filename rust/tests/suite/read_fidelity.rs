@@ -191,3 +191,36 @@ fn a_file_over_the_read_limit_is_read_in_windows() {
     );
     assert!(all.contains("lines:1-200"), "{all}");
 }
+
+/// G6: an instruction file is read whole only when the agent asked for
+/// nothing in particular; a line window it asked for is honoured.
+#[test]
+fn instruction_file_honours_a_line_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let home = dir.path();
+    let proj = home.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    let file = proj.join("AGENTS.md");
+    let body: String = (1..=40).map(|i| format!("rule number {i}\n")).collect();
+    std::fs::write(&file, body).unwrap();
+    let data = home.join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    let json = serde_json::json!({ "path": file, "start_line": 3, "limit": 2 }).to_string();
+    let out = Command::new(env!("CARGO_BIN_EXE_sobre"))
+        .args(["call", "sobre_read", "--project-root"])
+        .arg(&proj)
+        .args(["--json", &json])
+        .env("SOBRE_DATA_DIR", &data)
+        .env("HOME", home)
+        .output()
+        .expect("spawn sobre call sobre_read");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("rule number 3") && stdout.contains("rule number 4"),
+        "{stdout}"
+    );
+    assert!(
+        !stdout.contains("rule number 10") && !stdout.contains("rule number 40"),
+        "the window was ignored:\n{stdout}"
+    );
+}
