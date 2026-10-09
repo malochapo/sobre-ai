@@ -317,7 +317,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| next_build::compress(c, output),
     ),
     (
-        |c| c.starts_with("tsc") || c.contains("typescript"),
+        |c| c == "tsc" || c.starts_with("tsc "),
         |_c, output| typescript::compress(output),
     ),
     (
@@ -845,6 +845,23 @@ mod tests {
         let lint_output = "src/main.py:10: error: Missing return\nsrc/main.py:20: error: Unused var\nFound 2 errors";
         assert!(try_specific_pattern("pyright src/", lint_output).is_some());
         assert!(try_specific_pattern("basedpyright src/", lint_output).is_some());
+    }
+
+    /// A search for the word `typescript` is a search, not a `tsc` run.
+    #[test]
+    fn a_search_mentioning_typescript_goes_to_the_grep_compressor() {
+        let output = (0..60)
+            .map(|i| format!("src/file{}.ts:{i}:import ts from \"typescript\";", i % 3))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(grep::compress(&output).is_some());
+        for cmd in ["rg -n typescript src/", "grep -rn typescript src/"] {
+            assert_eq!(
+                try_specific_pattern(cmd, &output),
+                grep::compress(&output),
+                "{cmd}"
+            );
+        }
     }
 
     #[test]
