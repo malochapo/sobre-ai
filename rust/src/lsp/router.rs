@@ -24,9 +24,7 @@ fn resolve_config_for_language(language: &str) -> LspServerConfig {
 fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBackend>, String> {
     // Backing A: rust-analyzer (today's behavior).
     let config = resolve_config_for_language(language);
-    if super::config::find_binary_in_path(&config.command).is_none()
-        && !Path::new(&config.command).is_file()
-    {
+    if which::which(&config.command).is_err() && !Path::new(&config.command).is_file() {
         check_server_available(language)?;
     }
     let root_uri = file_path_to_uri(project_root)?;

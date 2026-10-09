@@ -334,7 +334,6 @@ fn run_build_worker(root: &str) {
             let _lock = crate::core::startup_guard::try_acquire_lock(
                 &lock_name,
                 std::time::Duration::from_millis(800),
-                std::time::Duration::from_mins(3),
             );
             if _lock.is_none() {
                 tracing::info!(

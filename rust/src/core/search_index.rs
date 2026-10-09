@@ -87,6 +87,9 @@ enum Narrowing {
 
 /// A per-file Bloom filter over the file's word-trigrams. No false negatives:
 /// if any probed bit for a trigram is unset, the file provably lacks it.
+/// Written here rather than taken from a Bloom crate: it hashes trigrams
+/// already packed into a `u32`, and its size and probe count are tuned to this
+/// index's posting budget.
 struct FileBloom {
     /// Bit storage; the filter width `m = bits.len() * 64` is a power of two.
     bits: Vec<u64>,
@@ -717,7 +720,6 @@ fn build_guarded(root: &str, respect_gitignore: bool) -> BuildOutcome {
     let lock = crate::core::startup_guard::try_acquire_lock(
         &search_index_lock_name(root),
         Duration::from_millis(200),
-        Duration::from_mins(3),
     );
     if lock.is_none() {
         // Another process owns the build. Clear the in-flight flag so a later
@@ -1166,13 +1168,13 @@ mod tests {
 
         let dir = corpus();
         let root = dir.path().to_string_lossy().to_string();
-        // Pre-hold the cross-process lock with *this* (alive) PID and a fresh
-        // mtime, so neither the dead-owner nor the staleness reclaim can take it
-        // — exactly the "another session is already building" state.
-        let lock_path = data
-            .path()
-            .join(format!(".{}.lock", search_index_lock_name(&root)));
-        std::fs::write(&lock_path, format!("{}\n", std::process::id())).unwrap();
+        // Pre-hold the cross-process lock: exactly the "another session is
+        // already building" state.
+        let _held = crate::core::startup_guard::try_acquire_lock(
+            &search_index_lock_name(&root),
+            Duration::ZERO,
+        )
+        .expect("the lock is free before the build");
 
         {
             let mut map = cache()
