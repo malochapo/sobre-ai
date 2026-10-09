@@ -96,10 +96,12 @@ impl Config {
                 }
                 Err(e) => {
                     record_parse_error(Some(format!("{e}")));
-                    tracing::warn!("config parse error in {}: {e}", path.display());
+                    // Said once, on stderr: a tracing warning as well printed
+                    // it twice on every command.
+                    tracing::debug!("config parse error in {}: {e}", path.display());
                     crate::errln!(
                         "\x1b[33m[sobre] WARNING: config parse error in {}: {e}\n  \
-                         Using defaults. Run `sobre doctor --fix` to repair.\x1b[0m",
+                         Every key is at its default until the file is fixed by hand.\x1b[0m",
                         path.display()
                     );
                     Self::default()

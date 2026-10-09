@@ -215,3 +215,20 @@ fn local_model_upstream_passes_and_only_the_proxy_itself_fails() {
         remote.line
     );
 }
+
+/// H6: an upstream the proxy cannot use fails the check: the proxy would
+/// send those requests to the provider's default instead.
+#[test]
+fn an_invalid_upstream_fails() {
+    for url in ["127.0.0.1:11434", "notaurl", "ftp://x.y"] {
+        let mut proxy = crate::core::config::ProxyConfig::default();
+        proxy.upstreams.insert("anthropic".into(), url.into());
+        let outcome = proxy::upstream_outcome(&proxy, 4444);
+        assert!(!outcome.ok, "{url}: {}", outcome.line);
+        assert!(
+            outcome.line.contains("invalid Anthropic upstream"),
+            "{}",
+            outcome.line
+        );
+    }
+}

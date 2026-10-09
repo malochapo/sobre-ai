@@ -3,7 +3,7 @@ use crate::core::config;
 pub fn cmd_config(args: &[String]) {
     match args.first().map(String::as_str) {
         None | Some("show") => {
-            crate::outln!("{}", config::Config::load().show());
+            crate::outln!("{}", show());
             crate::outln!(
                 "\nChange a key with `sobre config set <key> <value>`; `sobre config init`\nwrites the file with every key documented. `sobre doctor` flags unknown keys."
             );
@@ -14,20 +14,7 @@ pub fn cmd_config(args: &[String]) {
                 crate::errln!("Usage: sobre config set <key> <value>");
                 std::process::exit(2);
             }
-            let key = &args[1];
-            let val = &args[2];
-
-            // Upstream URLs are normalized before the single governed write
-            // path below, so the review covers every route.
-            let (write_key, write_val): (String, String) = match key.as_str() {
-                k if k.starts_with("proxy.upstreams.") => {
-                    let effective = normalize_optional_upstream(val).unwrap_or_default();
-                    (key.clone(), effective)
-                }
-                _ => (key.clone(), val.clone()),
-            };
-
-            write_config_key(&write_key, &write_val, key, val, args);
+            write_config_key(&args[1], &args[2], args);
         }
         Some("path") => cmd_config_path(),
         _ => {
@@ -37,61 +24,118 @@ pub fn cmd_config(args: &[String]) {
     }
 }
 
-/// Single governed write path for `config set`.
-///
-/// `key`/`value` are the resolved pair actually persisted; `display_key`/
-/// `display_val` are what the user typed (kept for messaging, e.g. when a value
-/// was normalized). Behavior:
-/// - **no-op** (current == new): report "unchanged", write nothing.
+/// Single governed write path for `config set`:
+/// - an unknown key is refused first, with the keys `config set` takes;
+/// - **no-op** (current == new): report "unchanged", write nothing;
 /// - **consequential key** ([`config::risk`]): print a before→after review + a
-///   risk note, then require confirmation or `--yes`; abort if declined.
-/// - **routine key**: write directly, as before.
-fn write_config_key(key: &str, value: &str, display_key: &str, display_val: &str, args: &[String]) {
+///   risk note, then require confirmation or `--yes`; abort if declined;
+/// - **routine key**: write directly.
+///
+/// `default` (or an empty value) removes the key, as does the key's default
+/// value: the documented default then applies.
+fn write_config_key(key: &str, value: &str, args: &[String]) {
     const BOLD: &str = "\x1b[1m";
     const DIM: &str = "\x1b[2m";
     const YELLOW: &str = "\x1b[33m";
     const RST: &str = "\x1b[0m";
 
-    let current = config::setter::current_value(key);
+    let keys = config::setter::settable_keys();
+    if !keys.iter().any(|k| k == key) {
+        crate::errln!("Unknown config key: {key}");
+        if key == "proxy.upstreams" {
+            crate::errln!(
+                "  it is a table: set proxy.upstreams.anthropic or proxy.upstreams.openai"
+            );
+        } else if let Some(near) =
+            crate::core::levenshtein::closest(key, keys.iter().map(String::as_str))
+        {
+            crate::errln!("  did you mean '{near}'?");
+        }
+        crate::errln!("  keys: {}", keys.join(", "));
+        std::process::exit(2);
+    }
 
-    if current.as_deref() == Some(value) {
-        crate::outln!("{display_key} is already set to {display_val} — unchanged.");
+    // Checked before any review: a value the loader would drop is refused.
+    let checked = match config::setter::checked_value(key, value) {
+        Ok(checked) => checked,
+        Err(e) => {
+            crate::errln!("{e}");
+            std::process::exit(2);
+        }
+    };
+    let unset = checked.is_none();
+    let current = config::setter::current_value(key);
+    if current.as_deref() == Some(value) || (unset && current.is_none()) {
+        crate::outln!(
+            "{key} is already {} — unchanged.",
+            current.as_deref().unwrap_or("at its default")
+        );
         return;
     }
 
     if let Some(risk) = config::risk::classify(key) {
         let before = current.as_deref().unwrap_or("(default)");
-        let after = if value.is_empty() { "(default)" } else { value };
-        crate::outln!("{BOLD}Review change to {display_key}{RST}");
+        let after = if unset { "(default)" } else { value };
+        crate::outln!("{BOLD}Review change to {key}{RST}");
         crate::outln!("  {before}  →  {after}");
         crate::outln!("  {YELLOW}{}{RST}", risk.note);
         if !super::prompt::confirm(
-            &format!("Apply {display_key} = {display_val}?"),
+            &format!("Apply {key} = {after}?"),
             super::prompt::wants_yes(args),
         ) {
-            crate::errln!("{DIM}Aborted — {display_key} left unchanged.{RST}");
+            crate::errln!("{DIM}Aborted — {key} left unchanged.{RST}");
             std::process::exit(1);
         }
     }
 
     match config::setter::set_by_key(key, value) {
-        Ok(_) => crate::outln!("Updated {display_key} = {display_val}"),
-        Err(e @ crate::core::error::ConfigError::UnknownKey { .. }) => {
-            let keys = config::schema::ConfigSchema::generate().known_keys();
-            crate::errln!("{e}");
-            if let Some(near) =
-                crate::core::levenshtein::closest(key, keys.iter().map(String::as_str))
-            {
-                crate::errln!("  did you mean '{near}'?");
-            }
-            crate::errln!("  keys: {}", keys.join(", "));
-            std::process::exit(2);
-        }
+        Ok(_) => match config::setter::current_value(key) {
+            Some(stored) => crate::outln!("Updated {key} = {stored}"),
+            None => crate::outln!("Removed {key}: its default applies."),
+        },
         Err(e) => {
             crate::errln!("{e}");
             std::process::exit(2);
         }
     }
+}
+
+/// `sobre config`: every key `config set` takes, with the value in effect —
+/// the file's, or the documented default.
+fn show() -> String {
+    let path = config::Config::path().map_or_else(
+        || "(config dir unresolved)".to_string(),
+        |p| p.display().to_string(),
+    );
+    let schema = config::schema::ConfigSchema::generate();
+    let mut out = format!("Config: {path}\n");
+    // Root keys first: a `[table]` header ends them.
+    let sections = schema
+        .sections
+        .iter()
+        .filter(|(s, _)| s.as_str() == "root")
+        .chain(schema.sections.iter().filter(|(s, _)| s.as_str() != "root"));
+    for (section, section_schema) in sections {
+        out.push('\n');
+        if section != "root" {
+            out.push_str(&format!("[{section}]\n"));
+        }
+        for (field, key_schema) in &section_schema.keys {
+            let key = if section == "root" {
+                field.clone()
+            } else {
+                format!("{section}.{field}")
+            };
+            let line = match config::setter::current_value(&key) {
+                Some(value) => format!("{field} = {value}"),
+                None if key_schema.default.is_null() => format!("{field}: not set"),
+                None => format!("{field} = {}  (default)", key_schema.default),
+            };
+            out.push_str(&line);
+            out.push('\n');
+        }
+    }
+    out.trim_end().to_string()
 }
 
 /// Resolves the [`config::Config`] that `config init` should persist.
@@ -132,9 +176,9 @@ fn init_config() {
         Err(e) => {
             crate::errln!(
                 "Error: refusing to overwrite an unparseable config.toml ({e}).\n  \
-                 Fix it manually or run `sobre doctor --fix`, then retry."
+                 Fix it by hand, then retry."
             );
-            return;
+            std::process::exit(1);
         }
     };
 
@@ -161,16 +205,6 @@ fn cmd_config_path() {
         std::process::exit(1);
     };
     crate::outln!("{}", p.display());
-}
-
-fn normalize_optional_upstream(value: &str) -> Option<String> {
-    use crate::core::config::normalize_url_opt;
-    let trimmed = value.trim();
-    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
-        None
-    } else {
-        normalize_url_opt(trimmed)
-    }
 }
 
 #[cfg(test)]

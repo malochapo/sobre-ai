@@ -159,14 +159,27 @@ pub(super) fn upstream_outcome(
         (
             "Anthropic",
             "proxy.upstreams.anthropic",
-            proxy.resolve_upstream(ProxyProvider::Anthropic),
+            proxy.resolve_upstream_checked(ProxyProvider::Anthropic),
         ),
         (
             "OpenAI",
             "proxy.upstreams.openai",
-            proxy.resolve_upstream(ProxyProvider::OpenAi),
+            proxy.resolve_upstream_checked(ProxyProvider::OpenAi),
         ),
     ];
+    // A configured value the proxy cannot use: it falls back to the
+    // provider's default, so requests meant elsewhere go to the provider.
+    for (label, key, resolved) in &checks {
+        if let Err(e) = resolved {
+            return Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Proxy upstream{RST}  {RED}invalid {label} upstream, the proxy uses the provider default: {e}{RST}  {YELLOW}set {key} to an http(s) URL{RST}"
+                ),
+            };
+        }
+    }
+    let checks = checks.map(|(label, key, resolved)| (label, key, resolved.unwrap_or_default()));
 
     let mut custom = Vec::new();
     let mut plaintext = Vec::new();
