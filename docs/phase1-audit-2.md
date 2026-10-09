@@ -79,7 +79,7 @@ was added.
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #58) |
 | J | Editing and shell tools | done (#59, #60) |
 | K | Reading and search tools | done (#61, #62) |
-| L | Graph, session, knowledge, review, `gain` | in progress (#PRNUM) |
+| L | Graph, session, knowledge, review, `gain` | in progress (#63) |
 | M | Code: dense-only code in the default build, leftovers, Windows lints | open |
 | P | CI and release | open |
 | N | Documentation: complete reference and architecture, written last | open |
@@ -887,25 +887,25 @@ documented:
   `build` can print "0 files… Index saved" and `callers` "0 edges"; the
   empty call graph is then saved.
 - [x] **L4 `sobre_session reset`, `load` and `import` drop the project
-  root, the shell directory and the extra roots** (#PRNUM)
+  root, the shell directory and the extra roots** (#63)
   (`tools/registered/sobre_session.rs:21-40,211-216`,
   `core/ccp_session_bundle.rs:190-205`; `extra_roots` is
   `serde(skip)`). Reads then resolve against `/`, and `search_roots` stops
   applying.
   Done: they replace the record and keep the roots; `import` reads paths
   against the session's root, never the server's cwd.
-- [x] **L5 One absolute read moves the session to another root.** (#PRNUM) The
+- [x] **L5 One absolute read moves the session to another root.** (#63) The
   session's task and findings are relabelled to the new root and saved
   over (`server/call_tool.rs:295-312`, `tools/server_paths.rs:31-49`),
   with no note.
   Done: the session (this conversation's, decision 4) moves with the root
   and is not saved for it; that call's output starts with
   `[sobre: project root is now …]`.
-- [x] **L6 Concurrent first calls race `roots/list`** (#PRNUM)
+- [x] **L6 Concurrent first calls race `roots/list`** (#63)
   (`server/call_tool.rs:216-221`). `roots_resolved.swap(true)` lets the
   other calls in flight run with no root.
   Done: the calls in flight wait for the one answer.
-- [x] **L7 Two windows on one project share one session.** (#PRNUM)
+- [x] **L7 Two windows on one project share one session.** (#63)
   - Both processes load and save the same session id; the temporary file
     names are fixed (`.{id}.json.tmp`, `.latest.json.tmp`), so a save
     fails ("Save failed") and decisions are lost
@@ -914,23 +914,23 @@ documented:
   - Done: each process starts its own empty session; every save writes its
     own temporary file; `latest.json` is gone.
 - [x] **L8 `consolidate` and `load` read the session from disk, not the
-  live one** (#PRNUM) (`tools/sobre_knowledge/consolidate.rs:49`, `tools/registered/sobre_session.rs:21-40`).
+  live one** (#63) (`tools/sobre_knowledge/consolidate.rs:49`, `tools/registered/sobre_session.rs:21-40`).
   Fresh decisions are not imported, `load` drops unsaved ones, and each
   `consolidate` re-imports the same facts: "confirmed ×4" and an inflated
   quality score.
   Done: `consolidate` imports the live session and skips what that session
   already imported; `load` saves the live session first.
 - [x] **L9 `sobre_knowledge search` returns superseded and archived facts,
-  unlabelled** (`tools/sobre_knowledge/search.rs:25-37`). (#PRNUM)
+  unlabelled** (`tools/sobre_knowledge/search.rs:25-37`). (#63)
   Done: only current facts.
-- [x] **L10 Every new server wipes the stub index.** (#PRNUM) The compaction marker
+- [x] **L10 Every new server wipes the stub index.** (#63) The compaction marker
   starts at 0 (`server/compaction_sync.rs:6,15-30`), so after the first
   PreCompact ever, each new process treats it as new and clears the stubs.
   Done: the stub index records the compaction it was emptied for.
 - [x] **L11 Root URIs with non-ASCII characters are rejected.**
   `percent_decode` pushes each byte as a char (`server/roots.rs:41-60`).
-  (#PRNUM) Done: bytes are decoded, then read as UTF-8.
-- [x] **L12 The previous run steers `mode=auto`.** *Invariant 2.* (#PRNUM)
+  (#63) Done: bytes are decoded, then read as UTF-8.
+- [x] **L12 The previous run steers `mode=auto`.** *Invariant 2.* (#63)
   - Each process reloads the latest session (`tools/server_lifecycle.rs:38-41`);
     its task then drives `mode=auto` (`core/auto_mode_resolver.rs:92-104`,
     `server/context_gate.rs:52-63`).
@@ -941,19 +941,19 @@ documented:
     the task, knowledge or the graph; the gate keeps only bounce-prevention.
     The dense search's boost from the last saved session's files is gone
     too.
-- [x] **L13 State that is written and never read.** (#PRNUM) `latest.json`
+- [x] **L13 State that is written and never read.** (#63) `latest.json`
   (`core/session/persistence.rs:45-49`), `SessionState.evidence` (read only
   by `export`, `core/session/state.rs:167-197`),
   `stats.total_tokens_input` and `stats.cache_hits` (`core/session/state.rs:160-164,219-222`).
   Done: all four removed; `sobre -c` no longer writes into a saved session.
-- [x] **L14 `context_gate`'s graph branches never fire.** (#PRNUM) They look up an
+- [x] **L14 `context_gate`'s graph branches never fire.** (#63) They look up an
   absolute path in a graph keyed by relative paths
   (`server/context_gate.rs:66-95`, `core/property_graph/queries.rs:40-62,121-140`).
   Done: removed with L12.
 - [ ] **L15 `sobre_graph` holds the cache write lock for its whole run**
   (`tools/registered/sobre_graph.rs:177-195`); concurrent reads fail meanwhile.
   Likely.
-- [x] **L16 `gain` overstates the proxy's savings.** (#PRNUM) The proxy recompresses
+- [x] **L16 `gain` overstates the proxy's savings.** (#63) The proxy recompresses
   the whole history on every request (`proxy/anthropic.rs:61-90`) and
   records each request's difference (`proxy/forward/prepare.rs:68-70`),
   priced as uncached input (`core/usage/summary.rs:116-121`). `gain`
@@ -993,13 +993,13 @@ documented:
   - `server/multi_path.rs` documents a `repo` argument nothing reads.
   - With only a local upstream, `gain` says "Real cost $0.00 (… local,
     free)" and "Gain $0.56 (100.0%)", priced at a hosted model's rate.
-  - Done in #PRNUM, all but the graph and `diff-review` items: background
+  - Done in #63, all but the graph and `diff-review` items: background
     models are matched on whole name parts; `recall` filters a category by
     the query; save, load, restore and unknown-store failures start with
     `ERROR`; an empty value is refused; `sobre call` resolves `path`, `to`
     and `project_root` as the dispatcher does; the `repo` line is gone;
     with only local calls `gain` shows no money figure.
-- [x] **L19 `sobre call` compressions are not in `usage.jsonl`.** (#PRNUM) The same
+- [x] **L19 `sobre call` compressions are not in `usage.jsonl`.** (#63) The same
   `sobre_shell` call adds a line over MCP and none through `sobre call`;
   the README says every compression is recorded "on every path".
   Done: recorded under the surface `call`.
