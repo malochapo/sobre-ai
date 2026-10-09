@@ -69,7 +69,7 @@ pub fn handle(
         }
 
         "list" => {
-            // This project's sessions only, as `load` and `restore` see them.
+            // This project's sessions only, as `load` sees them.
             let same_root = |root: Option<&str>| match (root, session.project_root.as_deref()) {
                 (Some(a), Some(b)) => {
                     crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(a))

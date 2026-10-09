@@ -389,8 +389,7 @@ fn apply_symbol_edit_headless_replaces_range() {
         text: "NEW".into(),
         expected_hash: None,
     };
-    // No port file under this temp dir → headless apply.
-    let res = super::apply_symbol_edit("replace_symbol_body", dir.path().to_str().unwrap(), &edit)
+    let res = super::apply_symbol_edit("replace_symbol_body", &edit)
         .unwrap();
     assert!(res.applied);
     assert_eq!(std::fs::read_to_string(&abs).unwrap(), "aaa\nNEW\nccc\n");

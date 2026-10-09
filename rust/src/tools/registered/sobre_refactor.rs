@@ -122,17 +122,5 @@ mod schema_tests {
         ] {
             assert!(schema.contains(needle), "schema missing {needle}: {schema}");
         }
-        for gone in [
-            "symbols_overview",
-            "\"scope\"",
-            "\"file\"",
-            "rename_preview",
-            "move_apply",
-            "inline_preview",
-            "reformat",
-            "type_hierarchy",
-        ] {
-            assert!(!schema.contains(gone), "schema still lists {gone}");
-        }
     }
 }

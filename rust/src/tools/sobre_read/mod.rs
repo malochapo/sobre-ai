@@ -997,13 +997,6 @@ fn prepare_inner(
 
     let store_result = cache.store(path, &content);
 
-    // Skip expensive hint computation for line-range reads and first reads.
-    // Hints are only useful from the 2nd read onwards when the file is contextually relevant.
-    // sobre removed the TF-IDF semantic cache: the post-dispatch `[related: …]`
-    // hint in `autonomy::enrich_after_read` already answers "what else should I
-    // look at" from the code graph — and names only files that are *not* in the
-    // session cache yet, which token overlap cannot do.
-
     if mode == "full" {
         cache.mark_full_delivered(path);
 

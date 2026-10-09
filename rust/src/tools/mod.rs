@@ -20,14 +20,12 @@ pub mod sobre_search;
 pub mod sobre_session;
 pub mod sobre_shell;
 pub mod sobre_tree;
-// Stays `pub`: driven from outside the crate by tests/suite/property_graph_reproducibility_contract.rs.
 pub(crate) mod impl_dedup;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
 pub mod impl_edit;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
 pub(crate) mod impl_overview;
-// Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
 pub(crate) mod impl_semantic_search;
 pub(crate) mod impl_smart_read;
 pub(crate) mod impl_symbol;

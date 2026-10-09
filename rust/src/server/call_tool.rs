@@ -124,9 +124,8 @@ impl SobreServer {
             let autonomy_clone = self.autonomy.clone();
             tokio::spawn(async move {
                 let result = std::panic::AssertUnwindSafe(async {
-                    // Bounded lock — the old unbounded `.write.await`
-                    // could queue behind a long computation and then hold the
-                    // lock during dedup, cascading the stall.
+                    // Bounded lock: an unbounded wait could queue behind a
+                    // long computation and then hold the lock during dedup.
                     let cache_timeout = tokio::time::timeout(
                         std::time::Duration::from_secs(5),
                         cache_clone.write(),
@@ -194,15 +193,8 @@ impl SobreServer {
         }
 
         // A machine-readable invocation (e.g. sobre_outline format=json) must
-        // return a byte-exact, parseable payload. The state-consuming briefings
-        // are already skipped above (so their once-per-session flags survive),
-        // but other steps still append recomputed prose (verify footer, throttle
-        // / budget warning) or compress the body — all of
-        // which break a JSON contract. This guard is the robust catch-all:
-        // restore the pure body captured *before* compression and decoration.
-        // Redaction + sensitivity were applied earlier so the security envelope
-        // is preserved. `sobre_outline` output is never teed, so
-        // `pre_compression` is the unmodified body here; no-op otherwise.
+        // return a byte-exact, parseable payload: the body captured before
+        // terse compression and the compression notice, as the tool returned it.
         if machine_readable {
             result_text = pre_compression;
         }
@@ -214,8 +206,8 @@ impl SobreServer {
     /// Called on the first tool call. If the client supports `roots/list`,
     /// we query it and pick the best root with project markers.
     ///
-    /// Roots is SEP-2577-deprecated in rmcp 2.0 but still fully functional; we
-    /// keep it for client-driven project-root auto-detection until MCP removes it.
+    /// rmcp marks roots deprecated (MCP SEP-2577); it still works and is how
+    /// a client tells sobre its project root.
     #[expect(deprecated)]
     async fn resolve_roots_once(&self) {
         use std::sync::atomic::Ordering;

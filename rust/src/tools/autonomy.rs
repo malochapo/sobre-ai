@@ -25,7 +25,8 @@ impl AutonomyState {
 /// Cache entries before deduplication runs.
 const DEDUP_THRESHOLD: usize = 8;
 
-/// Runs cache deduplication once the entry count exceeds the configured threshold.
+/// Runs cache deduplication once, the first time the cache holds
+/// [`DEDUP_THRESHOLD`] entries.
 pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     if state
         .dedup_applied
@@ -35,9 +36,7 @@ pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
         return;
     }
 
-    let entries = cache.get_all_entries();
-    let threshold = DEDUP_THRESHOLD;
-    if entries.len() < threshold {
+    if cache.get_all_entries().len() < DEDUP_THRESHOLD {
         state.dedup_applied.store(false, Ordering::SeqCst);
         return;
     }

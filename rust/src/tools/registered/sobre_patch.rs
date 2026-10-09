@@ -80,8 +80,8 @@ impl McpTool for SobrePatchTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        // replace_symbol is a whole-symbol rewrite — delegate to the LSP/IDE-aware
-        // sobre_refactor so there is one symbol-edit implementation.
+        // replace_symbol is a whole-symbol rewrite — delegate to sobre_refactor
+        // so there is one symbol-edit implementation.
         if crate::tools::sobre_patch::is_replace_symbol(args) {
             return delegate_replace_symbol(args, ctx);
         }
@@ -513,9 +513,9 @@ fn delegate_replace_symbol(
     let refactor_args = crate::tools::sobre_patch::build_refactor_args(args)
         .map_err(|e| ErrorData::invalid_params(e, None))?;
 
-    // Resolve `path` at the boundary when given (the name route resolves its own
-    // path inside sobre_refactor). abs_path is unused by the symbol-edit branch but
-    // we mirror sobre_refactor's wrapper to keep path resolution identical.
+    // Resolve `path` at the boundary when given, so a path that does not
+    // resolve is refused as in sobre_refactor (the name route resolves its own
+    // path inside sobre_refactor).
     let has_path = args.get("path").and_then(Value::as_str).is_some();
     let abs_path = if has_path {
         require_resolved_path(ctx, args, "path")?
