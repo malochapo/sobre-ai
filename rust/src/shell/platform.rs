@@ -332,7 +332,7 @@ pub fn join_command(args: &[String]) -> String {
     join_command_for(args, &flag)
 }
 
-fn join_command_for(args: &[String], shell_flag: &str) -> String {
+pub fn join_command_for(args: &[String], shell_flag: &str) -> String {
     match shell_flag {
         "-Command" => join_powershell(args),
         "/C" => join_cmd(args),
