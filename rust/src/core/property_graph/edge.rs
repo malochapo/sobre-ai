@@ -42,7 +42,6 @@ impl EdgeKind {
 
 #[derive(Debug, Clone)]
 pub struct Edge {
-    pub id: Option<i64>,
     pub source_id: i64,
     pub target_id: i64,
     pub kind: EdgeKind,
@@ -52,7 +51,6 @@ pub struct Edge {
 impl Edge {
     pub fn new(source_id: i64, target_id: i64, kind: EdgeKind) -> Self {
         Self {
-            id: None,
             source_id,
             target_id,
             kind,
@@ -60,6 +58,7 @@ impl Edge {
         }
     }
 
+    #[cfg(test)]
     pub fn with_metadata(mut self, meta: &str) -> Self {
         self.metadata = Some(meta.to_string());
         self
@@ -85,7 +84,7 @@ pub(super) fn upsert(conn: &Connection, edge: &Edge) -> anyhow::Result<()> {
 #[cfg(test)]
 pub(super) fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source_id, target_id, kind, metadata
+        "SELECT source_id, target_id, kind, metadata
          FROM edges WHERE source_id = ?1",
     )?;
     let edges = stmt
@@ -93,15 +92,13 @@ pub(super) fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<E
             Ok((
                 row.get(0)?,
                 row.get(1)?,
-                row.get(2)?,
-                row.get::<_, String>(3)?,
-                row.get(4)?,
+                row.get::<_, String>(2)?,
+                row.get(3)?,
             ))
         })?
         .filter_map(std::result::Result::ok)
-        .filter_map(|(id, source_id, target_id, kind, metadata)| {
+        .filter_map(|(source_id, target_id, kind, metadata)| {
             Some(Edge {
-                id: Some(id),
                 source_id,
                 target_id,
                 kind: EdgeKind::parse(&kind)?,
@@ -115,7 +112,7 @@ pub(super) fn from_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<E
 #[cfg(test)]
 pub(super) fn to_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edge>> {
     let mut stmt = conn.prepare(
-        "SELECT id, source_id, target_id, kind, metadata
+        "SELECT source_id, target_id, kind, metadata
          FROM edges WHERE target_id = ?1",
     )?;
     let edges = stmt
@@ -123,15 +120,13 @@ pub(super) fn to_node(conn: &Connection, node_id: i64) -> anyhow::Result<Vec<Edg
             Ok((
                 row.get(0)?,
                 row.get(1)?,
-                row.get(2)?,
-                row.get::<_, String>(3)?,
-                row.get(4)?,
+                row.get::<_, String>(2)?,
+                row.get(3)?,
             ))
         })?
         .filter_map(std::result::Result::ok)
-        .filter_map(|(id, source_id, target_id, kind, metadata)| {
+        .filter_map(|(source_id, target_id, kind, metadata)| {
             Some(Edge {
-                id: Some(id),
                 source_id,
                 target_id,
                 kind: EdgeKind::parse(&kind)?,

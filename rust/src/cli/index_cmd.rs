@@ -18,7 +18,7 @@ pub(crate) fn cmd_index(args: &[String]) {
             }
         }
         Some("build") => build(&project_root, args.iter().any(|a| a == "--force")),
-        _ => {
+        other => {
             eprintln!(
                 "Usage: sobre index <build|status> [--root <path>]\n\
                    sobre index build            graph + BM25 indexes, and the dense index\n\
@@ -27,6 +27,10 @@ pub(crate) fn cmd_index(args: &[String]) {
                    sobre index status [--json]  what is built\n\
                  Leave files out of every index with `ignore` in config.toml."
             );
+            // `sobre index` alone asks for the usage; anything else is a mistake.
+            if other.is_some() {
+                std::process::exit(2);
+            }
         }
     }
 }
@@ -34,7 +38,7 @@ pub(crate) fn cmd_index(args: &[String]) {
 /// Build (or with `force`, rebuild from scratch) the project's indexes:
 /// graph, then BM25, then the dense index in builds with local embeddings.
 fn build(project_root: &str, force: bool) {
-    // #790: activate the memory guardian for CLI builds so graph/BM25 abort
+    // Activate the memory guardian for CLI builds so graph/BM25 abort
     // checks actually fire.
     crate::core::memory_guard::start_guard(std::sync::Arc::new(|level| {
         tracing::warn!("[index build] memory pressure: {level:?} — background tasks will throttle");
@@ -46,13 +50,15 @@ fn build(project_root: &str, force: bool) {
 
     if force {
         let root = Path::new(project_root);
-        let _ = std::fs::remove_file(crate::core::bm25_index::BM25Index::index_file_path(root));
-        // #696 C4: purge the property graph (graph.db + wal/shm + meta) and
+        if let Some(path) = crate::core::bm25_index::BM25Index::index_file_path(root) {
+            let _ = std::fs::remove_file(path);
+        }
+        // C4: purge the property graph (graph.db + wal/shm + meta) and
         // the call-graph cache so the rebuild starts clean.
         crate::core::graph_index::purge_index(project_root);
-        let _ = std::fs::remove_file(
-            crate::core::index_namespace::vectors_dir(root).join("embeddings.bin"),
-        );
+        if let Some(dir) = crate::core::index_namespace::vectors_dir(root) {
+            let _ = std::fs::remove_file(dir.join("embeddings.bin"));
+        }
     }
 
     crate::core::index_orchestrator::ensure_all_background(project_root);
@@ -68,13 +74,13 @@ fn build(project_root: &str, force: bool) {
         eprintln!("  BM25 error: {err}");
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     build_dense(project_root);
 }
 
 /// The dense (embedding) index, on top of the fresh BM25 index. Uses the
 /// model `sobre embeddings provision` installed; never downloads it.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn build_dense(project_root: &str) {
     crate::core::interrupt::install_ctrlc_handler();
     wait_semantic_progress(project_root);
@@ -114,7 +120,7 @@ fn wait_graph_bm25_progress(project_root: &str) {
 
 /// Build the dense index on a worker thread while showing progress, and wait
 /// for it to finish: the worker stops when this process exits.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn wait_semantic_progress(project_root: &str) {
     let root = project_root.to_string();
     let handle = std::thread::spawn(move || {
@@ -149,7 +155,7 @@ fn apply_graph_bm25_progress(
     }
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn apply_semantic_progress(
     progress: &mut ProgressIndicator,
     view: &crate::core::index_orchestrator::ProgressView,
@@ -199,7 +205,7 @@ fn print_human_status(project_root: &str) {
         "  Semantic Index: {}",
         format_disk_line(&disk.semantic_index, "vectors")
     );
-    // #735: surface the `ignore` globs so a filtered index is always
+    // Surface the `ignore` globs so a filtered index is always
     // recognizable. Absent when `ignore` is empty.
     if let Some(summary) = crate::core::index_filter::IndexFileFilter::effective().summary() {
         println!("  Index Filters:  {summary}");

@@ -106,7 +106,7 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
 /// it is idle/building/ready/failed, how long the last build took, and — crucially
 /// — *why* it might be stuck (e.g. "indexed but NOT persisted: too large").
 ///
-/// This answers issue #249: users had no way to tell whether the semantic index
+/// Users otherwise had no way to tell whether the semantic index
 /// was working, how fast it was, or why it kept "warming up" forever.
 pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     let session = crate::core::session::SessionState::load_latest()?;
@@ -179,58 +179,10 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     };
     Some(outcome)
 }
-pub(crate) fn memory_outcome() -> Outcome {
-    let bm25_mb = crate::core::config::DEFAULT_BM25_PERSIST_MB;
-    let ttl_min = crate::core::config::IDLE_CACHE_TTL_SECS / 60;
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Memory{RST}  {GREEN}full caches{RST}  {DIM}(BM25 disk {bm25_mb} MB, cache kept {ttl_min} min idle){RST}"
-        ),
-    }
-}
-pub(crate) fn ram_guardian_outcome() -> Outcome {
-    // This process: sobre has no long-lived daemon whose RSS to measure instead.
-    let snap = crate::core::memory_guard::MemorySnapshot::capture();
-    let Some(snap) = snap else {
-        return Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}RAM Guardian{RST}  {YELLOW}not available{RST}  {DIM}(platform unsupported){RST}"
-            ),
-        };
-    };
-    let allocator = if cfg!(all(feature = "jemalloc", not(windows))) {
-        "jemalloc"
-    } else {
-        "system"
-    };
-    let source = "self";
-    let ok = snap.pressure_level == crate::core::memory_guard::PressureLevel::Normal;
-    let color = if ok { GREEN } else { RED };
-    let pressure_hint = match snap.pressure_level {
-        crate::core::memory_guard::PressureLevel::Normal => String::new(),
-        level => {
-            format!(
-                "  {YELLOW}pressure={level:?} — provision RAM or enforce an OS cgroup/container limit{RST}"
-            )
-        }
-    };
-    Outcome {
-        ok,
-        line: format!(
-            "{BOLD}RAM Guardian{RST}  {color}{:.0} MB{RST} / {:.1} GB system ({:.1}%)  {DIM}limit: {:.0} MB ({allocator}, {source}){RST}{pressure_hint}",
-            snap.rss_bytes as f64 / 1_048_576.0,
-            snap.system_ram_bytes as f64 / 1_073_741_824.0,
-            snap.rss_percent,
-            snap.rss_limit_bytes as f64 / 1_048_576.0,
-        ),
-    }
-}
 /// Reports knowledge stores whose `project_root` was deleted (removed git
 /// worktrees, thrown-away projects). Such a store can never be written again, so
 /// its eviction cap can never self-heal — it is pure accumulated bloat. This is
-/// informational (never a hard failure); `sobre doctor --fix` reclaims it (#615).
+/// informational (never a hard failure); `sobre doctor --fix` reclaims it.
 pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     let orphans = crate::core::knowledge::maintenance::find_orphaned_stores();
     if orphans.is_empty() {
@@ -342,7 +294,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
             checks.push((
                 "gotchas".to_string(),
                 g.gotchas.len(),
-                policy.gotcha.max_gotchas_per_project,
+                crate::core::gotcha_tracker::MAX_GOTCHAS,
             ));
         }
 
@@ -366,7 +318,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
                     warnings.join(", ")
                 ),
             });
-            // Actionable guidance (#972). A store *at* its cap is healthy by
+            // Actionable guidance. A store *at* its cap is healthy by
             // design — eviction keeps it there; only *over* cap means curation is
             // falling behind. Point the operator at the right lever either way.
             results.push(Outcome {
@@ -417,16 +369,16 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
 
     results
 }
-/// Actionable next-step for a memory capacity warning (#972). Separated from the
+/// Actionable next-step for a memory capacity warning. Separated from the
 /// on-disk capacity scan so the messaging is unit-tested directly: a store *at*
 /// its cap is healthy (eviction holds it there), while *over* cap means curation
 /// is behind and the operator should compact it.
 pub(crate) fn capacity_hint(critical: bool, project_root: Option<&str>) -> String {
     if !critical {
-        return "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup #970, 90-day prune #972)".to_string();
+        return "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup, 90-day prune)".to_string();
     }
     let root = project_root.unwrap_or("<project>");
     format!(
-        "over cap — eviction is behind. Compact it now: sobre call ctx_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
+        "over cap — eviction is behind. Compact it now: sobre call sobre_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
     )
 }

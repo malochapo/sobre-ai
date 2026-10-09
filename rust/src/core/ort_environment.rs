@@ -7,7 +7,7 @@
 //! # Search order
 //!
 //! 1. `ORT_DYLIB_PATH` env var (resolved relative to the executable directory)
-//! 2. The sobre managed runtime (`sobre embeddings provision`, GH #732)
+//! 2. The sobre managed runtime (`sobre embeddings provision`)
 //!    — version-matched to this build's `ort` API level by construction
 //! 3. Nix profile paths (Linux):
 //!    - `/run/current-system/sw/lib/` (system profile)
@@ -166,7 +166,7 @@ fn resolve_ort_dylib() -> anyhow::Result<PathBuf> {
         anyhow::bail!("ORT_DYLIB_PATH={p} set but file does not exist");
     }
 
-    // 2. Managed runtime (GH #732) — installed by `sobre embeddings
+    // 2. Managed runtime — installed by `sobre embeddings
     //    provision`, SHA-256 pinned to the official release and version-
     //    matched to this build's ort API level. After ORT_DYLIB_PATH so an
     //    operator override always wins.
@@ -368,7 +368,7 @@ mod tests {
     #[test]
     fn homebrew_prefix_lib_is_searched() {
         // A dylib under $HOMEBREW_PREFIX/lib is discovered (covers Homebrew on
-        // any platform / custom prefix, incl. Linuxbrew). See issue #544.
+        // any platform / custom prefix, incl. Linuxbrew).
         let tmp = std::env::temp_dir().join(format!("lc-ort-hb-{}", std::process::id()));
         let libdir = tmp.join("lib");
         std::fs::create_dir_all(&libdir).unwrap();

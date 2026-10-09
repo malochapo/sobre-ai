@@ -15,21 +15,18 @@
 //! - Zig: @import("path.zig") (best-effort)
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use super::deep_queries::ImportInfo;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedImport {
-    pub source: String,
     pub resolved_path: Option<String>,
     pub is_external: bool,
-    pub line: usize,
 }
 
 #[derive(Debug)]
 pub struct ResolverContext {
-    pub project_root: PathBuf,
     pub file_paths: Vec<String>,
     pub tsconfig_paths: HashMap<String, String>,
     pub go_module: Option<String>,
@@ -60,7 +57,6 @@ impl ResolverContext {
             build_csharp_namespace_index(project_root, &file_paths, file_contents);
 
         Self {
-            project_root: project_root.to_path_buf(),
             file_paths,
             tsconfig_paths,
             go_module,
@@ -185,10 +181,8 @@ pub fn resolve_imports(
         .map(|imp| {
             let (resolved, is_external) = resolve_one(imp, file_path, ext, ctx);
             ResolvedImport {
-                source: imp.source.clone(),
                 resolved_path: resolved,
                 is_external,
-                line: imp.line,
             }
         })
         .collect()
@@ -220,7 +214,7 @@ fn resolve_one(
         "scala" | "sc" => resolve_scala(imp, ctx),
         "ex" | "exs" => resolve_elixir(imp, file_path, ctx),
         // `.tscn` ext_resource paths are `res://` references — identical shape to
-        // a GDScript `preload`, so the GDScript resolver handles them. (#316)
+        // a GDScript `preload`, so the GDScript resolver handles them.
         "gd" | "tscn" => resolve_gd(imp, file_path, ctx),
         "lua" | "luau" => resolve_lua(imp, file_path, ctx),
         _ => (None, true),

@@ -29,23 +29,6 @@ struct Gotcha {
 }
 ```
 
-## GotchaPolicy
-
-`GotchaPolicy` (`rust/src/core/memory_policy.rs`) is part of `MemoryPolicy`.
-There is no config-file section for it: callers use `MemoryPolicy::default()`,
-so the values are fixed:
-
-| Field | Value |
-|---|---|
-| `max_gotchas_per_project` | 100 |
-| `retrieval_budget_per_room` | 10 |
-| `default_decay_rate` | 0.03 |
-| `category_decay_overrides` | empty |
-
-Of these, only `max_gotchas_per_project` is read at runtime (by the doctor
-storage check). The store enforces its own constants in
-`rust/src/core/gotcha_tracker/model.rs`.
-
 ## Store limits and decay
 
 Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:
@@ -64,7 +47,7 @@ Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:
 
 ## Tool Actions
 
-`ctx_knowledge action=gotcha` records a gotcha for the current project:
+`sobre_knowledge action=gotcha` records a gotcha for the current project:
 `trigger` and `resolution` are required, `severity` and `category` optional
 (category defaults to `convention`). Recorded gotchas are recalled through the
 knowledge search.

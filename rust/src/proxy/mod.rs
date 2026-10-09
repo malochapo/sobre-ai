@@ -42,7 +42,7 @@ pub struct ProxyState {
     pub client: reqwest::Client,
     pub port: u16,
     /// Live provider upstreams, refreshed from config.toml without a proxy
-    /// restart (#449). Read per request via [`ProxyState::openai_upstream`] etc.
+    /// restart. Read per request via [`ProxyState::openai_upstream`] etc.
     pub upstreams: tokio::sync::watch::Receiver<Arc<Upstreams>>,
 }
 
@@ -82,12 +82,12 @@ fn upstream_reload_secs() -> u64 {
 }
 
 /// Background task: re-resolves the provider upstreams from config.toml on an
-/// interval and publishes any change to the live request handlers (#449). Ends
+/// interval and publishes any change to the live request handlers. Ends
 /// once every receiver (the proxy itself) has been dropped.
 ///
 /// `Config::load()` already keeps an internal content-hash cache, so re-reading
 /// an unchanged `config.toml` skips the TOML parse + merge and costs only a small
-/// file read; combined with the relaxed default interval (#453) the idle steady
+/// file read; combined with the relaxed default interval the idle steady
 /// state is negligible without needing a separate stat pre-check.
 fn spawn_upstream_refresh(tx: tokio::sync::watch::Sender<Arc<Upstreams>>, initial: Upstreams) {
     let interval = std::time::Duration::from_secs(upstream_reload_secs());
@@ -158,7 +158,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // The proxy reads its upstreams live from a watch channel: a background task
     // re-resolves them from config.toml on an interval and publishes any change,
     // so `sobre config set proxy.upstreams.<id>` (or any config.toml edit) takes
-    // effect on the running proxy within seconds, without a restart (#449).
+    // effect on the running proxy within seconds, without a restart.
     let (upstream_tx, upstream_rx) = tokio::sync::watch::channel(Arc::new(initial.clone()));
     spawn_upstream_refresh(upstream_tx, initial.clone());
 
@@ -216,7 +216,7 @@ fn app(state: ProxyState, auth_token: String) -> Router {
         // at the proxy root — notably OpenCode via `@ai-sdk/openai`, whose
         // Responses-API requests hit `/responses` — dispatch here. The
         // `normalize_provider_path` layer rewrites the URI to its canonical
-        // `/v1/...` form before the handler forwards upstream (#353).
+        // `/v1/...` form before the handler forwards upstream.
         .route("/messages", any(anthropic::handler))
         .route("/messages/{*rest}", any(anthropic::handler))
         .route("/chat/completions", any(openai::handler))
@@ -239,7 +239,7 @@ fn app(state: ProxyState, auth_token: String) -> Router {
 
     // Outermost layer (runs first): normalize bare provider endpoints to their
     // canonical `/v1/...` form so auth, routing and upstream forwarding all agree,
-    // regardless of whether the client's base URL includes `/v1` (#353).
+    // regardless of whether the client's base URL includes `/v1`.
     app.layer(axum::middleware::from_fn(normalize_provider_path))
 }
 
@@ -306,13 +306,17 @@ async fn models_handler(
 
 /// `GET /v1/responses`: the WebSocket transport Codex tries first. A 426
 /// makes Codex fall back to HTTP for the rest of the session at once, where a
-/// 404 or 405 costs seconds of retries and a 400 fails the turn.
-async fn responses_websocket_refused() -> StatusCode {
-    StatusCode::UPGRADE_REQUIRED
+/// 404 or 405 costs seconds of retries and a 400 fails the turn. A 426 must
+/// name the protocol to use (RFC 9110 §15.5.22): plain HTTP/1.1.
+async fn responses_websocket_refused() -> impl IntoResponse {
+    (
+        StatusCode::UPGRADE_REQUIRED,
+        [(axum::http::header::UPGRADE, "HTTP/1.1")],
+    )
 }
 
 async fn status_handler(State(state): State<ProxyState>) -> impl IntoResponse {
-    // Live upstreams the proxy is forwarding to right now (#449). This is the
+    // Live upstreams the proxy is forwarding to right now. This is the
     // single source of truth for "where is my traffic actually going" — it
     // reflects config.toml hot-reloads and any start-time env override.
     let up = state.upstream_snapshot();
@@ -337,7 +341,10 @@ async fn proxy_auth_guard(
     expected_token: String,
 ) -> Result<Response, Response> {
     let path = req.uri().path();
-    if path == "/health" {
+    // The WebSocket refusal answers the same 426 with or without a token: it
+    // forwards nothing.
+    let websocket_refusal = req.method() == axum::http::Method::GET && path == "/v1/responses";
+    if path == "/health" || websocket_refusal {
         return Ok(next.run(req).await);
     }
 
@@ -401,7 +408,7 @@ fn has_provider_api_key(req: &axum::extract::Request) -> bool {
     // binds to loopback only and never injects upstream credentials — it forwards
     // this header verbatim, so an invalid key is rejected by the real upstream,
     // never silently honoured. Gating provider routes on key *shape* only ever
-    // produced false 401s for those clients (#362).
+    // produced false 401s for those clients.
     if let Some(auth) = headers.get("authorization").and_then(|v| v.to_str().ok()) {
         let auth = auth.trim();
         let credential = auth
@@ -433,10 +440,10 @@ fn is_provider_route(path: &str) -> bool {
 /// `/chat/completions` instead of `/v1/responses` — notably OpenCode via
 /// `@ai-sdk/openai`, whose Responses-API requests land on `/responses`. The proxy
 /// and every upstream only know the `/v1/...` paths, so an un-prefixed request
-/// would 401 (not a provider route) and then 404 (no handler). (#353)
+/// would 401 (not a provider route) and then 404 (no handler).
 fn canonical_provider_path(path: &str) -> Option<String> {
     // Inverse case of the bare-endpoint rewrite below: the OpenAI base URL sobre
-    // writes includes `/v1` (#366), so a client that treats the base URL as an
+    // writes includes `/v1`, so a client that treats the base URL as an
     // origin and appends `/v1/...` itself produces `/v1/v1/...`.
     if let Some(rest) = path.strip_prefix("/v1/v1/") {
         return Some(format!("/v1/{rest}"));
@@ -476,7 +483,7 @@ fn normalized_provider_uri(uri: &axum::http::Uri) -> Option<axum::http::Uri> {
 
 /// Rewrites the request URI in place when it targets a bare provider endpoint, so
 /// downstream auth (`is_provider_route`), routing and upstream forwarding all see
-/// the canonical `/v1/...` path. (#353)
+/// the canonical `/v1/...` path.
 async fn normalize_provider_path(
     mut req: axum::extract::Request,
     next: axum::middleware::Next,

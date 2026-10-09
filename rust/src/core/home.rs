@@ -7,17 +7,12 @@ pub const CODEX_PROFILE_ENV: &str = "CODEX_PROFILE";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexConfigPaths {
     base: PathBuf,
-    profile_name: Option<String>,
     profile: Option<PathBuf>,
 }
 
 impl CodexConfigPaths {
     pub fn base(&self) -> &Path {
         &self.base
-    }
-
-    pub fn profile_name(&self) -> Option<&str> {
-        self.profile_name.as_deref()
     }
 
     pub fn profile(&self) -> Option<&Path> {
@@ -27,11 +22,6 @@ impl CodexConfigPaths {
     /// Path sobre should write for the active Codex configuration.
     pub fn effective(&self) -> &Path {
         self.profile().unwrap_or_else(|| self.base())
-    }
-
-    /// Both layers in Codex's effective configuration, in load order.
-    pub fn layers(&self) -> impl Iterator<Item = &Path> {
-        std::iter::once(self.base()).chain(self.profile())
     }
 }
 
@@ -113,14 +103,9 @@ fn sole_codex_profile(codex_dir: &Path) -> Option<String> {
 }
 
 fn codex_config_paths_at(codex_dir: &Path, profile_name: Option<String>) -> CodexConfigPaths {
-    let base = codex_dir.join("config.toml");
-    let profile = profile_name
-        .as_deref()
-        .map(|name| codex_dir.join(format!("{name}.config.toml")));
     CodexConfigPaths {
-        base,
-        profile_name,
-        profile,
+        base: codex_dir.join("config.toml"),
+        profile: profile_name.map(|name| codex_dir.join(format!("{name}.config.toml"))),
     }
 }
 
@@ -172,16 +157,14 @@ mod tests {
     }
 
     #[test]
-    fn explicit_profile_selects_overlay_for_writes_and_layers() {
+    fn explicit_profile_selects_overlay_for_writes() {
         let _guard = env_lock();
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("CODEX_HOME", dir.path());
         crate::test_env::set_var(CODEX_PROFILE_ENV, "cat");
 
         let paths = resolve_codex_config_paths().unwrap();
-        assert_eq!(paths.profile_name(), Some("cat"));
         assert_eq!(paths.effective(), dir.path().join("cat.config.toml"));
-        assert_eq!(paths.layers().count(), 2);
         assert_eq!(paths.base(), &dir.path().join("config.toml"));
 
         crate::test_env::remove_var("CODEX_HOME");
@@ -196,12 +179,12 @@ mod tests {
         crate::test_env::set_var("CODEX_HOME", dir.path());
         crate::test_env::remove_var(CODEX_PROFILE_ENV);
         assert_eq!(
-            resolve_codex_config_paths().unwrap().profile_name(),
-            Some("cat")
+            resolve_codex_config_paths().unwrap().effective(),
+            dir.path().join("cat.config.toml")
         );
 
         std::fs::write(dir.path().join("work.config.toml"), "").unwrap();
-        assert_eq!(resolve_codex_config_paths().unwrap().profile_name(), None);
+        assert_eq!(resolve_codex_config_paths().unwrap().profile(), None);
 
         crate::test_env::remove_var("CODEX_HOME");
     }
@@ -214,7 +197,7 @@ mod tests {
         crate::test_env::set_var(CODEX_PROFILE_ENV, "../outside");
 
         let paths = resolve_codex_config_paths().unwrap();
-        assert_eq!(paths.profile_name(), None);
+        assert_eq!(paths.profile(), None);
         assert_eq!(paths.effective(), dir.path().join("config.toml"));
 
         crate::test_env::remove_var("CODEX_HOME");

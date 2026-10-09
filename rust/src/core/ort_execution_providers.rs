@@ -44,7 +44,7 @@ pub fn gpu_active() -> bool {
     if !runtime_wants_gpu() {
         return false;
     }
-    // The shipped Linux/Windows GPU build compiles only the CUDA EP. If its
+    // A build with `ort-cuda` registers the CUDA EP. If its
     // runtime deps (libcudart/libcublas/libcudnn/…) can't be dlopen'd, ORT
     // silently registers CPU instead; don't size batches for a phantom GPU.
     #[cfg(feature = "ort-cuda")]
@@ -160,7 +160,13 @@ fn cuda_missing_message(probe_err: &str) -> String {
 }
 
 pub fn execution_provider_help() -> &'static str {
-    "sobre uses the GPU when ORT_DYLIB_PATH points at a GPU runtime, and the CPU otherwise."
+    if compiled_gpu_provider_names().is_empty() {
+        "This build runs embeddings on the CPU. A GPU needs a source build with a GPU \
+         feature (--features ort-cuda, ort-rocm, ort-webgpu, ort-directml or ort-coreml) \
+         and ORT_DYLIB_PATH pointing at a GPU runtime."
+    } else {
+        "sobre uses the GPU when ORT_DYLIB_PATH points at a GPU runtime, and the CPU otherwise."
+    }
 }
 
 fn cpu_execution_providers() -> Vec<ort::ep::ExecutionProviderDispatch> {

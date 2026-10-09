@@ -5,7 +5,7 @@ title: 'pattern: '
 labels: enhancement, good first issue
 ---
 
-**Command:** (e.g. `mypy`, `black`, `flake8`)
+**Command:** (e.g. `nix build`, `pre-commit run`, `phpstan`)
 
 **Example raw output:**
 ```

@@ -13,7 +13,7 @@
 //! snapshot, so OKF and ctxpkg can never disagree on what the project's
 //! knowledge is.
 //!
-//! ## Determinism (#498)
+//! ## Determinism
 //! Every byte of the export is a pure function of the snapshot: frontmatter keys
 //! are emitted in a fixed order (reserved OKF keys first, then sorted
 //! `sobre_*`), file slugs are stable, relation lines are sorted, and no
@@ -759,7 +759,6 @@ mod tests {
             "s1",
         );
         KnowledgeSnapshot {
-            project_root: "/tmp/proj".into(),
             project_hash: "hash".into(),
             facts,
             patterns: Vec::new(),
@@ -809,7 +808,7 @@ mod tests {
         assert_eq!(
             to_okf_bundle(&snap),
             to_okf_bundle(&snap),
-            "two exports of the same snapshot are byte-identical (#498)"
+            "two exports of the same snapshot are byte-identical"
         );
     }
 

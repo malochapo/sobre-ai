@@ -1,4 +1,4 @@
-//! Typed XDG base-directory resolvers for sobre (GH #408 / GL #602).
+//! Typed XDG base-directory resolvers for sobre.
 //!
 //! One typed resolver per XDG category, so `config.toml` never mixes with
 //! runtime data and the config dir can stay read-only.
@@ -8,7 +8,7 @@
 //! `$XDG_DATA_HOME/sobre`, state `$XDG_STATE_HOME/sobre`, cache
 //! `$XDG_CACHE_HOME/sobre`. An override only ever moves its own category.
 //!
-//! Determinism (#498): every resolver is a pure function of environment + HOME;
+//! Determinism: every resolver is a pure function of environment + HOME;
 //! no timestamps, counters or randomness.
 
 use std::path::{Path, PathBuf};
@@ -76,11 +76,6 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
 /// Override: `SOBRE_CONFIG_DIR`; default `$XDG_CONFIG_HOME/sobre`.
 pub fn config_dir() -> Result<PathBuf, String> {
     category_dir("SOBRE_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
-}
-
-/// A member (a file or sub-directory) of the config dir.
-pub fn config_dir_member(sub: &str) -> Result<PathBuf, String> {
-    Ok(config_dir()?.join(sub))
 }
 
 /// Data directory — sessions, vectors, graphs, knowledge, archives, memory.

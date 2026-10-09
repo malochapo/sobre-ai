@@ -31,7 +31,7 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     // Markdown-family files opt into the lossy structural compactor by
     // extension alone; a plain `.txt` must additionally show a real ATX
     // heading — hyphen lists or wrapped prose are not enough to treat a text
-    // file as a structured document (#655).
+    // file as a structured document.
     let markdown_family = matches!(ext, Some("md" | "markdown" | "mdown"));
     let structured_txt =
         matches!(ext, Some("txt")) && crate::core::markdown_compact::has_markdown_headings(content);
@@ -44,7 +44,7 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
         return compacted;
     }
 
-    // Tabular data (CSV/TSV, #982): a redundant table with constant columns
+    // Tabular data (CSV/TSV): a redundant table with constant columns
     // compacts losslessly through the columnar crusher far better than the
     // line-based path below. Fires only when it at least halves the input;
     // otherwise fall through. The exact bytes stay recoverable via a full re-read.
@@ -54,7 +54,7 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
         return crushed;
     }
 
-    // YAML (#985): a verbose document compacts losslessly to compact JSON through
+    // YAML: a verbose document compacts losslessly to compact JSON through
     // the shared crusher — formatting dropped, redundant `items`/`list` arrays
     // factored — far better than the line-based path below. Fires only when it
     // clears the reduction gate; the exact bytes stay recoverable via a full

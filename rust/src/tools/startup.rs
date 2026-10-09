@@ -72,15 +72,3 @@ pub(super) fn maybe_derive_project_root_from_absolute(
     }
     None
 }
-
-/// Incremental background consolidation: import only session items newer than the
-/// per-session watermark, advancing it after a successful save. Delegates to the
-/// canonical engine ([`crate::tools::ctx_knowledge::consolidate_project_knowledge_with`]),
-/// which loads the session for the *requested* project root (cwd bug #2362), runs
-/// under the shared knowledge lock (#326) and reclaims history losslessly (#995).
-pub(crate) fn auto_consolidate_knowledge(project_root: &str) {
-    let _ = crate::tools::ctx_knowledge::consolidate_project_knowledge_with(
-        project_root,
-        &crate::core::consolidation_engine::ConsolidateOptions::incremental_auto(),
-    );
-}

@@ -9,27 +9,27 @@
 //! Reference: Cormack, Clarke & Buettcher (2009), "Reciprocal Rank Fusion
 //! outperforms Condorcet and individual Rank Learning Methods"
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 use std::collections::HashMap;
 
 use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::embeddings::EmbeddingEngine;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::hnsw::FlatEmbeddings;
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 const RRF_K: f64 = 60.0;
 
 /// Default weights for standard RRF: equal contribution per ranking (`Σ weight/(k+r)` with weight=1).
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 const DEFAULT_BM25_WEIGHT: f64 = 1.0;
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 const DEFAULT_DENSE_WEIGHT: f64 = 1.0;
 
 /// Hybrid search weights and candidate counts (built-in, not configurable).
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct HybridConfig {
@@ -42,12 +42,12 @@ pub struct HybridConfig {
     pub splade_weight: f64,
 }
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 fn default_splade_weight() -> f64 {
     0.5
 }
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 impl Default for HybridConfig {
     fn default() -> Self {
         Self {
@@ -64,7 +64,7 @@ impl Default for HybridConfig {
 ///
 /// `graph_file_ranks`: optional repo-relative file path → rank (0-based) for neighbors of
 /// recently touched session files; each matching result gets an extra `1/(k+r)` term.
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 pub fn reciprocal_rank_fusion(
     bm25_results: &[SearchResult],
     dense_results: &[DenseSearchResult],
@@ -86,7 +86,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            bm25_score: Some(result.score),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -107,7 +106,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -139,7 +137,7 @@ pub fn reciprocal_rank_fusion(
 
 /// Run hybrid search: BM25 + dense retrieval with RRF fusion + post-RRF reranking.
 /// Falls back to BM25-only if embedding engine is not available.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn hybrid_search(
     query: &str,
     index: &BM25Index,
@@ -197,7 +195,7 @@ pub fn hybrid_search(
     results
 }
 
-#[cfg(not(feature = "embeddings"))]
+#[cfg(not(feature = "dense"))]
 pub fn hybrid_search(query: &str, index: &BM25Index, top_k: usize) -> Vec<HybridResult> {
     let candidate_count = (top_k * 5).min(50);
     let mut results: Vec<HybridResult> = index
@@ -211,7 +209,7 @@ pub fn hybrid_search(query: &str, index: &BM25Index, top_k: usize) -> Vec<Hybrid
 
 /// Dense vector search over pre-computed chunk embeddings.
 /// Uses O(n log k) binary-heap top-k selection for small indices, HNSW for large ones.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 fn dense_search(
     query: &str,
     engine: &EmbeddingEngine,
@@ -233,7 +231,6 @@ fn dense_search(
             let chunk = chunks.get(idx)?;
             let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
             Some(DenseSearchResult {
-                chunk_idx: idx,
                 similarity: sim,
                 file_path: chunk.file_path.clone(),
                 symbol_name: chunk.symbol_name.clone(),
@@ -246,16 +243,15 @@ fn dense_search(
         .collect()
 }
 
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 fn result_key(file_path: &str, start_line: usize) -> String {
     format!("{file_path}:{start_line}")
 }
 
 /// Result from dense (embedding-based) search.
-#[cfg(any(test, feature = "embeddings"))]
+#[cfg(any(test, feature = "dense"))]
 #[derive(Debug, Clone)]
 pub struct DenseSearchResult {
-    pub chunk_idx: usize,
     pub similarity: f32,
     pub file_path: String,
     pub symbol_name: String,
@@ -275,7 +271,6 @@ pub struct HybridResult {
     pub end_line: usize,
     pub snippet: String,
     pub rrf_score: f64,
-    pub bm25_score: Option<f64>,
     pub dense_score: Option<f32>,
     pub bm25_rank: Option<usize>,
     pub dense_rank: Option<usize>,
@@ -295,7 +290,6 @@ impl HybridResult {
             end_line: result.end_line,
             snippet: result.snippet,
             rrf_score: result.score,
-            bm25_score: Some(result.score),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -334,8 +328,9 @@ pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String 
             ));
         } else {
             // Prefix the separator inside each arm so an absent rank-source
-            // (e.g. BM25-only fallback when embeddings are off) renders a clean
-            // "(rrf: X)" instead of a dangling "(rrf: X, )" (#509).
+            // (BM25-only or dense-only ranking) renders a clean "(score: X)".
+            // The score is RRF only for hybrid results; otherwise it is the
+            // BM25 score or the cosine similarity.
             let source_info = match (r.bm25_rank, r.dense_rank) {
                 (Some(bm), Some(dn)) => format!(", bm25:#{bm} + dense:#{dn}"),
                 (Some(bm), None) => format!(", bm25:#{bm}"),
@@ -343,7 +338,7 @@ pub fn format_hybrid_results(results: &[HybridResult], compact: bool) -> String 
                 _ => String::new(),
             };
             out.push_str(&format!(
-                "\n--- Result {} (rrf: {:.4}{}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
+                "\n--- Result {} (score: {:.4}{}) ---\n{} :: {} [{:?}] (L{}-{})\n{}\n",
                 i + 1,
                 r.rrf_score,
                 source_info,
@@ -378,7 +373,6 @@ mod tests {
 
     fn make_dense_result(file: &str, name: &str, line: usize, sim: f32) -> DenseSearchResult {
         DenseSearchResult {
-            chunk_idx: 0,
             similarity: sim,
             file_path: file.to_string(),
             symbol_name: name.to_string(),
@@ -498,7 +492,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            bm25_score: Some(4.2),
             dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
@@ -519,7 +512,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            bm25_score: Some(4.2),
             dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
@@ -531,7 +523,7 @@ mod tests {
     #[test]
     fn format_verbose_no_dangling_comma_when_source_absent() {
         // BM25-only fallback (embeddings off) leaves both ranks None; the header
-        // must read "(rrf: X)" with no trailing ", )" waste (#509).
+        // must read "(score: X)" with no dangling separator.
         let results = vec![HybridResult {
             file_path: "auth.rs".into(),
             symbol_name: "validate".into(),
@@ -540,20 +532,16 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.5898,
-            bm25_score: Some(4.2),
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         }];
         let output = format_hybrid_results(&results, false);
         assert!(
-            output.contains("(rrf: 0.5898)"),
+            output.contains("(score: 0.5898)"),
             "absent rank-source must render a clean header, got: {output}"
         );
-        assert!(
-            !output.contains(", )"),
-            "must not emit a dangling ', )' (#509)"
-        );
+        assert!(!output.contains(", )"), "must not emit a dangling ', )'");
     }
 
     #[test]
@@ -566,7 +554,6 @@ mod tests {
             end_line: 0,
             snippet: String::new(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,

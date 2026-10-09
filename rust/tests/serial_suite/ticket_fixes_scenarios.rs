@@ -1,18 +1,11 @@
-// Integration tests for all ticket fixes:
-// - #271: Crash hardening (catch_unwind, unwrap elimination)
-// - #288: Crash loop backoff resilience
-// - #289: Daemon autostart lifecycle
-// - Proxy opt-in (bootstrap/repair respect config)
-// - Loop detector error-awareness
+// Integration tests for past fixes:
+// - Zed auto-detect
+// - Crash loop backoff resilience
 // - JSONC UTF-8 safety
 // - ls -lah human-readable size passthrough
-// - PowerShell -NoProfile
-// - Uninstall: .bak cleanup, XDG dirs, project-local files
-// - Windows drive-colon grep parsing
-// - Shell-tokenizer for hook rewrites
 
 // ──────────────────────────────────────────────────────────
-// Scenario Group 2: Zed auto-detect (#247)
+// Scenario Group 2: Zed auto-detect
 // ──────────────────────────────────────────────────────────
 
 #[test]
@@ -33,7 +26,7 @@ fn zed_target_exists_with_correct_paths() {
 }
 
 // ──────────────────────────────────────────────────────────
-// Scenario Group 3: Crash loop backoff resilience (#288)
+// Scenario Group 3: Crash loop backoff resilience
 // User: IDE restarts several times quickly on slow machine,
 // sobre should not block for too long.
 // ──────────────────────────────────────────────────────────
@@ -260,15 +253,7 @@ fn ls_mixed_suffix_variants() {
 
 #[test]
 fn crash_hardening_no_remaining_unwrap_on_ctx_fields() {
-    const FIELDS: &[&str] = &[
-        "cache",
-        "session",
-        "workflow",
-        "agent_id",
-        "client_name",
-        "tool_calls",
-        "ledger",
-    ];
+    const FIELDS: &[&str] = &["cache", "session", "workflow", "client_name", "tool_calls"];
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools/registered");
     let mut scanned = 0;
     let mut hits = Vec::new();
@@ -370,7 +355,7 @@ fn hash_fast_with_mixed_scripts_at_4096_boundary() {
 fn uninstall_bak_path_generation() {
     use std::path::Path;
     let p = Path::new("/home/user/.cursor/settings.json");
-    let bak = sobre::uninstall::bak_path_for(p);
+    let bak = sobre::config_io::backup_path_for(p);
     assert!(
         bak.to_string_lossy().ends_with(".sobre.bak"),
         "Backup must use .sobre.bak suffix"

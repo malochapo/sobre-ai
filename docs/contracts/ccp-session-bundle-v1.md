@@ -1,7 +1,5 @@
 # CCP Session Bundle v1 (CcpSessionBundleV1)
 
-GitLab: `#2316`
-
 CCP session bundles standardise **export/import** of session excerpts for
 replayability: task, findings, decisions, evidence (tool receipts and manual
 keys).
@@ -27,7 +25,14 @@ Top-level fields:
 ## Privacy
 
 Exports are always redacted: evidence `value`s are dropped and strings go
-through `redaction::redact_text`. `privacy=full` is refused.
+through `redaction::redact_text`. There is no unredacted export.
+
+## Where a bundle is written
+
+`sobre_session action=export` returns the bundle. With `path=` it also writes
+it there; with `write=true` and no `path`, under
+`<data_dir>/exports/sessions/`. Nothing is written into the project
+unless `path=` points there.
 
 ## Import semantics
 
@@ -45,12 +50,12 @@ through `redaction::redact_text`. `privacy=full` is refused.
 
 Tool:
 
-- `ctx_session action=export format=json|summary write=true|false path=<optional>`
-- `ctx_session action=import path=<bundle.json>`
+- `sobre_session action=export format=json|summary write=true|false path=<optional>`
+- `sobre_session action=import path=<bundle.json>`
 
 ## Relevant code
 
 - Bundle contract/runtime: `rust/src/core/ccp_session_bundle.rs`
 - Session store: `rust/src/core/session/`
-- Tool surface: `rust/src/tools/ctx_session.rs` (registered in
-  `rust/src/tools/registered/ctx_session.rs`)
+- Tool surface: `rust/src/tools/sobre_session.rs` (registered in
+  `rust/src/tools/registered/sobre_session.rs`)

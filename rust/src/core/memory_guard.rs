@@ -244,7 +244,7 @@ fn publish_pressure(level: PressureLevel) {
 /// and signals background tasks to abort — never exits the process.
 pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) {
     // The guardian is a long-lived background monitor for the running
-    // server/daemon. Under `cargo test` a single OS process executes the entire
+    // server. Under `cargo test` a single OS process executes the entire
     // suite, so its RSS routinely exceeds the per-operation pressure threshold
     // (default 5% of system RAM). A test that constructs a server (e.g. the
     // `http_server` tests via `new_shared_with_context`) would start this thread,
@@ -254,7 +254,7 @@ pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) 
     // under pressure, leaving indexed files with no edges. That manifested as an
     // intermittent, macOS-only flake ("No files depend on Base.gd"). The guardian
     // has no purpose inside the test harness, so never start it there. Production
-    // and the daemon compile without `cfg!(test)` and are unaffected.
+    // and the MCP server compile without `cfg!(test)` and are unaffected.
     if cfg!(test) {
         return;
     }
@@ -269,13 +269,13 @@ pub fn start_guard(eviction_callback: Arc<dyn Fn(PressureLevel) + Send + Sync>) 
             // interval to IDLE_POLL_SECS. An idle server allocates nothing, so 3s
             // RSS sampling is just wasted wakeups; any pressure resets the cadence
             // instantly (below), leaving OOM reaction time during real work
-            // unchanged (#453 idle hygiene).
+            // unchanged (idle hygiene).
             const CALM_TICKS_BEFORE_BACKOFF: u64 = 5;
             const IDLE_POLL_SECS: u64 = 15;
             let mut poll_secs = 3u64;
             let mut calm_ticks = 0u64;
 
-            // #790: immediate first sample — close the 3s blind window so
+            // Immediate first sample — close the 3s blind window so
             // builders that start right after start_guard() see real pressure.
             if let Some(snap) = MemorySnapshot::capture() {
                 publish_pressure(snap.pressure_level);

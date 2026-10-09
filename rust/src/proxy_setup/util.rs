@@ -11,6 +11,7 @@ pub fn proxy_timeout() -> std::time::Duration {
     std::time::Duration::from_millis(200)
 }
 
+/// Whether something accepts a TCP connection on `port` on localhost.
 pub(crate) fn is_proxy_reachable(port: u16) -> bool {
     use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
     let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);

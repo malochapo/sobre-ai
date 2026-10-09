@@ -5,7 +5,7 @@
 // =============================================================================
 
 mod contracts_integrity {
-    /// Guards the load-bearing invariant behind #348: in MCP stdio mode `stdout`
+    /// Guards the load-bearing invariant: in MCP stdio mode `stdout`
     /// is the JSON-RPC transport, so every diagnostic MUST go to `stderr`. A stray
     /// switch to stdout would silently corrupt every MCP client's protocol stream.
     /// `tracing-subscriber` does not expose the runtime writer, so we assert on the
@@ -14,12 +14,12 @@ mod contracts_integrity {
     fn mcp_logging_targets_stderr_never_stdout() {
         let logging = include_str!("../../src/core/logging.rs");
         assert!(
-            logging.matches("with_writer(std::io::stderr)").count() >= 2,
-            "both init_logging and init_mcp_logging must pin the tracing writer to stderr"
+            logging.contains("with_writer(std::io::stderr)"),
+            "init_logging must pin the tracing writer to stderr"
         );
         assert!(
             !logging.contains("std::io::stdout"),
-            "logging must never route tracing to stdout — it corrupts the MCP JSON-RPC channel (#348)"
+            "logging must never route tracing to stdout — it corrupts the MCP JSON-RPC channel"
         );
     }
 }

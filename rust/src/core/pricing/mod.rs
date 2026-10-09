@@ -184,8 +184,7 @@ impl ModelPricing {
 
         // Azure AI Foundry serverless (Global Standard) — source:
         // https://azure.microsoft.com/en-us/pricing/details/ai-foundry-models/
-        // (July 2026). The cheap-OSS tier the gateway router downgrades to
-        // (enterprise#14); wrong/missing prices here would overstate savings.
+        // (July 2026). Wrong/missing prices here would overstate savings.
         // Foundry publishes no separate cache price → cache = input rate
         // (same convention as Gemini above).
         models.insert(
@@ -255,6 +254,19 @@ impl ModelPricing {
         );
 
         Self { models }
+    }
+
+    /// The priced models, sorted, without the blended fallback.
+    #[must_use]
+    pub fn known_models(&self) -> Vec<&str> {
+        let mut names: Vec<&str> = self
+            .models
+            .keys()
+            .map(String::as_str)
+            .filter(|k| *k != "fallback-blended")
+            .collect();
+        names.sort_unstable();
+        names
     }
 
     pub fn quote(&self, model: Option<&str>) -> ModelQuote {

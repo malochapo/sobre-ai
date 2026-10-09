@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 mod build;
 mod chunking;
 pub use chunking::*;
-mod coordinator;
 #[cfg(test)]
 mod tests;
 
@@ -45,7 +44,7 @@ pub fn persist_ceiling_bytes() -> u64 {
 
 /// Outcome of persisting a BM25 index to disk. Distinguishes a real write from a
 /// size-capped refusal so callers never mistake "refused to persist" for
-/// success (the bug behind the perpetual "index warming" report, issue #249).
+/// success (the bug behind the perpetual "index warming" report).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveOutcome {
     /// Written to disk. Carries the compressed (zstd) size in bytes.
@@ -224,21 +223,6 @@ impl BM25Index {
         chunks_size + inverted_size + files_size + freqs_size
     }
 
-    /// Drops all in-memory data, effectively freeing heap. Index can be re-loaded from disk.
-    pub fn unload(&mut self) {
-        let usage = self.memory_usage_bytes();
-        self.chunks = Vec::new();
-        self.inverted = HashMap::new();
-        self.doc_freqs = HashMap::new();
-        self.files = HashMap::new();
-        self.avg_doc_len = 0.0;
-        self.doc_count = 0;
-        tracing::info!(
-            "[bm25] unloaded index, freed ~{:.1}MB",
-            usage as f64 / 1_048_576.0
-        );
-    }
-
     /// Shrinks each resident chunk's `content` to its first `keep_lines` lines,
     /// reclaiming the RAM held by the full source bodies once the embedding pass
     /// has already consumed them. The search path only ever reads
@@ -304,12 +288,12 @@ impl BM25Index {
         }
         let files = list_code_files(root);
 
-        // #933: parallel fast path for the common case. The per-file parse +
+        // Parallel fast path for the common case. The per-file parse +
         // tokenize work is pure and thread-safe, so we fan it across a rayon pool
         // and merge sequentially in file order — measured 2.85 s → 0.69 s (~4x) on
         // the sobre repo. Under memory pressure (or for tiny corpora, where pool
         // setup is not worth it) we fall back to the sequential build, which carries
-        // the incremental early-break. #685 adds admission control: a corpus whose
+        // the incremental early-break. Admission control: a corpus whose
         // estimated peak would blow past the guardian's hard threshold degrades to
         // the sequential build up front instead of OOMing mid-fan-out. Both paths
         // produce an identical index (see `build` module + determinism tests).
@@ -355,14 +339,14 @@ impl BM25Index {
         let old_by_file = Self::group_prev_chunks_by_file(prev);
         let files = list_code_files(root);
 
-        // #581: mirror `build()`'s dispatch. The edit loop is the hottest path in
+        // Mirror `build`'s dispatch. The edit loop is the hottest path in
         // daily use, and its serial cost is dominated by re-tokenizing the *many
         // unchanged* files' reused chunks — not the few changed ones. So the
         // parallel path fans the entire tokenization (changed files via
         // `prepare_file`, unchanged via re-`prepare_chunk`) across the rayon pool
         // and merges sequentially in file order. The sequential path keeps the
         // per-file memory-pressure early-break and serves small corpora / pressure.
-        // #685: oversized corpora degrade to sequential via admission control.
+        // Oversized corpora degrade to sequential via admission control.
         // Both produce an identical index (see determinism tests).
         if files.len() >= build::PARALLEL_MIN_FILES
             && !crate::core::memory_guard::is_under_pressure()
@@ -428,7 +412,7 @@ impl BM25Index {
             }
             let content = if crate::core::extractors::is_binary_document(&abs) {
                 match std::fs::read(&abs) {
-                    Ok(bytes) => crate::core::extractors::extract(&abs, &bytes).text,
+                    Ok(bytes) => crate::core::extractors::text(&bytes),
                     Err(_) => continue,
                 }
             } else {
@@ -471,7 +455,7 @@ impl BM25Index {
             postings.push((idx, 1.0));
         }
 
-        // #790: truncate content to snippet AFTER tokenization — full text was
+        // Truncate content to snippet AFTER tokenization — full text was
         // used for BM25 scoring above; stored content is only for result display.
         const SNIPPET_LINES: usize = 10;
         if chunk.content.lines().nth(SNIPPET_LINES).is_some() {
@@ -582,10 +566,10 @@ impl BM25Index {
             );
         }
 
-        let dir = index_dir(root);
+        let dir = index_dir(root).ok_or_else(|| std::io::Error::other("no data dir"))?;
         std::fs::create_dir_all(&dir)?;
 
-        // #790: stream postcard → zstd → file to avoid holding the full
+        // Stream postcard → zstd → file to avoid holding the full
         // serialized buffer in memory. Temp-file + rename for atomicity.
         let target = dir.join("bm25_index.bin.zst");
         let tmp = dir.join("bm25_index.bin.zst.tmp");
@@ -631,7 +615,7 @@ impl BM25Index {
     }
 
     pub fn load(root: &Path) -> Option<Self> {
-        let dir = index_dir(root);
+        let dir = index_dir(root)?;
         let max_bytes = max_bm25_cache_bytes();
 
         let zst_path = dir.join("bm25_index.bin.zst");
@@ -659,25 +643,11 @@ impl BM25Index {
     }
 
     pub fn load_or_build(root: &Path) -> Self {
-        Self::load_or_build_inner(root, false)
-    }
-
-    /// Like `load_or_build` but uses a fast sentinel-sampling staleness check
-    /// that skips the expensive full directory walk for new-file detection.
-    pub fn load_or_build_fast(root: &Path) -> Self {
-        Self::load_or_build_inner(root, true)
-    }
-
-    fn load_or_build_inner(root: &Path, fast_stale: bool) -> Self {
         if !is_safe_bm25_root(root) {
             return Self::default();
         }
         if let Some(idx) = Self::load(root) {
-            let stale = if fast_stale {
-                bm25_index_looks_stale_fast(&idx, root)
-            } else {
-                bm25_index_looks_stale(&idx, root)
-            };
+            let stale = bm25_index_looks_stale(&idx, root);
             if !stale {
                 return idx;
             }
@@ -699,8 +669,8 @@ impl BM25Index {
         built
     }
 
-    pub fn index_file_path(root: &Path) -> PathBuf {
-        index_dir(root).join("bm25_index.bin.zst")
+    pub fn index_file_path(root: &Path) -> Option<PathBuf> {
+        Some(index_dir(root)?.join("bm25_index.bin.zst"))
     }
 
     /// Ingest external `ContentChunk`s into the BM25 index.
@@ -741,16 +711,6 @@ fn is_safe_bm25_root(root: &Path) -> bool {
 }
 
 fn bm25_index_looks_stale(index: &BM25Index, root: &Path) -> bool {
-    bm25_index_looks_stale_inner(index, root, false)
-}
-
-/// Fast staleness check: samples a subset of tracked files and skips the
-/// expensive `list_code_files()` walk for new-file detection.
-pub fn bm25_index_looks_stale_fast(index: &BM25Index, root: &Path) -> bool {
-    bm25_index_looks_stale_inner(index, root, true)
-}
-
-fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> bool {
     if index.chunks.is_empty() {
         return false;
     }
@@ -766,31 +726,6 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
                 continue;
             }
             if !root.join(rel).exists() {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    if fast {
-        let sample_size = index.files.len().min(SENTINEL_SAMPLE_SIZE);
-        let step = if index.files.len() > sample_size {
-            index.files.len() / sample_size
-        } else {
-            1
-        };
-        for (i, (rel, old_state)) in index.files.iter().enumerate() {
-            if i % step != 0 {
-                continue;
-            }
-            let abs = root.join(rel);
-            if !abs.exists() {
-                return true;
-            }
-            let Some(cur) = IndexedFileState::from_path(&abs) else {
-                return true;
-            };
-            if &cur != old_state {
                 return true;
             }
         }
@@ -819,8 +754,6 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
     false
 }
 
-const SENTINEL_SAMPLE_SIZE: usize = 10;
-
 fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
     use std::io::Read;
     let mut decoder = zstd::Decoder::new(compressed).ok()?;
@@ -846,13 +779,13 @@ fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-fn index_dir(root: &Path) -> PathBuf {
+fn index_dir(root: &Path) -> Option<PathBuf> {
     crate::core::index_namespace::vectors_dir(root)
 }
 
 fn list_code_files(root: &Path) -> Vec<String> {
     let cfg = crate::core::config::Config::load();
-    // #735: the declared corpus filter (config `ignore`) decides
+    // The declared corpus filter (config `ignore`) decides
     // membership before anything is chunked; the semantic index chunks this
     // corpus, so it inherits the same universe.
     let filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);

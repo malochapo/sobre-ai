@@ -4,21 +4,20 @@
 //! single thread is enforced.
 
 mod autonomy_tests;
-mod bazsi_reported_scenarios;
 mod claude_config_dir;
-mod codex_proxy_554;
-mod ctx_compose_scenarios;
+mod claude_mcp_selfheal;
+mod codex_proxy;
 mod dual_process_rehydrate;
 mod index_scoping_scenarios;
 mod intensive_benchmarks;
-mod issue_244_ledger_reset;
-mod issue_326_parallel_knowledge;
 mod memory_benchmark_suite;
 mod multi_read_cap_scenarios;
 mod output_contracts_knowledge;
-mod p4_docker_claude_mcp_selfheal_eval;
+mod parallel_knowledge;
 mod power_user_worksession;
 mod proxy_stale_env_scenarios;
 mod savings_verification;
+mod sobre_compose_scenarios;
+mod subagent_cache_hit_scenarios;
 mod terse_agent_tests;
 mod ticket_fixes_scenarios;

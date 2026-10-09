@@ -16,8 +16,27 @@ fn tokenize_splits_code() {
 }
 
 #[test]
+fn tokenize_splits_snake_case_and_adds_singulars() {
+    let tokens = tokenize("fn retry_with_backoff(attempts: u32)");
+    for t in [
+        "retry_with_backoff",
+        "retry",
+        "backoff",
+        "attempts",
+        "attempt",
+    ] {
+        assert!(tokens.contains(&t.to_string()), "missing {t}: {tokens:?}");
+    }
+    let query = tokenize("where are retries handled");
+    assert!(query.contains(&"retry".to_string()), "{query:?}");
+    let kept = tokenize("class status");
+    assert!(!kept.contains(&"statu".to_string()), "{kept:?}");
+    assert!(!kept.contains(&"clas".to_string()), "{kept:?}");
+}
+
+#[test]
 fn format_search_results_normalizes_windows_separators() {
-    // Issue #324: Windows backslash paths in search output were dropped or
+    // Windows backslash paths in search output were dropped or
     // escape-mangled by client render layers. They must come out with
     // forward slashes.
     let r = SearchResult {
@@ -393,7 +412,7 @@ fn shrink_resident_is_not_persisted_to_disk() {
         .unwrap();
     assert!(full_lines > 5, "fixture body must exceed snippet window");
 
-    // add_chunk already truncates to 10-line snippets (#790); the 8-line fixture
+    // add_chunk already truncates to 10-line snippets; the 8-line fixture
     // stays below that threshold so saved content equals the original body.
     // shrink_resident further tightens to 5 lines (resident-only, not persisted).
     index.save(root).expect("save full-content index");
@@ -435,7 +454,7 @@ fn save_reports_persisted_outcome() {
 #[test]
 fn persist_ceiling_is_the_disk_default() {
     // The public ceiling accessor (shared with doctor) is the generous disk
-    // default, decoupled from the RAM profile (#249).
+    // default, decoupled from the RAM profile.
     assert_eq!(
         persist_ceiling_bytes(),
         crate::core::config::DEFAULT_BM25_PERSIST_MB * 1024 * 1024
@@ -452,7 +471,7 @@ fn save_writes_project_root_marker() {
     let index = BM25Index::build_from_directory(root);
     index.save(root).expect("save");
 
-    let dir = crate::core::index_namespace::vectors_dir(root);
+    let dir = crate::core::index_namespace::vectors_dir(root).expect("data dir");
     let marker = dir.join("project_root.txt");
     assert!(marker.exists(), "project_root.txt marker should exist");
     let content = std::fs::read_to_string(&marker).expect("read marker");
@@ -480,7 +499,7 @@ fn save_load_roundtrip_uses_zstd() {
     assert!(index.doc_count > 0, "should have indexed chunks");
     index.save(root).expect("save");
 
-    let dir = crate::core::index_namespace::vectors_dir(root);
+    let dir = crate::core::index_namespace::vectors_dir(root).expect("data dir");
     let zst = dir.join("bm25_index.bin.zst");
     assert!(zst.exists(), "should write .bin.zst");
 
@@ -571,7 +590,7 @@ fn list_code_files_includes_extractable_pdf() {
     );
 }
 
-// ---- #933: parallel build determinism ----
+// ---- parallel build determinism ----
 
 /// Write a varied corpus that exercises the multi-chunk symbol path, the
 /// fallback (prose) chunker, camelCase splitting and repeated-token `doc_freqs`
@@ -608,7 +627,7 @@ fn write_parallel_corpus(root: &std::path::Path, n: usize) -> Vec<String> {
 
 /// Assert two indexes are logically identical: same chunk order, same inverted
 /// postings, same `doc_freqs`, same file set and corpus statistics. This is the
-/// determinism contract between the parallel and sequential builds (#933/#498).
+/// determinism contract between the parallel and sequential builds.
 fn assert_same_index(a: &BM25Index, b: &BM25Index) {
     assert_eq!(a.doc_count, b.doc_count, "doc_count");
     assert_eq!(a.chunks, b.chunks, "chunk vector (order + content)");
@@ -648,7 +667,7 @@ fn parallel_build_is_deterministic_across_runs() {
     assert_same_index(&a, &b);
 }
 
-/// #685: the batched parallel build must merge multiple batches into the same
+/// The batched parallel build must merge multiple batches into the same
 /// index a single-batch (or sequential) build produces. Batch size 7 over 40
 /// files forces 6 batch boundaries through the merge loop.
 #[test]
@@ -682,7 +701,7 @@ fn build_from_directory_dispatches_parallel_and_matches_sequential() {
     assert_same_index(&seq, &public);
 }
 
-// ---- #581: parallel incremental rebuild determinism ----
+// ---- parallel incremental rebuild determinism ----
 
 /// Mutate a freshly-built corpus to exercise every incremental branch — a
 /// changed file (re-extract), a new file, a removed file, and many unchanged
@@ -698,7 +717,7 @@ fn parallel_incremental_matches_sequential() {
     // full-build path), then mutate disk so the rebuild hits all branches.
     let prev = BM25Index::build_from_directory(root);
     // `files` keys and `chunk.file_path` keep the OS-native separator (output is
-    // normalized to '/' only at render time, #324); build expected keys the same
+    // normalized to '/' only at render time); build expected keys the same
     // way so these lookups also hit on Windows (`src\mod_001.rs`).
     let key = |rel: &str| rel.replace('/', std::path::MAIN_SEPARATOR_STR);
     assert!(prev.files.contains_key(&key("src/mod_001.rs")));
@@ -773,7 +792,7 @@ fn rebuild_incremental_dispatches_parallel_and_matches_sequential() {
 }
 
 /// CI build-time regression gate for the parallel incremental rebuild
-/// (#581, locking in #933). Off by default — wall-clock timing is meaningless
+/// Off by default — wall-clock timing is meaningless
 /// under the concurrent local / nextest runner — so it no-ops unless the CI job
 /// sets `SOBRE_PERF_GATE=1` and runs it on a quiet, single-threaded runner.
 /// Asserts the parallel rebuild is not slower than the sequential one
@@ -924,4 +943,26 @@ fn remove_chunks_with_prefix_evicts_only_matching() {
     );
     // A no-match prefix is a no-op.
     assert_eq!(index.remove_chunks_with_prefix("nope://"), 0);
+}
+
+/// A plain-language question finds the snake_case function it describes (B16).
+#[test]
+fn plain_language_query_finds_snake_case_function() {
+    let dir = tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("net.rs"),
+        "pub fn retry_with_backoff(attempts: u32) -> u32 {\n    attempts * 2\n}\n\n\
+         pub fn open_socket() -> u32 {\n    1\n}\n",
+    )
+    .unwrap();
+    let index = BM25Index::build_from_directory(dir.path());
+    for query in ["retry backoff", "where are retries handled"] {
+        let hits = index.search(query, 3);
+        assert!(
+            hits.first()
+                .is_some_and(|h| h.symbol_name.contains("retry_with_backoff")),
+            "{query}: {:?}",
+            hits.iter().map(|h| &h.symbol_name).collect::<Vec<_>>()
+        );
+    }
 }

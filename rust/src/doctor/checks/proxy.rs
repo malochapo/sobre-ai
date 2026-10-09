@@ -13,13 +13,9 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
 
     match cfg.proxy.enabled {
         Some(true) => {
-            let reachable = {
-                use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-                let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-                TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout()).is_ok()
-            };
+            let reachable = crate::proxy_setup::is_proxy_reachable(port);
             // Autostart has no backend on Windows/other platforms, so a missing
-            // autostart must never be a hard failure there (#416).
+            // autostart must never be a hard failure there.
             let supported = crate::proxy_autostart::is_supported();
 
             if reachable {
@@ -57,7 +53,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
                 }
             } else {
                 // Windows/other: no autostart backend, so a stopped proxy is a
-                // setup note (start it manually), not a doctor failure (#416).
+                // setup note (start it manually), not a doctor failure.
                 Outcome {
                     ok: true,
                     line: format!(
@@ -150,7 +146,7 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
             "{BOLD}Claude auth{RST}  {RED}ANTHROPIC_BASE_URL → proxy but no ANTHROPIC_API_KEY (Pro/Max subscription){RST}\n\
              {DIM}         A subscription token only authenticates against api.anthropic.com; routing it{RST}\n\
              {DIM}         through the proxy causes a login loop / 401. Fix one of:{RST}\n\
-             {YELLOW}           sobre proxy disable     {DIM}(keep your subscription; use ctx_* MCP tools for savings){RST}\n\
+             {YELLOW}           sobre proxy disable     {DIM}(keep your subscription; use sobre_* MCP tools for savings){RST}\n\
              {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: sobre proxy enable  (pay-as-you-go via proxy){RST}"
         ),
     })
@@ -241,7 +237,7 @@ pub(super) fn upstream_outcome(
         Outcome { ok: true, line }
     }
 }
-/// #449 drift check: warns when the running proxy forwards to a different
+/// Drift check: warns when the running proxy forwards to a different
 /// upstream than config.toml resolves to (an edit that failed validation).
 /// Returns `None` when the proxy is down or in sync, so the board stays quiet
 /// unless there is something actionable.

@@ -1,17 +1,17 @@
 //! Central `filter_entry` predicate shared by every directory walker
-//! (graph/index builders, `ctx_search`, `ctx_tree`, `ctx_glob`, CLI scans).
+//! (graph/index builders, `sobre_search`, `sobre_tree`, `sobre_glob`, CLI scans).
 //!
 //! Combines two protections:
 //! 1. Cloud-placeholder pruning (`cloud_files::keep_entry`) so walks never
 //!    hydrate OneDrive/iCloud stubs.
-//! 2. A conservative vendor-directory skip list (#400). Package-manager
+//! 2. A conservative vendor-directory skip list. Package-manager
 //!    output like `node_modules` is never useful in scans and explodes the
 //!    overview/index when no `.gitignore` applies — e.g. a project without a
 //!    `.git` directory, where the `ignore` crate skips `.gitignore` files
 //!    entirely unless `require_git(false)` is set.
 //!
 //! Explicitly requested roots stay reachable: the guard only prunes entries
-//! at `depth > 0`, so `ctx_tree path=node_modules/react` still works.
+//! at `depth > 0`, so `sobre_tree path=node_modules/react` still works.
 
 /// Directory names that are unambiguously package-manager/dependency output.
 /// Deliberately conservative — anything project-specific (`dist`, `build`,
@@ -25,7 +25,7 @@ const VENV_DIR_NAMES: &[&str] = &[".venv", "venv"];
 
 /// Resolve an explicitly requested Windows directory junction before handing it
 /// to `ignore::WalkBuilder`. The walker can treat a reparse-point root as a
-/// leaf, while normal file reads transparently follow it (#1003). Canonicalizing
+/// leaf, while normal file reads transparently follow it. Canonicalizing
 /// only the already-resolved root preserves the rule that nested links are never
 /// followed and strips Windows' verbatim prefix for `ignore` compatibility.
 pub fn explicit_walk_root(root: &std::path::Path) -> std::path::PathBuf {
@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn explicit_root_named_node_modules_is_not_pruned() {
         // depth == 0 must never be filtered, otherwise an explicitly
-        // requested path like `ctx_tree node_modules/react` returns nothing.
+        // requested path like `sobre_tree node_modules/react` returns nothing.
         let tmp = tempfile::tempdir().expect("tempdir");
         let nm = tmp.path().join("node_modules");
         std::fs::create_dir_all(&nm).expect("mkdir");

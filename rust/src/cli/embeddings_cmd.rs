@@ -1,9 +1,9 @@
-//! `sobre embeddings` — semantic-embedding runtime management (GH #732).
+//! `sobre embeddings` — semantic-embedding runtime management.
 //!
 //! The embedding engine loads ONNX Runtime dynamically. `provision` performs
 //! the **explicit, consent-gated** download of the official CPU runtime into
 //! the managed artifact layout; `status` shows what the resolver would use.
-//! Nothing here runs implicitly — the policy decided on #732 is "no silent
+//! Nothing here runs implicitly — the policy is "no silent
 //! download at first tool call, ever".
 
 use crate::core::artifacts_exec::ort_provision;
@@ -12,16 +12,16 @@ use crate::core::artifacts_exec::ort_provision;
 /// the configured model. The one place either is fetched; `index build` uses
 /// what is installed. A build without embeddings downloads nothing.
 pub(crate) fn provision(force: bool) -> Result<(), String> {
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     {
         let _ = force;
         Err(
-            "this build has no local embeddings (built without --features dense), \
-             so there is nothing to download"
+            "this build has no local embeddings, so there is nothing to download \
+             (they come with the sobre-dense release build, or a build with --features dense)"
                 .to_string(),
         )
     }
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     {
         println!(
             "Fetching the official ONNX Runtime {} (CPU) from microsoft/onnxruntime…",
@@ -51,25 +51,25 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
         }
         Some("status") | None => {
             println!("{}", ort_provision::status_line());
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             println!(
                 "This build requires ONNX Runtime >= 1.{}.x (ort api level).",
                 ort::MINOR_VERSION
             );
-            #[cfg(not(feature = "embeddings"))]
+            #[cfg(not(feature = "dense"))]
             println!(
-                "This build was compiled without the `embeddings` feature — the managed \
-                 runtime is only used by embedding-enabled builds."
+                "This build has no local embeddings: the managed runtime serves the \
+                 sobre-dense release build (or a build with --features dense)."
             );
             if let Ok(p) = std::env::var("ORT_DYLIB_PATH") {
                 println!("ORT_DYLIB_PATH override active: {p}");
             }
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             println!(
                 "{}",
                 crate::core::ort_execution_providers::execution_provider_status()
             );
-            #[cfg(feature = "embeddings")]
+            #[cfg(feature = "dense")]
             println!(
                 "{}",
                 crate::core::ort_execution_providers::execution_provider_help()
@@ -82,7 +82,7 @@ pub(crate) fn cmd_embeddings(rest: &[String]) {
                  sobre embeddings status              Show the managed ONNX Runtime state\n  \
                                  sobre embeddings provision [--force] Download the official CPU runtime (sha256-pinned) and the model"
             );
-            std::process::exit(1);
+            std::process::exit(2);
         }
     }
 }

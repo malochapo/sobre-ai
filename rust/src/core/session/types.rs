@@ -16,26 +16,16 @@ pub struct SessionState {
     pub decisions: Vec<Decision>,
     pub files_touched: Vec<FileTouched>,
     pub evidence: Vec<EvidenceRecord>,
-    pub active_structured_intent: Option<crate::core::intent_engine::StructuredIntent>,
     pub stats: SessionStats,
-    /// Watermark: timestamp of last auto-consolidation to prevent duplicate knowledge entries.
-    pub last_consolidate_ts: Option<DateTime<Utc>>,
     /// Extra project roots for multi-root workspaces: config `search_roots`,
     /// the host's workspace folders and MCP `roots/list`. Rebuilt every time
     /// the server starts and never persisted, so removing a path from the
     /// config takes it away from a resumed session too.
     #[serde(skip)]
     pub extra_roots: Vec<String>,
-    /// ACE delta playbook (#541): incremental, stable-ID checkpoint entries —
-    /// grown by ctx_compress, never rewritten (anti context-collapse).
-    pub playbook: super::playbook::Playbook,
-    /// Last ctx_semantic_search query (#542): fallback query source for
-    /// query-conditioned IB compression when no explicit task is set.
-    pub last_semantic_query: Option<String>,
-    /// #717: in-memory timestamp of the last flush to disk. Backs the
+    /// In-memory timestamp of the last flush to disk. Backs the
     /// time-based save trigger so a slow trickle of changes (below the
-    /// 5-change batch) still reaches disk — the dashboard reads session
-    /// JSONs and otherwise showed "idle" for the whole batch window.
+    /// 5-change batch) still reaches disk.
     #[serde(skip)]
     pub(crate) last_flush: Option<std::time::Instant>,
 }
@@ -74,7 +64,6 @@ pub struct FileTouched {
     pub last_mode: String,
     pub tokens: usize,
     pub stale: bool,
-    pub context_item_id: Option<String>,
     /// One-line summary of file purpose/content (max 80 chars)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
@@ -95,9 +84,8 @@ pub struct EvidenceRecord {
     pub key: String,
     pub value: Option<String>,
     pub tool: Option<String>,
-    pub input_md5: Option<String>,
-    pub output_md5: Option<String>,
-    pub agent_id: Option<String>,
+    pub input_hash: Option<String>,
+    pub output_hash: Option<String>,
     pub client_name: Option<String>,
     pub timestamp: DateTime<Utc>,
 }
@@ -134,13 +122,12 @@ pub struct PreparedSave {
 #[derive(Debug, Clone)]
 pub struct SessionSummary {
     pub id: String,
-    pub started_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     pub version: u32,
     pub task: Option<String>,
     pub tool_calls: u32,
     pub tokens_saved: u64,
-    /// Project root the session belongs to (GH #694): lets multi-window
+    /// Project root the session belongs to: lets multi-window
     /// setups see which workspace each session serves.
     pub project_root: Option<String>,
 }

@@ -1,10 +1,10 @@
 ---
-source: tests/pattern_snapshots.rs
+source: tests/suite/pattern_snapshots.rs
 expression: compressed
 ---
 JSON (356 bytes):
 {
-  page: number
-  total: number
   users: [object(4K); 5]
+  total: number
+  page: number
 }

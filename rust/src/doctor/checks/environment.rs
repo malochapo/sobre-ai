@@ -5,18 +5,6 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
-/// Reports the format-aware passthrough (#342): output already in a compact,
-/// token-oriented format (TOON by default) is preserved verbatim instead of
-/// recompressed, so an agent's proof-of-output-shape survives intact.
-pub(crate) fn compact_format_passthrough_outcome() -> Outcome {
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Compact-format passthrough{RST}  {GREEN}{}{RST}  {DIM}(preserved verbatim, not recompressed){RST}",
-            crate::core::config::PRESERVE_COMPACT_FORMATS.join(", ")
-        ),
-    }
-}
 pub(crate) fn mcp_config_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {
@@ -83,7 +71,7 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
         }
     }
 }
-/// WSL2 + VS Code (GH #669): VS Code's start-on-demand MCP lifecycle has a
+/// WSL2 + VS Code: VS Code's start-on-demand MCP lifecycle has a
 /// known client-side race — the first tool call of a fresh conversation can
 /// fire against cached tool metadata before the server's implementation is
 /// bound, failing with `Cannot read properties of undefined (reading 'invoke')`
@@ -100,7 +88,7 @@ pub(crate) fn wsl_vscode_mcp_outcome() -> Option<Outcome> {
     Some(Outcome {
         ok: true,
         line: format!(
-            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first ctx_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → sobre → Start){RST}"
+            "{BOLD}WSL2 + VS Code{RST}  {YELLOW}known first-call race in VS Code's MCP client{RST}  {DIM}(a fresh conversation's first sobre_* call may fail with \"reading 'invoke'\" — retry succeeds; upstream: microsoft/vscode#321150. Mitigation: run the MCP server once via \"MCP: List Servers\" → sobre → Start){RST}"
         ),
     })
 }
@@ -121,7 +109,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
             }
         }
         // No session for THIS cwd — but sessions for other workspaces may be
-        // live (GH #694: doctor run from a shell whose cwd is not one of the
+        // live (doctor run from a shell whose cwd is not one of the
         // open project roots claimed "no active session" and looked broken).
         // Surface the recent sessions with their roots instead of denying
         // their existence.
@@ -143,7 +131,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
 }
 
 /// Renders "recent: root1 (2h ago), root2 (5m ago)" for the newest sessions
-/// across ALL workspaces (multi-window setups, GH #694). `None` when no
+/// across ALL workspaces (multi-window setups). `None` when no
 /// session exists at all.
 fn recent_sessions_line(now: chrono::DateTime<chrono::Utc>) -> Option<String> {
     format_recent_sessions(crate::core::session::SessionState::list_sessions(), now)
@@ -219,61 +207,4 @@ pub(crate) fn lsp_server_outcomes() -> Vec<Outcome> {
             }
         })
         .collect()
-}
-/// True when `cwd_str` points inside an IDE/agent config directory rather than a
-/// real project (LM Studio, Claude, Codex). Matches both POSIX (`/`)
-/// and Windows (`\`) separators so the warning fires on every platform.
-pub(crate) fn cwd_looks_like_agent_dir(cwd_str: &str) -> bool {
-    crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd_str))
-}
-
-/// Warn if sobre is running as an MCP server from a directory that lacks
-/// a project marker and looks like an IDE/agent tool directory (e.g. .lmstudio,
-/// .claude). This usually means the MCP client launched the process from the
-/// wrong CWD, causing "path escapes project root" errors for every tool call.
-pub(crate) fn mcp_server_cwd_outcome() -> Outcome {
-    let is_mcp = crate::core::runtime_flags::mcp_server_enabled();
-    if !is_mcp {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}MCP server CWD{RST}  {DIM}(not running as MCP server){RST}"),
-        };
-    }
-
-    let Ok(cwd) = std::env::current_dir() else {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}MCP server CWD{RST}  {YELLOW}could not resolve{RST}"),
-        };
-    };
-
-    let has_marker = crate::core::pathutil::has_project_marker(&cwd);
-    let cwd_str = cwd.to_string_lossy();
-    let suspicious = cwd_looks_like_agent_dir(&cwd_str);
-
-    if has_marker {
-        Outcome {
-            ok: true,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {GREEN}under project root{RST}  {DIM}{}{RST}",
-                cwd.display()
-            ),
-        }
-    } else if suspicious {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}launched from an IDE/agent config dir{RST}  {DIM}sobre was launched from {}, which is not a project root. It auto-corrects to your real project on the first absolute path (#580); for relative paths to resolve immediately, set `cwd` in your MCP client config to your project directory.{RST}",
-                cwd.display()
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP server CWD{RST}  {YELLOW}no project marker found in CWD{RST}  {DIM}cwd={} — relative paths resolve against this directory. Add `cwd` to your MCP client config{RST}",
-                cwd.display()
-            ),
-        }
-    }
 }

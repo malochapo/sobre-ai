@@ -93,17 +93,6 @@ impl ContentChunk {
             metadata,
         }
     }
-
-    pub fn is_external(&self) -> bool {
-        !matches!(self.source, ContentSource::File)
-    }
-
-    pub fn provider_id(&self) -> Option<&str> {
-        match &self.source {
-            ContentSource::Provider { provider_id, .. } => Some(provider_id),
-            _ => None,
-        }
-    }
 }
 
 impl From<ContentChunk> for CodeChunk {
@@ -143,6 +132,7 @@ impl From<CodeChunk> for ContentChunk {
 // Chunk extraction helpers for external data
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
 /// Extract file path references from freeform text (issue bodies, PR descriptions).
 /// Looks for patterns like `src/auth.rs`, `lib/handler.ts`, `path/to/file.ext`.
 pub fn extract_file_references(text: &str) -> Vec<String> {
@@ -188,8 +178,6 @@ mod tests {
             None,
         );
 
-        assert!(cc.is_external());
-        assert_eq!(cc.provider_id(), Some("github"));
         assert_eq!(cc.file_path, "github://issues/123");
 
         let code_chunk: CodeChunk = cc.into();
@@ -211,7 +199,6 @@ mod tests {
         };
 
         let cc: ContentChunk = code.into();
-        assert!(!cc.is_external());
         assert_eq!(cc.source, ContentSource::File);
         assert!(cc.references.is_empty());
     }

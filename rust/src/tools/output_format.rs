@@ -1,6 +1,4 @@
-//! Shared `text|json` output-format selector for analysis tools
-//! (`ctx_impact`, `ctx_architecture`, `ctx_smells`), which all parsed the same
-//! two-variant enum independently before.
+//! Shared `text|json` output-format selector for the graph's impact actions.
 
 /// How a tool should render its result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

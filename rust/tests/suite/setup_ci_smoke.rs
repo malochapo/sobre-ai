@@ -122,6 +122,9 @@ fn setup_bootstrap_doctor_json_smoke() {
     }
 
     // init --agent claude should prefer `claude mcp add-json` when available.
+    // The `--json` run above wrote the entry itself (no CLI in quiet runs);
+    // without it, the entry is missing again and the CLI is used.
+    let _ = std::fs::remove_file(home.join(".claude.json"));
     let out = Command::new(bin)
         .args(["init", "--agent", "claude"])
         .envs(envs.iter().copied())
@@ -223,7 +226,7 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     );
     assert!(content.contains("sobre"), "must contain sobre entry");
 
-    // `doctor` is a health gate (#1046): it exits non-zero whenever *any* check
+    // `doctor` is a health gate: it exits non-zero whenever *any* check
     // needs attention, and this sandbox legitimately fails several unrelated
     // ones (no sobre on PATH, no shell profile, a fake `claude` that exits 1)
     // — the same reason the bootstrap smoke test tolerates a non-zero code. The

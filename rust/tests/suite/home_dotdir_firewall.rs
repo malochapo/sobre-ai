@@ -1,4 +1,4 @@
-//! Home dot-dir firewall — regression guard for the GH #434–#436 class.
+//! Home dot-dir firewall — regression guard.
 //!
 //! Building a HOME-based `~/.sobre` dir directly (e.g.
 //! `home.join(".sobre")`) bypasses the XDG resolver in `core::paths` /

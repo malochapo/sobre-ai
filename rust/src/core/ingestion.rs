@@ -22,7 +22,7 @@ pub enum IngestKind {
     /// Other UTF-8 text (unknown extension but verified textual).
     Text,
     /// Auto-generated content excluded from every index regardless of its
-    /// (often textual) extension — currently dependency lockfiles (#585).
+    /// (often textual) extension — currently dependency lockfiles.
     Generated,
     /// Not ingestible as text (images, media, archives, binary documents).
     Binary,
@@ -33,19 +33,6 @@ impl IngestKind {
     #[must_use]
     pub fn is_ingestible(self) -> bool {
         !matches!(self, IngestKind::Binary | IngestKind::Generated)
-    }
-
-    /// Stable lowercase label (for capabilities / diagnostics).
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            IngestKind::Code => "code",
-            IngestKind::Document => "document",
-            IngestKind::Data => "data",
-            IngestKind::Text => "text",
-            IngestKind::Generated => "generated",
-            IngestKind::Binary => "binary",
-        }
     }
 }
 
@@ -104,15 +91,15 @@ const SNIFF_BYTES: usize = 8192;
 
 /// Auto-generated dependency lockfiles. These are pinned dependency manifests —
 /// never useful for code understanding, often huge, and a token sink whenever a
-/// retrieval surface (`ctx_compose`, BM25 search) inlines them, so every index
+/// retrieval surface (`sobre_compose`, BM25 search) inlines them, so every index
 /// walker skips them via [`IngestKind::Generated`]. An explicit
-/// `ctx_read`/`ctx_tree`/`ctx_glob` of a lockfile still works — those paths
+/// `sobre_read`/`sobre_tree`/`sobre_glob` of a lockfile still works — those paths
 /// never consult the ingestion gate.
 ///
 /// Detection is by file *name*, independent of directory depth (so a monorepo's
 /// `frontend/package-lock.json` is caught too) and of extension: `*.lock` /
 /// `*.lockb` (Cargo, yarn, bun, poetry, Gemfile, flake, …) plus the JSON/YAML
-/// npm/pnpm lockfiles that would otherwise ingest as structured data (#585).
+/// npm/pnpm lockfiles that would otherwise ingest as structured data.
 fn is_generated_lockfile(path: &Path) -> bool {
     let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     if matches!(
@@ -137,7 +124,7 @@ fn is_generated_lockfile(path: &Path) -> bool {
 #[must_use]
 pub fn classify_path(path: &Path) -> IngestKind {
     // Auto-generated lockfiles are excluded before any extension routing — their
-    // .json/.yaml variants would otherwise pass as ingestible data (#585).
+    // .json/.yaml variants would otherwise pass as ingestible data.
     if is_generated_lockfile(path) {
         return IngestKind::Generated;
     }
@@ -152,7 +139,7 @@ pub fn classify_path(path: &Path) -> IngestKind {
         return IngestKind::Binary;
     }
     // Binary documents with a dedicated extractor (PDF, …): ingestible as
-    // documents — the indexer routes their bytes through `extractors::extract`
+    // documents — the indexer routes their bytes through `extractors::text`
     // instead of reading them as UTF-8.
     if EXTRACTABLE_DOC_EXTS.contains(&ext.as_str()) {
         return IngestKind::Document;
@@ -250,7 +237,7 @@ mod tests {
     #[test]
     fn pdf_is_ingestible_via_extractor() {
         // PDF has a dedicated extractor, so it classifies as an ingestible
-        // document (read through `extractors::extract`, not as UTF-8).
+        // document (read through `extractors::text`, not as UTF-8).
         assert_eq!(classify_path(&p("report.pdf")), IngestKind::Document);
         assert_eq!(classify_path(&p("REPORT.PDF")), IngestKind::Document);
         assert!(is_ingestible(&p("report.pdf")));

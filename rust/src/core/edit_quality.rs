@@ -1,4 +1,4 @@
-//! Quality loop v1 (#494): compression-caused edit failures feed back into
+//! Quality loop v1: compression-caused edit failures feed back into
 //! mode selection.
 //!
 //! `BounceTracker`/`path_mode_memory` close the loop for *re-read* bounces,
@@ -18,25 +18,17 @@
 //! successes) >= 0.25`, and stops being risky only when the rate drops below
 //! `0.15` — two thresholds so one lucky edit doesn't flap the decision.
 //!
-//! Storage: `edit_quality.json` in the data dir, atomic write (tmp+rename),
-//! loaded once per process, flushed periodically like `path_mode_memory`.
+//! Storage: memory only, for the life of the process. Nothing is written to
+//! disk, so one run's edits never change how a later run reads (decision 3).
 
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use serde::{Deserialize, Serialize};
-
-const STORE_FILE: &str = "edit_quality.json";
-/// (ext, mode) pairs without a failure for this long are dropped on load.
-const DECAY_SECS: u64 = 30 * 24 * 3600;
 /// Pending per-path escalations expire after this long.
 const ESCALATION_TTL_SECS: u64 = 3600;
 /// Hard caps; oldest entries are evicted first.
 const MAX_PAIRS: usize = 200;
 const MAX_PENDING: usize = 100;
-const FLUSH_EVERY: usize = 10;
 
 /// Risky when the failure share reaches this rate (with >= 2 fails)…
 const RISKY_ENTER_RATE: f64 = 0.25;
@@ -45,9 +37,8 @@ const RISKY_EXIT_RATE: f64 = 0.15;
 const RISKY_MIN_FAILS: u32 = 2;
 
 static STORE: OnceLock<Mutex<EditQualityStore>> = OnceLock::new();
-static RECORD_CALLS: AtomicUsize = AtomicUsize::new(0);
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PairStats {
     pub fails: u32,
     pub successes: u32,
@@ -76,20 +67,16 @@ impl PairStats {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct EditQualityStore {
     /// Key: `"{ext}|{mode}"` (e.g. `"rs|map"`).
     pub pairs: HashMap<String, PairStats>,
     /// Normalized path -> unix time of the compression-correlated edit fail.
     pub pending_escalations: HashMap<String, u64>,
-    /// Normalized path -> unix time of an anchored-edit (`ctx_patch`) staleness
+    /// Normalized path -> unix time of an anchored-edit (`sobre_patch`) staleness
     /// miss. The next auto read of that path resolves to `anchored` (not `full`),
-    /// so the model gets fresh line anchors to retry by reference (#1008).
+    /// so the model gets fresh line anchors to retry by reference.
     pub pending_anchored_escalations: HashMap<String, u64>,
-    /// All-time counter of consumed escalations (observability).
-    pub escalations_served: u64,
-    #[serde(skip)]
-    dirty: bool,
 }
 
 fn pair_key(ext: &str, mode: &str) -> String {
@@ -97,9 +84,8 @@ fn pair_key(ext: &str, mode: &str) -> String {
 }
 
 /// Evict the oldest entries of a `path -> timestamp` pending map down to
-/// [`MAX_PENDING`]; flips `dirty` when anything was dropped. Shared by the
-/// `full` and `anchored` escalation maps.
-fn evict_pending_to_cap(map: &mut HashMap<String, u64>, dirty: &mut bool) {
+/// [`MAX_PENDING`]. Shared by the `full` and `anchored` escalation maps.
+fn evict_pending_to_cap(map: &mut HashMap<String, u64>) {
     if map.len() <= MAX_PENDING {
         return;
     }
@@ -109,38 +95,9 @@ fn evict_pending_to_cap(map: &mut HashMap<String, u64>, dirty: &mut bool) {
     for (key, _) in items.into_iter().take(drop_n) {
         map.remove(&key);
     }
-    *dirty = true;
 }
 
 impl EditQualityStore {
-    fn load_from_disk() -> Self {
-        let Ok(raw) = std::fs::read_to_string(store_path()) else {
-            return Self::default();
-        };
-        let mut store: Self = serde_json::from_str(&raw).unwrap_or_default();
-        store.decay(now_unix());
-        store
-    }
-
-    fn decay(&mut self, now: u64) {
-        let before = self.pairs.len()
-            + self.pending_escalations.len()
-            + self.pending_anchored_escalations.len();
-        self.pairs
-            .retain(|_, s| now.saturating_sub(s.last_fail_unix) <= DECAY_SECS);
-        self.pending_escalations
-            .retain(|_, ts| now.saturating_sub(*ts) <= ESCALATION_TTL_SECS);
-        self.pending_anchored_escalations
-            .retain(|_, ts| now.saturating_sub(*ts) <= ESCALATION_TTL_SECS);
-        if self.pairs.len()
-            + self.pending_escalations.len()
-            + self.pending_anchored_escalations.len()
-            != before
-        {
-            self.dirty = true;
-        }
-    }
-
     fn evict_to_caps(&mut self) {
         if self.pairs.len() > MAX_PAIRS {
             let mut items: Vec<(String, u64)> = self
@@ -153,10 +110,9 @@ impl EditQualityStore {
             for (key, _) in items.into_iter().take(drop_n) {
                 self.pairs.remove(&key);
             }
-            self.dirty = true;
         }
-        evict_pending_to_cap(&mut self.pending_escalations, &mut self.dirty);
-        evict_pending_to_cap(&mut self.pending_anchored_escalations, &mut self.dirty);
+        evict_pending_to_cap(&mut self.pending_escalations);
+        evict_pending_to_cap(&mut self.pending_anchored_escalations);
     }
 
     pub fn record_failure(&mut self, ext: &str, mode: &str, now: u64) {
@@ -164,7 +120,6 @@ impl EditQualityStore {
         entry.fails = entry.fails.saturating_add(1);
         entry.last_fail_unix = now;
         entry.update_risky();
-        self.dirty = true;
         self.evict_to_caps();
     }
 
@@ -172,65 +127,34 @@ impl EditQualityStore {
         let entry = self.pairs.entry(pair_key(ext, mode)).or_default();
         entry.successes = entry.successes.saturating_add(1);
         entry.update_risky();
-        self.dirty = true;
     }
 
     pub fn set_pending_escalation(&mut self, norm_path: &str, now: u64) {
         self.pending_escalations.insert(norm_path.to_string(), now);
-        self.dirty = true;
         self.evict_to_caps();
     }
 
     /// Consumes the escalation for this path if present and not expired.
     pub fn take_pending_escalation(&mut self, norm_path: &str, now: u64) -> bool {
-        Self::take_from(
-            &mut self.pending_escalations,
-            norm_path,
-            now,
-            &mut self.escalations_served,
-            &mut self.dirty,
-        )
+        Self::take_from(&mut self.pending_escalations, norm_path, now)
     }
 
     pub fn set_pending_anchored_escalation(&mut self, norm_path: &str, now: u64) {
         self.pending_anchored_escalations
             .insert(norm_path.to_string(), now);
-        self.dirty = true;
         self.evict_to_caps();
     }
 
     /// Consumes the anchored escalation for this path if present and not expired.
     pub fn take_pending_anchored_escalation(&mut self, norm_path: &str, now: u64) -> bool {
-        Self::take_from(
-            &mut self.pending_anchored_escalations,
-            norm_path,
-            now,
-            &mut self.escalations_served,
-            &mut self.dirty,
-        )
+        Self::take_from(&mut self.pending_anchored_escalations, norm_path, now)
     }
 
-    /// Shared one-shot consume: remove `norm_path`, count it served when still
-    /// within [`ESCALATION_TTL_SECS`], else drop it silently.
-    fn take_from(
-        map: &mut HashMap<String, u64>,
-        norm_path: &str,
-        now: u64,
-        served: &mut u64,
-        dirty: &mut bool,
-    ) -> bool {
-        match map.remove(norm_path) {
-            Some(ts) if now.saturating_sub(ts) <= ESCALATION_TTL_SECS => {
-                *served += 1;
-                *dirty = true;
-                true
-            }
-            Some(_) => {
-                *dirty = true;
-                false
-            }
-            None => false,
-        }
+    /// Shared one-shot consume: remove `norm_path`; true when it was still
+    /// within [`ESCALATION_TTL_SECS`].
+    fn take_from(map: &mut HashMap<String, u64>, norm_path: &str, now: u64) -> bool {
+        map.remove(norm_path)
+            .is_some_and(|ts| now.saturating_sub(ts) <= ESCALATION_TTL_SECS)
     }
 
     pub fn is_risky(&self, ext: &str, mode: &str) -> bool {
@@ -238,33 +162,10 @@ impl EditQualityStore {
             .get(&pair_key(ext, mode))
             .is_some_and(|s| s.risky)
     }
-
-    pub fn save(&self) -> std::io::Result<()> {
-        let path = store_path();
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string(self)?;
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, json)?;
-        std::fs::rename(&tmp, &path)
-    }
-}
-
-fn store_path() -> PathBuf {
-    crate::core::data_dir::sobre_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(STORE_FILE)
-}
-
-fn now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
 
 fn global() -> &'static Mutex<EditQualityStore> {
-    STORE.get_or_init(|| Mutex::new(EditQualityStore::load_from_disk()))
+    STORE.get_or_init(|| Mutex::new(EditQualityStore::default()))
 }
 
 fn ext_of(path: &str) -> String {
@@ -284,9 +185,9 @@ pub fn record_edit_outcome(path: &str, last_mode: &str, success: bool) {
     record_outcome_with(path, last_mode, success, Escalation::Full);
 }
 
-/// Like [`record_edit_outcome`], but a failure is a `ctx_patch` anchor-staleness
+/// Like [`record_edit_outcome`], but a failure is a `sobre_patch` anchor-staleness
 /// miss: the recovery is a *fresh anchored read* (the model edits by reference),
-/// so the next auto read escalates to `anchored` instead of `full` (#1008).
+/// so the next auto read escalates to `anchored` instead of `full`.
 pub fn record_anchored_edit_outcome(path: &str, last_mode: &str, success: bool) {
     record_outcome_with(path, last_mode, success, Escalation::Anchored);
 }
@@ -325,7 +226,7 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
     if success {
         store.record_success(&ext, last_mode);
     } else {
-        let now = now_unix();
+        let now = crate::core::clock::now_unix();
         store.record_failure(&ext, last_mode, now);
         if last_mode != esc.target_mode() {
             let norm = crate::core::pathutil::normalize_tool_path(path);
@@ -335,7 +236,6 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
             }
         }
     }
-    maybe_flush(&mut store);
 }
 
 /// Process-global: one-shot check-and-consume of the per-path `full` escalation.
@@ -354,37 +254,18 @@ fn consume_escalation(path: &str, anchored: bool) -> bool {
     let Ok(mut store) = global().lock() else {
         return false;
     };
-    let now = now_unix();
-    let hit = if anchored {
+    let now = crate::core::clock::now_unix();
+    if anchored {
         store.take_pending_anchored_escalation(&norm, now)
     } else {
         store.take_pending_escalation(&norm, now)
-    };
-    if hit {
-        maybe_flush(&mut store);
     }
-    hit
 }
 
 /// Process-global: is `mode` currently risky for files with this extension?
 pub fn is_risky_mode(path: &str, mode: &str) -> bool {
     let ext = ext_of(path);
     global().lock().is_ok_and(|s| s.is_risky(&ext, mode))
-}
-
-pub fn flush() {
-    if let Ok(store) = global().lock()
-        && store.dirty
-    {
-        let _ = store.save();
-    }
-}
-
-fn maybe_flush(store: &mut EditQualityStore) {
-    let n = RECORD_CALLS.fetch_add(1, Ordering::Relaxed) + 1;
-    if n.is_multiple_of(FLUSH_EVERY) && store.dirty && store.save().is_ok() {
-        store.dirty = false;
-    }
 }
 
 #[cfg(test)]
@@ -442,20 +323,18 @@ mod tests {
             !s.take_pending_escalation("src/a.rs", 1101),
             "consumed — second read is normal again"
         );
-        assert_eq!(s.escalations_served, 1);
 
         s.set_pending_escalation("src/b.rs", 1000);
         assert!(
             !s.take_pending_escalation("src/b.rs", 1000 + ESCALATION_TTL_SECS + 1),
             "expired escalations are dropped, not served"
         );
-        assert_eq!(s.escalations_served, 1);
     }
 
     #[test]
     fn anchored_escalation_is_independent_and_one_shot() {
-        // #1008: the anchored map is separate from the `full` map — arming one
-        // must never consume the other, so str_replace and ctx_patch recoveries
+        // The anchored map is separate from the `full` map — arming one
+        // must never consume the other, so str_replace and sobre_patch recoveries
         // don't cross-talk.
         let mut s = EditQualityStore::default();
         s.set_pending_anchored_escalation("src/a.rs", 1000);
@@ -468,7 +347,6 @@ mod tests {
             !s.take_pending_anchored_escalation("src/a.rs", 1101),
             "anchored escalation is one-shot"
         );
-        assert_eq!(s.escalations_served, 1);
     }
 
     #[test]
@@ -479,20 +357,6 @@ mod tests {
         s.set_pending_anchored_escalation("src/x.rs", 1000);
         assert!(s.pending_escalations.is_empty());
         assert_eq!(s.pending_anchored_escalations.len(), 1);
-    }
-
-    #[test]
-    fn decay_drops_stale_pairs_and_pendings() {
-        let mut s = EditQualityStore::default();
-        s.record_failure("rs", "map", 1000);
-        s.record_failure("go", "map", 5000);
-        s.set_pending_escalation("old.rs", 1000);
-        s.set_pending_escalation("fresh.rs", 5000);
-        s.decay(5000 + DECAY_SECS - 10);
-        assert!(!s.pairs.contains_key("rs|map"));
-        assert!(s.pairs.contains_key("go|map"));
-        // Pendings use the much shorter escalation TTL.
-        assert!(s.pending_escalations.is_empty());
     }
 
     #[test]
@@ -508,16 +372,5 @@ mod tests {
         }
         assert_eq!(s.pending_escalations.len(), MAX_PENDING);
         assert!(!s.pending_escalations.contains_key("f0.rs"));
-    }
-
-    #[test]
-    fn roundtrip_serialization() {
-        let mut s = EditQualityStore::default();
-        s.record_failure("rs", "map", 42);
-        s.set_pending_escalation("x.rs", 42);
-        let json = serde_json::to_string(&s).unwrap();
-        let back: EditQualityStore = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.pairs.get("rs|map").unwrap().fails, 1);
-        assert!(back.pending_escalations.contains_key("x.rs"));
     }
 }

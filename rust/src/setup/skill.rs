@@ -54,7 +54,7 @@ pub fn install(agent: &str, home: &Path) -> Result<Option<PathBuf>, String> {
     if let Some(dir) = path.parent() {
         crate::config_io::ensure_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
-    std::fs::write(&path, SKILL_MD).map_err(|e| format!("{}: {e}", path.display()))?;
+    crate::config_io::write_owned(&path, SKILL_MD)?;
     Ok(Some(path))
 }
 
@@ -99,7 +99,7 @@ mod tests {
     fn every_tool_the_skill_names_is_registered() {
         let named: std::collections::BTreeSet<&str> = SKILL_MD
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .filter(|w| w.starts_with("ctx_") && w.len() > 4)
+            .filter(|w| w.starts_with("sobre_") && w.len() > 6)
             .collect();
         for tool in named {
             assert!(

@@ -6,7 +6,7 @@ const BOUNCE_RATE_THRESHOLD: f64 = 0.30;
 /// Seq-tick window during which a full read is treated as *edit-forced* rather
 /// than a compression bounce. Must match the window `should_force_full` uses to
 /// escalate post-edit reads to `full`, so the read we forced is never blamed on
-/// the compression arm (GL #622).
+/// the compression arm.
 const EDIT_FORCE_WINDOW: u64 = 10;
 /// Outer-map retention: a path whose newest activity is older than this many seq ticks
 /// can no longer satisfy BOUNCE_WINDOW (5) or the edit-force window (10), so it is inert
@@ -108,7 +108,7 @@ impl BounceTracker {
 
     fn detect_bounce(&mut self, norm_path: &str, full_seq: u64) {
         // A full re-read the system itself forced after an edit is not a
-        // compression failure (GL #622): `should_force_full` returns `full` for
+        // compression failure: `should_force_full` returns `full` for
         // EDIT_FORCE_WINDOW ticks post-edit, so the agent had no choice. Counting
         // it as a bounce would penalize the compression arm for the edit and
         // inflate the per-extension bounce rate until `should_force_full` pins the
@@ -191,38 +191,6 @@ impl BounceTracker {
     pub fn total_bounces(&self) -> u64 {
         self.total_bounces
     }
-
-    pub fn adjusted_savings(&self, raw_savings: usize) -> isize {
-        raw_savings as isize - self.total_wasted_tokens as isize
-    }
-
-    pub fn format_summary(&self) -> String {
-        if self.total_bounces == 0 {
-            return "Bounces: 0".to_string();
-        }
-        let mut lines = vec![format!(
-            "Bounces: {} ({} wasted tokens)",
-            self.total_bounces, self.total_wasted_tokens
-        )];
-        let mut exts: Vec<_> = self
-            .per_extension
-            .iter()
-            .filter(|(_, s)| s.bounces > 0)
-            .collect();
-        exts.sort_by_key(|a| std::cmp::Reverse(a.1.bounces));
-        for (ext, stats) in exts.iter().take(5) {
-            let rate = if stats.total_reads > 0 {
-                stats.bounces as f64 / stats.total_reads as f64 * 100.0
-            } else {
-                0.0
-            };
-            lines.push(format!(
-                "  {ext}: {}/{} reads bounced ({rate:.0}%), {} tok wasted",
-                stats.bounces, stats.total_reads, stats.wasted_tokens,
-            ));
-        }
-        lines.join("\n")
-    }
 }
 
 static GLOBAL_TRACKER: OnceLock<Mutex<BounceTracker>> = OnceLock::new();
@@ -273,7 +241,7 @@ mod tests {
 
     #[test]
     fn edit_forced_full_read_is_not_a_bounce() {
-        // GL #622: a compressed overview read, then an edit, then the `full`
+        // A compressed overview read, then an edit, then the `full`
         // re-read that `should_force_full` mandates must NOT register as a bounce
         // — the edit forced it, the compression did not fail.
         let mut bt = BounceTracker::new();
@@ -323,21 +291,5 @@ mod tests {
             bt.record_read(&format!("f{i}.yml"), "full", 400, 400);
         }
         assert!(bt.should_force_full("new.yml"));
-    }
-
-    #[test]
-    fn adjusted_savings_subtracts_waste() {
-        let mut bt = BounceTracker::new();
-        bt.seq_counter = 1;
-        bt.record_read("a.rs", "map", 50, 500);
-        bt.seq_counter = 2;
-        bt.record_read("a.rs", "full", 500, 500);
-        assert_eq!(bt.adjusted_savings(1000), 950);
-    }
-
-    #[test]
-    fn format_summary_empty() {
-        let bt = BounceTracker::new();
-        assert_eq!(bt.format_summary(), "Bounces: 0");
     }
 }

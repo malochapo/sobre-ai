@@ -1,14 +1,14 @@
-//! Runtime validation of published action-conditional tool schemas (#1008).
+//! Runtime validation of published action-conditional tool schemas.
 
 use std::collections::HashSet;
 
 use serde_json::{Value, json};
 
-use super::ctx_expand::CtxExpandTool;
-use super::ctx_graph::CtxGraphTool;
-use super::ctx_knowledge::CtxKnowledgeTool;
-use super::ctx_patch::CtxPatchTool;
-use super::ctx_search::CtxSearchTool;
+use super::sobre_expand::SobreExpandTool;
+use super::sobre_graph::SobreGraphTool;
+use super::sobre_knowledge::SobreKnowledgeTool;
+use super::sobre_patch::SobrePatchTool;
+use super::sobre_search::SobreSearchTool;
 use crate::server::tool_trait::McpTool;
 
 fn validator(tool: &dyn McpTool) -> jsonschema::Validator {
@@ -18,13 +18,13 @@ fn validator(tool: &dyn McpTool) -> jsonschema::Validator {
 
 #[test]
 fn expand_and_graph_require_action_inputs() {
-    let expand = validator(&CtxExpandTool);
+    let expand = validator(&SobreExpandTool);
     assert!(expand.is_valid(&json!({"id":"cargo_test_1a2b3c4d.log"})));
     assert!(expand.is_valid(&json!({"id":"x.log","start_line":1,"end_line":9})));
     assert!(!expand.is_valid(&json!({})));
     assert!(!expand.is_valid(&json!({"search":"ERROR"})));
 
-    let graph = validator(&CtxGraphTool);
+    let graph = validator(&SobreGraphTool);
     assert!(graph.is_valid(&json!({"action":"status"})));
     assert!(graph.is_valid(&json!({"action":"path","path":"a","to":"b"})));
     assert!(!graph.is_valid(&json!({"action":"symbol"})));
@@ -43,13 +43,15 @@ fn expand_and_graph_require_action_inputs() {
 
 #[test]
 fn knowledge_search_and_execute_require_mode_specific_inputs() {
-    let knowledge = validator(&CtxKnowledgeTool);
+    let knowledge = validator(&SobreKnowledgeTool);
     assert!(knowledge.is_valid(&json!({"action":"remember","category":"decision","value":"v"})));
     assert!(knowledge.is_valid(&json!({"action":"recall"})));
-    assert!(!knowledge.is_valid(&json!({"action":"remember","value":"v"})));
+    // B19: `value` alone is the documented form; the value is what is required.
+    assert!(knowledge.is_valid(&json!({"action":"remember","value":"v"})));
+    assert!(!knowledge.is_valid(&json!({"action":"remember","category":"decision"})));
     assert!(!knowledge.is_valid(&json!({"action":"gotcha","trigger":"t"})));
 
-    let search = validator(&CtxSearchTool);
+    let search = validator(&SobreSearchTool);
     assert!(search.is_valid(&json!({"pattern":"needle"})));
     assert!(search.is_valid(&json!({"action":"symbol","handle":"f.rs#f@L1"})));
     assert!(!search.is_valid(&json!({})));
@@ -90,7 +92,7 @@ fn collect_required(node: &Value, out: &mut Vec<String>) {
     }
 }
 
-/// Generic schema-integrity guard (#1020): once per-op requirements live in the
+/// Generic schema-integrity guard: once per-op requirements live in the
 /// schema (as `if`/`then` conditionals) rather than only in imperative parser
 /// code, the schema IS the source of truth — and requiring a param the schema
 /// never declares is a self-contradiction a client hits before the handler runs.
@@ -125,12 +127,12 @@ fn every_required_param_is_a_declared_property() {
     );
 }
 
-/// The sharp ctx_patch schema (#1020) encodes per-op required params, so a
+/// The sharp sobre_patch schema encodes per-op required params, so a
 /// client knows before calling that `replace_lines` needs `new_text` — not the
 /// retired `new_body`. Exercise the conditionals directly.
 #[test]
 fn patch_schema_encodes_per_op_required_params() {
-    let patch = validator(&CtxPatchTool);
+    let patch = validator(&SobrePatchTool);
 
     // set_line requires new_text; the retired new_body does not satisfy it.
     assert!(

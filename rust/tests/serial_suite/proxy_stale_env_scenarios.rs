@@ -1,4 +1,4 @@
-//! Scenario tests for GitHub Issue #256:
+//! Scenario tests:
 //! Stale `ANTHROPIC_BASE_URL` detection and cleanup when proxy is not enabled.
 //!
 //! Each test uses an isolated temp dir for both `SOBRE_DATA_DIR` (data dir)

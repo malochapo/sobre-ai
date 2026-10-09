@@ -10,7 +10,7 @@
 //! The regex extractors are intentionally conservative: single-line declarations,
 //! declaration-line spans only (`end_line == start_line`). Use
 //! [`extract_signatures_with_backend`] when you need to know — and surface —
-//! which backend actually produced a result (gitlab #981).
+//! which backend actually produced a result.
 
 use regex::Regex;
 
@@ -40,8 +40,8 @@ pub struct Signature {
 /// with full signatures + line ranges; repeating those same names in an
 /// `exports:` line is pure redundancy. Callers surface only the exports the API
 /// does not already cover (e.g. re-exports or const/type aliases that aren't
-/// captured as signatures), keeping map lossless while dropping duplicates
-/// (#361). Shared by the MCP, CLI, and benchmark map renderers.
+/// captured as signatures), keeping map lossless while dropping duplicates.
+/// Shared by the MCP, CLI, and benchmark map renderers.
 #[must_use]
 pub fn exports_not_in_signatures<'a>(
     exports: &'a [String],
@@ -71,7 +71,7 @@ impl Signature {
         }
     }
 
-    /// Plain, self-describing notation (GL #580): real keywords (`class`,
+    /// Plain, self-describing notation: real keywords (`class`,
     /// `trait`, `pub`) instead of abbreviations, so a vanilla agent without
     /// injected rules reads the output correctly. Keyword tokens cost the
     /// same as (or less than) the old `cl`/`⊛` forms.
@@ -164,7 +164,7 @@ impl Signature {
     }
 }
 
-/// One-line legend for TDD symbol notation (GL #580): outputs must be
+/// One-line legend for TDD symbol notation: outputs must be
 /// self-describing for vanilla agents without injected rules. Only the
 /// symbols actually present in `sigs` are explained, keeping the line well
 /// under the 15-token budget for typical files. Empty when nothing applies.
@@ -252,9 +252,8 @@ fn rust_impl_re() -> &'static Regex {
 
 /// Which extractor produced a signature set: the primary tree-sitter AST path
 /// ([`crate::core::signatures_ts`]) or the line-oriented regex fallback in this
-/// module. Surfaced so navigation output (`ctx_outline`) can label its backend
+/// module. Surfaced so navigation output (`sobre_outline`) can label its backend
 /// honestly and verifiably instead of merely *claiming* "via tree-sitter"
-/// (gitlab #981).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SigBackend {
     TreeSitter,
@@ -769,7 +768,7 @@ mod tests {
 
     #[test]
     fn plain_notation_is_self_describing() {
-        // GL #580: plain mode must read like source keywords, no decoder ring.
+        // Plain mode must read like source keywords, no decoder ring.
         let mut sig = sample_fn();
         sig.kind = "struct";
         assert_eq!(sig.to_compact(), "struct pub run");
@@ -785,7 +784,7 @@ mod tests {
 
     #[test]
     fn tdd_legend_explains_only_present_symbols() {
-        // GL #580: symbol outputs carry their own minimal legend.
+        // Symbol outputs carry their own minimal legend.
         let f = sample_fn();
         let mut s = sample_fn();
         s.kind = "struct";

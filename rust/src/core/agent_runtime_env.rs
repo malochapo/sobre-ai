@@ -2,26 +2,26 @@
 //!
 //! The sobre MCP server is a long-lived child of the agent host. Some agents
 //! (notably Codex) expose runtime/session variables such as `CODEX_THREAD_ID`
-//! only in the *native agent shell* environment, not in the MCP server process
-//! (#370). `ctx_shell` runs inside the MCP server, so it cannot forward those
+//! only in the *native agent shell* environment, not in the MCP server process.
+//! `sobre_shell` runs inside the MCP server, so it cannot forward those
 //! variables by reading its own `std::env`.
 //!
 //! Short-lived sobre processes that *do* run inside the agent environment —
 //! the hook handlers (`sobre hook …`) and the `sobre -c` shell wrapper —
 //! [`capture`] the relevant variables into a small file in the data dir. The MCP
 //! server then [`load`]s them when constructing the child environment for
-//! `ctx_shell` (see `crate::server::execute`).
+//! `sobre_shell` (see `crate::server::execute`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// Env var name prefixes identifying agent runtime/session state worth forwarding
-/// to `ctx_shell` child processes.
+/// to `sobre_shell` child processes.
 pub const FORWARD_PREFIXES: &[&str] = &["CODEX_", "CLAUDE_", "OPENCODE_", "GEMINI_"];
 
 /// Case-insensitive name substrings that mark an env var as credential-shaped.
 ///
-/// A variable whose name contains any of these is NEVER forwarded to `ctx_shell`
+/// A variable whose name contains any of these is NEVER forwarded to `sobre_shell`
 /// children — and never captured to disk — even when it matches a forwardable
 /// prefix. Forwarding API keys / tokens / passwords into every child shell is an
 /// exfiltration risk that output redaction cannot stop: a `curl … -d "$KEY"`
@@ -68,7 +68,7 @@ pub fn is_forwardable(key: &str) -> bool {
         && !is_credential_shaped(key)
 }
 
-/// Canonical capture-file location: the STATE dir (GH #408 / GL #605).
+/// Canonical capture-file location: the STATE dir.
 ///
 /// This file holds captured agent **session/thread identifiers** (e.g.
 /// `CODEX_THREAD_ID`); credential-shaped vars are filtered out by
@@ -79,13 +79,6 @@ fn store_path() -> Option<PathBuf> {
     crate::core::paths::state_dir()
         .ok()
         .map(|dir| dir.join(FILE_NAME))
-}
-
-fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 /// Forwardable variables present in the current process environment.
@@ -112,7 +105,7 @@ fn read_store(path: &Path) -> Option<(BTreeMap<String, String>, u64)> {
 }
 
 /// Capture forwardable variables from the current (agent) environment into the
-/// data dir so the MCP server can forward them to `ctx_shell` children.
+/// data dir so the MCP server can forward them to `sobre_shell` children.
 ///
 /// No-op when the current environment carries no forwardable variables — this
 /// prevents a process with a stripped environment (e.g. the MCP server itself)
@@ -131,7 +124,8 @@ pub fn capture() {
     {
         return;
     }
-    let payload = serde_json::json!({ "vars": vars, "captured_at": now_secs() });
+    let payload =
+        serde_json::json!({ "vars": vars, "captured_at": crate::core::clock::now_unix() });
     let Ok(json) = serde_json::to_string_pretty(&payload) else {
         return;
     };
@@ -144,7 +138,7 @@ pub fn capture() {
 /// Load captured agent runtime variables, honoring the freshness TTL.
 ///
 /// When no valid capture exists, falls back to probing the parent process's
-/// environment (#800). This covers the case where the sobre MCP server was
+/// environment. This covers the case where the sobre MCP server was
 /// spawned by an agent that sets runtime vars only in native shell commands
 /// (e.g. Codex with CODEX_THREAD_ID) without going through `sobre -c` first.
 #[must_use]
@@ -153,14 +147,14 @@ pub fn load() -> BTreeMap<String, String> {
         return BTreeMap::new();
     };
     let Some((vars, captured_at)) = read_store(&path) else {
-        // No capture file — try probing the parent process environment (#800).
+        // No capture file — try probing the parent process environment.
         let probed = probe_parent_env();
         if !probed.is_empty() {
             persist_probed_vars(&path, &probed);
         }
         return probed;
     };
-    if now_secs().saturating_sub(captured_at) > TTL_SECS {
+    if crate::core::clock::now_unix().saturating_sub(captured_at) > TTL_SECS {
         return BTreeMap::new();
     }
     // Defense-in-depth: never forward a credential-shaped var, even from a
@@ -171,7 +165,7 @@ pub fn load() -> BTreeMap<String, String> {
 }
 
 /// Probe the parent process's environment for forwardable agent runtime
-/// variables (#800). On Linux reads `/proc/<ppid>/environ`; on macOS uses
+/// variables. On Linux reads `/proc/<ppid>/environ`; on macOS uses
 /// `ps eww`. Returns only non-credential forwardable vars.
 fn probe_parent_env() -> BTreeMap<String, String> {
     let ppid = parent_pid();
@@ -251,7 +245,8 @@ fn parse_ps_environ(output: &str) -> BTreeMap<String, String> {
 }
 
 fn persist_probed_vars(path: &Path, vars: &BTreeMap<String, String>) {
-    let payload = serde_json::json!({ "vars": vars, "captured_at": now_secs() });
+    let payload =
+        serde_json::json!({ "vars": vars, "captured_at": crate::core::clock::now_unix() });
     if let Ok(json) = serde_json::to_string_pretty(&payload) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -310,7 +305,7 @@ mod tests {
         let path = store_path().unwrap();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
-        let stale = now_secs().saturating_sub(TTL_SECS + 60);
+        let stale = crate::core::clock::now_unix().saturating_sub(TTL_SECS + 60);
         let payload =
             serde_json::json!({ "vars": { "CODEX_THREAD_ID": "old" }, "captured_at": stale });
         std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
@@ -397,7 +392,7 @@ mod tests {
         // A capture file holding a real secret.
         let payload = serde_json::json!({
             "vars": { "CODEX_THREAD_ID": "t", "OPENCODE_SERVER_PASSWORD": "p4ssw0rd" },
-            "captured_at": now_secs()
+            "captured_at": crate::core::clock::now_unix()
         });
         std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
 

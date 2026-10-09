@@ -17,7 +17,6 @@ fn recent_sessions_line_names_each_workspace_once_with_age() {
     let now = chrono::Utc::now();
     let mk = |root: Option<&str>, mins_ago: i64| SessionSummary {
         id: format!("s{mins_ago}"),
-        started_at: now - chrono::Duration::minutes(mins_ago + 5),
         updated_at: now - chrono::Duration::minutes(mins_ago),
         version: 1,
         task: None,
@@ -66,19 +65,19 @@ fn capacity_hint_is_actionable_for_both_states() {
     // CRIT (over cap): give an immediate compaction action for that project.
     let crit = capacity_hint(true, Some("/p"));
     assert!(crit.contains(
-        r#"sobre call ctx_knowledge --project-root '/p' --json '{"action":"consolidate"}'"#
+        r#"sobre call sobre_knowledge --project-root '/p' --json '{"action":"consolidate"}'"#
     ));
 
     assert_ne!(warn, crit);
 }
 
 #[test]
-fn cwd_looks_like_agent_dir_matches_both_separators() {
+fn agent_config_dir_matches_both_separators() {
     for sep in ['/', '\\'] {
         for dir in [".lmstudio", ".claude", ".codex"] {
             let cwd = format!("C:{sep}Users{sep}me{sep}{dir}{sep}mcp");
             assert!(
-                cwd_looks_like_agent_dir(&cwd),
+                crate::core::pathutil::is_agent_config_dir(std::path::Path::new(&cwd)),
                 "expected {cwd} to be flagged as an agent dir"
             );
         }
@@ -86,14 +85,14 @@ fn cwd_looks_like_agent_dir_matches_both_separators() {
 }
 
 #[test]
-fn cwd_looks_like_agent_dir_ignores_real_projects() {
+fn agent_config_dir_ignores_real_projects() {
     for cwd in [
         "/home/me/work/myproj",
         "/Users/me/code/sobre",
         "C:\\src\\app",
     ] {
         assert!(
-            !cwd_looks_like_agent_dir(cwd),
+            !crate::core::pathutil::is_agent_config_dir(std::path::Path::new(cwd)),
             "{cwd} is a real project and must not be flagged"
         );
     }

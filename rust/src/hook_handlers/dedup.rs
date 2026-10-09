@@ -1,4 +1,4 @@
-//! PID-independent dedup for Cursor's double-fired hooks (#1032).
+//! PID-independent dedup for Cursor's double-fired hooks.
 //!
 //! Cursor spawns `preToolUse` twice — two separate processes, 2–128 ms apart,
 //! with byte-identical payloads (confirmed in `debug.log`). The hook would then
@@ -12,7 +12,7 @@
 //! Correctness first: dedup must never break a redirect. Every failure path falls
 //! back to running the work, so the worst case degrades to today's duplicate
 //! behaviour rather than a dropped or corrupted response. The claim/resp files
-//! are pure side channels — the stdout body stays byte-identical (#498).
+//! are pure side channels — the stdout body stays byte-identical.
 
 use std::fs::{self, OpenOptions};
 use std::path::Path;

@@ -23,13 +23,15 @@ only the compiler decides whether it worked.
 ```bash
 cd rust
 cargo check --all-targets                  # the default, local-only build
-cargo check --all-targets --features dense # local embeddings + GPU providers
+cargo check --all-targets --features dense # with local embeddings
 ```
 
 CI checks both builds. The one local gate that mirrors it is
 `scripts/preflight.sh` (fmt, clippy on both builds, rustdoc, generated docs,
-file size); `scripts/preflight.sh full` adds the whole test suite. The git hooks
-run the same script.
+file size); `scripts/preflight.sh full` adds the whole test suite. The git
+hooks are opt-in: `make setup-hooks` points git at `.githooks/`, whose
+pre-commit checks formatting and whose pre-push runs `scripts/preflight.sh`
+(`SKIP_PREFLIGHT=1 git push` skips it).
 
 On a pull request, CI runs Lint and the test suite on Linux. macOS and Windows
 run on push to `main` and on demand (Actions → CI → Run workflow): their
@@ -45,8 +47,13 @@ false positives when features are off.
 ## Tests
 
 ```bash
-cargo test --manifest-path rust/Cargo.toml
+cd rust && cargo test
 ```
+
+Run cargo from `rust/`: rustup reads the pinned toolchain
+(`rust/rust-toolchain.toml`) from the current directory, so
+`--manifest-path rust/Cargo.toml` from the root builds with whatever toolchain
+is the default.
 
 Run the whole thing, not `--lib`. The library tests are the bulk of the count,
 but a good deal of behaviour is pinned by the integration suites under

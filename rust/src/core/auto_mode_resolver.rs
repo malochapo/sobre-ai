@@ -1,75 +1,4 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-
 use crate::core::cache::SessionCache;
-
-/// Per-process counters of which signal decided each auto-mode resolution.
-/// Surfaced by `ctx_metrics` so the learning loops are observable (#496).
-static SOURCE_COUNTS: Mutex<Option<HashMap<&'static str, u64>>> = Mutex::new(None);
-
-fn count_source(source: &'static str) {
-    if let Ok(mut guard) = SOURCE_COUNTS.lock() {
-        *guard
-            .get_or_insert_with(HashMap::new)
-            .entry(source)
-            .or_insert(0) += 1;
-    }
-}
-
-fn sources_path() -> Option<std::path::PathBuf> {
-    crate::core::data_dir::sobre_data_dir()
-        .ok()
-        .map(|d| d.join("auto_mode_sources.json"))
-}
-
-/// Persist the in-process counters by *adding* them into the cumulative
-/// on-disk file, then reset the process counters. The counters live in the
-/// MCP/CLI process — the dashboard is a separate process and can only see
-/// them through this file (#505).
-pub fn flush_sources() {
-    let drained: Vec<(String, u64)> = {
-        let Ok(mut guard) = SOURCE_COUNTS.lock() else {
-            return;
-        };
-        match guard.take() {
-            Some(m) if !m.is_empty() => m.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
-            _ => return,
-        }
-    };
-    let Some(path) = sources_path() else {
-        return;
-    };
-    let mut on_disk: HashMap<String, u64> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    for (k, v) in drained {
-        *on_disk.entry(k).or_insert(0) += v;
-    }
-    let Ok(json) = serde_json::to_string_pretty(&on_disk) else {
-        return;
-    };
-    let tmp = path.with_extension("json.tmp");
-    if std::fs::write(&tmp, json).is_ok() {
-        let _ = std::fs::rename(&tmp, &path);
-    }
-}
-
-/// Cumulative auto-mode decision sources from disk (all processes, all time),
-/// sorted by count descending. Used by the dashboard's Live Signals panel.
-#[cfg(test)]
-pub fn persisted_source_counts() -> Vec<(String, u64)> {
-    let Some(path) = sources_path() else {
-        return Vec::new();
-    };
-    let map: HashMap<String, u64> = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
-    let mut items: Vec<(String, u64)> = map.into_iter().collect();
-    items.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-    items
-}
 
 pub struct AutoModeContext<'a> {
     pub path: &'a str,
@@ -86,7 +15,7 @@ pub struct ResolvedMode {
 /// Single entry point for auto-mode resolution.
 /// Merges Pipeline A (select_mode_with_task) and Pipeline B (resolve_auto_mode).
 pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
-    // Quality loop (#1008): a ctx_patch anchor went stale — hand back fresh line
+    // Quality loop: a sobre_patch anchor went stale — hand back fresh line
     // anchors (not `full`) so the agent retries by reference, one-shot. Checked
     // before the `full` escalation: it is the strictly better recovery for a
     // model already editing via anchors.
@@ -94,7 +23,7 @@ pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved("anchored", "anchored_edit_fail_escalation");
     }
 
-    // Quality loop (#494), signal 1: an edit on this file just failed after a
+    // Quality loop, signal 1: an edit on this file just failed after a
     // compressed read — the agent needs the real body now, one-shot.
     if crate::core::edit_quality::take_pending_escalation(ctx.path) {
         return resolved("full", "edit_fail_escalation");
@@ -102,7 +31,7 @@ pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
 
     let r = resolve_inner(ctx);
 
-    // Quality loop (#494), signal 2: this mode keeps producing edit failures
+    // Quality loop, signal 2: this mode keeps producing edit failures
     // for this file type — compression here is a proven net loss, use full.
     if r.mode != "full" && crate::core::edit_quality::is_risky_mode(ctx.path, &r.mode) {
         return resolved("full", "edit_quality_penalty");
@@ -111,7 +40,7 @@ pub fn resolve(ctx: &AutoModeContext) -> ResolvedMode {
 }
 
 fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
-    if crate::tools::ctx_read::is_instruction_file(ctx.path) {
+    if crate::tools::sobre_read::is_instruction_file(ctx.path) {
         return resolved("full", "instruction_file");
     }
 
@@ -133,7 +62,7 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         // read and collapses the cache hit rate: the 2nd read of every file
         // blows up to full and stub hits only begin at the 3rd read (which
         // agents rarely reach). Only short-circuit once full was delivered;
-        // otherwise fall through to the predictor, which deterministically
+        // otherwise fall through to the size heuristic, which deterministically
         // reproduces the cached compressed mode and serves it from the
         // compressed-output cache as a cheap, consistent hit.
         if cache.is_full_delivered(ctx.path) {
@@ -154,13 +83,13 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         return resolved("full", "config_data");
     }
 
-    // Active compiler error (#499): the agent reads this file to fix the
+    // Active compiler error: the agent reads this file to fix the
     // build — compressed modes would hide the error region.
     if crate::core::diagnostics_store::has_error(ctx.path) {
         return resolved("full", "active_diagnostic");
     }
 
-    // Suspect file (#361 capability): the task explicitly names this file
+    // Suspect file (capability): the task explicitly names this file
     // (e.g. "fix the version sort in versioncmp.c"), so the agent is about to
     // inspect it for the defect. Keep the full body it needs to localize and
     // edit, ahead of any task-type intent default that might compress it.
@@ -174,7 +103,7 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
 
     // The capability guards above plus the deterministic heuristic below make
     // `auto` a pure function of (file, task) — byte-stable for provider prompt
-    // caching (#498).
+    // caching.
 
     // Deterministic cold-read fallback. Every read that reaches here missed the
     // session cache (a warm hit returns `full`/`diff` above). Structure-first is
@@ -236,7 +165,7 @@ fn heuristic_mode(ext: &str, token_count: usize) -> String {
         }
         return "aggressive".to_string();
     }
-    // Structure-first cold-read floor (#361): on a phase-isolated harness a cold
+    // Structure-first cold-read floor: on a phase-isolated harness a cold
     // `full` read never amortizes, so code files default to `map` (deps +
     // exports + key signatures) — cheaper and a better localization surface.
     // `map` keeps far more than `signatures` (no empty bodies), so the
@@ -328,7 +257,6 @@ fn is_config_or_data(ext: &str, path: &str) -> bool {
 }
 
 fn resolved(mode: &str, source: &'static str) -> ResolvedMode {
-    count_source(source);
     ResolvedMode {
         mode: mode.to_string(),
         source,
@@ -338,42 +266,6 @@ fn resolved(mode: &str, source: &'static str) -> ResolvedMode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn flush_sources_merges_additively_into_disk_file() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!("sobre-amr-flush-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("SOBRE_DATA_DIR", dir.to_str().unwrap());
-        let _ = std::fs::remove_file(dir.join("auto_mode_sources.json"));
-
-        // Unique test-only keys: parallel resolve() tests count real sources
-        // into the same process-global map, so shared keys would be flaky.
-        count_source("test_flush_alpha");
-        count_source("test_flush_alpha");
-        count_source("test_flush_beta");
-        flush_sources();
-
-        count_source("test_flush_alpha");
-        flush_sources();
-
-        let persisted = persisted_source_counts();
-        let get = |k: &str| {
-            persisted
-                .iter()
-                .find(|(s, _)| s == k)
-                .map_or(0, |(_, n)| *n)
-        };
-        assert_eq!(
-            get("test_flush_alpha"),
-            3,
-            "two flushes must merge additively"
-        );
-        assert_eq!(get("test_flush_beta"), 1);
-
-        crate::test_env::remove_var("SOBRE_DATA_DIR");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 
     #[test]
     fn small_file_always_full() {
@@ -411,7 +303,7 @@ mod tests {
         //
         // Sized > 6000 tokens so the deterministic default heuristic itself
         // picks a compressed mode (`map` for large code) — making the
-        // compressed-only premise real even with learning off (#683); the
+        // compressed-only premise real; the
         // invariant under test is that the `cache_hit` shortcut never fires for
         // an entry whose full body was not delivered.
         let dir = tempfile::tempdir().unwrap();
@@ -580,9 +472,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// #683: with learning off (the default), a medium code file with no task
-    /// resolves through the deterministic size heuristic — never a learning
-    /// source — and is byte-stable across repeated calls.
+    /// A medium code file with no task resolves through the deterministic
+    /// size heuristic and is byte-stable across repeated calls.
     #[test]
     fn learning_off_by_default_is_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();

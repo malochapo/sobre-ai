@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-pub(super) const MAX_GOTCHAS: usize = 100;
+pub(crate) const MAX_GOTCHAS: usize = 100;
 pub(super) const MAX_SESSION_LOGS: usize = 20;
 pub(super) const MAX_PENDING: usize = 10;
 pub(super) const PENDING_TIMEOUT_SECS: i64 = 900; // 15 minutes
@@ -225,7 +225,7 @@ pub struct GotchaStore {
     pub error_log: Vec<SessionErrorLog>,
     pub updated_at: DateTime<Utc>,
 
-    // Persisted (#451 shell-ding): a fail→fix spanning two `sobre -c`
+    // Persisted (shell-ding): a fail→fix spanning two `sobre -c`
     // invocations is two separate processes, so the in-memory active store
     // cannot bridge them. Persisting pending errors lets the later process load
     // and correlate the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on

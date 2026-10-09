@@ -1,4 +1,4 @@
-//! Embedding-based Knowledge Retrieval for `ctx_knowledge`.
+//! Embedding-based Knowledge Retrieval for `sobre_knowledge`.
 //!
 //! Wraps `ProjectKnowledge` with a vector index for semantic recall.
 //! Facts are automatically embedded on `remember` and searched via
@@ -12,7 +12,7 @@ use super::knowledge::{KnowledgeFact, ProjectKnowledge};
 use crate::core::embedding_quant::{self, QuantizedVector};
 use crate::core::memory_policy::MemoryPolicy;
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 use super::embeddings::EmbeddingEngine;
 
 const ALPHA_SEMANTIC: f32 = 0.6;
@@ -85,7 +85,7 @@ impl KnowledgeEmbeddingIndex {
             .retain(|e| !(e.category == category && e.key == key));
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     pub fn semantic_search(
         &self,
         query_embedding: &[f32],
@@ -133,7 +133,7 @@ impl KnowledgeEmbeddingIndex {
         // Atomic write (temp + rename) so a concurrent, lock-free reader in
         // `recall` (which loads the index without taking the per-project lock)
         // never observes a half-written file — it sees either the old or the new
-        // complete index, never trailing garbage (issue #412).
+        // complete index, never trailing garbage.
         crate::config_io::write_atomic(&path, &json)
     }
 }
@@ -156,7 +156,7 @@ pub struct ScoredFact<'a> {
     pub recency_score: f32,
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn semantic_recall<'a>(
     knowledge: &'a ProjectKnowledge,
     index: &KnowledgeEmbeddingIndex,
@@ -232,7 +232,7 @@ pub fn semantic_recall<'a>(
     results
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn semantic_recall_semantic_only<'a>(
     knowledge: &'a ProjectKnowledge,
     index: &KnowledgeEmbeddingIndex,
@@ -359,7 +359,7 @@ fn recency_decay(fact: &KnowledgeFact) -> f32 {
     (1.0 - days_old / MAX_RECENCY_DAYS).max(0.0)
 }
 
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn embed_and_store(
     index: &mut KnowledgeEmbeddingIndex,
     engine: &EmbeddingEngine,
@@ -419,7 +419,7 @@ pub fn missing_current_facts<'a>(
 /// `embeddings_reindex`. Called from `remember` under the per-project lock
 /// once the engine is warm, so active projects self-heal incrementally.
 /// Returns the number of facts embedded.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn backfill_missing(
     index: &mut KnowledgeEmbeddingIndex,
     engine: &EmbeddingEngine,
@@ -458,7 +458,7 @@ pub fn backfill_missing(
 /// agent to resolve — it never mutates or merges facts.
 ///
 /// [`find_cross_key_similar`]: crate::core::knowledge::find_cross_key_similar
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn find_semantic_duplicates(
     index: &KnowledgeEmbeddingIndex,
     engine: &EmbeddingEngine,
@@ -600,7 +600,7 @@ mod tests {
 
     #[test]
     fn concurrent_remember_keeps_all_embeddings() {
-        // #412: the embedding-index read-modify-write must be serialized under
+        // The embedding-index read-modify-write must be serialized under
         // the per-project lock and compacted against fresh on-disk knowledge.
         // The old lock-free + stale-snapshot path let parallel writers clobber
         // each other's vectors and prune just-stored ones. This mirrors
@@ -832,7 +832,7 @@ mod tests {
         assert_eq!(decay, 0.0, "100-day-old fact should have 0 recency");
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     #[test]
     fn semantic_search_skips_other_widths() {
         let mut idx = KnowledgeEmbeddingIndex::new("test");
@@ -843,7 +843,7 @@ mod tests {
         assert_eq!(results[0].0.key, "db");
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     #[test]
     fn semantic_search_ranking() {
         let mut idx = KnowledgeEmbeddingIndex::new("test");

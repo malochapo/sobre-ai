@@ -155,7 +155,7 @@ fn mcp_handshake(bin: &str, env: &TestEnv, client_name: &str) -> (String, Vec<St
 
 fn assert_full_surface(tools: &[String], client: &str) {
     // Invariant 3: every client sees the same surface, and it is the whole
-    // registry. This used to mirror a per-client quirk that hid `ctx_patch`
+    // registry. This used to mirror a per-client quirk that hid `sobre_patch`
     // from clients with a native editor.
     let registered: Vec<String> = sobre::server::registry::build_registry()
         .tool_defs()

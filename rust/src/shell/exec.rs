@@ -1,4 +1,4 @@
-use std::io::{self, IsTerminal, Read};
+use std::io::{self, Read};
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,7 +15,7 @@ use crate::core::config;
 /// only the direct child (a shell) leaves orphaned grandchildren holding the
 /// stdout/stderr pipe write ends — the reader threads then never see EOF and
 /// the join below blocks forever, wedging the caller *despite* the timeout
-/// having fired (GH #720: an orphaned `rg` kept a Cursor shell session dead
+/// having fired (an orphaned `rg` kept a Cursor shell session dead
 /// for hours).
 pub(super) fn wait_with_limits(
     mut child: Child,
@@ -126,7 +126,7 @@ pub(super) fn wait_with_limits(
 }
 
 /// Kill a timed-out child — and, when it owns a process group, every
-/// descendant in that group (GH #720). SIGKILL to the negative pgid reaps
+/// descendant in that group. SIGKILL to the negative pgid reaps
 /// shells' grandchildren so the captured pipes actually close.
 fn kill_child(child: &mut Child, kill_group: bool) {
     #[cfg(unix)]
@@ -237,7 +237,7 @@ pub(super) fn exec_limits(command: &str) -> (usize, std::time::Duration) {
     (max_bytes, shell_timeout(command))
 }
 
-/// Resolve the timeout `ctx_shell` / `sobre -c` grants a command.
+/// Resolve the timeout `sobre_shell` / `sobre -c` grants a command.
 ///
 /// Heavy builds/tests (cargo install/nextest/build, npm ci, git commit/push, …)
 /// get the long ceiling instead of being killed at the 2-minute default, keeping
@@ -255,7 +255,7 @@ pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
 /// the executor for days.
 const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
 
-/// [`shell_timeout`] with an optional per-call override (ctx_shell's
+/// [`shell_timeout`] with an optional per-call override (sobre_shell's
 /// `timeout_ms` arg). Precedence: per-call override (clamped to
 /// [`MAX_CALL_TIMEOUT_MS`], zero ignored) > per-tier config > built-in
 /// heavy/normal ceilings.
@@ -277,7 +277,7 @@ pub(crate) fn shell_timeout_with_override(
     }
 }
 
-/// #1113: detect shell loop constructs that are intentionally long-running.
+/// Detect shell loop constructs that are intentionally long-running.
 /// Matches `while true`, `while :`, `while sleep`, `for … in`, and similar
 /// patterns used for poll loops and background monitors.
 fn is_loop_command(lower: &str) -> bool {
@@ -290,7 +290,7 @@ fn is_loop_command(lower: &str) -> bool {
 fn is_heavy_command(command: &str) -> bool {
     let cmd = command.trim();
     let lower = cmd.to_lowercase();
-    // #1113: shell loops (`while true; do ... done`, `for i in ...`) are
+    // Shell loops (`while true; do ... done`, `for i in ...`) are
     // intentionally long-running poll/monitor scripts. Killing them at 120s
     // breaks CI watchers and background monitors.
     if is_loop_command(&lower) {
@@ -414,7 +414,17 @@ fn stdout_is_regular_file() -> bool {
     }
 }
 
-pub fn exec(command: &str) -> i32 {
+/// How [`exec`] treats the command's output.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ExecMode {
+    /// `sobre -c`: compressed, unless the command is passthrough or writes
+    /// to a file.
+    Compress,
+    /// `sobre raw`: the exact output.
+    Raw,
+}
+
+pub fn exec(command: &str, mode: ExecMode) -> i32 {
     let mut collapsed_nested = false;
     let collapsed;
     let command = if let Some(c) = collapse_nested_sobre_exec(command) {
@@ -431,45 +441,26 @@ pub fn exec(command: &str) -> i32 {
         return exec_shell_default(command, &shell, &shell_flag);
     }
 
-    let cfg = config::Config::load();
-    let force_compress = crate::core::runtime_flags::compress_enabled();
-    let raw_mode = crate::core::runtime_flags::raw_enabled();
-
-    if raw_mode {
+    if mode == ExecMode::Raw {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
+    let cfg = config::Config::load();
     let policy = super::output_policy::classify(command, &cfg.passthrough_commands);
 
-    // Passthrough: ALWAYS bypass compression, even with force_compress.
+    // Passthrough: never compressed. A verbatim command still takes the
+    // buffered path, where `compress_if_beneficial` only size-caps it.
     if policy == super::output_policy::OutputPolicy::Passthrough {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
 
-    // Verbatim: bypass compression unless force_compress is set,
-    // in which case use buffered path (compress_if_beneficial will
-    // respect the verbatim classification and only size-cap).
-    if policy == super::output_policy::OutputPolicy::Verbatim && !force_compress {
-        return exec_inherit_tracked(command, &shell, &shell_flag);
-    }
-
-    if !force_compress {
-        if io::stdout().is_terminal() {
-            return exec_inherit_tracked(command, &shell, &shell_flag);
-        }
-        let code = exec_inherit(command, &shell, &shell_flag);
-        crate::core::tool_lifecycle::record_shell_command(command, 0, 0);
-        return code;
-    }
-
-    // Compression is forced (`-c`, e.g. from an agent's command hook).
-    // It must STILL never alter bytes destined for a file: a redirect
+    // Compression must never alter bytes destined for a file: a redirect
     // (`cmd > out`, `cmd >> out`) means the output is captured as data, not read by
     // a human or agent. Writing the compressed digest there would silently
     // drop/abbreviate lines and corrupt the file (e.g. contradictory `git diff`
     // dumps). Pass redirected-to-file output through verbatim; pipes (agent
     // capture) and TTYs keep compressing. This is the single choke point, so it
-    // holds for every caller (hook, direct CLI, Pi/MCP bridges).
+    // holds for every caller (hook, direct CLI).
     if stdout_is_regular_file() {
         return exec_inherit_tracked(command, &shell, &shell_flag);
     }
@@ -632,12 +623,12 @@ fn exec_inherit_tracked(command: &str, shell: &str, shell_flag: &str) -> i32 {
 
 /// Label inserted between stdout and stderr of a FAILED command so the agent can
 /// attribute the error to the right stream instead of guessing — and never has to
-/// re-run the command raw just to locate the failure. See #809 / #812.
+/// re-run the command raw just to locate the failure.
 pub(crate) const STDERR_LABEL: &str = "--- stderr ---";
 
 /// Join captured stdout and stderr for display/recovery. On failure (non-zero
 /// exit) with both streams present, a labeled delimiter separates them; success
-/// output keeps the plain `stdout\nstderr` shape (determinism, #498).
+/// output keeps the plain `stdout\nstderr` shape (determinism).
 pub(crate) fn combine_streams(stdout: &str, stderr: &str, exit_code: i32) -> String {
     match (stdout.is_empty(), stderr.is_empty()) {
         (_, true) => stdout.to_string(),
@@ -794,7 +785,7 @@ mod exec_tests {
         assert!(stdout.contains("[sobre: output truncated"));
     }
 
-    /// GH #720: killing only the direct child (a shell) on timeout leaves its
+    /// Killing only the direct child (a shell) on timeout leaves its
     /// grandchildren alive holding the stdout pipe — the reader threads never
     /// see EOF and `wait_with_limits` blocks forever even though the timeout
     /// fired. With the child in its own process group and a group kill, the
@@ -891,7 +882,7 @@ mod exec_tests {
             "npm run build",
             "docker build -t myapp .",
             // Git verbs that fire build/test hooks (pre-commit clippy, pre-push
-            // preflight) must not be killed at the default ceiling (#854).
+            // preflight) must not be killed at the default ceiling.
             "git commit --amend --no-edit",
             "git push -u origin HEAD",
             // Agents prefix with `cd /path && ...` — heavy detection must
@@ -925,7 +916,7 @@ mod exec_tests {
         let iso = crate::core::data_dir::isolated_data_dir();
 
         // Heavy builds/tests and hook-firing git verbs get the heavy ceiling;
-        // read-only verbs stay on the default. Preserves the #854 promotion.
+        // read-only verbs stay on the default. Preserves the promotion.
         assert_eq!(
             super::shell_timeout("cargo install --path ."),
             super::HEAVY_TIMEOUT
@@ -1025,7 +1016,7 @@ mod exec_tests {
         );
     }
 
-    // Per-call `timeout_ms` (ctx_shell tool arg): explicit caller intent beats
+    // Per-call `timeout_ms` (sobre_shell tool arg): explicit caller intent beats
     // the built-in tiers in both directions, absurd values clamp to the 1h
     // ceiling, and zero is ignored.
     #[test]

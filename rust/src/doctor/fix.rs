@@ -10,12 +10,12 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
     let report = build_and_persist_fix_report(opts.json)?;
     if opts.json {
         let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-        println!("{json_text}");
+        crate::outln!("{json_text}");
     } else {
         let (passed, total) = compact_score();
         print_compact_status(passed, total);
         if let Ok(path) = crate::core::setup_report::doctor_report_path() {
-            println!("  {DIM}report saved:{RST} {}", display_user_path(&path));
+            crate::outln!("  {DIM}report saved:{RST} {}", display_user_path(&path));
         }
     }
     Ok(i32::from(!report.success))
@@ -34,63 +34,61 @@ fn build_and_persist_fix_report(
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
-    let mut mcp_step = SetupStepReport {
-        name: "mcp_config".to_string(),
+    // The same agent connection `init` runs: MCP entry, hooks and skill for
+    // every installed agent.
+    let mut agents_step = SetupStepReport {
+        name: "agents".to_string(),
         ok: true,
         items: Vec::new(),
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    let binary = crate::core::portable_binary::resolve_portable_binary();
-    let targets = crate::core::editor_registry::build_targets(&home);
-    for t in &targets {
-        if !t.detect_path.exists() {
+    for outcome in crate::setup::connect_agents(&[], false) {
+        if !outcome.detected {
             continue;
         }
-        let short = t.config_path.to_string_lossy().to_string();
-
-        let res = crate::core::editor_registry::write_config_with_options(
-            t,
-            &binary,
-            crate::core::editor_registry::WriteOptions {
-                overwrite_invalid: true,
-            },
+        let status = if !outcome.errors.is_empty() {
+            "error"
+        } else if outcome.files.is_empty() {
+            "already"
+        } else {
+            "repaired"
+        };
+        agents_step.ok &= outcome.errors.is_empty();
+        agents_step.items.push(SetupItem {
+            name: outcome.name.to_string(),
+            status: status.to_string(),
+            path: None,
+            note: (!outcome.files.is_empty()).then(|| {
+                outcome
+                    .files
+                    .iter()
+                    .map(|(p, _)| crate::setup::display_path(p, &home))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }),
+        });
+        agents_step.warnings.extend(
+            outcome
+                .warnings
+                .iter()
+                .map(|w| format!("{}: {w}", outcome.name)),
         );
-
-        match res {
-            Ok(r) => {
-                let status = match r.action {
-                    crate::core::editor_registry::WriteAction::Created => "created",
-                    crate::core::editor_registry::WriteAction::Updated => "updated",
-                    crate::core::editor_registry::WriteAction::Already => "already",
-                };
-                mcp_step.items.push(SetupItem {
-                    name: t.name.to_string(),
-                    status: status.to_string(),
-                    path: Some(short),
-                    note: r.note,
-                });
-            }
-            Err(e) => {
-                mcp_step.ok = false;
-                mcp_step.items.push(SetupItem {
-                    name: t.name.to_string(),
-                    status: "error".to_string(),
-                    path: Some(short),
-                    note: Some(e.clone()),
-                });
-                mcp_step.errors.push(format!("{}: {e}", t.name));
-            }
-        }
+        agents_step.errors.extend(
+            outcome
+                .errors
+                .iter()
+                .map(|e| format!("{}: {e}", outcome.name)),
+        );
     }
-    if mcp_step.items.is_empty() {
-        mcp_step
+    if agents_step.items.is_empty() {
+        agents_step
             .warnings
-            .push("no supported AI tools detected; skipped MCP config repair".to_string());
+            .push("no supported AI tools detected; nothing to repair".to_string());
     }
-    steps.push(mcp_step);
+    steps.push(agents_step);
 
-    // Resolve workspace/user dual-scope conflicts (issue #338)
+    // Resolve workspace/user dual-scope conflicts
     let mut ws_scope_step = SetupStepReport {
         name: "workspace_scope".to_string(),
         ok: true,
@@ -115,30 +113,6 @@ fn build_and_persist_fix_report(
         },
     });
     steps.push(ws_scope_step);
-
-    let mut hooks_step = SetupStepReport {
-        name: "agent_hooks".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let targets = crate::core::editor_registry::build_targets(&home);
-    for t in &targets {
-        if !t.detect_path.exists() || t.agent_key.trim().is_empty() {
-            continue;
-        }
-        crate::hooks::install_agent_hook(&t.agent_key);
-        hooks_step.items.push(SetupItem {
-            name: format!("{} hooks", t.name),
-            status: "installed".to_string(),
-            path: Some(t.detect_path.to_string_lossy().to_string()),
-            note: Some("merge-based install/repair".to_string()),
-        });
-    }
-    if !hooks_step.items.is_empty() {
-        steps.push(hooks_step);
-    }
 
     for (name, prune_result) in [
         ("bm25_cache_prune", prune_bm25_caches()),
@@ -207,8 +181,8 @@ fn build_and_persist_fix_report(
 
     // Prune knowledge stores whose project_root was deleted (removed git
     // worktrees, thrown-away projects). They can never be written again, so
-    // their per-store eviction cap can never self-heal — pure accumulated bloat
-    // (GH #615). Only the explicit --fix path deletes; the background lifecycle
+    // their per-store eviction cap can never self-heal — pure accumulated bloat.
+    // Only the explicit --fix path deletes; the background lifecycle
     // never does, since a missing root can also be a temporarily-unmounted drive.
     let mut orphan_step = SetupStepReport {
         name: "orphaned_knowledge".to_string(),
@@ -278,7 +252,7 @@ fn build_and_persist_fix_report(
 
     let path = doctor_report_path()?;
     let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-    crate::config_io::write_atomic_with_backup(&path, &json_text)?;
+    crate::config_io::write_atomic(&path, &json_text)?;
 
     Ok(report)
 }

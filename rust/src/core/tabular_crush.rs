@@ -1,5 +1,5 @@
 //! Deterministic tabular (CSV/TSV) crusher — columnar redundancy factoring for
-//! delimited data (#982, Headroom tabular-compressor port, GitLab Epic #973).
+//! delimited data (a port of Headroom's tabular compressor).
 //!
 //! Real-world CSV/TSV dumps (DB exports, `psql -A -F,`, analytics extracts) are
 //! dominated by columns that repeat one value on every row (a `status`, `region`,
@@ -17,16 +17,66 @@
 //! The compact form is serialized with `serde_json` (robust quoting, escapes and
 //! Unicode — no hand-rolled format that could desync the reader), and the output
 //! is a pure function of the input (columns walked in header order, `_const`
-//! keyed deterministically), so identical input yields byte-identical output
-//! (#498). The crusher never inflates: callers gate on the shared
+//! keyed deterministically), so identical input yields byte-identical output.
+//! The crusher never inflates: callers gate on the shared
 //! [`crate::core::json_crush::KEEP_DATA_DIVISOR`] threshold and a no-op input returns [`None`].
 
 use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-use crate::core::extractors::csv;
 use crate::core::json_crush::CrushResult;
+
+/// Parse delimited text into rows of fields (RFC-4180 quoting aware).
+#[must_use]
+fn parse(input: &str, delimiter: char) -> Vec<Vec<String>> {
+    let mut rows = Vec::new();
+    let mut field = String::new();
+    let mut record: Vec<String> = Vec::new();
+    let mut in_quotes = false;
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if in_quotes {
+            if ch == '"' {
+                if chars.peek() == Some(&'"') {
+                    field.push('"');
+                    chars.next();
+                } else {
+                    in_quotes = false;
+                }
+            } else {
+                field.push(ch);
+            }
+        } else if ch == '"' {
+            in_quotes = true;
+        } else if ch == delimiter {
+            record.push(std::mem::take(&mut field));
+        } else if ch == '\n' || ch == '\r' {
+            // Swallow a CRLF pair as one terminator.
+            if ch == '\r' && chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            record.push(std::mem::take(&mut field));
+            push_record(&mut rows, std::mem::take(&mut record));
+        } else {
+            field.push(ch);
+        }
+    }
+    // Trailing field/record (no final newline).
+    if !field.is_empty() || !record.is_empty() {
+        record.push(field);
+        push_record(&mut rows, record);
+    }
+    rows
+}
+
+/// Append a record unless it is entirely empty (skips blank lines).
+fn push_record(rows: &mut Vec<Vec<String>>, record: Vec<String>) {
+    if record.iter().any(|f| !f.trim().is_empty()) {
+        rows.push(record);
+    }
+}
 
 /// Marks a crushed-table document. Vanishingly unlikely as a real top-level CSV
 /// shape (the input is delimited text, never a JSON object), so `reconstruct` (test-only)
@@ -75,7 +125,7 @@ fn crush(text: &str, delimiter: char, drop_entropy: f64) -> Option<CrushResult> 
         return None;
     }
 
-    let rows = csv::parse(text, delimiter);
+    let rows = parse(text, delimiter);
     if rows.len() < MIN_ROWS + 1 {
         return None; // need a header + >= MIN_ROWS data rows
     }
@@ -232,6 +282,19 @@ pub fn reconstruct(text: &str) -> Option<Vec<Vec<String>>> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn parses_quoted_fields_with_embedded_delimiter() {
+        let rows = parse("a,b\n\"x,y\",\"he said \"\"hi\"\"\"\n", ',');
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[1][0], "x,y");
+        assert_eq!(rows[1][1], "he said \"hi\"");
+    }
+
+    #[test]
+    fn parse_skips_blank_lines() {
+        assert_eq!(parse("a\n\n\nb", ',').len(), 2);
+    }
+
     /// A redundant roster: two constant columns (`status`, `region`) and two
     /// varying ones (`id`, `name`) over enough rows to clearly pay.
     fn roster_csv() -> String {
@@ -257,7 +320,7 @@ mod tests {
         let csv = roster_csv();
         let crushed = crush_text_if_beneficial(&csv, ',').unwrap();
         let restored = reconstruct(&crushed).unwrap();
-        let original = csv::parse(&csv, ',');
+        let original = parse(&csv, ',');
         assert_eq!(restored, original);
     }
 
@@ -265,7 +328,7 @@ mod tests {
     fn output_is_byte_stable_across_calls() {
         let csv = roster_csv();
         let run = || crush_text_if_beneficial(&csv, ',').unwrap();
-        assert_eq!(run(), run(), "crush output must be deterministic (#498)");
+        assert_eq!(run(), run(), "crush output must be deterministic");
     }
 
     #[test]
@@ -283,7 +346,7 @@ mod tests {
             s.push_str(&format!("{i}\tuser{i}\tactive\teu-central-1\n"));
         }
         let crushed = crush_text_if_beneficial(&s, '\t').expect("tsv crushes");
-        assert_eq!(reconstruct(&crushed).unwrap(), csv::parse(&s, '\t'));
+        assert_eq!(reconstruct(&crushed).unwrap(), parse(&s, '\t'));
     }
 
     #[test]
@@ -296,7 +359,7 @@ mod tests {
         }
         let crushed = crush_text_if_beneficial(&s, ',').unwrap();
         let restored = reconstruct(&crushed).unwrap();
-        assert_eq!(restored, csv::parse(&s, ','));
+        assert_eq!(restored, parse(&s, ','));
         // The embedded-delimiter, escaped-quote value survived verbatim.
         assert_eq!(restored[1][1], "a, 0 \"q\"");
     }

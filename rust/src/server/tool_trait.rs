@@ -2,14 +2,16 @@ use rmcp::ErrorData;
 use rmcp::model::{ContentBlock, Tool};
 use serde_json::{Map, Value};
 
-/// Outcome of a shell execution, carried alongside the rendered text so the
-/// MCP dispatch layer can surface failures in protocol metadata instead of
-/// only as an `[exit:N]` text footer (GitHub #389: clients had no programmatic
-/// way to detect ctx_shell failures and resorted to fragile regex matching).
+/// Outcome of a call, carried alongside the rendered text so the MCP dispatch
+/// layer can surface failures in protocol metadata (`isError`) instead of only
+/// in the text (clients had no programmatic way to detect
+/// failures and resorted to fragile regex matching).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellOutcome {
     /// The command ran; carries its real exit code (0 = success).
     Exit(i32),
+    /// A non-shell tool failed: an error, a conflict or an unknown action.
+    Failed,
 }
 
 impl ShellOutcome {
@@ -17,6 +19,7 @@ impl ShellOutcome {
     pub fn is_error(self) -> bool {
         match self {
             ShellOutcome::Exit(code) => code != 0,
+            ShellOutcome::Failed => true,
         }
     }
 
@@ -26,7 +29,7 @@ impl ShellOutcome {
     /// token-neutral for clients that render structured content.
     pub fn structured(self) -> Option<serde_json::Value> {
         match self {
-            ShellOutcome::Exit(0) => None,
+            ShellOutcome::Exit(0) | ShellOutcome::Failed => None,
             ShellOutcome::Exit(code) => Some(serde_json::json!({ "exitCode": code })),
         }
     }
@@ -37,11 +40,8 @@ pub struct ToolOutput {
     pub text: String,
     pub original_tokens: usize,
     pub saved_tokens: usize,
-    pub mode: Option<String>,
-    /// Path associated with the tool call (for record_call_with_path).
-    pub path: Option<String>,
     /// Set by shell-executing tools so dispatch can populate `isError` +
-    /// `structuredContent` on the MCP result (GitHub #389). `None` for tools
+    /// `structuredContent` on the MCP result. `None` for tools
     /// that don't run shell commands.
     pub shell_outcome: Option<ShellOutcome>,
     /// Override content blocks for non-text responses (e.g. images).
@@ -55,8 +55,6 @@ impl ToolOutput {
             text,
             original_tokens: 0,
             saved_tokens: 0,
-            mode: None,
-            path: None,
             shell_outcome: None,
             content_blocks: None,
         }
@@ -64,13 +62,11 @@ impl ToolOutput {
 
     /// Construct a ToolOutput for image/binary content blocks.
     /// Bypasses all text processing in the dispatch pipeline.
-    pub fn image(blocks: Vec<ContentBlock>, path: String) -> Self {
+    pub fn image(blocks: Vec<ContentBlock>) -> Self {
         Self {
             text: String::new(),
             original_tokens: 0,
             saved_tokens: 0,
-            mode: Some("image".to_string()),
-            path: Some(path),
             shell_outcome: None,
             content_blocks: Some(blocks),
         }
@@ -80,15 +76,11 @@ impl ToolOutput {
 /// Trait for a self-contained MCP tool. Each tool provides its own schema
 /// definition and handler, eliminating the possibility of schema/handler drift.
 ///
-/// This trait is the plugin interface for LcpTools: any implementation can be
-/// registered at runtime via `ToolRegistry::register()`. Future plugin system
-/// will load implementations from shared libraries or subprocess bridges.
-///
 /// Handlers are synchronous because all existing tool handlers are sync.
 /// The async boundary (cache locks, session reads) is handled by the dispatch
 /// layer before calling `handle`.
 pub trait McpTool: Send + Sync {
-    /// Tool name as registered in the MCP protocol (e.g. "ctx_tree").
+    /// Tool name as registered in the MCP protocol (e.g. "sobre_tree").
     fn name(&self) -> &'static str;
 
     /// MCP tool definition including JSON schema.
@@ -105,10 +97,47 @@ pub trait McpTool: Send + Sync {
     /// (auto-context briefing, verify footer, hints, checkpoints) and terse
     /// compression for this call, returning the pure body.
     /// Keyed on `args` because most tools emit machine-readable output only for
-    /// an opt-in format flag (e.g. `format=json`); defaults to `false` (#990).
+    /// an opt-in format flag (e.g. `format=json`); defaults to `false`.
     fn produces_machine_readable(&self, _args: Option<&Map<String, Value>>) -> bool {
         false
     }
+
+    /// Whether this tool's text starts with `ERROR`, `CONFLICT` or `Unknown
+    /// action` exactly when the call failed, so dispatch can mark the result
+    /// `isError` ([`reports_failure`]). Tools that return file or command
+    /// content keep `false`: that content may start with anything.
+    fn text_reports_failures(&self) -> bool {
+        false
+    }
+}
+
+/// Whether a tool's text answer reports a failure: its first line, or the
+/// first line of a `[file]` section in a multi-file answer, starts with one of
+/// the prefixes the tool cores use for errors, conflicts and unknown actions.
+pub fn reports_failure(text: &str) -> bool {
+    const PREFIXES: [&str; 5] = ["ERROR", "Error:", "ERR:", "CONFLICT", "Unknown action"];
+    let fails = |line: &str| PREFIXES.iter().any(|p| line.trim_start().starts_with(p));
+    let mut lines = text.lines();
+    let Some(first) = lines.next() else {
+        return false;
+    };
+    if fails(first) {
+        return true;
+    }
+    let mut after_label = is_section_label(first);
+    for line in lines {
+        if after_label && fails(line) {
+            return true;
+        }
+        after_label = is_section_label(line);
+    }
+    false
+}
+
+/// A `[path]` line that opens one file's part of a multi-file answer.
+fn is_section_label(line: &str) -> bool {
+    let t = line.trim();
+    t.len() > 2 && t.starts_with('[') && t.ends_with(']') && !t.contains(' ')
 }
 
 /// Context passed to tool handlers. Contains pre-resolved values that
@@ -116,15 +145,15 @@ pub trait McpTool: Send + Sync {
 /// handlers. Extended with shared server state for tools that need
 /// cache/session access.
 ///
-/// `Clone` exists for per-op delegation (#1088): a batch op with its own
+/// `Clone` exists for per-op delegation: a batch op with its own
 /// `path` clones the ctx and swaps in that op's resolved path.
 #[derive(Clone)]
 pub struct ToolContext {
     pub project_root: String,
-    /// Session-scoped extra roots (MCP `roots/list`, config `search_roots`),
-    /// snapshotted from the session so sync handlers can honor them without an
-    /// async lock. Empty = single root (#403).
-    pub extra_roots: Vec<String>,
+    /// The session's shell cwd (where `sobre_shell` last ran): relative paths
+    /// fall back to it, and a cwd in another git checkout outranks
+    /// `project_root`.
+    pub shell_cwd: Option<String>,
     /// Pre-resolved paths keyed by argument name (e.g. "path" -> "/abs/dir").
     pub resolved_paths: std::collections::HashMap<String, String>,
     /// CRP mode for compression-aware tools.
@@ -133,13 +162,12 @@ pub struct ToolContext {
     pub cache: Option<crate::tools::SharedCache>,
     /// Shared session handle for tools that need session access.
     pub session: Option<std::sync::Arc<tokio::sync::RwLock<crate::core::session::SessionState>>>,
-    /// Errors from path resolution (PathJail rejection, secret path, etc.).
-    /// Keyed by argument name (e.g. "path" -> "path escapes project root: ...").
+    /// Errors from path resolution, keyed by argument name.
     pub path_errors: std::collections::HashMap<String, String>,
     /// Shared in-memory BM25 index cache for semantic search.
     pub bm25_cache: Option<crate::core::bm25_cache::SharedBm25Cache>,
-    /// MCP progress notification sender for long-running operations.
-    pub progress_sender: Option<crate::server::progress::SharedProgressSender>,
+    /// Progress notifications for this request, when the client sent a token.
+    pub progress_sender: Option<crate::server::progress::ProgressSender>,
 }
 
 impl Default for ToolContext {
@@ -149,7 +177,7 @@ impl Default for ToolContext {
     fn default() -> Self {
         Self {
             project_root: String::new(),
-            extra_roots: Vec::new(),
+            shell_cwd: None,
             resolved_paths: std::collections::HashMap::new(),
             crp_mode: crate::tools::CrpMode::Off,
             cache: None,
@@ -171,18 +199,19 @@ impl ToolContext {
         self.path_errors.get(key).map(String::as_str)
     }
 
-    /// Sync path resolution using `project_root` + session `extra_roots`. Thin
-    /// wrapper over [`crate::core::path_resolve::resolve_tool_path`]
-    /// for sync tool handlers.
+    /// Sync path resolution with the same rules as the dispatcher: a thin
+    /// wrapper over [`crate::core::path_resolve::resolve_tool_path`] with
+    /// `project_root` and `shell_cwd`.
     pub fn resolve_path_sync(&self, path: &str) -> Result<String, String> {
-        crate::core::path_resolve::resolve_tool_path(Some(&self.project_root), None, path)
+        let root = (!self.project_root.is_empty()).then_some(self.project_root.as_str());
+        crate::core::path_resolve::resolve_tool_path(root, self.shell_cwd.as_deref(), path)
     }
 }
 
 // ── Arg extraction helpers (mirror server/helpers.rs for standalone use) ──
 
 /// Extract a resolved path from context with differentiated error messages.
-/// Returns descriptive errors for: missing param, PathJail rejection, wrong type.
+/// Returns descriptive errors for: missing param, unresolvable path, wrong type.
 pub fn require_resolved_path(
     ctx: &ToolContext,
     args: &Map<String, Value>,
@@ -258,6 +287,31 @@ mod tests {
 
     fn empty_ctx() -> ToolContext {
         ToolContext::default()
+    }
+
+    #[test]
+    fn failures_are_recognised_by_their_prefix() {
+        for text in [
+            "ERROR: path is required for action=impact",
+            "Error: value is required for remember",
+            "ERR: empty index. Try action=reindex first.",
+            "Unknown action: x. Use: status, load",
+            "[src/a.rs]\nCONFLICT: 1 stale anchor(s) in a.rs",
+            "[a.rs]\n✓ a.rs: 1 edit\n\n[b.rs]\nERROR: file changed since read",
+        ] {
+            assert!(reports_failure(text), "{text}");
+        }
+        for text in [
+            "Impact of changing src/a.rs: 2 affected files",
+            "[a.rs]\n✓ a.rs: 1 edit",
+            "No files depend on src/a.rs (leaf node in the dependency graph).",
+            "line one\nERROR: inside the content, not a section start",
+            "",
+        ] {
+            assert!(!reports_failure(text), "{text}");
+        }
+        assert!(ShellOutcome::Failed.is_error());
+        assert_eq!(ShellOutcome::Failed.structured(), None);
     }
 
     #[test]

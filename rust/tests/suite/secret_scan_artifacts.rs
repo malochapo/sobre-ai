@@ -50,13 +50,6 @@ fn generated_artifacts_and_docs_contain_no_obvious_secrets() {
         ),
     ];
 
-    let manifest = root.join("website/generated/mcp-tools.json");
-    if manifest.exists() {
-        for (label, re) in &patterns {
-            assert_no_match(&manifest, label, re);
-        }
-    }
-
     let security_md = root.join("SECURITY.md");
     if security_md.exists() {
         for (label, re) in &patterns {

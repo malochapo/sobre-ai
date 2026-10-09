@@ -1,16 +1,16 @@
-/// #843: precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
+/// Precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
 /// must pass through every mode-override path untouched — bounce-prevention,
 /// pressure-downgrade, and the graph/knowledge heuristics below must never
 /// silently reinterpret one of these to e.g. `full`, which would discard the
 /// exact window/anchors/delta the caller asked for. Classifies off the typed
-/// `ReadMode` (single source of truth, see `tools::ctx_read::mode`) rather than
+/// `ReadMode` (single source of truth, see `tools::sobre_read::mode`) rather than
 /// a hand-maintained string-prefix list, so a future precise mode has to be
 /// added to `ReadMode::is_precise_pinned_read` explicitly instead of silently
 /// falling through an allowlist. An unparseable mode is conservatively treated
 /// as *not* pinned, matching prior behaviour for anything outside this set.
 fn is_precise_pinned_mode(requested_mode: &str) -> bool {
     requested_mode
-        .parse::<crate::tools::ctx_read::ReadMode>()
+        .parse::<crate::tools::sobre_read::ReadMode>()
         .is_ok_and(|m| m.is_precise_pinned_read())
 }
 
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn pre_dispatch_passthrough_for_anchored_window() {
-        // #843: a windowed anchored:N-M read must keep its hash anchors —
+        // A windowed anchored:N-M read must keep its hash anchors —
         // bounce-prevention, pressure-downgrade, etc. must not clobber it to
         // "full" and silently drop the window.
         {
@@ -166,11 +166,11 @@ mod tests {
 
     #[test]
     fn pre_dispatch_passthrough_for_lines_multi_select() {
-        // #971: `lines:A-B,C-D` is a precise pinned window exactly like
+        // `lines:A-B,C-D` is a precise pinned window exactly like
         // `lines:A-B`, but it parsed as Malformed, so `is_precise_pinned_mode`
         // reported "not pinned" and bounce-prevention rewrote an 8-line request
         // into a full-file read. Exercises the edit-forced branch, which is what
-        // the field report actually hit (a ctx_patch anchored edit immediately
+        // the field report actually hit (a sobre_patch anchored edit immediately
         // before the read).
         {
             let mut bt = crate::core::bounce_tracker::global()
@@ -193,7 +193,7 @@ mod tests {
         let multi = pre_dispatch_read("multi-select-971.rs", "lines:620-622,1214-1218", None, None);
         assert!(
             multi.overridden_mode.is_none(),
-            "lines:A-B,C-D must not be overridden by bounce-prevention (#971)"
+            "lines:A-B,C-D must not be overridden by bounce-prevention"
         );
 
         // Control: the single-range form was already protected.

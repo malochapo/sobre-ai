@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
 use super::bm25_index::CodeChunk;
@@ -56,7 +55,7 @@ impl EmbeddingEntry {
 }
 
 /// Outcome of a `build_or_update` call from the index orchestrator.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EmbeddingBuildOutcome {
     /// Embeddings were built or already up-to-date.
@@ -73,11 +72,11 @@ pub enum EmbeddingBuildOutcome {
 /// Called by `sobre index build` after the BM25 index is ready. This is a
 /// *background-friendly* operation: it runs the ONNX
 /// model incrementally (only chunks whose content hash changed) and persists
-/// `embeddings.bin` (postcard) so later `ctx_search` dense/hybrid calls find a warm cache.
+/// `embeddings.bin` (postcard) so later `sobre_search` dense/hybrid calls find a warm cache.
 ///
 /// Returns [`EmbeddingBuildOutcome`] — the orchestrator uses this to set the
 /// semantic component state without aborting the overall index build.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub fn build_or_update(root: &Path, bm25: &super::bm25_index::BM25Index) -> EmbeddingBuildOutcome {
     {
         // Never download here: `index build` also runs in the background
@@ -225,39 +224,6 @@ impl EmbeddingIndex {
         self.dimensions != engine_dimensions && !self.entries.is_empty()
     }
 
-    /// Approximate heap memory used by this index in bytes.
-    pub fn memory_usage_bytes(&self) -> usize {
-        let entries_size: usize = self
-            .entries
-            .iter()
-            .map(|e| {
-                e.file_path.len()
-                    + e.symbol_name.len()
-                    + e.content_hash.len()
-                    + e.quant.code.len()
-                    + 4
-                    + 48
-            })
-            .sum();
-        let hashes_size: usize = self
-            .file_hashes
-            .iter()
-            .map(|(k, v)| k.len() + v.len() + 32)
-            .sum();
-        entries_size + hashes_size
-    }
-
-    /// Drops all in-memory data to free heap. Index can be re-loaded from disk.
-    pub fn unload(&mut self) {
-        let usage = self.memory_usage_bytes();
-        self.entries = Vec::new();
-        self.file_hashes = HashMap::new();
-        tracing::info!(
-            "[embeddings] unloaded index, freed ~{:.1}MB",
-            usage as f64 / 1_048_576.0
-        );
-    }
-
     /// Determine which files need re-embedding based on content hashes.
     ///
     /// When the index is empty (no prior embeddings), skips hash computation
@@ -293,7 +259,7 @@ impl EmbeddingIndex {
     /// Number of `chunks` a re-embed pass would have to embed right now — i.e.
     /// the chunks belonging to files flagged by [`Self::files_needing_update`].
     ///
-    /// Used by the hybrid/dense cold-start guard (#512): on a server that came
+    /// Used by the hybrid/dense cold-start guard: on a server that came
     /// up before the on-disk index existed, the first query would otherwise embed
     /// the *entire* corpus inline under the request watchdog, producing a runaway
     /// the watchdog abandons but cannot cancel. Counting the pending chunks up
@@ -387,7 +353,7 @@ impl EmbeddingIndex {
     }
 
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
-        let dir = index_dir(root);
+        let dir = index_dir(root).ok_or_else(|| std::io::Error::other("no data dir"))?;
         std::fs::create_dir_all(&dir)?;
         // Binary (postcard) — compact, fast, deterministic.
         let data = postcard::to_allocvec(self).map_err(std::io::Error::other)?;
@@ -396,7 +362,7 @@ impl EmbeddingIndex {
     }
 
     pub fn load(root: &Path) -> Option<Self> {
-        let bin_path = index_dir(root).join("embeddings.bin");
+        let bin_path = index_dir(root)?.join("embeddings.bin");
         let data = std::fs::read(&bin_path).ok()?;
         match postcard::from_bytes::<Self>(&data) {
             // Only accept an index whose on-disk schema matches the current one.
@@ -424,14 +390,12 @@ impl EmbeddingIndex {
     }
 }
 
-fn index_dir(root: &Path) -> PathBuf {
+fn index_dir(root: &Path) -> Option<PathBuf> {
     crate::core::index_namespace::vectors_dir(root)
 }
 
 fn hash_content(content: &str) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(content.as_bytes());
-    crate::core::hasher::hex_encode(&hasher.finalize())
+    crate::core::hasher::hash_str(content)
 }
 
 fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
@@ -453,19 +417,16 @@ fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
             ))
         });
 
-        let mut hasher = Md5::new();
+        let mut hasher = blake3::Hasher::new();
         hasher.update(file.as_bytes());
         for c in file_chunks {
-            hasher.update(c.start_line.to_le_bytes());
-            hasher.update(c.end_line.to_le_bytes());
+            hasher.update(&c.start_line.to_le_bytes());
+            hasher.update(&c.end_line.to_le_bytes());
             hasher.update(c.symbol_name.as_bytes());
-            hasher.update([kind_tag(&c.kind)]);
+            hasher.update(&[kind_tag(&c.kind)]);
             hasher.update(c.content.as_bytes());
         }
-        out.insert(
-            file.to_string(),
-            crate::core::hasher::hex_encode(&hasher.finalize()),
-        );
+        out.insert(file.to_string(), hasher.finalize().to_hex().to_string());
     }
     out
 }

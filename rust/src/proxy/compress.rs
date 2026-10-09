@@ -13,13 +13,12 @@ fn research_prose_cap() -> usize {
 
 /// Proxy compression funnel: routes a tool result to the right compressor.
 ///
-/// 1. Already-cited research output (from `ctx_url_read` / the web layer) is kept
-///    verbatim — it is distilled and citation-stamped, so the shell pipeline must
-///    not touch its footer or claim markers.
-/// 2. Prose results (web fetches, doc reads, research MCP bridges) are squeezed
-///    by the prose-aware research compressor instead of the log/code-tuned shell
-///    engine.
-/// 3. Everything else (shell/build/search output) flows through the unified
+/// 1. Results of sobre's own tools pass through: they were compressed at the
+///    tool boundary.
+/// 2. `<lc_safe>` spans are kept verbatim.
+/// 3. Prose results (doc reads, other MCP servers' text) are squeezed by the
+///    prose-aware compressor instead of the log/code-tuned shell engine.
+/// 4. Everything else (shell/build/search output) flows through the unified
 ///    `compress_if_beneficial` pipeline. A `$ ...` command hint is extracted so
 ///    the pattern engine gets the same routing as the CLI and MCP paths.
 ///
@@ -34,11 +33,11 @@ pub(crate) fn compress_tool_result(content: &str, tool_name: Option<&str>) -> St
     label(content, compressed)
 }
 
-/// Ends a rewritten tool result with the line that says so (#482): the token
+/// Ends a rewritten tool result with the line that says so: the token
 /// counts and where the original is kept in the content-addressed tee store.
 /// Both are pure functions of the content, so the rewritten result is
-/// byte-stable across turns and never invalidates the provider cache prefix
-/// (#448). The original is kept as is when it cannot be stored, or when the
+/// byte-stable across turns and never invalidates the provider cache prefix.
+/// The original is kept as is when it cannot be stored, or when the
 /// labeled rewrite is not smaller.
 fn label(original: &str, result: String) -> String {
     if result == original {
@@ -53,7 +52,7 @@ fn label(original: &str, result: String) -> String {
         .file_name()
         .map_or_else(|| handle.clone(), |n| n.to_string_lossy().into_owned());
     let labeled = format!(
-        "{}\n[sobre: compressed by the proxy, {before} → {after} tokens; full original at {handle}, or ctx_expand(id=\"{name}\") for a slice]",
+        "{}\n[sobre: compressed by the proxy, {before} → {after} tokens; full original at {handle}, or sobre_expand(id=\"{name}\") for a slice]",
         result.trim_end()
     );
     if labeled.len() < original.len() {
@@ -68,17 +67,17 @@ fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
         return content.to_string();
     }
 
-    // #479: sobre's own MCP tools already applied their compression policy at
+    // Sobre's own MCP tools already applied their compression policy at
     // the tool boundary — honouring `raw=true`/`bypass`, `<lc_safe>` spans and
     // the configured aggressiveness. Their `raw` intent lives in the originating
     // `tool_use` input, which is invisible here, so re-compressing on the wire
     // would silently undo an explicit `raw=true` and double-compress everything
-    // else. Pass results from `ctx_*` tools through untouched.
+    // else. Pass results from `sobre_*` tools through untouched.
     if tool_name.is_some_and(is_sobre_tool) {
         return content.to_string();
     }
 
-    // #709: honour explicit <lc_safe>…</lc_safe> spans on the proxy path too.
+    // Honour explicit <lc_safe>…</lc_safe> spans on the proxy path too.
     // Protected spans pass through verbatim; each unprotected segment flows back
     // through the normal funnel (markers are stripped, so this never recurses).
     if crate::core::protect::has_markers(content) {
@@ -199,13 +198,13 @@ fn squeeze_research_prose(content: &str) -> Option<String> {
     Some(squeezed)
 }
 
-/// True when `name` refers to one of sobre's own `ctx_*` MCP tools, whose
+/// True when `name` refers to one of sobre's own `sobre_*` MCP tools, whose
 /// results are already compressed at the tool boundary and must not be touched
-/// again by the proxy (#479).
+/// again by the proxy.
 ///
-/// Clients namespace MCP tools differently, so a plain `starts_with("ctx_")`
+/// Clients namespace MCP tools differently, so a plain `starts_with("sobre_")`
 /// misses the real-world callers: Claude Code (the reporter's setup) sends
-/// `mcp__sobre__ctx_shell`, others use `sobre:ctx_read`. Strip the client
+/// `mcp__sobre__sobre_shell`, others use `sobre:sobre_read`. Strip the client
 /// prefix down to the bare tool segment before matching.
 fn is_sobre_tool(name: &str) -> bool {
     let bare = name
@@ -215,7 +214,7 @@ fn is_sobre_tool(name: &str) -> bool {
         .rsplit([':', '/', '.'])
         .next()
         .unwrap_or(name);
-    bare.starts_with("ctx_") || name.starts_with("ctx_")
+    bare.starts_with("sobre_") || name.starts_with("sobre_")
 }
 
 fn infer_command(content: &str, tool_name: Option<&str>) -> String {
@@ -253,7 +252,7 @@ fn extract_command_hint(content: &str) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// #980/#985: search tool results must compress without corrupting source.
+    /// Search tool results must compress without corrupting source.
     #[test]
     fn search_tool_result_is_compressed_without_corrupting_source() {
         let raw = (0..60)
@@ -328,22 +327,22 @@ mod tests {
 
     #[test]
     fn sobre_tool_results_pass_through_verbatim() {
-        // A ctx_shell result the tool already produced (raw=true, or its own
+        // A sobre_shell result the tool already produced (raw=true, or its own
         // compression). The proxy must NOT re-compress / re-truncate it — that
-        // was the #479 defect where `raw=true` was silently undone on the wire.
+        // was the defect where `raw=true` was silently undone on the wire.
         let raw = (1..=120)
             .map(|i| format!("Line {i:04}: the quick brown fox jumps over the lazy dog"))
             .collect::<Vec<_>>()
             .join("\n");
         assert!(raw.len() > 200);
         // Bare names AND the namespaced forms real MCP clients emit (Claude Code
-        // `mcp__sobre__ctx_shell`, colon-style `sobre:ctx_read`).
+        // `mcp__sobre__sobre_shell`, colon-style `sobre:sobre_read`).
         for tool in [
-            "ctx_shell",
-            "ctx_read",
-            "ctx_search",
-            "mcp__sobre__ctx_shell",
-            "sobre:ctx_read",
+            "sobre_shell",
+            "sobre_read",
+            "sobre_search",
+            "mcp__sobre__sobre_shell",
+            "sobre:sobre_read",
         ] {
             assert_eq!(
                 compress_tool_result(&raw, Some(tool)),
@@ -456,7 +455,7 @@ mod tests {
 
         // The compressed result carries the content-addressed handle, and the
         // handle points at the *verbatim* original — live compression is now
-        // non-lossy (#482), recoverable with a plain native file read.
+        // non-lossy, recoverable with a plain native file read.
         let handle = ccr::persist(&log).expect("same content -> same handle");
         assert!(out.contains(&handle), "CCR handle must be embedded: {out}");
         let recovered = std::fs::read_to_string(&handle).expect("tee file readable");

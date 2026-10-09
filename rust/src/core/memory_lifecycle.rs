@@ -6,26 +6,15 @@
 //! - Compaction when limits are exceeded
 //! - Archival of old/unused facts
 
-use crate::core::text_similarity::{token_jaccard, token_jaccard_f32};
+use crate::core::text_similarity::token_jaccard_f32;
 use chrono::{Duration, Utc};
 use std::path::PathBuf;
 
 use super::knowledge::{KnowledgeFact, sort_fact_for_output};
 use super::memory_archive::{ArchiveConfig, MemoryStore};
 
-const DEFAULT_MAX_FACTS: usize = 1000;
-const LOW_CONFIDENCE_THRESHOLD: f32 = 0.3;
-const STALE_DAYS: i64 = 30;
 /// Default proactive headroom on a capacity reclaim: settle a full store at 75%
 /// so it keeps real working room instead of churning at its cap.
-/// Replay pairs must be *related*, not duplicates: below this they are
-/// unrelated, at or above [`REPLAY_RELATED_HIGH`] the lifecycle merge owns them.
-const REPLAY_RELATED_LOW: f64 = 0.12;
-const REPLAY_RELATED_HIGH: f64 = 0.79;
-const REPLAY_BOOST_SCALE: f64 = 0.02;
-/// Confidence must move by more than this for a fact to count as promoted.
-const REPLAY_MIN_DELTA: f32 = 0.001;
-
 pub const DEFAULT_RECLAIM_HEADROOM_PCT: f32 = 0.25;
 
 /// Spacing/testing effect: how strongly each prior retrieval lengthens memory
@@ -49,41 +38,28 @@ pub struct LifecycleConfig {
     /// Characteristic stability (days) for the Ebbinghaus curve before spacing
     /// and feedback modulation.
     pub base_stability_days: f32,
-    /// When true, scale stability by the fact's archetype so structural *evidence*
-    /// (architecture/dependency/…) decays slower than *inference*. Default false:
-    /// every archetype decays at `base_stability_days`.
-    pub archetype_aware_decay: bool,
     /// Archive facts untouched for this many days that were **never** retrieved —
-    /// dead weight that costs injection tokens regardless of confidence (#962).
-    /// `None` disables it (the `LifecycleConfig` default); the production policy
-    /// sets it. Reversible: pruned facts go to the archive.
+    /// dead weight that costs injection tokens regardless of confidence.
+    /// `None` disables it. Reversible: pruned facts go to the archive.
     pub prune_unretrieved_after_days: Option<i64>,
-    /// Proactive headroom on a capacity reclaim (#995): when a store reaches its
+    /// Proactive headroom on a capacity reclaim: when a store reaches its
     /// cap, drop down to `reclaim_target(max_facts, reclaim_headroom_pct)` so it
     /// settles with working room instead of churning at the cap. `0.25` = 75%.
     pub reclaim_headroom_pct: f32,
 }
 
+/// The production policy's values (`MemoryPolicy::default()`), so tests run
+/// against the same numbers as the server.
 impl Default for LifecycleConfig {
     fn default() -> Self {
-        Self {
-            max_facts: DEFAULT_MAX_FACTS,
-            low_confidence_threshold: LOW_CONFIDENCE_THRESHOLD,
-            stale_days: STALE_DAYS,
-            consolidation_similarity: 0.85,
-            base_stability_days: DEFAULT_BASE_STABILITY_DAYS,
-            archetype_aware_decay: false,
-            prune_unretrieved_after_days: None,
-            reclaim_headroom_pct: DEFAULT_RECLAIM_HEADROOM_PCT,
-        }
+        Self::from_policy(&crate::core::memory_policy::MemoryPolicy::default())
     }
 }
 
 impl LifecycleConfig {
     /// Map the persisted [`crate::core::memory_policy::MemoryPolicy`] to the
     /// runtime lifecycle config. The single mapping site, so adding a knob
-    /// touches exactly one place (previously duplicated across the lifecycle and
-    /// cognition callers).
+    /// touches exactly one place.
     pub fn from_policy(policy: &crate::core::memory_policy::MemoryPolicy) -> Self {
         Self {
             max_facts: policy.knowledge.max_facts,
@@ -91,7 +67,6 @@ impl LifecycleConfig {
             stale_days: policy.lifecycle.stale_days,
             consolidation_similarity: policy.lifecycle.similarity_threshold,
             base_stability_days: policy.lifecycle.base_stability_days,
-            archetype_aware_decay: policy.lifecycle.archetype_aware_decay,
             prune_unretrieved_after_days: policy.lifecycle.prune_unretrieved_after_days,
             reclaim_headroom_pct: policy.lifecycle.reclaim_headroom_pct,
         }
@@ -106,7 +81,7 @@ pub struct LifecycleReport {
     pub compacted_count: usize,
     /// Of `archived_count`, how many facts were evicted purely for capacity
     /// (the proactive reclaim) versus quality (low-confidence/stale/unretrieved).
-    /// Lets callers report per-store capacity reclaim distinctly (#995).
+    /// Lets callers report per-store capacity reclaim distinctly.
     pub capacity_archived: usize,
     pub remaining_facts: usize,
 }
@@ -139,21 +114,13 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
         let retrieval_count = fact.retrieval_count as f32;
         let net_feedback = i64::from(fact.feedback_up) - i64::from(fact.feedback_down);
 
-        // Archetype-aware stability (opt-in): structural evidence is more durable
-        // than inference. Off by default → every archetype uses the base stability.
-        let base_stability = if config.archetype_aware_decay {
-            config.base_stability_days * fact.archetype.stability_multiplier()
-        } else {
-            config.base_stability_days
-        };
-
         let new_confidence = ebbinghaus_confidence(
             fact.confidence,
             days_since_confirmed,
             days_since_retrieved,
             retrieval_count,
             net_feedback,
-            base_stability,
+            config.base_stability_days,
         );
         if (new_confidence - fact.confidence).abs() > 0.001 {
             fact.confidence = new_confidence;
@@ -164,7 +131,7 @@ pub fn apply_confidence_decay(facts: &mut [KnowledgeFact], config: &LifecycleCon
     count
 }
 
-/// Ebbinghaus retention `R = exp(-Δt / S)` (#1). Stability `S` grows with the
+/// Ebbinghaus retention `R = exp(-Δt / S)`. Stability `S` grows with the
 /// spacing effect (each prior retrieval) and net feedback; `Δt` is time since
 /// the memory was last reinforced (confirmed *or* retrieved). Multiplicative so
 /// confidence approaches the floor smoothly and never overshoots. Deterministic.
@@ -263,7 +230,7 @@ pub fn compact(
             continue;
         }
 
-        // Real pruning (#962): a single-confirmation fact untouched for the
+        // Real pruning: a single-confirmation fact untouched for the
         // configured horizon that was *never* retrieved is dead weight even at
         // high confidence — archive it. Gated on `confirmation_count <= 1` so
         // repeatedly-confirmed (structurally important) facts are always kept.
@@ -314,7 +281,7 @@ pub fn run_lifecycle(
         let _ = archive_facts(&archived);
     }
 
-    // Capacity reclaim (#995): facts settle at headroom via the single capacity
+    // Capacity reclaim: facts settle at headroom via the single capacity
     // manager, archiving the evicted tail losslessly under the facts archive root
     // — the same path quality archival uses, so recall rehydration is uniform.
     let capacity_archived = crate::core::memory_capacity::reclaim_store(
@@ -368,54 +335,6 @@ pub fn list_archives() -> Vec<PathBuf> {
 /// reachable.
 pub fn reachable_archives(cfg: &ArchiveConfig) -> Vec<PathBuf> {
     crate::core::memory_archive::reachable_archives(MemoryStore::Facts, None, cfg)
-}
-
-/// Replay boost (#3): lift the confidence of facts that are *related but not
-/// duplicates* and that both get retrieved often.
-///
-/// Additive by construction: confidence is only ever raised, never lowered, and
-/// no fact is removed. Deterministic.
-#[must_use]
-pub fn apply_replay_boost(facts: &mut [KnowledgeFact]) -> u32 {
-    let idx: Vec<usize> = facts
-        .iter()
-        .enumerate()
-        .filter(|(_, f)| f.is_current())
-        .map(|(i, _)| i)
-        .collect();
-    if idx.len() < 2 {
-        return 0;
-    }
-
-    let mut deltas = vec![0.0_f64; idx.len()];
-    for (pos_a, &i) in idx.iter().enumerate() {
-        for (pos_b, &j) in idx.iter().enumerate().skip(pos_a + 1) {
-            let jac = token_jaccard(&facts[i].value, &facts[j].value);
-            if !(REPLAY_RELATED_LOW..REPLAY_RELATED_HIGH).contains(&jac) {
-                continue;
-            }
-            let co = ((f64::from(facts[i].retrieval_count) + 1.0).ln()
-                * (f64::from(facts[j].retrieval_count) + 1.0).ln())
-            .sqrt();
-            let bump = REPLAY_BOOST_SCALE * co;
-            deltas[pos_a] += bump;
-            deltas[pos_b] += bump;
-        }
-    }
-
-    let mut promoted = 0u32;
-    for (pos, &i) in idx.iter().enumerate() {
-        if deltas[pos] <= 0.0 {
-            continue;
-        }
-        #[allow(clippy::cast_possible_truncation)]
-        let boosted = (f64::from(facts[i].confidence) + deltas[pos]).min(1.0) as f32;
-        if boosted > facts[i].confidence + REPLAY_MIN_DELTA {
-            facts[i].confidence = boosted;
-            promoted += 1;
-        }
-    }
-    promoted
 }
 
 #[cfg(test)]
@@ -509,37 +428,6 @@ mod tests {
     }
 
     #[test]
-    fn archetype_aware_decay_protects_evidence() {
-        // Opt-in: structural evidence (Architecture) decays slower than inference
-        // (Preference). Off (default), archetype is ignored and both decay alike.
-        let mut evidence = make_old_fact("arch", "db", "PostgreSQL", 0.9, 30);
-        evidence.archetype = KnowledgeArchetype::Architecture;
-        let mut inference = make_old_fact("pref", "style", "tabs", 0.9, 30);
-        inference.archetype = KnowledgeArchetype::Preference;
-
-        let off = LifecycleConfig::default();
-        let mut a = vec![evidence.clone(), inference.clone()];
-        apply_confidence_decay(&mut a, &off);
-        assert!(
-            (a[0].confidence - a[1].confidence).abs() < 1e-6,
-            "flag off → archetype ignored, equal decay"
-        );
-
-        let on = LifecycleConfig {
-            archetype_aware_decay: true,
-            ..Default::default()
-        };
-        let mut b = vec![evidence, inference];
-        apply_confidence_decay(&mut b, &on);
-        assert!(
-            b[0].confidence > b[1].confidence,
-            "evidence {} should outlast inference {}",
-            b[0].confidence,
-            b[1].confidence
-        );
-    }
-
-    #[test]
     fn decay_skips_recent_facts() {
         let config = LifecycleConfig::default();
         let mut facts = vec![make_fact("arch", "db", "PostgreSQL", 0.9)];
@@ -581,7 +469,7 @@ mod tests {
 
     #[test]
     fn spacing_effect_protects_frequently_retrieved() {
-        // #1: under the Ebbinghaus curve, a fact retrieved many times must decay
+        // Under the Ebbinghaus curve, a fact retrieved many times must decay
         // slower than an identical never-retrieved fact of the same age.
         let config = LifecycleConfig::default();
         let rarely = make_old_fact("arch", "rare", "x", 0.9, 20);
@@ -599,7 +487,7 @@ mod tests {
 
     #[test]
     fn ebbinghaus_decay_is_deterministic() {
-        // Determinism contract (#498): same input → same output, no RNG.
+        // Determinism contract: same input → same output, no RNG.
         let config = LifecycleConfig::default();
         let mut a = vec![make_old_fact("arch", "k", "v", 0.8, 15)];
         let mut b = a.clone();
@@ -649,7 +537,7 @@ mod tests {
 
     #[test]
     fn compact_is_quality_only_and_ignores_capacity() {
-        // Post-#995: capacity reclaim moved out of `compact` into the single
+        // Capacity reclaim moved out of `compact` into the single
         // capacity manager (driven by `run_lifecycle`). A store full of healthy,
         // current, high-confidence facts is a *capacity* concern, so `compact`
         // (quality only) must leave it untouched.
@@ -717,7 +605,7 @@ mod tests {
 
     #[test]
     fn prune_unretrieved_archives_old_never_retrieved_facts() {
-        // Opt-in (#962): a 60-day-old, high-confidence, never-retrieved,
+        // Opt-in: a 60-day-old, high-confidence, never-retrieved,
         // single-confirmation fact is dead weight and must be archived even
         // though its confidence is well above the low-confidence floor.
         let config = LifecycleConfig {

@@ -1,9 +1,5 @@
-//! Configuration enums and their behavior.
-//!
-//! Extracted from `config::mod` to keep the top-level config module focused on
-//! the `Config` struct and loading logic. These types are re-exported from the
-//! `config` module root, so external paths like `config::CompressionLevel`
-//! continue to work unchanged.
+//! Configuration enums and their behavior, re-exported from the `config`
+//! module root (`config::CompressionLevel`).
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::AtomicU8;
@@ -30,7 +26,7 @@ pub enum CompressionLevel {
     Max,
     /// Ultra-dense bullet-point-only mode — zero prose, diff-style facts,
     /// strictest token budget (<=50 tokens per non-code response). Maps to
-    /// CrpMode::Tdd with tighter output constraints (#795).
+    /// CrpMode::Tdd with tighter output constraints.
     Raw,
 }
 
@@ -116,13 +112,12 @@ impl CompressionLevel {
 
     /// Maps re-fetch *pressure* to a session-degrade decision. Pressure is the
     /// stronger of the correction-loop count (re-reads/re-runs) and the CCR
-    /// retrieve count (`ctx_expand`) — two views of the same "too
-    /// aggressive" signal (#941): 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
+    /// retrieve count (`sobre_expand`) — two views of the same "too
+    /// aggressive" signal: 5+ degrades to `Off`, 3+ to `Lite`, 0 clears,
     /// and the 1–2 band leaves the current degrade untouched.
     ///
     /// Pure and total so the thresholds are unit-testable without the dispatch
-    /// path — the regression guard for the brittle source-grep test this replaced
-    /// (#957).
+    /// path — the regression guard for the brittle source-grep test this replaced.
     pub fn degrade_action(correction_count: u32, retrieve_count: u32) -> SessionDegrade {
         let pressure = correction_count.max(retrieve_count);
         if pressure >= 5 {
@@ -174,7 +169,7 @@ mod tests {
         use CompressionLevel::{Lite, Off};
         use SessionDegrade::{Clear, Leave, Set};
         // 5+ pressure → Off, driven by EITHER the correction-loop or the CCR
-        // retrieve count (the stronger of the two), per #941.
+        // retrieve count (the stronger of the two).
         assert_eq!(CompressionLevel::degrade_action(5, 0), Set(Off));
         assert_eq!(CompressionLevel::degrade_action(0, 5), Set(Off));
         assert_eq!(CompressionLevel::degrade_action(9, 1), Set(Off));

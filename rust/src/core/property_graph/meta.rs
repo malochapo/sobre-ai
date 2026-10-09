@@ -50,7 +50,7 @@ impl Default for PropertyGraphMetaV1 {
     }
 }
 
-pub fn meta_path(project_root: &str) -> PathBuf {
+pub(crate) fn meta_path(project_root: &str) -> PathBuf {
     super::graph_dir(project_root).join("graph.meta.json")
 }
 

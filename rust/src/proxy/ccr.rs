@@ -1,4 +1,4 @@
-//! Content-addressed recovery (CCR) for the proxy's lossy rewrites (#482).
+//! Content-addressed recovery (CCR) for the proxy's lossy rewrites.
 //!
 //! When the proxy prunes an old `tool_result` from conversation history, the
 //! lossy stub used to say *"re-read the file"* — which is stale-unsafe by
@@ -13,7 +13,7 @@
 //! stub. Retrieval is MCP-independent: the agent reads the path with its native
 //! file read; no sobre tool has to be attached.
 //!
-//! ## Cache-safety (#448)
+//! ## Cache-safety
 //! The handle is the file path, and the path is a pure function of the content
 //! hash ([`crate::core::hasher::hash_short`]). For a fixed pruned message the
 //! handle is therefore byte-identical on every later turn, so the provider
@@ -37,7 +37,7 @@ const CLEANUP_INTERVAL_SECS: u64 = 600;
 
 /// Length of the content hash in a proxy tee name ([`hash_short`]).
 const TEE_HASH_LEN: usize = 16;
-/// Length of the command hash in a shell tee name (`shell::redact::save_tee`).
+/// Length of the hash in a shell tee name (`shell::redact::save_tee`).
 const SHELL_TEE_HASH_LEN: usize = 8;
 
 /// Deterministic tee path for `content`:
@@ -103,15 +103,6 @@ pub(crate) fn persist(content: &str) -> Option<String> {
             }
         }
     }
-    if path.is_file() {
-        crate::core::relevance_tracker::register_compressed(
-            handle.clone(),
-            content,
-            "proxy",
-            crate::core::tokens::count_tokens(content),
-            0,
-        );
-    }
     Some(handle)
 }
 
@@ -149,7 +140,7 @@ fn is_shell_tee_name(name: &str) -> bool {
 
 /// Resolve a retrieval `id` back to a file in the shared `{state}/tee/` store.
 /// Accepts every handle form a stub or footer can carry, with a fixed precedence
-/// so the forms can never collide (#936):
+/// so the forms can never collide:
 ///
 /// 1. **Proxy form** — `proxy_<16hex>(.log)`: the proxy history-prune and live
 ///    compression stubs.
@@ -279,7 +270,7 @@ mod tests {
     fn resolve_tee_does_not_capture_reference_ids() {
         let _lock = crate::core::data_dir::test_env_lock();
         // A reference-store id (`ref_<16hex>`, no `.log`) must fall through the
-        // tee resolver so ctx_expand routes it to the reference store, not the
+        // tee resolver so sobre_expand routes it to the reference store, not the
         // tee store — the precedence guard for the unified retrieve ladder.
         assert!(resolve_tee("ref_deadbeefcafef00d").is_none());
         // A bare 16-hex archive id with no backing tee file also stays None.

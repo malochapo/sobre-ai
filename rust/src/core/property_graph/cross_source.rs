@@ -1,7 +1,7 @@
 //! Cross-source edges — lateral links between code files and external sources
 //! (issues, PRs, DB schemas, wiki pages) discovered via the provider pipeline.
 //!
-//! Stored in a dedicated table rather than the code node/edge model (#682) so
+//! Stored in a dedicated table rather than the code node/edge model so
 //! external URIs never pollute the File-node catalog and the exact provider
 //! relation kind and weight survive round-trips — which the `cross_source_hints`
 //! consumer relies on for weighting and relation labels.

@@ -67,7 +67,7 @@ pub(crate) fn check_cursor_hooks(path: &std::path::Path, binary: &str) -> NamedC
 
 /// Shared verdict for hook checks: distinguishes missing/incomplete managed
 /// entries from a stale binary reference, so `doctor` can show the precise
-/// repair reason (the #249 observability pattern, extended to hook staleness).
+/// repair reason (the observability pattern, extended to hook staleness).
 pub(crate) fn finalize_hook_check(
     name: &str,
     path: &std::path::Path,

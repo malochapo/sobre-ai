@@ -1,26 +1,26 @@
 pub mod autonomy;
-pub mod ctx_compose;
-pub mod ctx_expand;
-pub mod ctx_glob;
-pub mod ctx_graph;
-pub mod ctx_graph_calls;
-pub mod ctx_graph_diagram;
-pub mod ctx_graph_primitives;
-pub mod ctx_impact;
-pub mod ctx_knowledge;
-pub mod ctx_knowledge_relations;
-pub mod ctx_outline;
-pub mod ctx_patch;
-pub mod ctx_read;
-pub mod ctx_refactor;
-pub mod ctx_review;
-pub mod ctx_search;
-pub mod ctx_session;
-pub mod ctx_shell;
-pub mod ctx_tree;
 pub(crate) mod edit_io;
 pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
+pub mod sobre_compose;
+pub mod sobre_expand;
+pub mod sobre_glob;
+pub mod sobre_graph;
+pub mod sobre_graph_calls;
+pub mod sobre_graph_diagram;
+pub mod sobre_graph_impact;
+pub mod sobre_graph_primitives;
+pub mod sobre_knowledge;
+pub mod sobre_knowledge_relations;
+pub mod sobre_outline;
+pub mod sobre_patch;
+pub mod sobre_read;
+pub mod sobre_refactor;
+pub mod sobre_review;
+pub mod sobre_search;
+pub mod sobre_session;
+pub mod sobre_shell;
+pub mod sobre_tree;
 // Stays `pub`: driven from outside the crate by tests/suite/property_graph_reproducibility_contract.rs.
 pub(crate) mod impl_dedup;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
@@ -28,7 +28,6 @@ pub mod impl_edit;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
 pub mod impl_multi_read;
 pub(crate) mod impl_overview;
-pub(crate) mod impl_preload;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/intensive_benchmarks.rs.
 pub(crate) mod impl_semantic_search;
 pub(crate) mod impl_smart_read;
@@ -92,7 +91,7 @@ mod resolve_path_tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn resolve_path_auto_reroots_from_agent_config_dir() {
-        // #580: the MCP server is launched from an agent/IDE config dir
+        // The MCP server is launched from an agent/IDE config dir
         // (~/.copilot-style) and wrongly adopts it as the root. With no
         // trusted startup root, the first
         // absolute path into a real project must still correct the root — an
@@ -162,7 +161,7 @@ mod resolve_path_tests {
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
     async fn resolve_path_markerless_root_keeps_root_for_markerless_path() {
-        // #649: from a markerless client cwd, an absolute path that derives NO
+        // From a markerless client cwd, an absolute path that derives NO
         // project marker is read as is and the root is unchanged. Only a real
         // project becomes the new root.
         let _iso = crate::core::data_dir::isolated_data_dir();
@@ -328,7 +327,7 @@ mod resolve_path_tests {
         assert_eq!(session.project_root.as_deref(), Some(root_value.as_str()));
     }
 
-    // #707: a mid-session worktree switch moves shell_cwd into a nested linked
+    // A mid-session worktree switch moves shell_cwd into a nested linked
     // worktree (own `.git` *file*) while project_root stays at initialize-time.
     // The path `src/lib.rs` deliberately also exists relative to the test
     // process CWD (`rust/`): the server's `p.exists()` probe used to
@@ -350,7 +349,7 @@ mod resolve_path_tests {
 
         let server = SobreServer::new_with_project_root(Some(&root_value));
         {
-            // The worktree switch as ctx_shell's cwd tracking records it.
+            // The worktree switch as sobre_shell's cwd tracking records it.
             let mut session = server.session.write().await;
             session.shell_cwd = Some(wt.to_string_lossy().to_string());
         }

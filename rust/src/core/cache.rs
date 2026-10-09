@@ -1,4 +1,3 @@
-use md5::{Digest, Md5};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -45,7 +44,6 @@ pub struct CacheEntry {
     pub line_count: usize,
     pub original_tokens: usize,
     read_count: AtomicU32,
-    pub path: String,
     last_access: AtomicU64,
     pub stored_mtime: Option<SystemTime>,
     /// Mode-specific compressed outputs (e.g. "map", "signatures") cached to avoid re-parsing.
@@ -56,7 +54,7 @@ pub struct CacheEntry {
     /// Conversation id that received the full content (see
     /// [`crate::core::conversation`]). The `[unchanged]` stub is only valid for
     /// a re-read from this same conversation; `None` means delivered without a
-    /// known conversation context (legacy / hooks absent).
+    /// known conversation context (hooks absent).
     pub delivered_conversation: Option<String>,
     /// Last read mode used for this file (for auto-escalation on edit failure).
     pub last_mode: String,
@@ -81,7 +79,6 @@ impl CacheEntry {
         hash: String,
         line_count: usize,
         original_tokens: usize,
-        path: String,
         stored_mtime: Option<SystemTime>,
     ) -> Self {
         let compressed_content = zstd_compress(content);
@@ -91,7 +88,6 @@ impl CacheEntry {
             line_count,
             original_tokens,
             read_count: AtomicU32::new(1),
-            path,
             last_access: AtomicU64::new(encode_instant(Instant::now())),
             stored_mtime,
             compressed_outputs: HashMap::new(),
@@ -107,10 +103,11 @@ impl CacheEntry {
     }
 
     /// Atomically increments the read count and returns the new value (lock-free).
-    pub fn bump_read_count(&self) -> u32 {
-        self.read_count.fetch_add(1, Ordering::Relaxed) + 1
+    pub fn bump_read_count(&self) {
+        self.read_count.fetch_add(1, Ordering::Relaxed);
     }
 
+    #[cfg(test)]
     /// Overwrites the read count (used by `store` and tests).
     pub fn set_read_count(&self, n: u32) {
         self.read_count.store(n, Ordering::Relaxed);
@@ -142,11 +139,6 @@ impl CacheEntry {
     pub fn set_content(&mut self, content: &str) {
         self.compressed_content = zstd_compress(content);
     }
-
-    /// Approximate RAM usage of the compressed content in bytes.
-    pub fn compressed_size(&self) -> usize {
-        self.compressed_content.len()
-    }
 }
 
 /// Result of a cache store operation, indicating whether it was a hit or new entry.
@@ -154,10 +146,7 @@ impl CacheEntry {
 pub struct StoreResult {
     pub line_count: usize,
     pub original_tokens: usize,
-    pub read_count: u32,
     pub was_hit: bool,
-    /// Whether full content was previously delivered for this cache entry.
-    pub full_content_delivered: bool,
 }
 
 impl CacheEntry {
@@ -185,7 +174,7 @@ impl CacheEntry {
 const RRF_K: f64 = 60.0;
 
 /// Hebbian protection added to an entry's RRF eviction score per unit of
-/// association strength with the currently-active working set (#3). Files that
+/// association strength with the currently-active working set. Files that
 /// are read together resist eviction together ("fire together, wire together").
 /// Deterministic: a fixed multiplier, no sampling.
 const HEBBIAN_PROTECT_WEIGHT: f64 = 0.05;
@@ -256,7 +245,7 @@ pub fn eviction_scores_rrf(entries: &[(&String, &CacheEntry)], now: Instant) -> 
         .collect()
 }
 
-/// Add the Hebbian co-access bonus (#3) to RRF eviction scores in place. A
+/// Add the Hebbian co-access bonus to RRF eviction scores in place. A
 /// higher score means "keep longer", so co-accessed entries are protected.
 fn apply_hebbian_bonus(scores: &mut [(String, f64)], bonus: &HashMap<String, f64>) {
     if bonus.is_empty() {
@@ -286,7 +275,7 @@ pub struct SessionCache {
     file_refs: HashMap<String, String>,
     next_ref: usize,
     shared_blocks: Vec<SharedBlock>,
-    /// Hebbian co-access matrix (#3): tracks which files are read together so
+    /// Hebbian co-access matrix: tracks which files are read together so
     /// eviction can protect co-accessed clusters. Updated on `store`, consulted
     /// during eviction.
     co_access: crate::core::hebbian_cache::CoAccessMatrix,
@@ -310,14 +299,14 @@ impl SessionCache {
         }
     }
 
-    /// Close the current co-access burst so its associations are committed.
-    /// Call at the end of a logical tool call (post-dispatch).
+    /// Commit the pending co-access burst now (tests; production commits it
+    /// on the first access after the burst window).
     #[cfg(test)]
     pub fn flush_co_access(&mut self) {
         self.co_access.end_burst();
     }
 
-    /// Per-entry Hebbian eviction bonus (#3): each cached entry that is
+    /// Per-entry Hebbian eviction bonus: each cached entry that is
     /// co-accessed with the recently-active working set earns a positive bonus
     /// that is added to its RRF score, so clustered files survive eviction
     /// together. Deterministic (no sampling); ticks the activation registry when
@@ -394,11 +383,11 @@ impl SessionCache {
     /// Stores file content in the cache; returns a hit if content hash matches.
     pub fn store(&mut self, path: &str, content: &str) -> StoreResult {
         let key = normalize_key(path);
-        // #3: feed the Hebbian co-access matrix on every read so eviction can
+        // Feed the Hebbian co-access matrix on every read so eviction can
         // later protect files that are habitually read together.
         self.co_access
             .record_access(crate::core::hebbian_cache::path_hash(&key));
-        let hash = compute_md5(content);
+        let hash = content_hash(content);
         let line_count = content.lines().count();
         let original_tokens = count_tokens(content);
         let stored_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
@@ -410,13 +399,11 @@ impl SessionCache {
                 existing.stored_mtime = stored_mtime;
             }
             if existing.hash == hash {
-                let new_count = existing.bump_read_count();
+                existing.bump_read_count();
                 return StoreResult {
                     line_count: existing.line_count,
                     original_tokens: existing.original_tokens,
-                    read_count: new_count,
                     was_hit: true,
-                    full_content_delivered: existing.full_content_delivered,
                 };
             }
             existing.compressed_outputs.clear();
@@ -424,7 +411,7 @@ impl SessionCache {
             existing.hash = hash;
             existing.line_count = line_count;
             existing.original_tokens = original_tokens;
-            let new_count = existing.bump_read_count();
+            existing.bump_read_count();
             existing.full_content_delivered = false;
             existing.delivered_conversation = None;
             if stored_mtime.is_some() {
@@ -433,31 +420,20 @@ impl SessionCache {
             return StoreResult {
                 line_count,
                 original_tokens,
-                read_count: new_count,
                 was_hit: false,
-                full_content_delivered: false,
             };
         }
 
         self.evict_if_needed(original_tokens);
         self.get_file_ref(&key);
 
-        let entry = CacheEntry::new(
-            content,
-            hash,
-            line_count,
-            original_tokens,
-            key.clone(),
-            stored_mtime,
-        );
+        let entry = CacheEntry::new(content, hash, line_count, original_tokens, stored_mtime);
 
         self.entries.insert(key, entry);
         StoreResult {
             line_count,
             original_tokens,
-            read_count: 1,
             was_hit: false,
-            full_content_delivered: false,
         }
     }
 
@@ -565,8 +541,8 @@ impl SessionCache {
         if let Some(entry) = self.entries.get_mut(&key) {
             entry.mark_full_delivered(conversation.clone());
             // Write-through to the persistent stub index so an unchanged re-read
-            // in the same conversation survives a daemon restart / idle clear
-            // (#955). `record` ignores None-conversation deliveries.
+            // in the same conversation survives an MCP restart or idle clear.
+            // `record` ignores None-conversation deliveries.
             crate::core::read_stub_index::record(crate::core::read_stub_index::StubRecord::new(
                 key.clone(),
                 entry.hash.clone(),
@@ -704,7 +680,7 @@ pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> boo
 const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Staleness with content verification: like [`is_cache_entry_stale`], but when
-/// the mtime claims "unchanged", additionally compares the md5 of the on-disk
+/// the mtime claims "unchanged", additionally compares the hash of the on-disk
 /// content against the cached hash.
 ///
 /// mtime alone cannot be trusted for *correctness*: same-second writes are
@@ -737,15 +713,13 @@ pub fn is_cache_entry_stale_verified(
     }
     match std::fs::read(path) {
         // Hash the same view of the bytes that `store()` hashed (lossy UTF-8).
-        Ok(bytes) => compute_md5(&String::from_utf8_lossy(&bytes)) != cached_hash,
+        Ok(bytes) => content_hash(&String::from_utf8_lossy(&bytes)) != cached_hash,
         Err(_) => true,
     }
 }
 
-fn compute_md5(content: &str) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(content.as_bytes());
-    crate::core::hasher::hex_encode(&hasher.finalize())
+fn content_hash(content: &str) -> String {
+    crate::core::hasher::hash_str(content)
 }
 
 #[cfg(test)]
@@ -849,7 +823,7 @@ mod tests {
 
     #[test]
     fn hebbian_eviction_bonus_is_wired() {
-        // #3: files read together build a Hebbian association via store()'s
+        // Files read together build a Hebbian association via store's
         // recording, and that association must feed the eviction bonus.
         //
         // Warm up tiktoken first: the very first count_tokens() in the process
@@ -870,11 +844,11 @@ mod tests {
     }
 
     #[test]
-    fn md5_is_deterministic() {
-        let h1 = compute_md5("test content");
-        let h2 = compute_md5("test content");
+    fn content_hash_is_deterministic() {
+        let h1 = content_hash("test content");
+        let h2 = content_hash("test content");
         assert_eq!(h1, h2);
-        assert_ne!(h1, compute_md5("different"));
+        assert_ne!(h1, content_hash("different"));
     }
 
     #[test]
@@ -883,8 +857,8 @@ mod tests {
         let key_b = "b.rs".to_string();
         // Construct entries first so the global instant base is initialized,
         // then assign access times relative to a post-init reference.
-        let recent = CacheEntry::new("a", "h1".to_string(), 1, 10, "/a.rs".to_string(), None);
-        let old = CacheEntry::new("b", "h2".to_string(), 1, 10, "/b.rs".to_string(), None);
+        let recent = CacheEntry::new("a", "h1".to_string(), 1, 10, None);
+        let old = CacheEntry::new("b", "h2".to_string(), 1, 10, None);
         let t_old = Instant::now();
         std::thread::sleep(std::time::Duration::from_millis(10));
         let t_recent = Instant::now();
@@ -907,11 +881,11 @@ mod tests {
         let key_a = "a.rs".to_string();
         let key_b = "b.rs".to_string();
         let frequent = {
-            let e = CacheEntry::new("a", "h1".to_string(), 1, 10, "/a.rs".to_string(), None);
+            let e = CacheEntry::new("a", "h1".to_string(), 1, 10, None);
             e.set_read_count(20);
             e
         };
-        let rare = CacheEntry::new("b", "h2".to_string(), 1, 10, "/b.rs".to_string(), None);
+        let rare = CacheEntry::new("b", "h2".to_string(), 1, 10, None);
         let entries: Vec<(&String, &CacheEntry)> = vec![(&key_a, &frequent), (&key_b, &rare)];
         let scores = eviction_scores_rrf(&entries, now);
         let score_a = scores.iter().find(|(p, _)| p == "a.rs").unwrap().1;
@@ -940,7 +914,7 @@ mod tests {
         assert!(is_cache_entry_stale(&p, entry.stored_mtime));
     }
 
-    // P0-7 (#419): a *backward* mtime (git checkout, touch -t) is a change.
+    // P0-7: a *backward* mtime (git checkout, touch -t) is a change.
     #[test]
     fn stale_detection_flags_backward_mtime() {
         let dir = tempfile::tempdir().unwrap();
@@ -966,7 +940,7 @@ mod tests {
         );
     }
 
-    // P0-7 (#419): identical mtime with different content (same-second write,
+    // P0-7: identical mtime with different content (same-second write,
     // restored timestamps) is caught by the content-hash verification.
     #[test]
     fn verified_staleness_catches_same_mtime_content_change() {

@@ -1,4 +1,4 @@
-//! Path and content heuristics shared by `ctx_read` summaries and the code
+//! Path and content heuristics shared by `sobre_read` summaries and the code
 //! health scan.
 
 /// Returns true for paths that are noise rather than signal:
@@ -112,7 +112,7 @@ mod tests {
 
     #[test]
     fn extract_content_hint_survives_multibyte_byte_budget() {
-        // Regression for #379: a matched line whose byte-budget cut (70/80) lands
+        // Regression: a matched line whose byte-budget cut (70/80) lands
         // inside a 2-byte Cyrillic char must snap to a char boundary, not panic.
         // `extract_content_hint` skips the first line, so each input has a header.
         // Layer 3 — markdown / doc heading (the reported auto_findings.rs:424,

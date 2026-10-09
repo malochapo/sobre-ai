@@ -37,9 +37,15 @@ fn multi_read_respects_output_cap() {
         "output must contain cap warning when exceeding limit:\n{}",
         &output[output.len().saturating_sub(300)..]
     );
+    // The files left out are named, and none of them counts as read: a
+    // later sobre_read returns its content, not an [unchanged] stub.
+    assert!(output.contains("Not read:"), "must name the files left out");
+    assert!(output.contains("file_19.txt"), "the last file is left out");
+    let again = sobre::tools::sobre_read::handle(&mut cache, &paths[19], "full", CrpMode::Off);
     assert!(
-        output.contains("file(s) skipped"),
-        "must report skipped files"
+        again.contains("// File 19"),
+        "{}",
+        &again[..again.len().min(200)]
     );
 }
 

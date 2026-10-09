@@ -4,7 +4,7 @@
 //! sobre writes no rules into the agent's own files (CLAUDE.md, AGENTS.md,
 //! `.cursor/rules`, …). Every client gets this same text on `initialize`, and
 //! the only setting that changes it is `compression_level`: it picks the output
-//! style appended below and the CRP suffix. The detailed guide is the `sobre`
+//! style appended below. The detailed guide is the `sobre`
 //! skill, which agents that support skills load on demand.
 //!
 //! The text must stay true on every host: hooks compress native shell output
@@ -12,23 +12,22 @@
 //! here may claim they are.
 
 use crate::core::config::CompressionLevel;
-use crate::tools::CrpMode;
 
 /// Claude Code truncates a server's instructions at 2048 characters; the
-/// longest combination (`Raw` style + TDD suffix) must fit under it.
+/// longest style (`Raw`) must fit under it.
 const MAX_INSTRUCTION_CHARS: usize = 2048;
 
 /// What every client is told, whatever its level.
 pub const GUIDE: &str = "\
 sobre: local context tools. Prefer them when they fit; native tools keep working.
-• Orient: ctx_compose first (no task = project overview; with task = ranked files + source).
-• Read: ctx_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). Unchanged re-reads cost ~13 tokens.
-• Find: ctx_search (regex | action=symbol | action=semantic), ctx_glob (files), ctx_tree, ctx_outline (symbols).
-• Impact: ctx_graph (action=callers|callees|trace for calls, impact|path for files), ctx_impact (blast radius).
-• Edit: ctx_read(mode=anchored) → ctx_patch (line+hash anchors; op=create for new files). Native Edit also works.
-• Shell: ctx_shell compresses output; long jobs → run_in_background=true.
-• Memory: ctx_session (task, findings, decisions), ctx_knowledge (facts across sessions); undo: ctx_checkpoint.
-RECOVER: compressed output is not exact evidence. Footer id → ctx_expand(id); file → ctx_read(mode=full) or read the shown path; shell → ctx_shell(raw=true) or `sobre raw \"<command>\"`. Never rebuild exact content line-by-line.
+• Orient: sobre_compose first (no task = project overview; with task = ranked files + source).
+• Read: sobre_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). Unchanged re-reads cost ~13 tokens.
+• Find: sobre_search (regex | action=symbol | action=semantic), sobre_glob (files), sobre_tree, sobre_outline (symbols).
+• Impact: sobre_graph (action=callers|callees|trace for calls; impact|changes|path for files).
+• Edit: sobre_read(mode=anchored) → sobre_patch (line+hash anchors; op=create for new files). Native Edit also works.
+• Shell: sobre_shell compresses output; long jobs → run_in_background=true.
+• Memory: sobre_session (task, findings, decisions), sobre_knowledge (facts across sessions); undo: sobre_checkpoint.
+RECOVER: compressed output is not exact evidence. Footer id → sobre_expand(id); file → sobre_read(mode=full) or read the shown path; shell → sobre_shell(raw=true) or `sobre raw \"<command>\"`. Never rebuild exact content line-by-line.
 Full guide: the `sobre` skill, if your agent has skills.
 OUTPUT: never echo tool output, no narration comments, show only changed code.";
 
@@ -57,39 +56,27 @@ pub fn compression_text(level: CompressionLevel) -> &'static str {
     }
 }
 
-fn crp_suffix(crp_mode: CrpMode) -> &'static str {
-    match crp_mode {
-        CrpMode::Off => "",
-        CrpMode::Compact => {
-            "CRP: compact — omit filler; abbreviate fn,cfg,impl,deps,req,res; \
-             diff lines (+/-) only; <=200 tok; trust tool outputs."
-        }
-        CrpMode::Tdd => {
-            "CRP: tdd — max density; Fn refs + diff lines only \
-             (+F1:42 | -F1:10-15 | ~F1:42 old->new); <=150 tok; zero narration."
-        }
-    }
-}
-
-/// The instructions for the configured `compression_level`.
+/// The instructions for the configured `compression_level`. A session's
+/// temporary lowering of compression changes tool output only, never this
+/// text (invariant 3: one tools/list, one set of instructions).
 #[must_use]
 pub fn build_instructions() -> String {
-    let level = CompressionLevel::effective(&crate::core::config::Config::load());
-    render(level, CrpMode::effective())
+    render(CompressionLevel::effective_configured(
+        &crate::core::config::Config::load(),
+    ))
 }
 
-/// The instructions for an explicit level and CRP mode.
+/// The instructions for an explicit level.
 #[must_use]
-pub fn render(level: CompressionLevel, crp_mode: CrpMode) -> String {
+pub fn render(level: CompressionLevel) -> String {
     let mut parts = vec![GUIDE.to_string()];
     let shell = shell_hint();
     if !shell.is_empty() {
         parts.push(shell);
     }
-    for extra in [compression_text(level), crp_suffix(crp_mode)] {
-        if !extra.is_empty() {
-            parts.push(extra.to_string());
-        }
+    let style = compression_text(level);
+    if !style.is_empty() {
+        parts.push(style.to_string());
     }
     let out = parts.join("\n");
     if out.len() <= MAX_INSTRUCTION_CHARS {
@@ -124,34 +111,34 @@ mod tests {
         CompressionLevel::Max,
         CompressionLevel::Raw,
     ];
-    const CRP_MODES: [CrpMode; 3] = [CrpMode::Off, CrpMode::Compact, CrpMode::Tdd];
-
     #[test]
-    fn every_combination_fits_claude_codes_limit_untruncated() {
+    fn every_level_fits_claude_codes_limit_untruncated() {
         for level in LEVELS {
-            for crp in CRP_MODES {
-                let out = render(level, crp);
-                let full = [GUIDE, compression_text(level), crp_suffix(crp)]
-                    .into_iter()
-                    .filter(|s| !s.is_empty())
-                    .map(str::len)
-                    .sum::<usize>();
-                assert!(
-                    full + 64 <= MAX_INSTRUCTION_CHARS,
-                    "{level:?}/{crp:?}: {full} chars leaves no room under {MAX_INSTRUCTION_CHARS}"
-                );
-                assert!(out.contains(compression_text(level)));
-                assert!(out.contains(crp_suffix(crp)));
-            }
+            let out = render(level);
+            let full = GUIDE.len() + compression_text(level).len();
+            assert!(
+                full + 64 <= MAX_INSTRUCTION_CHARS,
+                "{level:?}: {full} chars leaves no room under {MAX_INSTRUCTION_CHARS}"
+            );
+            assert!(out.contains(compression_text(level)));
         }
     }
 
     #[test]
     fn only_the_level_changes_the_text() {
-        let off = render(CompressionLevel::Off, CrpMode::Off);
+        let off = render(CompressionLevel::Off);
         assert_eq!(off, GUIDE.to_string() + &shell_hint_line());
-        let lite = render(CompressionLevel::Lite, CrpMode::Off);
+        let lite = render(CompressionLevel::Lite);
         assert!(lite.starts_with(GUIDE) && lite.contains("OUTPUT STYLE: concise"));
+        // One writing-style line, no second prompt that repeats or contradicts it.
+        for level in LEVELS {
+            let text = render(level);
+            assert!(!text.contains("CRP:"), "{level:?}");
+            assert!(
+                !text.to_lowercase().contains("trust tool outputs"),
+                "{level:?}"
+            );
+        }
     }
 
     fn shell_hint_line() -> String {
@@ -163,9 +150,9 @@ mod tests {
     fn every_named_tool_is_registered() {
         let named: std::collections::BTreeSet<&str> = GUIDE
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-            .filter(|w| w.starts_with("ctx_") && w.len() > 4)
+            .filter(|w| w.starts_with("sobre_") && w.len() > 6)
             .collect();
-        assert!(named.len() >= 14, "guide names {named:?}");
+        assert!(named.len() >= 13, "guide names {named:?}");
         for tool in named {
             assert!(
                 crate::server::registry::is_registered(tool),
@@ -197,9 +184,9 @@ mod tests {
         // compressed: the expand id, a full read, and raw shell output — the
         // last one on the CLI too, since hooks compress native shell output.
         for path in [
-            "ctx_expand(id)",
-            "ctx_read(mode=full)",
-            "ctx_shell(raw=true)",
+            "sobre_expand(id)",
+            "sobre_read(mode=full)",
+            "sobre_shell(raw=true)",
             "sobre raw \"<command>\"",
             "not exact evidence",
         ] {

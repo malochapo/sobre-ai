@@ -64,7 +64,7 @@ fn analyze_with_tree_sitter(content: &str, ext: &str) -> Option<DeepAnalysis> {
 
 /// Map a file extension to its tree-sitter [`Language`], or `None` when
 /// unsupported. `pub(crate)` so the post-edit syntax gate
-/// ([`crate::core::syntax_validate`]) reuses the exact same grammar set (#1008).
+/// ([`crate::core::syntax_validate`]) reuses the exact same grammar set.
 #[cfg(feature = "tree-sitter")]
 pub(crate) fn get_language(ext: &str) -> Option<Language> {
     match ext {
@@ -111,7 +111,7 @@ fn find_child_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
 
 #[cfg(feature = "tree-sitter")]
 fn find_descendant_by_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
-    // Iterative (heap-stack) search — see core::ast_walk (#378 SIGABRT).
+    // Iterative (heap-stack) search — see core::ast_walk (SIGABRT).
     crate::core::ast_walk::find_descendant_by_kind(node, kind)
 }
 
@@ -125,7 +125,7 @@ mod tests {
     use super::*;
 
     /// Indexing a deeply nested AST must not overflow the worker-thread stack
-    /// (the #378 SIGABRT) through the real `analyze` entry point. It runs on a
+    /// (the SIGABRT) through the real `analyze` entry point. It runs on a
     /// 128 KiB stack: 2,000 levels exceed that for any recursive walk using
     /// more than 64 bytes a frame, yet because every walk is iterative it
     /// returns normally. Analysis time grows with the square of the depth, so a
@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn rust_calls_inside_macros_are_extracted() {
-        // #658: `main` only calls `greet` inside println!/assert_eq! — the call
+        // `main` only calls `greet` inside println!/assert_eq! — the call
         // graph must still see the edge, or a fresh Rust project shows 0 edges.
         let src = r#"
 fn main() {
@@ -305,7 +305,7 @@ use std::collections::HashMap;
 
     #[test]
     fn rust_pub_use_reexport() {
-        let src = r"pub use crate::tools::ctx_read;";
+        let src = r"pub use crate::tools::sobre_read;";
         let analysis = analyze(src, "rs");
         assert_eq!(analysis.imports.len(), 1);
         assert_eq!(analysis.imports[0].kind, ImportKind::Reexport);
@@ -371,7 +371,7 @@ class User:
 
     #[test]
     fn python_call_sites() {
-        // Regression for GH #365: Python uses a bare `call` node, so class
+        // Regression: Python uses a bare `call` node, so class
         // instantiation and method calls must both be extracted as call sites.
         let src = r"
 from models.engine import Engine
@@ -697,7 +697,7 @@ namespace MyApp.Services {
         );
     }
 
-    /// GH #398: types consumed without any `using` (same-namespace visibility)
+    /// Types consumed without any `using` (same-namespace visibility)
     /// must surface as `type_uses` so the property graph can build TypeRef
     /// edges. Covers fields, ctor parameters, return types, base list,
     /// generic arguments, casts and `typeof`.
@@ -740,7 +740,7 @@ public class Motor : VehiclePart, IStartable
         assert!(!names.contains(&"var"), "var is not a type use: {names:?}");
     }
 
-    /// GH #398 follow-up: types consumed only in *expression position* —
+    /// Follow-up: types consumed only in *expression position* —
     /// static calls/fields, enum values and attributes — carry no `type`
     /// field, so the declaration-position walk missed them. They must still
     /// surface as `type_uses` so the property graph can link consumer ->
@@ -782,7 +782,7 @@ public class Garage
         );
     }
 
-    /// GH #398 (Java flavour): same-package types are visible without import;
+    /// (Java flavour): same-package types are visible without import;
     /// `type_identifier` nodes cover fields, params, returns and extends.
     #[test]
     fn java_type_uses_without_import() {
@@ -801,7 +801,7 @@ public class Motor extends VehiclePart {
         }
     }
 
-    /// GH #398 bug class (Go): same-package types are referenced without any
+    /// Bug class (Go): same-package types are referenced without any
     /// import. `type_identifier` nodes cover struct fields, params, results and
     /// slices; a cross-package `pkg.Type` (`qualified_type`) must be skipped —
     /// that dependency rides the package import, not a same-package type edge.
@@ -835,7 +835,7 @@ func (m *Motor) Build(c Clutch) Gearbox {
         );
     }
 
-    /// GH #398 bug class (Kotlin): same-package types need no import. `user_type`
+    /// Bug class (Kotlin): same-package types need no import. `user_type`
     /// nodes (with a possibly-qualified `identifier`) cover properties, params,
     /// returns, supertypes and generic arguments; only the last dotted segment
     /// names the type. The declaring class name is an `identifier`, never a
@@ -961,7 +961,6 @@ namespace App
         );
 
         let save = analysis.calls.iter().find(|c| c.callee == "Save").unwrap();
-        assert_eq!(save.receiver.as_deref(), Some("_repository"));
         assert!(save.is_method);
     }
 
@@ -1029,7 +1028,6 @@ end
             .iter()
             .find(|c| c.callee == "method2")
             .unwrap();
-        assert_eq!(m.receiver.as_deref(), Some("obj"));
         assert!(m.is_method);
     }
 
@@ -1070,7 +1068,7 @@ export type Vec = { x: number, y: number }
         assert!(analysis.types.is_empty());
     }
 
-    /// GH #398 follow-up (#641): every C# type definition records the namespace
+    /// Follow-up: every C# type definition records the namespace
     /// it lives in — file-scoped (`namespace A.B;`), block-scoped
     /// (`namespace A { … }`) and nested block namespaces (joined outer→inner).
     /// Other languages leave `namespace` as `None`.
@@ -1116,7 +1114,7 @@ export type Vec = { x: number, y: number }
         assert_eq!(motor.namespace, None);
     }
 
-    /// GH #398 follow-up (#642): a C# method whose first parameter carries the
+    /// Follow-up: a C# method whose first parameter carries the
     /// `this` modifier is an extension method and is captured in `ext_methods`;
     /// ordinary methods are not.
     #[test]

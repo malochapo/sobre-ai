@@ -4,15 +4,6 @@
 
 use lsp_types::{GotoDefinitionResponse, Location, Position, Uri, WorkspaceEdit};
 
-/// A single symbol entry from a file's structure overview.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SymbolOverviewItem {
-    pub name: String,
-    pub kind: String,
-    /// 1-indexed line.
-    pub line: u32,
-}
-
 /// A 0-based, half-open text range (LSP/wire convention: start inclusive, end exclusive).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextRange0Based {
@@ -23,7 +14,7 @@ pub struct TextRange0Based {
 }
 
 /// A resolved, ready-to-apply edit. The `name_path` → range resolution has already
-/// happened in `ctx_refactor`; the backend only ever sees an absolute path + range.
+/// happened in `sobre_refactor`; the backend only ever sees an absolute path + range.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeEdit {
     /// Absolute, resolved path of the file to edit.
@@ -54,37 +45,19 @@ pub struct EditResult {
 /// `BACKENDS` cache (`Mutex<HashMap<String, Box<dyn LspBackend>>>`).
 pub trait LspBackend: Send {
     fn open_file(&mut self, uri: &Uri, language_id: &str, text: &str) -> Result<(), String>;
-    fn references(
-        &mut self,
-        uri: &Uri,
-        position: Position,
-        scope: &str,
-    ) -> Result<Vec<Location>, String>;
+    fn references(&mut self, uri: &Uri, position: Position) -> Result<Vec<Location>, String>;
     fn definition(
         &mut self,
         uri: &Uri,
         position: Position,
     ) -> Result<GotoDefinitionResponse, String>;
-    fn implementations(
-        &mut self,
-        uri: &Uri,
-        position: Position,
-        scope: &str,
-    ) -> Result<Vec<Location>, String>;
+    fn implementations(&mut self, uri: &Uri, position: Position) -> Result<Vec<Location>, String>;
     fn rename(
         &mut self,
         uri: &Uri,
         position: Position,
         new_name: &str,
     ) -> Result<Option<WorkspaceEdit>, String>;
-
-    fn symbols_overview(&mut self, uri: &Uri) -> Result<Vec<SymbolOverviewItem>, String> {
-        // v2a §5.2: lossless headless default via the tree-sitter symbol index
-        // (same source as ctx_symbol/ctx_outline).
-        let abs = crate::lsp::client::uri_to_file_path(uri)
-            .ok_or_else(|| "symbols_overview: bad uri".to_string())?;
-        Ok(crate::lsp::edit_apply::overview_from_index(&abs))
-    }
 
     /// Replace a symbol's full declaration range with `edit.text`.
     /// Applied by the headless local range write.

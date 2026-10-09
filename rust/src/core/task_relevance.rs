@@ -146,111 +146,6 @@ pub fn compute_relevance(
     result
 }
 
-pub fn compute_relevance_from_intent(
-    gp: &GraphProvider,
-    intent: &super::intent_engine::StructuredIntent,
-) -> Vec<RelevanceScore> {
-    use super::intent_engine::IntentScope;
-
-    let mut file_seeds: Vec<String> = Vec::new();
-    let mut extra_keywords: Vec<String> = intent.keywords.clone();
-
-    let file_paths = gp.file_paths();
-    for target in &intent.targets {
-        if target.contains('.') || target.contains('/') {
-            let matched = resolve_target_to_files(&file_paths, target);
-            if matched.is_empty() {
-                extra_keywords.push(target.clone());
-            } else {
-                file_seeds.extend(matched);
-            }
-        } else {
-            let from_symbol = resolve_symbol_to_files(gp, target);
-            if from_symbol.is_empty() {
-                extra_keywords.push(target.clone());
-            } else {
-                file_seeds.extend(from_symbol);
-            }
-        }
-    }
-
-    if let Some(lang) = &intent.language_hint {
-        let lang_ext = match lang.as_str() {
-            "rust" => Some("rs"),
-            "typescript" => Some("ts"),
-            "javascript" => Some("js"),
-            "python" => Some("py"),
-            "go" => Some("go"),
-            "ruby" => Some("rb"),
-            "java" => Some("java"),
-            _ => None,
-        };
-        if let Some(ext) = lang_ext
-            && file_seeds.is_empty()
-        {
-            for path in &file_paths {
-                if path.ends_with(&format!(".{ext}")) {
-                    extra_keywords.push(
-                        std::path::Path::new(path)
-                            .file_stem()
-                            .and_then(|s| s.to_str())
-                            .unwrap_or("")
-                            .to_string(),
-                    );
-                    break;
-                }
-            }
-        }
-    }
-
-    let mut result = compute_relevance(gp, &file_seeds, &extra_keywords);
-
-    match intent.scope {
-        IntentScope::SingleFile => {
-            result.truncate(5);
-        }
-        IntentScope::MultiFile => {
-            result.truncate(15);
-        }
-        IntentScope::CrossModule | IntentScope::ProjectWide => {}
-    }
-
-    result
-}
-
-fn resolve_target_to_files(file_paths: &[String], target: &str) -> Vec<String> {
-    file_paths
-        .iter()
-        .filter(|path| path.ends_with(target) || path.contains(target))
-        .cloned()
-        .collect()
-}
-
-fn resolve_symbol_to_files(gp: &GraphProvider, symbol: &str) -> Vec<String> {
-    let found = gp.find_symbols(symbol, None, None);
-    let mut matches: Vec<String> = found
-        .into_iter()
-        .map(|s| s.file)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-    if matches.is_empty() {
-        let sym_lower = symbol.to_lowercase();
-        for path in gp.file_paths() {
-            if let Some(entry) = gp.get_file_entry(&path)
-                && entry
-                    .exports
-                    .iter()
-                    .any(|e| e.to_lowercase().contains(&sym_lower))
-                && !matches.contains(&path)
-            {
-                matches.push(path);
-            }
-        }
-    }
-    matches
-}
-
 fn recommend_mode(score: f64) -> &'static str {
     if score >= 0.8 {
         "full"
@@ -476,7 +371,7 @@ pub fn information_bottleneck_filter(
     information_bottleneck_filter_typed(content, task_keywords, budget_ratio, None, force_keep)
 }
 
-/// #840: IB filter with optional markdown section-header preservation.
+/// IB filter with optional markdown section-header preservation.
 /// When `preserve_section_headers` is true, the nearest preceding `#`-header
 /// for each selected line is injected into the output so fragments remain
 /// attributable to their enclosing sections.
@@ -535,8 +430,8 @@ fn inject_section_headers(original: &str, filtered: &str) -> String {
 }
 
 /// Task-type-aware IB filter. Uses `TaskType` to adjust structural weights.
-/// `force_keep` lines (explicit `protect` tokens, #709) are kept verbatim on top
-/// of the budget; `&[]` reproduces the pre-protect output byte-for-byte (#498).
+/// `force_keep` lines (explicit `protect` tokens) are kept verbatim on top
+/// of the budget; `&[]` reproduces the pre-protect output byte-for-byte.
 pub fn information_bottleneck_filter_typed(
     content: &str,
     task_keywords: &[String],
@@ -647,7 +542,7 @@ pub fn information_bottleneck_filter_typed(
                 * (information * 0.25 + 0.05)
                 * (attn_weight * 0.15 + 0.05);
 
-            // Explicit protect tokens (#709) force the line to the top of the
+            // Explicit protect tokens force the line to the top of the
             // ranking; INF survives the MMR lambda penalty so it is always kept.
             let score = if super::protect::line_is_protected(line, force_keep) {
                 f64::INFINITY
@@ -659,9 +554,9 @@ pub fn information_bottleneck_filter_typed(
         })
         .collect();
 
-    // Protected lines (#709) are kept on top of the ranked budget, so widen the
+    // Protected lines are kept on top of the ranked budget, so widen the
     // budget to hold them without displacing other selected content. With an
-    // empty `force_keep` this adds zero and the budget is byte-identical (#498).
+    // empty `force_keep` this adds zero and the budget is byte-identical.
     let protected_count = lines
         .iter()
         .filter(|l| super::protect::line_is_protected(l, force_keep))
@@ -907,7 +802,7 @@ mod tests {
 
     #[test]
     fn ib_empty_force_keep_is_byte_identical() {
-        // Protect must not change the unprotected IB output (#498).
+        // Protect must not change the unprotected IB output.
         let content = "fn main() {\n    let x = 1;\n    return Err(\"e\");\n    let y = 2;\n}\n";
         let a = information_bottleneck_filter(content, &["main".to_string()], 0.5, &[]);
         let b = information_bottleneck_filter_typed(content, &["main".to_string()], 0.5, None, &[]);

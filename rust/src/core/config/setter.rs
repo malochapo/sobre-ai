@@ -22,7 +22,16 @@ pub fn set_by_key(key: &str, value: &str) -> Result<Config, crate::core::error::
             })?;
 
     let mut table = load_config_as_table()?;
-    let toml_value = parse_value(value, key_schema)?;
+    let toml_value = parse_value(value, key_schema).map_err(|e| match e {
+        crate::core::error::ConfigError::InvalidValue { message, .. } => {
+            crate::core::error::ConfigError::InvalidValue {
+                key: key.to_string(),
+                message,
+            }
+        }
+        other => other,
+    })?;
+    check_range(key, &toml_value)?;
     set_nested(&mut table, key, toml_value)?;
 
     let cfg: Config = toml::Value::Table(table)
@@ -44,7 +53,7 @@ pub fn set_by_key(key: &str, value: &str) -> Result<Config, crate::core::error::
 /// as the string a user would type (no TOML quoting), or `None` if the key is
 /// unset (still at its schema default).
 ///
-/// Powers the before→after review for consequential `config set` writes (#852).
+/// Powers the before→after review for consequential `config set` writes.
 /// Reads only the user's file, so an unset key is reported as `None` rather than
 /// the default — the review then shows `(default) → <new>`.
 #[must_use]
@@ -96,7 +105,7 @@ fn parse_value(
                 value: value.to_string(),
             }),
         },
-        "u8" | "u16" | "u32" | "u64" | "usize" | "u64?" => {
+        ty if ty.trim_end_matches('?').starts_with('u') => {
             let n: i64 =
                 value
                     .parse()
@@ -106,6 +115,18 @@ fn parse_value(
             if n < 0 {
                 return Err(crate::core::error::ConfigError::ExpectedUnsignedInteger {
                     value: value.to_string(),
+                });
+            }
+            let max = match ty.trim_end_matches('?') {
+                "u8" => i64::from(u8::MAX),
+                "u16" => i64::from(u16::MAX),
+                "u32" => i64::from(u32::MAX),
+                _ => i64::MAX,
+            };
+            if n > max {
+                return Err(crate::core::error::ConfigError::InvalidValue {
+                    key: String::new(),
+                    message: format!("{n} is above {max}"),
                 });
             }
             Ok(toml::Value::Integer(n))
@@ -148,6 +169,24 @@ fn parse_value(
             Ok(toml::Value::String(value.to_string()))
         }
     }
+}
+
+/// Keys whose value has bounds the type does not express. A value outside
+/// them is refused instead of being clamped where it is read.
+fn check_range(key: &str, value: &toml::Value) -> Result<(), crate::core::error::ConfigError> {
+    let bounds = match key {
+        "compression_level" => Some((0.0, 1.0)),
+        _ => None,
+    };
+    if let (Some((lo, hi)), Some(n)) = (bounds, value.as_float())
+        && !(lo..=hi).contains(&n)
+    {
+        return Err(crate::core::error::ConfigError::InvalidValue {
+            key: key.to_string(),
+            message: format!("{n} is outside {lo}–{hi}"),
+        });
+    }
+    Ok(())
 }
 
 fn set_nested(
@@ -194,6 +233,25 @@ mod tests {
             toml::Value::Boolean(false)
         );
         assert!(parse_value("maybe", &schema).is_err());
+    }
+
+    /// C3: `proxy.port` is a `u16?` and parses as a number, bounded by the
+    /// type; `compression_level` outside 0–1 is refused, not clamped.
+    #[test]
+    fn optional_port_parses_and_ranges_are_enforced() {
+        let port = KeySchema {
+            ty: "u16?".to_string(),
+            default: serde_json::json!(null),
+            description: String::new(),
+            values: None,
+        };
+        assert_eq!(
+            parse_value("18999", &port).unwrap(),
+            toml::Value::Integer(18999)
+        );
+        assert!(parse_value("70000", &port).is_err());
+        assert!(check_range("compression_level", &toml::Value::Float(7.0)).is_err());
+        assert!(check_range("compression_level", &toml::Value::Float(0.5)).is_ok());
     }
 
     #[test]

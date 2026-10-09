@@ -80,7 +80,7 @@ pub fn has_structural_output(command: &str) -> bool {
     is_structural_git_command(command)
 }
 
-/// Grep-family search commands (#980, #985). Routed to the dedicated
+/// Grep-family search commands. Routed to the dedicated
 /// `patterns::grep` compressor (groups matches per file, caps count) which
 /// never applies terse dictionaries. This is the correct middle tier: verbatim
 /// wastes tokens, terse corrupts source identifiers.
@@ -243,7 +243,7 @@ fn is_verbatim_pipe_tail(command: &str) -> bool {
     is_verbatim_single(last_segment)
 }
 
-/// #980: `cd /repo && cat file` — classification only inspected the first token
+/// `cd /repo && cat file` — classification only inspected the first token
 /// (`cd`), missing that the *last* compound segment is a file viewer.  Analogous
 /// to [`is_verbatim_pipe_tail`] but for `&&` / `||` / `;` operators.
 fn is_verbatim_compound_tail(command: &str) -> bool {
@@ -273,12 +273,12 @@ fn is_file_viewer(command: &str) -> bool {
     let first = first_binary(command);
     match first {
         "cat" | "bat" | "batcat" | "pygmentize" | "highlight" => true,
-        // #980/#985: grep-family routes to `has_structural_output` via
+        // Grep-family routes to `has_structural_output` via
         // `is_source_search` — the dedicated `patterns::grep` compressor
         // handles them dictionary-free. NOT in is_file_viewer.
         "head" | "tail" => !command.contains("-f") && !command.contains("--follow"),
         // sed/awk are commonly used as range/pattern file viewers
-        // (`sed -n '10,50p' file`, `awk '{print}' file`, GH #688). Their stdout
+        // (`sed -n '10,50p' file`, `awk '{print}' file`). Their stdout
         // is file payload and must never enter the generic terse pipeline —
         // the dictionary layer word-substitutes code identifiers
         // (`function`→`fn`, `return`→`ret`) with no code-awareness. In-place
@@ -293,7 +293,7 @@ fn is_file_viewer(command: &str) -> bool {
 /// gawk's `-i inplace`. Detection is token-based — a *filename* containing
 /// "-i" (`my-input.txt`, `data-import.csv`) must not match, or the dump falls
 /// back into the terse pipeline: the exact corruption this classification
-/// prevents (GH #688).
+/// prevents.
 fn has_in_place_flag(command: &str) -> bool {
     command.split_whitespace().any(|tok| {
         if let Some(long) = tok.strip_prefix("--") {
@@ -863,7 +863,7 @@ fn toon_header_kind(line: &str) -> Option<ToonHeader> {
 }
 
 /// Heuristically detects output already encoded in TOON (Token-Oriented Object
-/// Notation) so it can be preserved verbatim instead of recompressed (#342).
+/// Notation) so it can be preserved verbatim instead of recompressed.
 ///
 /// TOON is itself a compact, token-oriented encoding; a second compression pass
 /// saves little and rewrites the exact line/field shape an agent relies on to
@@ -963,7 +963,7 @@ mod toon_tests {
 mod verbatim_classification_tests {
     use super::*;
 
-    // #980/#985: grep-family routes to structural (patterns::grep), NOT verbatim/terse.
+    // Grep-family routes to structural (patterns::grep), NOT verbatim/terse.
     #[test]
     fn grep_is_structural_not_terse() {
         for cmd in [
@@ -983,12 +983,12 @@ mod verbatim_classification_tests {
         }
     }
 
-    // #980: `cd /repo && cat file` — last compound segment is a file viewer.
+    // `cd /repo && cat file` — last compound segment is a file viewer.
     #[test]
     fn compound_cd_then_cat_is_verbatim() {
         assert!(
             is_verbatim_output("cd /repo && cat file.yaml"),
-            "cd && cat must be verbatim (#980)"
+            "cd && cat must be verbatim"
         );
     }
 

@@ -73,7 +73,7 @@ mod root_resolution_tests {
 
     #[test]
     fn resolve_search_root_promotes_subdir_to_project_root() {
-        // #948: the index namespace is keyed on the project root; a subdir search
+        // The index namespace is keyed on the project root; a subdir search
         // must resolve to that same root (and keep the subdir as a scope) instead
         // of hashing to a different, empty namespace.
         let _lock = crate::core::data_dir::test_env_lock();
@@ -102,14 +102,14 @@ mod root_resolution_tests {
     }
 }
 
-#[cfg(all(test, feature = "embeddings"))]
+#[cfg(all(test, feature = "dense"))]
 mod cold_start_guard_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
 
     #[test]
     fn budget_zero_disables_guard() {
-        // 0 = "always embed inline" (pre-#512 behavior), regardless of size.
+        // 0 = "always embed inline" (the earlier behavior), regardless of size.
         assert!(!exceeds_inline_embed_budget(1_000_000, 0));
     }
 
@@ -159,7 +159,6 @@ mod determinism_tests {
             end_line: 1,
             snippet: "a".to_string(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -172,7 +171,6 @@ mod determinism_tests {
             end_line: 1,
             snippet: "b".to_string(),
             rrf_score: 0.0,
-            bm25_score: None,
             dense_score: None,
             bm25_rank: None,
             dense_rank: None,
@@ -193,7 +191,7 @@ mod determinism_tests {
     }
 }
 
-#[cfg(all(test, feature = "embeddings"))]
+#[cfg(all(test, feature = "dense"))]
 mod dense_toggle_tests {
     #[allow(clippy::wildcard_imports)]
     use super::super::*;
@@ -226,7 +224,7 @@ mod dense_toggle_tests {
         ])
     }
 
-    /// #512/#686: on a cold dense index hybrid ranks without the dense signal,
+    /// On a cold dense index hybrid ranks without the dense signal,
     /// finds the lexical match, says it degraded, and never writes embeddings.
     #[test]
     fn hybrid_on_cold_index_ranks_without_embeddings_and_says_so() {
@@ -271,7 +269,7 @@ mod search_mode_tests {
         assert!(err.contains("unknown mode"), "{err}");
     }
 
-    #[cfg(not(feature = "embeddings"))]
+    #[cfg(not(feature = "dense"))]
     #[test]
     fn dense_modes_are_an_error_without_embeddings() {
         for mode in ["dense", "hybrid"] {
@@ -280,7 +278,7 @@ mod search_mode_tests {
         }
     }
 
-    #[cfg(feature = "embeddings")]
+    #[cfg(feature = "dense")]
     #[test]
     fn dense_modes_parse_with_embeddings() {
         assert_eq!(SearchMode::parse(Some("dense")), Ok(SearchMode::Dense));

@@ -1,5 +1,5 @@
 #![allow(clippy::cast_precision_loss)]
-//! Proactive context expansion (#1122): automatically injects previously
+//! Proactive context expansion: automatically injects previously
 //! compressed data when it becomes relevant to the current request.
 //!
 //! When sobre compresses content (via CCR tee-store), this module indexes
@@ -7,13 +7,12 @@
 //! context matches indexed keywords above a threshold, the relevant compressed
 //! content is proactively expanded and appended.
 //!
-//! Determinism (#498): expansion decisions are pure functions of
+//! Determinism: expansion decisions are pure functions of
 //! (query_terms, stored_entries, budget). No timestamps in scoring —
 //! age eviction uses monotonic seq_ticks.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_BUDGET_TOKENS: usize = 2000;
 const DEFAULT_THRESHOLD: f64 = 0.6;
@@ -78,23 +77,11 @@ impl RelevanceTracker {
         }
     }
 
+    #[cfg(test)]
     pub fn with_config(budget_tokens: usize, threshold: f64) -> Self {
-        Self::with_config_and_age(budget_tokens, threshold, DEFAULT_MAX_AGE_SECS)
-    }
-
-    pub fn with_config_and_age(budget_tokens: usize, threshold: f64, max_age_secs: u64) -> Self {
-        Self {
-            entries: Vec::new(),
-            seq_counter: 0,
-            budget_tokens,
-            threshold: if threshold.is_finite() {
-                threshold.clamp(0.0, 1.0)
-            } else {
-                DEFAULT_THRESHOLD
-            },
-            max_age_secs,
-            disabled_handles: BTreeSet::new(),
-        }
+        let mut tracker = Self::new();
+        tracker.configure(budget_tokens, threshold, DEFAULT_MAX_AGE_SECS);
+        tracker
     }
 
     /// Update runtime settings without discarding already indexed entries.
@@ -123,7 +110,7 @@ impl RelevanceTracker {
             source_tool,
             original_tokens,
             compressed_tokens,
-            now_secs(),
+            crate::core::clock::now_unix(),
         );
     }
 
@@ -184,7 +171,7 @@ impl RelevanceTracker {
             return Vec::new();
         }
 
-        let now = now_secs();
+        let now = crate::core::clock::now_unix();
         let mut scored: Vec<(usize, f64)> = self
             .entries
             .iter()
@@ -278,28 +265,16 @@ impl RelevanceTracker {
     }
 }
 
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
-}
-
-/// Register a CCR artifact for later proactive expansion.
+/// Register a CCR artifact for later proactive expansion, with zero compressed
+/// tokens: the whole original counts toward the expansion budget.
 pub(crate) fn register_compressed(
     handle: String,
     original_content: &str,
     source_tool: &'static str,
     original_tokens: usize,
-    compressed_tokens: usize,
 ) {
     if let Ok(mut tracker) = global().lock() {
-        tracker.register(
-            handle,
-            original_content,
-            source_tool,
-            original_tokens,
-            compressed_tokens,
-        );
+        tracker.register(handle, original_content, source_tool, original_tokens, 0);
     }
 }
 
@@ -472,7 +447,7 @@ mod tests {
         tracker.register(
             "html_abc123.log".to_string(),
             "The proxy forward module handles upstream HTTP requests with authentication",
-            "ctx_shell",
+            "sobre_shell",
             500,
             50,
         );
@@ -490,7 +465,7 @@ mod tests {
             tracker.register(
                 format!("entry_{i}.log"),
                 "proxy forward authentication tokens request handling",
-                "ctx_shell",
+                "sobre_shell",
                 500, // 500 tokens each
                 50,
             );
@@ -511,7 +486,7 @@ mod tests {
             tracker.register(
                 format!("entry_{i}.log"),
                 &format!("content for entry number {i}"),
-                "ctx_shell",
+                "sobre_shell",
                 100,
                 10,
             );
@@ -551,7 +526,7 @@ mod edge_tests {
     #[test]
     fn handles_empty_content_registration() {
         let mut tracker = RelevanceTracker::new();
-        tracker.register("empty.log".into(), "", "ctx_shell", 0, 0);
+        tracker.register("empty.log".into(), "", "sobre_shell", 0, 0);
         assert!(tracker.find_matches("anything").is_empty());
     }
 

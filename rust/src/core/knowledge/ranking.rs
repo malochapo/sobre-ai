@@ -191,8 +191,7 @@ pub fn find_cross_key_similar(
 }
 
 pub(super) fn fact_version_id_v1(f: &KnowledgeFact) -> String {
-    use md5::{Digest, Md5};
-    let mut hasher = Md5::new();
+    let mut hasher = blake3::Hasher::new();
     hasher.update(f.category.as_bytes());
     hasher.update(b"\n");
     hasher.update(f.key.as_bytes());
@@ -202,5 +201,5 @@ pub(super) fn fact_version_id_v1(f: &KnowledgeFact) -> String {
     hasher.update(f.source_session.as_bytes());
     hasher.update(b"\n");
     hasher.update(f.created_at.to_rfc3339().as_bytes());
-    crate::core::hasher::hex_encode(&hasher.finalize())
+    hasher.finalize().to_hex().to_string()
 }

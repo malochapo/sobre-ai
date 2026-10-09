@@ -4,12 +4,10 @@
 pub mod aggressiveness;
 pub mod artifacts_exec;
 pub mod auto_findings;
-pub mod codebook;
 pub mod compressor;
 pub mod entropy;
 pub mod json_crush;
 pub mod markdown_compact;
-pub mod pop_pruning;
 pub mod preservation;
 pub mod protect;
 pub mod rabin_karp;
@@ -18,16 +16,6 @@ pub mod runtime_flags;
 pub mod structured_read;
 pub mod tabular_crush;
 pub mod yaml_crush;
-
-/// Convenience re-export: all compression-related modules.
-pub mod compression {
-    pub use super::codebook;
-    pub use super::compressor;
-    pub use super::entropy;
-    pub use super::json_crush;
-    pub use super::preservation;
-    pub use super::rabin_karp;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Memory
@@ -38,15 +26,7 @@ pub mod memory_capacity;
 pub mod memory_guard;
 pub mod memory_lifecycle;
 pub mod memory_policy;
-pub mod memory_salience;
 pub mod prospective_memory;
-
-/// Convenience re-export: all memory-related modules.
-pub mod memory {
-    pub use super::memory_lifecycle;
-    pub use super::memory_policy;
-    pub use super::prospective_memory;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Graph
@@ -57,51 +37,24 @@ pub mod graph_index;
 pub mod graph_provider;
 pub mod property_graph;
 
-/// Convenience re-export: all graph-related modules.
-pub mod graph {
-    pub use super::call_graph;
-    pub use super::graph_context;
-    pub use super::graph_index;
-    pub use super::graph_provider;
-    pub use super::property_graph;
-}
-
 // ---------------------------------------------------------------------------
 // Domain: Context
 // ---------------------------------------------------------------------------
-pub mod context_field;
-pub mod context_handles;
-pub mod context_ledger;
 pub mod context_lint;
 pub mod context_overhead;
 pub mod cross_source_hints;
-
-/// Convenience re-export: all context-related modules.
-pub mod context {
-    pub use super::context_field;
-    pub use super::context_handles;
-    pub use super::context_ledger;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Knowledge
 // ---------------------------------------------------------------------------
 pub mod knowledge;
-// Without `embeddings` the engine still compiles these modules — their
+// Without `dense` the engine still compiles these modules — their
 // entry points are internally cfg-gated and fall back — but their helpers
 // go uncalled. That is honest unused code, not dead code, so it is silenced
-// only in that configuration. TODO: proper cfg hygiene across the 21 call
-// sites listed in docs/removals.md would let this attribute go away.
-#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
+// only in that configuration.
+#[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod knowledge_embedding;
 pub mod knowledge_relations;
-
-/// Convenience re-export: all knowledge-related modules.
-pub mod knowledge_domain {
-    pub use super::knowledge;
-    pub use super::knowledge_embedding;
-    pub use super::knowledge_relations;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Search & Retrieval
@@ -112,58 +65,40 @@ pub mod content_cache;
 pub mod content_chunk;
 pub mod context_packing;
 pub mod cooccurrence;
+#[cfg(feature = "dense")]
 pub mod dense_backend;
 pub mod embedding_index;
 pub mod embedding_quant;
-// Without `embeddings` the engine still compiles these modules — their
+// Without `dense` the engine still compiles these modules — their
 // entry points are internally cfg-gated and fall back — but their helpers
 // go uncalled. That is honest unused code, not dead code, so it is silenced
-// only in that configuration. TODO: proper cfg hygiene across the 21 call
-// sites listed in docs/removals.md would let this attribute go away.
-#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
+// only in that configuration.
+#[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub mod embeddings;
 pub mod hybrid_search;
 pub mod search_reranking;
 pub mod splade_retrieval;
 pub mod spreading_activation;
 
-/// Convenience re-export: all search-related modules.
-pub mod search {
-    pub use super::bm25_index;
-    pub use super::content_chunk;
-    pub use super::dense_backend;
-    pub use super::embedding_index;
-    pub use super::embeddings;
-    pub use super::hybrid_search;
-    pub use super::search_reranking;
-    pub use super::splade_retrieval;
-}
-
 // ---------------------------------------------------------------------------
 // Domain: Session & Handoff
 // ---------------------------------------------------------------------------
 pub mod ccp_session_bundle;
+pub mod clock;
 pub mod session;
 pub mod session_diff;
-
-/// Convenience re-export: all session-related modules.
-pub mod session_domain {
-    pub use super::ccp_session_bundle;
-    pub use super::session;
-    pub use super::session_diff;
-}
 
 // ---------------------------------------------------------------------------
 // Domain: Neural / ML
 // ---------------------------------------------------------------------------
 pub mod neural;
 // ORT runtime glue links against the `ort` crate, which is only pulled in by the
-// `embeddings` feature. On platforms ORT does not support (e.g.
-// FreeBSD, see #586) it is disabled, so the modules must be gated
+// `dense` feature. On platforms ORT does not support (e.g.
+// FreeBSD) it is disabled, so the modules must be gated
 // to keep the build clean without them.
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub mod ort_environment;
-#[cfg(feature = "embeddings")]
+#[cfg(feature = "dense")]
 pub mod ort_execution_providers;
 
 // ---------------------------------------------------------------------------
@@ -172,18 +107,15 @@ pub mod ort_execution_providers;
 pub mod patterns;
 
 // ---------------------------------------------------------------------------
-// Domain: Agents & A2A
+// Domain: Agents
 // ---------------------------------------------------------------------------
 pub mod agent_runtime_env;
-pub mod agents;
 
 // ---------------------------------------------------------------------------
 // Domain: Adaptive & Scoring
 // ---------------------------------------------------------------------------
-pub mod adaptive;
 pub mod adaptive_thresholds;
 pub mod auto_mode_resolver;
-pub mod model_registry;
 pub mod task_relevance;
 
 // ---------------------------------------------------------------------------
@@ -208,7 +140,6 @@ pub mod binary_detect;
 pub mod bounce_tracker;
 pub mod budgets;
 pub mod cache;
-pub mod client_capabilities;
 pub mod cloud_files;
 pub mod config;
 pub mod consolidation;
@@ -256,6 +187,7 @@ pub mod launchd;
 pub mod levenshtein;
 pub mod limits;
 pub mod logging;
+#[cfg(any(test, feature = "test-support"))]
 pub mod mcp_manifest;
 pub mod path_locks;
 pub mod path_resolve;
@@ -267,6 +199,7 @@ pub mod protocol;
 pub mod read_stub_index;
 pub mod recovery;
 pub mod redaction;
+#[cfg(any(test, feature = "test-support"))]
 pub mod reference_docs;
 pub mod sanitize;
 pub mod search_index;
@@ -276,12 +209,11 @@ pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
 pub mod task_briefing;
-/// macOS Seatbelt self-sandbox (#356): wraps the launchd-owned proxy in a
+/// macOS Seatbelt self-sandbox: wraps the launchd-owned proxy in a
 /// `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/`~/Downloads`,
 /// so the TCC privacy prompt can never appear.
 #[cfg(target_os = "macos")]
 pub mod tcc_guard_sandbox;
-pub mod tdd_schema;
 pub mod terse;
 pub mod text_similarity;
 pub mod theme;

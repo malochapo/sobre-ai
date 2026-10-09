@@ -99,7 +99,6 @@ fn resume_block_with_files() {
             last_mode: "full".to_string(),
             tokens: 100,
             stale: false,
-            context_item_id: None,
             summary: None,
         });
     session
@@ -112,7 +111,6 @@ fn resume_block_with_files() {
             last_mode: "full".to_string(),
             tokens: 50,
             stale: false,
-            context_item_id: None,
             summary: None,
         });
     let block = session.build_resume_block();
@@ -129,21 +127,20 @@ fn resume_block_with_files() {
 #[test]
 fn session_resume_action() {
     let mut session = make_session_with_data();
-    let result = sobre::tools::ctx_session::handle(
+    let result = sobre::tools::sobre_session::handle(
         &mut session,
         "resume",
         None,
         None,
-        sobre::tools::ctx_session::SessionToolOptions {
+        sobre::tools::sobre_session::SessionToolOptions {
             format: None,
             path: None,
             write: false,
-            privacy: None,
         },
     );
     assert!(
         result.contains("SESSION RESUME"),
-        "ctx_session resume should return resume block"
+        "sobre_session resume should return resume block"
     );
     assert!(result.contains("Implement auth module"));
 }

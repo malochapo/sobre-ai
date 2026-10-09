@@ -2,9 +2,9 @@ use std::path::{Path, PathBuf};
 
 use crate::core::cache::SessionCache;
 use crate::core::tokens::count_tokens;
-// Shared TOCTOU-safe read→verify→atomic-write primitives (epic #1008): the same
-// audited boundary `ctx_patch` (anchored editing) builds on, so a fix protects
-// both tools. `verify_expected_preimage` stays here — it is `ctx_edit`-specific
+// Shared TOCTOU-safe read→verify→atomic-write primitives: the same
+// audited boundary `sobre_patch` (anchored editing) builds on, so a fix protects
+// both tools. `verify_expected_preimage` stays here — it is `sobre_edit`-specific
 // (keyed on `EditParams`).
 use crate::tools::edit_io::{
     FileFingerprint, FilePreimage, default_backup_path, ensure_preimage_still_matches,
@@ -18,8 +18,8 @@ pub struct EditParams {
     pub new_string: String,
     pub replace_all: bool,
     pub create: bool,
-    /// Optional preimage guards. If provided, ctx_edit fails if the current file preimage differs.
-    pub expected_md5: Option<String>,
+    /// Optional preimage guards. If provided, sobre_edit fails if the current file preimage differs.
+    pub expected_hash: Option<String>,
     pub expected_size: Option<u64>,
     pub expected_mtime_ms: Option<u64>,
     /// Optional backup before writing.
@@ -30,6 +30,8 @@ pub struct EditParams {
     pub diff_max_lines: usize,
     /// Reject invalid UTF-8 by default; allow lossy reads only when explicitly enabled.
     pub allow_lossy_utf8: bool,
+    /// Compute the edit and show its diff without writing anything.
+    pub dry_run: bool,
 }
 
 struct ReplaceArgs<'a> {
@@ -59,19 +61,19 @@ fn verify_expected_preimage(pre: &FilePreimage, params: &EditParams) -> Result<(
             params.path, expected, pre.fp.mtime_ms
         ));
     }
-    if let Some(expected) = params.expected_md5.as_deref()
-        && expected != pre.fp.md5
+    if let Some(expected) = params.expected_hash.as_deref()
+        && expected != pre.fp.hash
     {
         return Err(format!(
-            "ERROR: preimage mismatch for {}: expected_md5={}, actual_md5={}",
-            params.path, expected, pre.fp.md5
+            "ERROR: preimage mismatch for {}: expected_hash={}, actual_hash={}",
+            params.path, expected, pre.fp.hash
         ));
     }
     Ok(())
 }
 
 /// Bounded, secret-redacted unified diff for edit evidence. `pub(crate)` so the
-/// anchored editor (`ctx_patch`) reuses the identical evidence format (#1008).
+/// anchored editor (`sobre_patch`) reuses the identical evidence format.
 pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) -> String {
     let diff = similar::TextDiff::from_lines(old, new)
         .unified_diff()
@@ -79,7 +81,7 @@ pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) 
         .header(label, label)
         .to_string();
     // Single source of truth for secret masking — `core::redaction` carries the
-    // GH #430 non-secret-literal guard (type annotations, `undefined`, …) and
+    // non-secret-literal guard (type annotations, `undefined`, …) and
     // does not leak the value of generic long secrets like this duplicate once
     // did. Keeping a second regex set here only invites drift.
     let diff = crate::core::redaction::redact_text(&diff);
@@ -101,7 +103,7 @@ pub fn build_diff_evidence(old: &str, new: &str, label: &str, max_lines: usize) 
 /// Decoupling the cache mutation from the I/O lets the MCP layer perform the
 /// (slow) file read/replace/write while holding only a cheap per-file lock, then
 /// touch the shared cache for a sub-millisecond instant — instead of holding the
-/// global cache write-lock across all disk I/O (the root cause of issue #320).
+/// global cache write-lock across all disk I/O (the root cause of a contention bug).
 pub enum CacheEffect {
     /// No cache change required (e.g. the edit failed before writing).
     None,
@@ -112,7 +114,7 @@ pub enum CacheEffect {
     StoreFull(String),
 }
 
-/// Quality loop (#494): classify the edit result and feed it into
+/// Quality loop: classify the edit result and feed it into
 /// [`crate::core::edit_quality`]. Only two outcomes carry a compression
 /// signal: a clean replacement (success) and an `old_string` miss
 /// (failure — the body the agent quoted wasn't what's on disk). Parameter
@@ -154,6 +156,14 @@ pub fn apply_cache_effect(cache: &mut SessionCache, path: &str, effect: CacheEff
 pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
     let file_path = &params.path;
 
+    if params.create && params.dry_run {
+        let path = Path::new(file_path);
+        let old = std::fs::read_to_string(path).unwrap_or_default();
+        return (
+            dry_run_text(path, &old, &params.new_string, params.diff_max_lines),
+            CacheEffect::None,
+        );
+    }
     if params.create {
         return handle_create(file_path, &params.new_string, params);
     }
@@ -164,7 +174,7 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
         Ok(p) => p,
         Err(e) => {
             // File missing? Tell the agent whether it moved or the path is
-            // wrong, instead of a bare "cannot open" (#331 point 3).
+            // wrong, instead of a bare "cannot open" (point 3).
             if !path.exists() {
                 let hint = crate::tools::edit_recovery::moved_or_deleted_hint(path);
                 return (format!("{e}{hint}"), CacheEffect::None);
@@ -415,11 +425,18 @@ fn do_replace(
         args.content.replacen(args.old_str, args.new_str, 1)
     };
 
+    if params.dry_run {
+        return (
+            dry_run_text(path, args.content, &new_content, params.diff_max_lines),
+            CacheEffect::None,
+        );
+    }
+
     // Code-health gate: an advisory notice on cognitive-complexity drift.
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let health_notice = crate::core::code_health::gate::evaluate(args.content, &new_content, ext);
 
-    // #960: a point-in-time check, not a held lock — see
+    // A point-in-time check, not a held lock — see
     // ensure_preimage_still_matches' doc for the residual window between
     // this check and the write below.
     if let Err(e) = ensure_preimage_still_matches(path, &pre.fp, cap) {
@@ -490,14 +507,14 @@ fn do_replace(
     let post_fp = FileFingerprint {
         size: new_content.len() as u64,
         mtime_ms: post_mtime_ms,
-        md5: crate::core::hasher::hash_hex(new_content.as_bytes()),
+        hash: crate::core::hasher::hash_hex(new_content.as_bytes()),
     };
 
     let mut out = format!(
         "✓ {short}: {replaced_str}, {delta_str} lines ({old_tokens}→{new_tokens} tok)\n\
-preimage: bytes={}, mtime_ms={}, md5={}\n\
-postimage: bytes={}, mtime_ms={}, md5={}",
-        pre.fp.size, pre.fp.mtime_ms, pre.fp.md5, post_fp.size, post_fp.mtime_ms, post_fp.md5
+preimage: bytes={}, mtime_ms={}, hash={}\n\
+postimage: bytes={}, mtime_ms={}, hash={}",
+        pre.fp.size, pre.fp.mtime_ms, pre.fp.hash, post_fp.size, post_fp.mtime_ms, post_fp.hash
     );
     if let Some(bp) = backup_path {
         out.push_str(&format!("\nbackup: {bp}"));
@@ -515,6 +532,19 @@ postimage: bytes={}, mtime_ms={}, md5={}",
     (out, CacheEffect::Invalidate)
 }
 
+/// What a dry run returns: the diff the edit would make. Nothing is written.
+pub(crate) fn dry_run_text(path: &Path, old: &str, new: &str, max_lines: usize) -> String {
+    let short = path.file_name().map_or_else(
+        || path.to_string_lossy().to_string(),
+        |f| f.to_string_lossy().to_string(),
+    );
+    let diff = build_diff_evidence(old, new, &short, max_lines.max(1));
+    format!(
+        "DRY RUN, nothing written to {}:\n```diff\n{diff}\n```",
+        path.display()
+    )
+}
+
 fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String, CacheEffect) {
     let path = Path::new(file_path);
     let cap = crate::core::limits::max_read_bytes();
@@ -528,7 +558,7 @@ fn handle_create(file_path: &str, content: &str, params: &EditParams) -> (String
         if let Err(e) = verify_expected_preimage(&pre, params) {
             return (e, CacheEffect::None);
         }
-        // #960: a point-in-time check, not a held lock — see
+        // A point-in-time check, not a held lock — see
         // ensure_preimage_still_matches' doc for the residual window between
         // this check and the write below.
         if let Err(e) = ensure_preimage_still_matches(path, &pre.fp, cap) {
@@ -643,7 +673,7 @@ mod tests {
     /// `record_outcome` -> `apply_cache_effect`). It used to be a shipped free
     /// function whose only callers were the tests below, so it is test
     /// scaffolding now rather than dead production code. It must stay in step
-    /// with `registered::impl_edit::CtxEditTool::handle`, which runs the same
+    /// with `registered::impl_edit::SobreEditTool::handle`, which runs the same
     /// three calls for real.
     fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
         let last_mode = cache
@@ -672,7 +702,7 @@ mod tests {
             new_string: new.to_string(),
             replace_all,
             create,
-            expected_md5: None,
+            expected_hash: None,
             expected_size: None,
             expected_mtime_ms: None,
             backup: false,
@@ -680,6 +710,7 @@ mod tests {
             evidence: false,
             diff_max_lines: 200,
             allow_lossy_utf8: false,
+            dry_run: false,
         }
     }
 
@@ -729,7 +760,7 @@ mod tests {
         assert!(path.exists());
     }
 
-    // GH #459: parent dir read-only, file inode writable (the bind-mount
+    // Parent dir read-only, file inode writable (the bind-mount
     // sandbox shape). The atomic tempfile + rename needs *directory* write
     // permission and fails; the in-place fallback overwrites the existing inode
     // and succeeds. Skipped under root, which bypasses the directory permission
@@ -762,7 +793,7 @@ mod tests {
         assert_eq!(std::fs::read(&path).unwrap(), b"world");
     }
 
-    // GH #459 end-to-end: the full ctx_edit flow (read -> preimage -> write)
+    // End-to-end: the full sobre_edit flow (read -> preimage -> write)
     // must succeed when the parent dir is read-only but the file is writable.
     #[cfg(unix)]
     #[test]
@@ -917,11 +948,11 @@ mod tests {
     }
 
     #[test]
-    fn expected_md5_mismatch_fails_without_writing() {
+    fn expected_hash_mismatch_fails_without_writing() {
         let f = make_temp("aaa\n");
         let mut cache = SessionCache::new();
         let mut p = mk_params(f.path(), "aaa", "bbb", false, false);
-        p.expected_md5 = Some("deadbeef".to_string());
+        p.expected_hash = Some("deadbeef".to_string());
         let result = handle(&mut cache, &p);
         assert!(
             result.contains("preimage mismatch"),
@@ -968,7 +999,7 @@ mod tests {
         );
     }
 
-    /// Issue #320: run_io performs the full edit without any cache handle, so the
+    /// Run_io performs the full edit without any cache handle, so the
     /// MCP layer can avoid holding the global cache write-lock across disk I/O.
     /// A successful edit reports an Invalidate effect.
     #[test]
@@ -998,7 +1029,7 @@ mod tests {
         );
     }
 
-    /// Issue #320: concurrent edits to *different* files must all succeed without
+    /// Concurrent edits to *different* files must all succeed without
     /// serializing on any shared lock — run_io takes no cache, so there is nothing
     /// global to contend on.
     #[test]
@@ -1170,7 +1201,7 @@ mod tests {
         assert!(text.contains("b.rs"), "got: {text}");
     }
 
-    // P0-6 (#418): a symlink at the edit path is rejected: the atomic rename
+    // P0-6: a symlink at the edit path is rejected: the atomic rename
     // would otherwise replace the link with a plain file.
     #[cfg(unix)]
     #[test]
@@ -1191,7 +1222,7 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&real).unwrap(), "fn old() {}\n");
     }
 
-    // P0-6 (#418): the write side must also reject a symlink destination
+    // P0-6: the write side must also reject a symlink destination
     // (defense in depth for create-mode and backup paths).
     #[cfg(unix)]
     #[test]

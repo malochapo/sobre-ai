@@ -6,7 +6,6 @@ mod fix;
 mod integrations;
 mod lint_context;
 mod overhead;
-mod report;
 mod workspace_scope;
 
 #[allow(clippy::wildcard_imports)]
@@ -34,7 +33,7 @@ pub(super) struct Outcome {
 }
 
 /// Accumulates doctor checks so the rendered ✓/✗ list and the summary tally can
-/// never diverge (#433): every scored check is counted exactly once via
+/// never diverge: every scored check is counted exactly once via
 /// [`Scoreboard::check`]; only explicitly-optional advisories (LSP, "not
 /// configured" notes) use [`Scoreboard::info`], which renders without counting.
 /// The old hand-maintained `passed`/`effective_total` pair drifted whenever a
@@ -44,6 +43,9 @@ pub(super) struct Outcome {
 struct Scoreboard {
     passed: u32,
     total: u32,
+    /// `--json`: lines are collected for one JSON document instead of printed.
+    json: bool,
+    entries: Vec<serde_json::Value>,
 }
 
 impl Scoreboard {
@@ -53,7 +55,26 @@ impl Scoreboard {
         if outcome.ok {
             self.passed += 1;
         }
-        print_check(outcome);
+        self.render(outcome, true);
+    }
+
+    fn render(&mut self, outcome: &Outcome, scored: bool) {
+        if self.json {
+            self.entries.push(serde_json::json!({
+                "ok": outcome.ok,
+                "scored": scored,
+                "check": crate::core::theme::strip_ansi(&tildify_home(&outcome.line)),
+            }));
+        } else {
+            print_check(outcome);
+        }
+    }
+
+    /// A line that is neither a check nor advice: printed in text mode only.
+    fn note(&self, line: &str) {
+        if !self.json {
+            crate::outln!("{line}");
+        }
     }
 
     /// An optional/advisory line: render it but never count it toward the score
@@ -62,9 +83,8 @@ impl Scoreboard {
     /// Deliberately a method (not a free function) so every rendered line flows
     /// through the board and each call site has to choose `check` vs `info` — the
     /// `&self` is unused by design, which is the whole point.
-    #[allow(clippy::unused_self)]
-    fn info(&self, outcome: &Outcome) {
-        print_check(outcome);
+    fn info(&mut self, outcome: &Outcome) {
+        self.render(outcome, false);
     }
 }
 
@@ -72,14 +92,19 @@ impl Scoreboard {
 /// Renders the full diagnostics board and returns how many checks need
 /// attention, so `sobre doctor` can exit non-zero when something is wrong
 /// (a health gate must fail loudly, not silently exit 0).
-pub fn run() -> u32 {
-    let mut board = Scoreboard::default();
+pub fn run(json: bool) -> u32 {
+    let mut board = Scoreboard {
+        json,
+        ..Scoreboard::default()
+    };
 
-    println!("{BOLD}{WHITE}sobre doctor{RST}  {DIM}diagnostics{RST}");
-    println!("  {}", summary_line());
-    println!("  {}\n", debug_log_line());
+    board.note(&format!(
+        "{BOLD}{WHITE}sobre doctor{RST}  {DIM}diagnostics{RST}"
+    ));
+    board.note(&format!("  {}", summary_line()));
+    board.note(&format!("  {}\n", debug_log_line()));
 
-    // 1) Binary on PATH
+    // Binary on PATH
     let path_bin = resolve_sobre_binary();
     let also_in_path_dirs = path_in_path_env();
     let bin_ok = path_bin.is_some() || also_in_path_dirs;
@@ -97,7 +122,7 @@ pub fn run() -> u32 {
         line: bin_line,
     });
 
-    // 2) Version from PATH binary
+    // Version from PATH binary
     let ver = if bin_ok {
         sobre_version_from_path()
     } else {
@@ -108,7 +133,7 @@ pub fn run() -> u32 {
     };
     board.check(&ver);
 
-    // 3) data directory (respects SOBRE_DATA_DIR)
+    // Data directory (respects SOBRE_DATA_DIR)
     let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
     let dir_outcome = match &lean_dir {
         Some(p) if p.is_dir() => Outcome {
@@ -132,7 +157,7 @@ pub fn run() -> u32 {
     };
     board.check(&dir_outcome);
 
-    // 4) usage ledger + size (missing is OK: it appears with the first
+    // Usage ledger + size (missing is OK: it appears with the first
     // compression)
     let usage_path = lean_dir.as_ref().map(|d| d.join("usage.jsonl"));
     let shown = usage_path
@@ -164,9 +189,9 @@ pub fn run() -> u32 {
     };
     board.check(&usage_outcome);
 
-    // 5) config.toml (missing is OK). It lives in the CONFIG dir
+    // config.toml (missing is OK). It lives in the CONFIG dir
     // ($XDG_CONFIG_HOME/sobre), resolved through Config::path() to match
-    // the loader's logic (#435).
+    // the loader's logic.
     let config_path = crate::core::config::Config::path();
     let config_outcome = match &config_path {
         Some(p) => match std::fs::metadata(p) {
@@ -199,49 +224,37 @@ pub fn run() -> u32 {
     };
     board.check(&config_outcome);
 
-    // 5b) Silent config parse error trap (#341)
+    // Silent config parse error trap
     let parse_outcome = config_parse_outcome();
     board.check(&parse_outcome);
 
-    // 5b2) Search roots that never resolve (GH #392)
+    // Search roots that never resolve
     let search_roots = search_roots_outcome();
     board.check(&search_roots);
 
-    // 5b3b) Secret/.env redaction — the exfiltration-defense plane (#507).
-    let secret_detection = secret_detection_outcome();
-    board.check(&secret_detection);
-
-    // 5b3c) Managed addon binaries (GH #725): receipt path + sha256 pin +
-    // revocation, so binhash-gate refusals surface here instead of at first
-    // tool call. Silent when nothing is managed.
-
-    // 5b3d) Managed ONNX Runtime (GH #732): present + readable on
+    // Managed ONNX Runtime: present + readable on
     // embedding-enabled builds. Silent when not provisioned (opt-in).
     if let Some(managed_ort) = managed_ort_outcome() {
         board.check(&managed_ort);
     }
 
-    // 5c) Compact-format passthrough (preserve already-compact TOON output, #342)
-    let passthrough_outcome = compact_format_passthrough_outcome();
-    board.check(&passthrough_outcome);
-
-    // 6) Proxy upstreams
+    // Proxy upstreams
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
 
-    // 8) MCP
+    // MCP
     let mcp = mcp_config_outcome();
     board.check(&mcp);
     let user_scope_mcp_locations = dirs::home_dir()
         .map(|home| sobre_mcp_location_names(&home))
         .unwrap_or_default();
 
-    // 7b) WSL2 + VS Code: surface the upstream first-call invoke race (GH #669)
+    // WSL2 + VS Code: surface the upstream first-call invoke race
     if let Some(wsl_hint) = wsl_vscode_mcp_outcome() {
         board.check(&wsl_hint);
     }
 
-    // 8) Workspace-scope MCP (optional; only when a project-local config exists)
+    // Workspace-scope MCP (optional; only when a project-local config exists)
     let workspace_scope = workspace_scope::workspace_scope_outcome(&user_scope_mcp_locations);
     if let Some(ref ws) = workspace_scope {
         board.check(ws);
@@ -254,58 +267,53 @@ pub fn run() -> u32 {
     {
         let lines: Vec<&str> = contents.lines().collect();
         if lines.len() >= 5 {
-            println!(
-                "  {YELLOW}⚠{RST}  Crash-loop log: {} recent restarts  {DIM}({}){RST}",
-                lines.len(),
-                display_user_path(&log_path)
-            );
+            board.info(&Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Crash-loop log{RST}  {YELLOW}{} recent restarts{RST}  {DIM}({}){RST}",
+                    lines.len(),
+                    display_user_path(&log_path)
+                ),
+            });
         }
     }
 
-    // 9) Session state (project_root + shell_cwd)
+    // Session state (project_root + shell_cwd)
     let session_outcome = session_state_outcome();
     board.check(&session_outcome);
 
-    // 14) Claude Code instruction truncation guard
+    // Claude Code instruction truncation guard
     let claude_truncation = claude_truncation_outcome();
     if let Some(ref ct) = claude_truncation {
         board.check(ct);
     }
 
-    // 15) BM25 cache health
+    // BM25 cache health
     let bm25_health = bm25_cache_health_outcome();
     board.check(&bm25_health);
 
-    // 15a) Semantic index runtime status (state/timing/persistence) for the
-    // active project — surfaces a stuck "warming" index (issue #249).
+    // Semantic index runtime status (state/timing/persistence) for the
+    // active project — surfaces a stuck "warming" index.
     let semantic_index = semantic_index_outcome();
     if let Some(ref check) = semantic_index {
         board.check(check);
     }
 
-    // 16) Memory
-    let mem = memory_outcome();
-    board.check(&mem);
-
-    // 18) RAM Guardian
-    let ram_outcome = ram_guardian_outcome();
-    board.check(&ram_outcome);
-
-    // 19) Capacity warnings (memory stores near limits)
+    // Capacity warnings (memory stores near limits)
     let cap_warnings = capacity_warnings();
     for cw in &cap_warnings {
         board.check(cw);
     }
 
-    // 19b) Orphaned knowledge stores (deleted projects — reclaimable bloat, #615)
+    // Orphaned knowledge stores (deleted projects — reclaimable bloat)
     let orphan_outcome = orphaned_knowledge_outcome();
     board.check(&orphan_outcome);
 
-    // 20) Proxy health
+    // Proxy health
     let proxy_health = proxy_health_outcome();
     board.check(&proxy_health);
 
-    // 20a) Proxy upstream drift (#449): running proxy serves a different upstream
+    // Proxy upstream drift: running proxy serves a different upstream
     // than config.toml resolves to (env override masking config). Only surfaces
     // when the proxy is up and actually drifting.
     let upstream_drift = proxy_upstream_drift_outcome();
@@ -313,24 +321,22 @@ pub fn run() -> u32 {
         board.check(check);
     }
 
-    // 20) Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
+    // Stale proxy env (ANTHROPIC_BASE_URL pointing to local proxy while proxy is not enabled)
     let stale_env = stale_proxy_env_outcome();
     if let Some(ref check) = stale_env {
         board.check(check);
     }
 
-    // 21) Claude Pro/Max subscription routed through the proxy without an API key
+    // Claude Pro/Max subscription routed through the proxy without an API key
     let subscription_conflict = proxy_subscription_conflict_outcome();
     if let Some(ref check) = subscription_conflict {
         board.check(check);
     }
 
-    // MCP server CWD warning (informational, only fires when running as MCP)
-    let mcp_cwd = mcp_server_cwd_outcome();
-    board.check(&mcp_cwd);
-
     // LSP servers (optional, informational)
-    println!("\n  {BOLD}{WHITE}LSP (optional — for ctx_refactor):{RST}");
+    board.note(&format!(
+        "\n  {BOLD}{WHITE}LSP (optional — for sobre_refactor):{RST}"
+    ));
     let lsp_outcomes = lsp_server_outcomes();
     for lsp_check in &lsp_outcomes {
         board.info(lsp_check);
@@ -338,30 +344,46 @@ pub fn run() -> u32 {
 
     // Tool-schema footprint (informational, not scored). There is one surface —
     // the registry — so report its size rather than a tier name. This used to
-    // branch on a pinned tier and print it; #415 was already a bug where it
+    // branch on a pinned tier and print it; that was already a bug once, where it
     // claimed "power" right after the wizard chose lean.
     let advertised = crate::server::registry::build_registry().tool_defs().len();
-    println!(
+    board.note(&format!(
         "  {BOLD}Tools{RST}  {WHITE}{advertised} advertised{RST}  \
          {DIM}one surface, every client{RST}"
-    );
+    ));
 
     // The board counted exactly what it rendered — the displayed ✓/✗ list and
-    // this tally can no longer drift apart (#433).
+    // this tally can no longer drift apart.
     let passed = board.passed;
     let total = board.total;
     let needs_attention = total.saturating_sub(passed);
-    println!();
-    println!("  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed");
+    if json {
+        let report = serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "passed": passed,
+            "total": total,
+            "tools_advertised": advertised,
+            "checks": board.entries,
+        });
+        crate::outln!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
+        );
+        return needs_attention;
+    }
+    crate::outln!();
+    crate::outln!(
+        "  {BOLD}{WHITE}Summary:{RST}  {GREEN}{passed}{RST}{DIM}/{total}{RST} checks passed"
+    );
     if needs_attention > 0 {
-        println!(
+        crate::outln!(
             "  {YELLOW}{needs_attention} check(s) need attention.{RST}  Auto-repair what's fixable:  {BOLD}sobre doctor --fix{RST}"
         );
     } else {
-        println!("  {GREEN}Everything looks good.{RST}");
+        crate::outln!("  {GREEN}Everything looks good.{RST}");
     }
-    println!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
-    println!("  {DIM}sobre {}{RST}", env!("CARGO_PKG_VERSION"));
+    crate::outln!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
+    crate::outln!("  {DIM}sobre {}{RST}", env!("CARGO_PKG_VERSION"));
 
     needs_attention
 }
@@ -420,16 +442,16 @@ pub fn run_cli(args: &[String]) -> i32 {
     let help = rest.iter().any(|a| a == "--help" || a == "-h");
 
     if help {
-        println!("Usage:");
-        println!("  sobre doctor");
-        println!(
+        crate::outln!("Usage:");
+        crate::outln!("  sobre doctor");
+        crate::outln!(
             "  sobre doctor overhead [--json] [--gate]   Fixed context cost per session (--gate: non-zero exit when over the 8000-token budget)"
         );
-        println!(
+        crate::outln!(
             "  sobre doctor lint-context [--json]   Lint injected context for low-signal/dup lines"
         );
-        println!("  sobre doctor integrations [--json]");
-        println!("  sobre doctor --fix [--json]");
+        crate::outln!("  sobre doctor integrations [--json]");
+        crate::outln!("  sobre doctor --fix [--json]");
         return 0;
     }
 
@@ -451,7 +473,7 @@ pub fn run_cli(args: &[String]) -> i32 {
     if !fix {
         // Non-zero exit when checks need attention so `sobre doctor` works
         // as a CI/health gate, not just a pretty printer.
-        return i32::from(run() > 0);
+        return i32::from(run(json) > 0);
     }
 
     match fix::run_fix(&fix::DoctorFixOptions { json }) {
@@ -474,11 +496,12 @@ pub fn compact_score() -> (u32, u32) {
     if lean_dir.as_ref().is_some_and(|p| p.is_dir()) {
         passed += 1;
     }
+    // Same rule as `sobre doctor`: a missing usage ledger is fine (it appears
+    // with the first compression); only something that is not a file fails.
     if lean_dir
         .as_ref()
         .map(|d| d.join("usage.jsonl"))
-        .and_then(|p| std::fs::metadata(p).ok())
-        .is_some_and(|m| m.is_file())
+        .is_some_and(|p| std::fs::metadata(p).map_or(true, |m| m.is_file()))
     {
         passed += 1;
     }
@@ -495,7 +518,7 @@ pub(super) fn print_compact_status(passed: u32, total: u32) {
     } else {
         format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}sobre doctor{RST} for details")
     };
-    println!("  {status}");
+    crate::outln!("  {status}");
 }
 
 #[cfg(test)]

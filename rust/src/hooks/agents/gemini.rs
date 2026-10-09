@@ -1,39 +1,15 @@
-use super::super::{mcp_server_quiet_mode, resolve_hook_command_binary, write_file};
+use super::super::resolve_hook_command_binary;
 
-pub(crate) fn install_gemini_hook() {
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        tracing::error!("Cannot resolve home directory");
-        return;
-    };
-    install_gemini_hook_config(&home);
-}
-
-/// Gemini CLI hooks in `~/.gemini/settings.json`. Gemini cannot replace a shell
-/// command's output after it ran, so `BeforeTool` wraps the command in
-/// `sobre -c` — only when Gemini's own rules treat both forms alike, and
-/// with no decision. Merged: only sobre's own entries are replaced.
-pub(crate) fn install_gemini_hook_config(home: &std::path::Path) {
+pub(crate) fn install_gemini_hook_config(home: &std::path::Path) -> Result<(), String> {
     let binary = resolve_hook_command_binary();
     let settings_path = home.join(".gemini").join("settings.json");
-    let content = std::fs::read_to_string(&settings_path).unwrap_or_default();
-    let mut root = if content.trim().is_empty() {
-        serde_json::json!({})
-    } else if let Ok(parsed) = crate::core::jsonc::parse_jsonc(&content) {
-        parsed
-    } else {
-        return;
-    };
-
-    merge_gemini_hooks(&mut root, &binary);
-
-    let formatted = serde_json::to_string_pretty(&root).unwrap_or_default();
-    if formatted == content {
-        return;
-    }
-    write_file(&settings_path, &formatted);
-    if !mcp_server_quiet_mode() {
-        eprintln!("Installed Gemini CLI hooks in {}", settings_path.display());
-    }
+    crate::config_io::edit_json(&settings_path, |root| {
+        let mut value = serde_json::Value::Object(std::mem::take(root));
+        merge_gemini_hooks(&mut value, &binary);
+        if let serde_json::Value::Object(map) = value {
+            *root = map;
+        }
+    })
 }
 
 fn merge_gemini_hooks(root: &mut serde_json::Value, binary: &str) {

@@ -232,7 +232,7 @@ mod tests {
                 EVENT_COMPRESSION,
                 &[
                     ("sobre.surface", Value::Str("mcp".into())),
-                    ("sobre.tool", Value::Str("ctx_read".into())),
+                    ("sobre.tool", Value::Str("sobre_read".into())),
                     ("sobre.tokens.original", Value::Int(10_000)),
                     ("sobre.tokens.sent", Value::Int(2_000)),
                 ],
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(s.compression.saved(), 10_000);
         assert_eq!(s.net_saved_tokens(), 9_500);
         assert_eq!(s.by_surface["shell"].saved(), 2_000);
-        assert_eq!(s.by_tool["ctx_read"].events, 1);
+        assert_eq!(s.by_tool["sobre_read"].events, 1);
         assert_eq!(s.llm_calls, 2);
         assert_eq!(s.local_calls, 1);
         assert_eq!(s.dominant_model(), Some("gpt-4o"));
@@ -282,7 +282,7 @@ mod tests {
             ev(
                 EVENT_COMPRESSION,
                 &[
-                    ("sobre.tool", Value::Str("ctx_read".into())),
+                    ("sobre.tool", Value::Str("sobre_read".into())),
                     ("sobre.tokens.original", Value::Int(1_000)),
                     ("sobre.tokens.sent", Value::Int(200)),
                 ],

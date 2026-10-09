@@ -17,7 +17,7 @@ The MCP tool surface is capped at **20 tools**. There is no exception, no
 "internal" tool that doesn't count, no meta-tool that fans out to a hidden
 registry.
 
-The surface currently stands at 16, leaving four slots. That margin is
+The surface currently stands at 15, leaving five slots. That margin is
 deliberate: a cap you are already touching is a cap you will break.
 
 Adding a tool requires naming the tool it replaces, in the same PR. If nothing
@@ -28,7 +28,8 @@ is being replaced, the answer is no.
 
 ## 2. One configuration file, one level, no cascade
 
-- **One** config file. One location. No per-repository init, no per-agent init.
+- **One** config file. One location. No per-repository install, and no
+  per-agent settings: `init <agent>` only picks which agents to connect.
 - **No layering.** No defaults → profile → file → env → flag resolution chain.
   If a value can come from two places, it comes from one place.
 - **No environment variables that change behaviour.** Variables may exist for
@@ -49,7 +50,10 @@ The file currently has 11 keys, leaving four slots: `search_roots`, `ignore`,
 `compression_level`, `debug_log`, `embedding_model`, and the `[proxy]` table's
 `enabled`, `port` and `upstreams`. Every key has one value even when
 the file is silent: `compression_level` defaults to 0.3, never to "unset".
-`init` takes no option beyond which agent to connect.
+`init` sets nothing of its own: besides which agents to connect, its flags
+only preview (`--check`), skip its questions (`--repair`) or report in JSON
+(`--json`). Its two questions write `proxy.enabled` and, in a build with
+embeddings, download the model.
 The generated list is `docs/reference/generated/config-keys.md`.
 
 If a setting can be decided correctly by the tool, it is not a setting.
@@ -63,9 +67,11 @@ There is exactly one answer to `tools/list`. It does not depend on an
 environment variable, a config key, a pinned profile, the identity of the
 calling client, a role, or a workflow state.
 
-One deliberate exception, on wording only: `compression_level` condenses the
-prose of tool descriptions, as it condenses the rest of sobre's prose. The
-set of tools, their names and their parameters never change.
+Two deliberate exceptions. On wording: `compression_level` condenses the prose
+of tool descriptions, as it condenses the rest of sobre's prose. On builds:
+the build with local embeddings adds one parameter, `sobre_search`'s `mode`,
+which a build without them could not honour. Within a build, the set of
+tools, their names and their parameters never change.
 
 Corollary: no "universal invoker" tool, because there are no hidden tools for it
 to reach.
@@ -149,8 +155,10 @@ exist so that shipping often and shipping safely are not in tension.
 - Branch protection on `main` and `develop`: no direct pushes, review required.
 - **Two maintainers with equal rights, from day one.** A project whose bus
   factor is 1 has already reproduced the problem it was forking away from.
-- No generated artefacts, marketing material, or private notes in the
-  repository. The repo contains source, tests, docs and CI. Nothing else.
+- No marketing material or private notes in the repository, and no generated
+  artefacts except the reference pages in `docs/reference/generated/`, which
+  CI regenerates and compares with the code. The repo contains source, tests,
+  docs and CI. Nothing else.
 - **Commit messages and comments describe what `sobre` does and why.** They do
   not narrate what the upstream project got wrong. The fork is justified by
   what it is. Technical observations about inherited code belong in the

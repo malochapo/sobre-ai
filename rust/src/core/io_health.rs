@@ -14,7 +14,7 @@ pub enum IoEnvironment {
     SlowFs,
     Degraded,
     /// Windows with Defender/NTFS overhead — slower than Fast but not as bad as
-    /// network FS. Gives 1.8× base timeouts (#1018).
+    /// network FS. Gives 1.8× base timeouts.
     WindowsDefault,
 }
 
@@ -55,7 +55,7 @@ pub fn recent_freeze_count() -> u32 {
 }
 
 /// Returns an adaptive timeout: longer in slow/degraded environments to avoid
-/// a death spiral where shorter timeouts cause more timeouts (#1018).
+/// a death spiral where shorter timeouts cause more timeouts.
 pub fn adaptive_timeout(base: Duration) -> Duration {
     match environment() {
         IoEnvironment::Fast => base,
@@ -100,7 +100,7 @@ pub fn is_slow_mount(path: &str) -> bool {
     false
 }
 
-/// Windows always gets elevated latency treatment (#1018): NTFS mandatory
+/// Windows always gets elevated latency treatment: NTFS mandatory
 /// locking, Defender real-time scanning, and higher thread scheduling quanta
 /// (15.6ms vs ~1ms) combine to make lock acquisition measurably slower even
 /// when there is no actual contention. The probe runs once at startup and is

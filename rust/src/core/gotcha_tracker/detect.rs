@@ -212,7 +212,7 @@ pub fn normalize_error_signature(raw: &str) -> String {
 /// shell-layer hook uses it to skip all disk work for ordinary commands
 /// (`ls`, `cat`, `echo`, …) — a false positive only costs a cheap store load,
 /// never a wrong gotcha (`detect_error_pattern` still gates the real signal).
-pub fn is_correlatable_command(command: &str) -> bool {
+pub(crate) fn is_correlatable_command(command: &str) -> bool {
     let c = command.trim_start().to_lowercase();
     const PREFIXES: &[&str] = &[
         "cargo ", "rustc", "npm ", "pnpm ", "yarn ", "node ", "tsx ", "ts-node", "python", "pip ",

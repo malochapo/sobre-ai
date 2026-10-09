@@ -4,8 +4,8 @@
 //! Each line is one OpenTelemetry log record in OTLP/JSON form, with the GenAI
 //! semantic-convention attribute names where one exists
 //! (`gen_ai.usage.input_tokens`, `gen_ai.request.model`, …) and `sobre.*`
-//! names for the rest. Nothing exports it; the format only means an exporter
-//! can be added later without a migration.
+//! names for the rest. Nothing exports it; the format means an OpenTelemetry
+//! exporter could read it as is.
 //!
 //! Three events:
 //!
@@ -38,7 +38,7 @@ const FILE_NAME: &str = "usage.jsonl";
 /// Where a compression happened.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Surface {
-    /// An MCP tool call (`ctx_read`, `ctx_shell`, …).
+    /// An MCP tool call (`sobre_read`, `sobre_shell`, …).
     Mcp,
     /// The `sobre -c` shell wrapper.
     Shell,
@@ -189,7 +189,7 @@ mod tests {
     #[test]
     fn records_round_trip_through_the_file() {
         let dir = crate::core::data_dir::isolated_data_dir();
-        record_compression(Surface::Mcp, "ctx_read", 1000, 250);
+        record_compression(Surface::Mcp, "sobre_read", 1000, 250);
         record_compression(Surface::Shell, "cargo test", 0, 0);
         record_llm_call(&LlmCall {
             provider: "anthropic".into(),
@@ -201,7 +201,7 @@ mod tests {
             cache_write_tokens: 0,
             local: false,
         });
-        record_bounce("ctx_read", 300);
+        record_bounce("sobre_read", 300);
 
         let events = load();
         assert_eq!(events.len(), 3, "the empty compression is not recorded");

@@ -1,5 +1,5 @@
-// Auto-split from the former monolithic dispatch.rs. run() (the command
-// match) stays in mod.rs; standalone helpers grouped by concern.
+//! `sobre mcp`: the MCP server over stdio, its startup housekeeping and the
+//! parent watchdog.
 
 use super::lifecycle::spawn_proxy_if_needed;
 use crate::{core, mcp_stdio, tools};
@@ -9,11 +9,9 @@ pub(super) fn run_mcp_server() -> Result<()> {
     use rmcp::ServiceExt;
 
     // Time-to-initialize is the metric that decides whether a client's
-    // start-on-demand first tool call races us (GH #669) — measured from
+    // start-on-demand first tool call races us — measured from
     // process entry to the completed MCP initialize handshake.
     let started_at = std::time::Instant::now();
-
-    crate::core::runtime_flags::enable_mcp_server();
 
     crate::core::startup_guard::crash_loop_backoff(crate::core::startup_guard::MCP_PROCESS_NAME);
 
@@ -32,7 +30,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
     // The Tokio caps above bound async work, but the CPU-heavy index build runs
     // on rayon, whose global pool otherwise grabs *every* core — so a fleet of
-    // concurrent sessions still spikes the host on startup (#460). Resolve the
+    // concurrent sessions still spikes the host on startup. Resolve the
     // cap in three tiers:
     //   1. if other sobre processes are running, split the cores fairly
     //      across the fleet so N sessions use ~one core-count of index work
@@ -63,11 +61,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
     drop(startup_lock);
 
     let result = rt.block_on(async {
-        core::logging::init_mcp_logging();
-
-        // Activate the plugin registry once per server process, then announce the
-        // session. `notify` is a no-op unless a plugin listens for the hook.
-        // Stays ahead of serve(): a plugin may hook the very first tool call.
+        core::logging::init_logging("info");
 
         tracing::info!("sobre v{} MCP server starting", env!("CARGO_PKG_VERSION"));
 
@@ -75,7 +69,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // closing stdin), we exit cleanly instead of hanging forever.
         spawn_parent_watchdog();
 
-        // Deferred housekeeping (GH #669): none of this is needed to answer
+        // Deferred housekeeping: none of this is needed to answer
         // `initialize`, but each item spawns processes or opens sockets — on a
         // cold WSL2 / VS Code Server start that widened the window in which the
         // client's start-on-demand first tool call races server readiness
@@ -83,9 +77,8 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // with the handshake, instead of in front of it.
         let _housekeeping = tokio::task::spawn_blocking(|| {
             // Kill orphan MCP processes whose parent IDE died (one `ps` per
-            // sobre pid). Auto-start the proxy so the dashboard gets exact
-            // token data. Then the throttled (24h), opt-in publish of the
-            // savings recap — silent + detached, never touches stdout.
+            // sobre pid), then start the proxy if it is enabled and not
+            // running. Never touches stdout.
             cleanup_orphan_mcp_processes();
             spawn_proxy_if_needed();
         });
@@ -115,7 +108,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
         );
         // A completed handshake proves binary + config are healthy, so clear
         // the crash-loop start history: concurrent multi-window sessions
-        // (GH #694 — N windows × client retries) must never accumulate into a
+        // (N windows × client retries) must never accumulate into a
         // fake "crash loop" whose pre-handshake backoff sleep then *causes*
         // the client timeouts it was meant to prevent. True crash loops die
         // before this line, so their detection is unaffected.
@@ -139,10 +132,6 @@ pub(super) fn run_mcp_server() -> Result<()> {
 
         server_handle.shutdown().await;
 
-        // Single source of truth for the buffered-telemetry flush set, shared
-        // with the CLI tool arms and the parent watchdog so they can't drift (#550).
-        core::tool_lifecycle::flush_all();
-
         Ok(())
     });
 
@@ -154,13 +143,13 @@ pub(super) fn run_mcp_server() -> Result<()> {
 /// Tear the server runtime down with a bounded grace period instead of the
 /// implicit `Drop`, which BLOCKS until every `spawn_blocking` task finishes.
 ///
-/// A hung tool handler survives its watchdog (#271 abandons the join handle;
+/// A hung tool handler survives its watchdog (abandons the join handle;
 /// the blocking thread keeps running), so after the client disconnected the
 /// implicit drop kept the whole process alive indefinitely. Clients that
 /// force-reconnect on tool timeout (e.g. the Pi extension's MCP bridge) spawn
 /// a *fresh* server per reconnect, so every abandoned handler leaked one
 /// ~26 MB stdio-server process — on low-RAM machines that accumulation
-/// exhausted memory within a single session (#733). Stragglers are abandoned
+/// exhausted memory within a single session. Stragglers are abandoned
 /// after the grace period: their threads die with the process, which holds no
 /// client-visible state at this point (transport closed, telemetry flushed).
 fn shutdown_runtime_bounded(rt: tokio::runtime::Runtime) {
@@ -273,9 +262,6 @@ fn spawn_parent_watchdog() {
                             "[parent-watchdog] parent PID changed ({ppid} → {current_ppid}), \
                              IDE likely closed — exiting to prevent orphan"
                         );
-                        // Same flush set as the clean shutdown path (#550) — the
-                        // hand-rolled copy here used to miss the predictor + feedback.
-                        core::tool_lifecycle::flush_all();
                         std::process::exit(0);
                     }
                 }
@@ -289,7 +275,7 @@ pub(super) fn resolve_worker_threads(parallelism: usize) -> usize {
 }
 
 /// Herd-aware default for the rayon index-build thread cap when the operator
-/// has not set one explicitly (#460).
+/// has not set one explicitly.
 ///
 /// Splits the machine's cores fairly across the sobre processes alive right
 /// now, so a single session indexes at full speed while a fleet of `concurrent`
@@ -320,7 +306,7 @@ mod tests {
     #[test]
     fn fleet_splits_cores_and_stays_under_core_count() {
         // 10 sessions on a 16-core box: each gets 1 thread → total 10 < 16, so
-        // the collective index load stays under the core count (the #460 bar).
+        // the collective index load stays under the core count (the bar).
         assert_eq!(herd_aware_index_threads(16, 10), 1);
         assert!(herd_aware_index_threads(16, 10) * 10 < 16);
         // A handful of sessions each get a fair slice that sums to ~the cores.
@@ -336,8 +322,8 @@ mod tests {
         assert_eq!(herd_aware_index_threads(0, 0), 1);
     }
 
-    /// #733: after the transport closes, the server process must exit even if
-    /// an abandoned (#271) tool handler still occupies a blocking thread. An
+    /// After the transport closes, the server process must exit even if
+    /// an abandoned tool handler still occupies a blocking thread. An
     /// implicit runtime drop waits forever on such a task; the bounded
     /// shutdown must return within the grace period.
     #[test]
@@ -392,12 +378,6 @@ mod tests {
         assert!(!is_orphan_mcp_ps_line("99 /Users/me/.local/bin/sobre"));
         assert!(!is_orphan_mcp_ps_line(
             "1 /Users/me/.local/bin/sobre proxy start --port=4444"
-        ));
-        assert!(!is_orphan_mcp_ps_line(
-            "1 /Users/me/.local/bin/sobre serve --port=8080"
-        ));
-        assert!(!is_orphan_mcp_ps_line(
-            "1 /Users/me/.local/bin/sobre daemon start"
         ));
         assert!(!is_orphan_mcp_ps_line(
             "1 /usr/bin/sandbox-exec -f /tmp/seatbelt.sb /Users/me/.local/bin/sobre proxy start --port=4444"

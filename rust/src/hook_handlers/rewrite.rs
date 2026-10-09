@@ -21,7 +21,7 @@ use super::{
     is_shell_tool, payload, read_stdin_with_timeout, resolve_binary,
 };
 use crate::compound_lexer;
-use crate::core::debug_log::{self, Route};
+use crate::core::debug_log;
 
 pub fn handle_cursor() {
     emit_gating_decision(HOOK_GATING_TIMEOUT, || compute(Host::Cursor));
@@ -50,13 +50,13 @@ fn compute(host: Host) -> String {
     };
     let cwd = payload_cwd(&v);
 
-    // #1032: Cursor fires preToolUse twice; the second fire replays the first.
+    // Cursor fires preToolUse twice; the second fire replays the first.
     let key = format!("{host:?}\u{0}{cmd}");
     dedup::deduped("rewrite", &key, || {
         let binary = resolve_binary();
         match rewrite_for(host, &cmd, &binary, &cwd) {
             Some(wrapped) => {
-                debug_log::log_hook_decision("rewrite", &tool, Route::Sobre, &cmd, "wrapped");
+                debug_log::log_hook_decision("rewrite", &tool, &cmd, "wrapped");
                 reply(host, args.as_ref(), &wrapped)
             }
             None => build_passthrough_output(),
@@ -121,17 +121,17 @@ fn wrap_single_command(cmd: &str, binary: &str) -> String {
     }
 }
 
-/// The host's "replace the command" reply, with no permission field.
+/// The host's "replace the command" reply, with no permission field. Every
+/// other argument the model gave (Gemini's `description` and `dir_path`,
+/// Cursor's `cwd`) is sent back unchanged, so a host that replaces the input
+/// wholesale loses nothing.
 fn reply(host: Host, args: Option<&Value>, wrapped: &str) -> String {
+    let mut input = args.and_then(Value::as_object).cloned().unwrap_or_default();
+    input.insert("command".into(), Value::String(wrapped.to_string()));
+    let input = Value::Object(input);
     match host {
-        Host::Cursor => {
-            let mut input = args.and_then(Value::as_object).cloned().unwrap_or_default();
-            input.insert("command".into(), Value::String(wrapped.to_string()));
-            json!({ "updated_input": Value::Object(input) }).to_string()
-        }
-        Host::Gemini => {
-            json!({ "hookSpecificOutput": { "tool_input": { "command": wrapped } } }).to_string()
-        }
+        Host::Cursor => json!({ "updated_input": input }).to_string(),
+        Host::Gemini => json!({ "hookSpecificOutput": { "tool_input": input } }).to_string(),
     }
 }
 
@@ -180,12 +180,17 @@ mod tests {
         assert_eq!(v["updated_input"]["cwd"], "/repo");
         assert!(!cursor.contains("permission") && !cursor.contains("allow"));
 
-        let gemini = reply(Host::Gemini, None, "sobre -c 'git status'");
+        let gemini_args = json!({
+            "command": "git status",
+            "description": "Show status",
+            "dir_path": "sub"
+        });
+        let gemini = reply(Host::Gemini, Some(&gemini_args), "sobre -c 'git status'");
         let v: Value = serde_json::from_str(&gemini).unwrap();
-        assert_eq!(
-            v["hookSpecificOutput"]["tool_input"]["command"],
-            "sobre -c 'git status'"
-        );
+        let input = &v["hookSpecificOutput"]["tool_input"];
+        assert_eq!(input["command"], "sobre -c 'git status'");
+        assert_eq!(input["description"], "Show status");
+        assert_eq!(input["dir_path"], "sub");
         assert!(!gemini.contains("decision"));
     }
 }

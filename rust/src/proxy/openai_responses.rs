@@ -126,7 +126,7 @@ fn compress_responses_input(doc: &mut Value) -> bool {
                 .and_then(|v| v.as_str())
                 .and_then(|id| tool_names.get(id))
                 .map(String::as_str);
-            // #481: per-tool exclusion (Serena default) — skip live compression
+            // Per-tool exclusion (Serena default) — skip live compression
             // for excluded tools; history pruning above still applies.
             if name.is_some_and(|n| cfg.proxy.is_tool_live_compress_excluded(n)) {
                 continue;
@@ -272,7 +272,7 @@ mod tests {
     #[test]
     fn string_output_mirrors_engine_and_shrinks() {
         // tee path depends on the data dir; serialize env access so a parallel
-        // test never swaps SOBRE_DATA_DIR between the two compressions (#498).
+        // test never swaps SOBRE_DATA_DIR between the two compressions.
         let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
@@ -302,7 +302,7 @@ mod tests {
     #[test]
     fn array_output_text_is_compressed() {
         // tee path depends on the data dir; serialize env access so a parallel
-        // test never swaps SOBRE_DATA_DIR between the two compressions (#498).
+        // test never swaps SOBRE_DATA_DIR between the two compressions.
         let _lock = crate::core::data_dir::test_env_lock();
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
@@ -422,7 +422,7 @@ mod tests {
 
     #[test]
     fn responses_instructions_and_assistant_prose_pass_through_verbatim() {
-        // #710: role aggressiveness is off, so prose is never rewritten.
+        // Role aggressiveness is off, so prose is never rewritten.
         let _iso = crate::core::data_dir::isolated_data_dir();
 
         let prose = big_prose();
@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(
             parsed["input"][1]["content"].as_str().unwrap(),
             prose,
-            "assistant turns must pass through verbatim (#710)"
+            "assistant turns must pass through verbatim"
         );
     }
 
@@ -470,7 +470,7 @@ mod tests {
         assert_eq!(
             compress_request_body(a, la).0,
             compress_request_body(b, lb).0,
-            "identical input must yield byte-identical output (#498)"
+            "identical input must yield byte-identical output"
         );
     }
 
@@ -548,7 +548,7 @@ mod tests {
 
     #[test]
     fn responses_compression_is_deterministic() {
-        // #498: the same request must compress to byte-identical output so the
+        // The same request must compress to byte-identical output so the
         // provider's prompt cache (and our regression diffs) stay stable.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let mk = || serde_json::json!({"model": "gpt-5", "input": responses_read_turns(14)});
@@ -596,7 +596,7 @@ mod tests {
 
     #[test]
     fn effort_control_is_off() {
-        // #834: effort control is off, so no `reasoning` object is added.
+        // Effort control is off, so no `reasoning` object is added.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let body = serde_json::json!({"model": "gpt-5.5", "input": []});
         let bytes = serde_json::to_vec(&body).unwrap();

@@ -1,4 +1,4 @@
-/// Verbatim hook-binary override (#708), or `None` when unset/blank.
+/// Verbatim hook-binary override, or `None` when unset/blank.
 ///
 /// Users who sync agent settings (`~/.claude/settings.json`, …) across
 /// machines with different usernames set `hook_binary` (config.toml) to an env-based form like
@@ -44,7 +44,7 @@ pub fn resolve_portable_binary() -> String {
 ///    lives in `target/{debug,release}` (`cargo run -- setup`), where the
 ///    installed copy is the intended target.
 /// 3. an absolute `current_exe` even from a build dir — still better than a bare
-///    name (keeps generated hooks absolute, see #367).
+///    name (keeps generated hooks absolute).
 /// 4. bare `sobre`.
 fn choose_binary_path(current_exe: Option<&str>, which_raw: Option<&str>) -> String {
     let is_build_artifact = |p: &str| {
@@ -175,7 +175,7 @@ mod tests {
         );
     }
 
-    /// #708: the configured override is emitted verbatim — no absolutization,
+    /// The configured override is emitted verbatim — no absolutization,
     /// no rewriting — so synced settings keep `$HOME/...` forms; blank means
     /// unset so an empty value cannot wedge hook generation.
     #[test]
@@ -193,7 +193,7 @@ mod tests {
 
     #[test]
     fn resolve_portable_binary_is_absolute() {
-        // #367: generated hook commands must use an absolute binary path, never
+        // Generated hook commands must use an absolute binary path, never
         // a bare `sobre`, because agents run hooks under non-login shells
         // without the install dir on PATH. `which`/`current_exe()` both yield
         // an absolute path in any normal environment (incl. the test harness).
@@ -206,7 +206,7 @@ mod tests {
 
     #[test]
     fn nothing_resolvable_returns_bare_name() {
-        // #2444: neither a usable running binary nor a PATH hit -> bare name.
+        // Neither a usable running binary nor a PATH hit -> bare name.
         assert_eq!(choose_binary_path(None, None), "sobre");
         // A relative current_exe is not a usable absolute path.
         assert_eq!(choose_binary_path(Some("sobre"), None), "sobre");
@@ -219,7 +219,7 @@ mod tests {
 
         #[test]
         fn current_exe_beats_path_lookup() {
-            // The core of #2444: the *running* build wins over a divergent PATH
+            // The core rule: the *running* build wins over a divergent PATH
             // entry (e.g. a stale Homebrew copy shadowing ~/.local/bin).
             let chosen = choose_binary_path(
                 Some("/Users/dev/.local/bin/sobre"),
@@ -251,7 +251,7 @@ mod tests {
         #[test]
         fn build_artifact_without_path_keeps_absolute_current_exe() {
             // No installed copy on PATH -> an absolute build path still beats the
-            // bare name, so generated hooks stay absolute (#367).
+            // bare name, so generated hooks stay absolute.
             let chosen = choose_binary_path(Some("/work/sobre/rust/target/release/sobre"), None);
             assert_eq!(chosen, "/work/sobre/rust/target/release/sobre");
         }

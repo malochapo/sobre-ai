@@ -83,7 +83,7 @@ fn init_repair_leaves_doctor_fully_green() {
         "doctor must never point back to setup right after onboard ran; doctor said:\n{stdout}"
     );
 
-    // doctor is a health gate (#1046): exit 0 == every counted check green.
+    // doctor is a health gate: exit 0 == every counted check green.
     assert!(
         doctor.status.success(),
         "doctor must be fully green right after onboard --yes; output:\n{stdout}"

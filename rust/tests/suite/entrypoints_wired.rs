@@ -1,4 +1,4 @@
-//! Entrypoint smoke gate (#902): every advertised entrypoint must be reachable.
+//! Entrypoint smoke gate: every advertised entrypoint must be reachable.
 //!
 //! Background: the v3.4.7 release shipped tools/commands whose *implementation*
 //! existed but whose *entrypoint* was not wired — `sobre pack` / `index` fell
@@ -9,17 +9,17 @@
 //! 2. CLI — top-level subcommands route to their handler instead of falling
 //!    through to the global help (the exact `pack`/`index` regression).
 //!
-//! Dispatch on the MCP side is registry-driven (`registry.get_arc(name)`), so the
-//! manifest↔registry drift is already covered by `mcp_manifest_up_to_date.rs` and
-//! `granular_defs_match_registry`. This gate adds the *advertised entrypoint* and
-//! *CLI wiring* dimensions those tests do not cover.
+//! Dispatch on the MCP side is registry-driven (`registry.get_arc(name)`), and
+//! the generated tool reference is checked against the registry by
+//! `reference_docs_drift`. This gate adds the *advertised entrypoint* and *CLI
+//! wiring* dimensions.
 
 use std::process::Command;
 
 use serde_json::Value;
 
 /// Collect every `"name"` string field anywhere in the manifest JSON. Tool names
-/// (`ctx_*`) only ever appear as tool entry names, so membership is unambiguous.
+/// (`sobre_*`) only ever appear as tool entry names, so membership is unambiguous.
 fn collect_names(value: &Value, out: &mut std::collections::BTreeSet<String>) {
     match value {
         Value::Object(map) => {
@@ -54,21 +54,20 @@ fn mcp_entrypoint_tools_are_advertised() {
     // read/search surface. If a handler exists but is not advertised here, the
     // tool is unreachable for MCP clients (the v3.4.7 "missing manifest entry").
     let required = [
-        "ctx_read",
-        "ctx_shell",
-        "ctx_search",
-        "ctx_compose",
-        "ctx_graph",
-        "ctx_knowledge",
-        "ctx_session",
-        "ctx_patch",
+        "sobre_read",
+        "sobre_shell",
+        "sobre_search",
+        "sobre_compose",
+        "sobre_graph",
+        "sobre_knowledge",
+        "sobre_session",
+        "sobre_patch",
     ];
     for tool in required {
         assert!(
             names.contains(tool),
-            "entrypoint tool '{tool}' is not advertised in the manifest.\n\
-             Register it in the tool registry and regenerate:\n  \
-             cargo run --example gen_mcp_manifest --features dev-tools"
+            "entrypoint tool '{tool}' is not advertised in the manifest: \
+             register it in the tool registry"
         );
     }
 }
@@ -76,14 +75,14 @@ fn mcp_entrypoint_tools_are_advertised() {
 fn sobre() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
     // Mirror cli_characterization.rs: sandbox the binary so subcommands are
-    // side-effect-free (no daemon, no real HOME writes).
+    // side-effect-free (no background process, no real HOME writes).
     cmd.env("HOME", "/tmp/sobre-entrypoint-test");
     cmd
 }
 
 /// Run the sandboxed binary; return trimmed stdout, trimmed stderr and the exit
 /// code. Stderr matters because the unknown-command handler reports on stderr
-/// (#1046 premium UX), so the wiring detector keys off it.
+/// (premium UX), so the wiring detector keys off it.
 fn run(args: &[&str]) -> (String, String, i32) {
     let out = sobre()
         .args(args)
@@ -96,14 +95,14 @@ fn run(args: &[&str]) -> (String, String, i32) {
 
 #[test]
 fn cli_subcommands_are_wired() {
-    // The dispatch fallthrough for an unknown command (#1046 premium UX) reports on
+    // The dispatch fallthrough for an unknown command (premium UX) reports on
     // stderr — `sobre: unknown command '<cmd>'` plus a "did you mean?" hint —
-    // with empty stdout and exit 1. That stderr marker is the *signature* of "not
+    // with empty stdout and exit 2. That stderr marker is the *signature* of "not
     // wired" — the exact v3.4.7 `pack`/`index` regression. Derive it from a token
     // that can never be a real command, so the detector validates itself.
     let (stdout, stderr, code) = run(&["__sobre_not_a_command__"]);
     assert!(
-        stdout.is_empty() && stderr.contains("unknown command") && code == 1,
+        stdout.is_empty() && stderr.contains("unknown command") && code == 2,
         "unknown-command fallthrough changed (stdout={stdout:?}, stderr={stderr:?}, \
          exit={code}); the wiring detector below keys off the stderr marker"
     );

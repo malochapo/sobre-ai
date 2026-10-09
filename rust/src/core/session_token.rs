@@ -1,4 +1,4 @@
-/// Auto-generated session tokens for proxy/HTTP server security.
+/// Auto-generated session tokens for the proxy.
 ///
 /// Security principle: Least Action — minimize attack surface by always having
 /// a token, even when the user hasn't explicitly configured one. The token is
@@ -39,7 +39,7 @@ pub fn resolve_proxy_token(env_var: &str) -> String {
     }
 
     let token_path = token_file_path();
-    if let Ok(existing) = std::fs::read_to_string(&token_path) {
+    if let Some(Ok(existing)) = token_path.as_ref().map(std::fs::read_to_string) {
         let t = existing.trim().to_string();
         if !t.is_empty() {
             return t;
@@ -47,7 +47,9 @@ pub fn resolve_proxy_token(env_var: &str) -> String {
     }
 
     let token = generate_token();
-    write_token_file(&token_path, &token);
+    if let Some(path) = &token_path {
+        write_token_file(path, &token);
+    }
     token
 }
 
@@ -66,10 +68,12 @@ fn write_token_file(path: &PathBuf, token: &str) {
     set_restrictive_permissions(path);
 }
 
-fn token_file_path() -> PathBuf {
-    crate::core::data_dir::sobre_data_dir()
-        .unwrap_or_else(|_| PathBuf::from(".sobre"))
-        .join(TOKEN_FILE)
+fn token_file_path() -> Option<PathBuf> {
+    Some(
+        crate::core::data_dir::sobre_data_dir()
+            .ok()?
+            .join(TOKEN_FILE),
+    )
 }
 
 #[cfg(unix)]

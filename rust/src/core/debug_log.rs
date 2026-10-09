@@ -1,16 +1,13 @@
-//! Opt-in human-readable debug log of intercepted tool activity (#520).
+//! Opt-in human-readable debug log of intercepted tool activity.
 //! Off by default. Enable with the `debug_log = true` config key. Records
 //! two kinds of events to
 //! `<state_dir>/logs/debug.log`:
 //!
-//! 1. **MCP tool calls** handled by the sobre server (`ctx_*`) — tool name, a
+//! 1. **MCP tool calls** handled by the sobre server (`sobre_*`) — tool name, a
 //!    redacted argument summary, a one-line result preview, byte size, token
 //!    savings and wall time.
-//! 2. **Hook routing decisions** — for every native tool call sobre *can*
-//!    intercept (shell / Read / Grep), whether it was routed to `sobre` or
-//!    left to the editor's **native** tool, and *why*. This is #520's core ask:
-//!    explain why one call used sobre and the next fell back to the native
-//!    Read/Grep tool.
+//! 2. **Hook actions** — each native tool call a hook changed (a wrapped shell
+//!    command, a re-read replaced by a stub), with the reason.
 //!
 //! All writes are best-effort and never panic — logging must never break a hook
 //! subprocess or a tool call. Secrets in arguments/commands/results are scrubbed
@@ -23,31 +20,13 @@ use std::time::Duration;
 use serde_json::{Map, Value};
 
 /// Rotate once the log crosses this size, keeping a single `.1` backup so the
-/// file cannot grow without bound on a long-lived daemon.
+/// file cannot grow without bound on a long-lived MCP server.
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 /// Clamp any single field rendered into a log line so one huge argument or
 /// result cannot dominate the file (or leak a large blob). Bytes; clamped on a
 /// UTF-8 char boundary.
 const FIELD_CLAMP: usize = 200;
-
-/// Where a hook sent an intercepted native tool call.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Route {
-    /// Rewritten / redirected through sobre (compression + caching).
-    Sobre,
-    /// Left to the editor's native tool.
-    Native,
-}
-
-impl Route {
-    fn label(self) -> &'static str {
-        match self {
-            Route::Sobre => "sobre",
-            Route::Native => "native",
-        }
-    }
-}
 
 /// Whether the opt-in debug log is active.
 /// Set by the `debug_log` config key, which hook subprocesses read too.
@@ -97,17 +76,16 @@ pub fn log_mcp_error(tool: &str, args: Option<&Map<String, Value>>, error: &str)
     ));
 }
 
-/// Record a hook routing decision for an intercepted native tool call.
+/// Record a native tool call a hook changed.
 ///
-/// `subject` is the command / path / pattern that was inspected; `reason`
-/// explains the choice (e.g. `"rewritable shell command"`, `"sensitive path"`).
-pub fn log_hook_decision(event: &str, tool: &str, route: Route, subject: &str, reason: &str) {
+/// `subject` is the command or path it changed; `reason` says why (e.g.
+/// `"wrapped"`).
+pub fn log_hook_decision(event: &str, tool: &str, subject: &str, reason: &str) {
     if !is_enabled() {
         return;
     }
     append(&format!(
-        "hook {event} {tool} -> {} ({reason}): {}",
-        route.label(),
+        "hook {event} {tool} ({reason}): {}",
         clamp(&redact(subject))
     ));
 }
@@ -202,7 +180,7 @@ mod tests {
     fn disabled_by_default_writes_nothing() {
         let iso = crate::core::data_dir::isolated_data_dir();
         // Config default is `debug_log = false`, so nothing should be written.
-        log_mcp_call("ctx_read", None, "hello", 5, 0, Duration::from_millis(1));
+        log_mcp_call("sobre_read", None, "hello", 5, 0, Duration::from_millis(1));
         let path = iso.path().join("logs").join("debug.log");
         assert!(!path.exists(), "debug.log must not exist when disabled");
     }
@@ -216,7 +194,7 @@ mod tests {
         args.insert("mode".into(), Value::String("full".into()));
 
         log_mcp_call(
-            "ctx_read",
+            "sobre_read",
             Some(&args),
             "first line of result",
             1234,
@@ -225,7 +203,7 @@ mod tests {
         );
 
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
-        assert!(content.contains("mcp  ctx_read("), "tool name + marker");
+        assert!(content.contains("mcp  sobre_read("), "tool name + marker");
         assert!(content.contains("path=\"src/main.rs\""), "arg summary");
         assert!(content.contains("mode=\"full\""), "arg summary");
         assert!(content.contains("saved≈87 tok"), "savings");
@@ -240,7 +218,7 @@ mod tests {
         let mut args = Map::new();
         args.insert("command".into(), Value::String(secret.into()));
 
-        log_mcp_call("ctx_shell", Some(&args), secret, 10, 0, Duration::ZERO);
+        log_mcp_call("sobre_shell", Some(&args), secret, 10, 0, Duration::ZERO);
 
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
         assert!(content.contains("[REDACTED"), "secret must be redacted");
@@ -251,22 +229,14 @@ mod tests {
     }
 
     #[test]
-    fn hook_decision_records_route_and_reason() {
+    fn hook_decision_records_reason() {
         let iso = crate::core::data_dir::isolated_data_dir();
         enable(&iso);
 
-        log_hook_decision("rewrite", "Bash", Route::Sobre, "cat foo.rs", "rewritable");
-        log_hook_decision(
-            "redirect",
-            "Read",
-            Route::Native,
-            "/etc/passwd",
-            "sensitive path",
-        );
+        log_hook_decision("rewrite", "Bash", "cat foo.rs", "wrapped");
 
         let content = std::fs::read_to_string(log_path().unwrap()).unwrap();
-        assert!(content.contains("hook rewrite Bash -> sobre (rewritable): cat foo.rs"));
-        assert!(content.contains("hook redirect Read -> native (sensitive path): /etc/passwd"));
+        assert!(content.contains("hook rewrite Bash (wrapped): cat foo.rs"));
     }
 
     #[test]
@@ -298,7 +268,7 @@ mod tests {
         f.set_len(MAX_LOG_BYTES + 1).unwrap();
         drop(f);
 
-        log_mcp_call("ctx_read", None, "after rotation", 14, 0, Duration::ZERO);
+        log_mcp_call("sobre_read", None, "after rotation", 14, 0, Duration::ZERO);
 
         assert!(rotated_path(&path).exists(), "backup debug.log.1 created");
         let fresh = std::fs::read_to_string(&path).unwrap();

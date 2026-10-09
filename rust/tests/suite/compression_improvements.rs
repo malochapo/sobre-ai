@@ -11,7 +11,7 @@ fn markdown_aggressive_keeps_headings_and_saves_tokens() {
             "Repeated explanatory prose line {i} about background concepts and examples.\n"
         ));
     }
-    doc.push_str("- `ctx_read` keeps exact source references for agent tasks.\n");
+    doc.push_str("- `sobre_read` keeps exact source references for agent tasks.\n");
     doc.push_str("## Safety\n\nMUST preserve diagnostics, commands, and recovery notes.\n");
     for i in 0..60 {
         doc.push_str(&format!(
@@ -24,7 +24,7 @@ fn markdown_aggressive_keeps_headings_and_saves_tokens() {
     assert!(compressed.contains("# Context Engine"));
     assert!(compressed.contains("## Setup"));
     assert!(compressed.contains("## Safety"));
-    assert!(compressed.contains("ctx_read"));
+    assert!(compressed.contains("sobre_read"));
     assert!(compressed.contains("MUST preserve"));
 }
 
@@ -74,7 +74,7 @@ fn pytest_success_output_folds_passed_lines_and_preserves_summary() {
 
 #[test]
 fn markdown_compaction_is_deterministic_across_calls() {
-    // #498: aggressive compaction must be a pure function of the input bytes.
+    // Aggressive compaction must be a pure function of the input bytes.
     // Mixed token frequencies engineer near-tied line scores on purpose — with
     // unordered per-line token sets the f64 summation order could flip the
     // selected lines between calls.
@@ -172,7 +172,7 @@ fn markdown_compaction_never_splits_code_fences() {
     for i in 0..40 {
         doc.push_str(&format!("Filler prose sentence number {i} for volume.\n"));
     }
-    doc.push_str("```bash\nsobre read src/lib.rs\n\nsobre search \"ctx_read\" src/\n```\n");
+    doc.push_str("```bash\nsobre read src/lib.rs\n\nsobre search \"sobre_read\" src/\n```\n");
     for i in 0..40 {
         doc.push_str(&format!("More filler prose sentence number {i}.\n"));
     }

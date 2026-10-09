@@ -1,19 +1,17 @@
 # sobre — Rust engine
 
 The single crate behind `sobre`: the CLI, the MCP server, the agent hooks and
-the local proxy. The binary is still called `sobre`. See
-[../README.md](../README.md) for what the project is, and
+the local proxy. See [../README.md](../README.md) for what the project is, and
 [../INVARIANTS.md](../INVARIANTS.md) for the rules it holds itself to.
-
-> **Not released.** Interfaces change without notice.
 
 ## Build
 
-The toolchain is pinned in `rust-toolchain.toml`.
+The toolchain is pinned in `rust-toolchain.toml`; run cargo from this
+directory so rustup picks it up.
 
 ```bash
 cargo build --release                    # local-only default
-cargo build --release --features dense   # + local embeddings and GPU providers
+cargo build --release --features dense   # + local embeddings
 ```
 
 Feature notes:
@@ -48,7 +46,7 @@ src/
 ├─ cli/               subcommands, dispatch, help
 ├─ core/              the engine: cache, compression, graph, session, config
 ├─ server/            MCP server: registry, dispatch, tool visibility
-├─ tools/             the 16 MCP tools
+├─ tools/             the 15 MCP tools
 ├─ instructions.rs    the MCP server instructions — the one rules channel
 ├─ shell/             shell-output compression patterns
 ├─ proxy/             local provider proxy
@@ -59,7 +57,6 @@ src/
 
 skill/SKILL.md        the `sobre` skill, embedded in the binary
 tests/                integration suites
-data/                 data compiled into the binary (model registry)
 ```
 
 ## Generated files

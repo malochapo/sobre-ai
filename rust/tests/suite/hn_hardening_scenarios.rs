@@ -160,7 +160,7 @@ mod double_compression_guard {
     #[test]
     fn scenario_dispatch_returns_saved_tokens() {
         // Verify the dispatch_tool return type includes saved_tokens (the
-        // third element carries the shell outcome for MCP isError, GH #389)
+        // third element carries the shell outcome for MCP isError)
         // and content_blocks (fourth element for image/binary MCP output).
         let src = include_str!("../../src/server/dispatch/mod.rs");
         assert!(
@@ -173,15 +173,12 @@ mod double_compression_guard {
     fn scenario_skip_terse_when_already_compressed() {
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
-        // Reads already produce mode-aware, structure-preserving output, so the
-        // generic terse layer must never re-compress them. The guard skips the
-        // whole read family unconditionally (a verbatim `full`/`lines:` read has
-        // 0 savings yet must still be protected from dictionary-mangling). The
-        // read-family + verbatim-mode decision lives in `is_verbatim_read`.
+        // Terse is an allow-list of prose and shell tools: code from reads,
+        // searches and symbol bodies is never re-compressed.
         let body = crate::suite::hn_hardening_scenarios::skip_terse_body(&src);
         assert!(
-            body.contains("is_verbatim_read"),
-            "skip_terse must skip verbatim reads (read family) to avoid re-compressing them"
+            body.contains("TERSE_TOOLS"),
+            "skip_terse must condense only the tools in TERSE_TOOLS"
         );
 
         // Usage is recorded once, after terse, from the final sent count: the
@@ -224,7 +221,7 @@ mod cache_hit_messages {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Modify file
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -238,7 +235,7 @@ mod cache_hit_messages {
                 .unwrap();
         }
 
-        let result = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let result = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             result.contains("version 2") || result.contains("new_function"),
             "modified file must return new content"
@@ -411,8 +408,8 @@ mod auto_degrade {
         use sobre::core::config::SessionDegrade::{Clear, Leave, Set};
         // Behavioral invariant for the dispatch's auto-degrade. Asserted via the
         // pure `degrade_action` decision rather than grepping the dispatch source
-        // for a literal, so an internal rename (e.g. #941's `correction_count` →
-        // retrieve-coupled `pressure`) can't silently rot this guard again (#957).
+        // for a literal, so an internal rename (e.g. `correction_count` →
+        // retrieve-coupled `pressure`) can't silently rot this guard again.
         assert_eq!(
             CompressionLevel::degrade_action(5, 0),
             Set(CompressionLevel::Off),
@@ -438,57 +435,7 @@ mod auto_degrade {
 }
 
 // =============================================================================
-// Fix H: First-Contact Auto-Context (meta_visible guard removed)
-// =============================================================================
-
-mod first_contact {
-    #[test]
-    fn scenario_meta_visible_guard_removed() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        // Find the auto_context section
-        let auto_ctx_pos = src
-            .find("let Some(ctx) = auto_context")
-            .expect("auto_context block must exist");
-        let block = &src[auto_ctx_pos..auto_ctx_pos + 200];
-
-        // Must NOT contain meta_visible check
-        assert!(
-            !block.contains("meta_visible()"),
-            "meta_visible guard must be removed from auto_context block"
-        );
-    }
-
-    #[test]
-    fn scenario_token_budget_enforced() {
-        // The briefing is cut to its budget where it is built, not dropped at
-        // the call site.
-        let src = include_str!("../../src/tools/autonomy.rs");
-        assert!(
-            src.contains("pub const BRIEFING_MAX_TOKENS: usize = 400;"),
-            "auto_context must enforce a 400 token budget"
-        );
-        assert!(
-            src.contains("Some(format_briefing(&result))"),
-            "the session briefing must go through the budget cut"
-        );
-    }
-
-    #[test]
-    fn scenario_raw_shell_still_skips_auto_context() {
-        let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
-        // Collapse whitespace so the gating check survives the edition-2024
-        // let-chain collapse (`if !is_raw_shell { if let Some(ctx) = … }` →
-        // `if !is_raw_shell && let Some(ctx) = …`) and any rustfmt line wrapping.
-        let collapsed = src.split_whitespace().collect::<Vec<_>>().join(" ");
-        assert!(
-            collapsed.contains("if !is_raw_shell && let Some(ctx) = auto_context"),
-            "auto_context must still be gated behind !is_raw_shell"
-        );
-    }
-}
-
-// =============================================================================
-// Fix G: ctx_overview Module Descriptions
+// Fix G: project overview module descriptions
 // =============================================================================
 
 mod overview_descriptions {
@@ -505,9 +452,9 @@ mod overview_descriptions {
         .unwrap();
         let path = file.to_string_lossy().to_string();
 
-        // Use ctx_read to verify file is readable, then check overview behavior
+        // Use sobre_read to verify file is readable, then check overview behavior
         let mut cache = SessionCache::new();
-        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Session-level"));
     }
 
@@ -523,7 +470,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("Utility functions"));
     }
 
@@ -539,7 +486,7 @@ mod overview_descriptions {
         let path = file.to_string_lossy().to_string();
 
         let mut cache = SessionCache::new();
-        let content = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let content = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(content.contains("REST API"));
     }
 
@@ -548,11 +495,11 @@ mod overview_descriptions {
         let src = include_str!("../../src/tools/impl_overview.rs");
         assert!(
             src.contains("extract_module_doc"),
-            "ctx_overview must call extract_module_doc"
+            "the overview must call extract_module_doc"
         );
         assert!(
             src.contains("knowledge_doc_for_file"),
-            "ctx_overview must have knowledge fallback"
+            "the overview must have a knowledge fallback"
         );
     }
 }
@@ -619,14 +566,14 @@ mod integration {
         let mut cache = SessionCache::new();
 
         // Read 1: full content
-        let r1 = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r1 = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(r1.contains("stable_function"));
 
         // Read 2: still returns content (marks as delivered)
-        sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
 
         // Read 3: now cache hit with proof
-        let r3 = sobre::tools::ctx_read::handle(&mut cache, &path, "full", CrpMode::Off);
+        let r3 = sobre::tools::sobre_read::handle(&mut cache, &path, "full", CrpMode::Off);
         assert!(
             r3.contains("unchanged") || r3.contains("cached"),
             "third read should be a cache hit: {r3}"
@@ -638,7 +585,7 @@ mod integration {
         // Structural test: verify the pipeline
         let src = crate::suite::hn_hardening_scenarios::server_dispatch_src();
 
-        // 1. dispatch threads saved_tokens (+ shell outcome, GH #389,
+        // 1. dispatch threads saved_tokens (+ shell outcome,
         // content_blocks) out of the tool call
         assert!(
             src.contains("let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks)")

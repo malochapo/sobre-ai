@@ -1,7 +1,7 @@
 //! Re-fetch signals: the agent asking again for what sobre already gave it.
 //!
 //! A fresh re-read of a file, a `map` read bounced to `full`, the same shell
-//! command re-run within a minute, or a `ctx_expand` of compressed output all
+//! command re-run within a minute, or a `sobre_expand` of compressed output all
 //! mean the compressed form lost something the agent needed. The counts feed
 //! [`crate::core::config::CompressionLevel::degrade_action`], which can only
 //! lower compression for the session. Nothing here throttles or refuses a call.
@@ -25,7 +25,7 @@ pub struct RefetchSignals {
 }
 
 impl RefetchSignals {
-    /// Records a `ctx_read`: a `fresh=true` re-read of a file read in the
+    /// Records a `sobre_read`: a `fresh=true` re-read of a file read in the
     /// window, or a `map`/`signatures` read followed by `full` within 30s.
     pub fn record_read(&mut self, path: &str, mode: &str, fresh: bool) {
         self.total_calls += 1;
@@ -50,7 +50,7 @@ impl RefetchSignals {
             .insert(path.to_string(), (now, mode.to_string()));
     }
 
-    /// Records a `ctx_shell` command: the same command re-run within 60s.
+    /// Records a `sobre_shell` command: the same command re-run within 60s.
     pub fn record_shell(&mut self, command: &str) {
         self.total_calls += 1;
         let now = Instant::now();
@@ -64,7 +64,7 @@ impl RefetchSignals {
         self.recent_commands.insert(key, now);
     }
 
-    /// Records one `ctx_expand` of compressed output (#941).
+    /// Records one `sobre_expand` of compressed output.
     pub fn record_retrieve(&mut self) {
         self.retrieves.push(Instant::now());
     }
@@ -74,7 +74,7 @@ impl RefetchSignals {
         count_recent(&self.corrections)
     }
 
-    /// `ctx_expand` calls in the window.
+    /// `sobre_expand` calls in the window.
     pub fn retrieve_count(&self) -> u32 {
         count_recent(&self.retrieves)
     }

@@ -1,62 +1,10 @@
-use super::super::{mcp_server_quiet_mode, resolve_hook_command_binary, write_file};
+use super::super::resolve_hook_command_binary;
 
-pub(crate) fn install_claude_hook() {
-    let Some(home) = crate::core::home::resolve_home_dir() else {
-        tracing::error!("Cannot resolve home directory");
-        return;
-    };
-
-    install_claude_hook_config(&home);
-    install_claude_mcp_server(&home);
-}
-
-fn install_claude_mcp_server(home: &std::path::Path) {
-    let config_path = crate::core::editor_registry::claude_mcp_json_path(home);
-    let binary = super::super::resolve_binary_path();
-
-    let existing = std::fs::read_to_string(&config_path).unwrap_or_default();
-    if existing.contains("\"sobre\"") && existing.contains("mcpServers") {
-        return;
-    }
-
-    let parsed: Result<serde_json::Value, _> = if existing.trim().is_empty() {
-        Ok(serde_json::json!({}))
-    } else {
-        crate::core::jsonc::parse_jsonc(&existing)
-    };
-
-    if let Ok(mut root) = parsed
-        && let Some(obj) = root.as_object_mut()
-    {
-        let servers = obj
-            .entry("mcpServers")
-            .or_insert_with(|| serde_json::json!({}));
-        if let Some(servers_obj) = servers.as_object_mut()
-            && !servers_obj.contains_key("sobre")
-        {
-            servers_obj.insert(
-                "sobre".to_string(),
-                serde_json::json!({
-                    "command": binary,
-                    "args": []
-                }),
-            );
-            write_file(
-                &config_path,
-                &serde_json::to_string_pretty(&root).unwrap_or_default(),
-            );
-            if !super::super::mcp_server_quiet_mode() {
-                eprintln!("Added sobre MCP server to {}", config_path.display());
-            }
-        }
-    }
-}
-
-/// PostToolUse matcher for the guard-safe re-read dedup (GL #1140): Read only —
+/// PostToolUse matcher for the guard-safe re-read dedup: Read only —
 /// the handler mirrors the Read result shape and must never see another tool's.
 const READ_DEDUP_MATCHER: &str = "Read";
 
-/// Ensure the PostToolUse `hook read-dedup` entry exists exactly once (GL #1140).
+/// Ensure the PostToolUse `hook read-dedup` entry exists exactly once.
 ///
 /// Runs alongside the observe hook on PostToolUse; read-dedup (Read) and
 /// compress (Bash) are the only `updatedToolOutput` writers and never see the
@@ -166,22 +114,10 @@ fn ensure_claude_observe_hooks(
             .entry(event.to_string())
             .or_insert_with(|| serde_json::json!([]));
 
-        if let Some(arr) = entry.as_array() {
-            let already = arr.iter().any(|group| {
-                group
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .is_some_and(|hooks| {
-                        hooks.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_str())
-                                .is_some_and(|c| c.contains("hook observe"))
-                        })
-                    })
-            });
-            if already {
-                continue;
-            }
+        if let Some(arr) = entry.as_array_mut()
+            && super::refresh_commands(arr, "hook observe", observe_cmd)
+        {
+            continue;
         }
 
         if let Some(arr) = entry.as_array_mut() {
@@ -195,25 +131,15 @@ fn ensure_claude_observe_hooks(
     }
 }
 
-pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
+pub(crate) fn install_claude_hook_config(home: &std::path::Path) -> Result<(), String> {
     let binary = resolve_hook_command_binary();
     let compress_cmd = format!("{binary} hook compress");
     let observe_cmd = format!("{binary} hook observe");
     let read_dedup_cmd = format!("{binary} hook read-dedup");
 
     let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
-    let settings_content = std::fs::read_to_string(&settings_path).unwrap_or_default();
-    let mut root = if settings_content.trim().is_empty() {
-        serde_json::json!({})
-    } else if let Ok(parsed) = crate::core::jsonc::parse_jsonc(&settings_content) {
-        parsed
-    } else {
-        return;
-    };
-    let before = serde_json::to_string_pretty(&root).unwrap_or_default();
-
-    if let Some(root_obj) = root.as_object_mut() {
-        let hooks = root_obj
+    crate::config_io::edit_json(&settings_path, |root| {
+        let hooks = root
             .entry("hooks".to_string())
             .or_insert_with(|| serde_json::json!({}));
         if let Some(hooks_obj) = hooks.as_object_mut() {
@@ -230,17 +156,7 @@ pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
             }
             ensure_read_dedup_hook(hooks_obj, &read_dedup_cmd);
         }
-    }
-
-    // Only rewrite (with backup) when the merge actually changed something, so a
-    // no-op re-run doesn't churn the user's settings.json or pile up backups.
-    let after = serde_json::to_string_pretty(&root).unwrap_or_default();
-    if after != before {
-        write_file(&settings_path, &after);
-    }
-    if !mcp_server_quiet_mode() {
-        eprintln!("Installed Claude Code hooks in {}", settings_path.display());
-    }
+    })
 }
 
 /// The Claude Code shell tools whose output `hook compress` may shrink.
@@ -347,7 +263,7 @@ mod tests {
 
     #[test]
     fn read_dedup_hook_installs_once_alongside_observe() {
-        // GL #1140: the PostToolUse array carries observe (matcher .*) AND
+        // The PostToolUse array carries observe (matcher .*) AND
         // read-dedup (matcher Read); repeated installs must not duplicate either.
         let mut hooks_obj = serde_json::Map::new();
         ensure_claude_observe_hooks(&mut hooks_obj, "sobre hook observe");

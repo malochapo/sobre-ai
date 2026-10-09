@@ -32,7 +32,7 @@ pub fn run() {
 
     let enters_mcp = args.len() == 1 || args.get(1).is_some_and(|a| a == "mcp");
     if !enters_mcp {
-        crate::core::logging::init_logging();
+        crate::core::logging::init_logging("warn");
     }
 
     if args.len() > 1 {
@@ -82,11 +82,11 @@ pub fn run() {
             "hook" => {
                 // Hooks run inside the agent shell environment, so they can see
                 // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived
-                // MCP server process never receives. Bridge them for ctx_shell (#370).
+                // MCP server process never receives. Bridge them for sobre_shell.
                 core::agent_runtime_env::capture();
                 let action = rest.first().map_or("help", std::string::String::as_str);
                 // Rewrite hooks self-bound their work and FAIL OPEN inside the
-                // handler (#1035), so they must NOT also carry the force-exit
+                // handler, so they must NOT also carry the force-exit
                 // watchdog (which would `exit(1)` with no reply and wedge the
                 // host). The remaining hooks keep the simple zombie-guard.
                 if !matches!(action, "cursor" | "gemini") {
@@ -101,14 +101,14 @@ pub fn run() {
                     _ => {
                         eprintln!("Usage: sobre hook <compress|cursor|gemini|read-dedup|observe>");
                         eprintln!("  Internal commands used by agent hooks");
-                        std::process::exit(1);
+                        std::process::exit(2);
                     }
                 }
                 return;
             }
             "uninstall" => {
                 // Safety: `--help`/`-h` must NEVER fall through to a real
-                // uninstall (issue #476). Short-circuit before any removal.
+                // uninstall. Short-circuit before any removal.
                 if rest.iter().any(|a| a == "--help" || a == "-h") {
                     uninstall::print_help();
                     return;
@@ -144,7 +144,7 @@ pub fn run() {
                     eprintln!("       did you mean '{suggestion}'?");
                 }
                 eprintln!("       run 'sobre help' for the full command list");
-                std::process::exit(1);
+                std::process::exit(2);
             }
         }
     }
@@ -174,21 +174,23 @@ fn is_server_mode(args: &[String]) -> bool {
 
 fn handle_exec(args: &[String]) -> ! {
     let cmd_args = &args[2..];
+    if cmd_args.iter().all(|a| a.trim().is_empty()) {
+        eprintln!("Usage: sobre -c \"command\"");
+        std::process::exit(2);
+    }
     let command = if cmd_args.len() == 1 {
         cmd_args[0].clone()
     } else {
         shell::join_command(cmd_args)
     };
     // The `sobre -c` wrapper runs inside the agent shell, which carries
-    // runtime/session vars the MCP server never sees. Bridge them so ctx_shell
-    // can forward them too (#370).
+    // runtime/session vars the MCP server never sees. Bridge them so sobre_shell
+    // can forward them too.
     core::agent_runtime_env::capture();
     if crate::shell::reentry::should_pass_through() {
         passthrough(&command);
     }
-    core::runtime_flags::enable_compress();
-    let code = shell::exec(&command);
-    core::tool_lifecycle::flush_all();
+    let code = shell::exec(&command, shell::ExecMode::Compress);
     std::process::exit(code);
 }
 
@@ -196,15 +198,14 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
         eprintln!("Usage: sobre raw \"command\"");
         eprintln!("Runs the command with output passed through unchanged (no compression).");
-        std::process::exit(1);
+        std::process::exit(2);
     }
     let command = if rest.len() == 1 {
         rest[0].clone()
     } else {
         shell::join_command(&args[2..])
     };
-    core::runtime_flags::enable_raw();
-    let code = shell::exec(&command);
+    let code = shell::exec(&command, shell::ExecMode::Raw);
     std::process::exit(code);
 }
 
@@ -213,7 +214,7 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
 /// Rust's runtime ignores SIGPIPE process-wide, so `sobre doctor | head`
 /// made `println!` panic with BrokenPipe; the LineWriter flush in stdout's
 /// Drop then panicked again *during unwinding*, which aborts — the SIGABRT
-/// (exit 134) of upstream #378 / GL#436. Real CLIs (cat, grep, rg) terminate
+/// (exit 134) seen upstream. Real CLIs (cat, grep, rg) terminate
 /// silently with exit 141 instead; SIG_DFL gives us exactly that. Children
 /// spawned via std::process::Command are unaffected either way (std resets
 /// their SIGPIPE disposition since Rust 1.65).

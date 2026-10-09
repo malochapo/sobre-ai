@@ -1,10 +1,9 @@
-//! Efficiency benchmark harness (Phase 0 of the efficiency epic).
+//! Efficiency benchmark harness.
 //!
 //! Custom harness (no criterion, matching the other `harness = false` benches):
-//! prints a markdown latency + token report for `ctx_search` on a synthetic
-//! corpus. From Phase 1 on it also measures the resident line-search index so
-//! the walk-vs-index speedup is visible in a single run (no "before" git state
-//! needed).
+//! prints a markdown latency + token report for `sobre_search` on a synthetic
+//! corpus, with and without the resident line-search index, so the
+//! walk-vs-index speedup is visible in a single run.
 //!
 //! Run:    cargo bench --bench efficiency
 //! Tune:   `BENCH_FILES=5000` cargo bench --bench efficiency
@@ -14,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use sobre::core::protocol::CrpMode;
 use sobre::core::tokens::count_tokens;
-use sobre::tools::ctx_search;
+use sobre::tools::sobre_search;
 
 const ITERS: usize = 50;
 
@@ -69,7 +68,7 @@ fn measure<F: FnMut() -> String>(mut run: F) -> (f64, f64, f64, usize) {
 
 fn bench_walk(corpus: &str, pattern: &str) -> (f64, f64, f64, usize) {
     measure(|| {
-        ctx_search::handle_filtered(
+        sobre_search::handle_filtered(
             pattern,
             corpus,
             None,
@@ -101,7 +100,7 @@ fn main() {
         ("negative (xyzzy_nonexistent)", "xyzzy_nonexistent"),
     ];
 
-    println!("# ctx_search efficiency bench ({n_files} files, {ITERS} iters)\n");
+    println!("# sobre_search efficiency bench ({n_files} files, {ITERS} iters)\n");
 
     // --- Walk path (legacy): force index off so numbers are uncontaminated ---
     // SAFETY: single-threaded bench `main()`; runs before any worker threads start.
@@ -138,7 +137,7 @@ fn main() {
 /// Extracts the set of `file:line` match lines from a search response so the
 /// walk path and index path can be compared for recall parity.
 fn match_lines(corpus: &str, pattern: &str) -> std::collections::BTreeSet<String> {
-    let out = ctx_search::handle_filtered(
+    let out = sobre_search::handle_filtered(
         pattern,
         corpus,
         None,

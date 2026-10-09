@@ -14,7 +14,7 @@ pub(super) fn human_bytes(bytes: u64) -> String {
     }
 }
 
-/// Abbreviate the user's `$HOME` to `~` wherever it appears in `text` (#437).
+/// Abbreviate the user's `$HOME` to `~` wherever it appears in `text`.
 /// Doctor output otherwise mixes `/home/<user>/…` and `~/…`, which is noisy and
 /// forces users to redact their username before pasting a report. Matches both
 /// the native and the forward-slash spelling of the home prefix; non-home
@@ -38,7 +38,7 @@ pub(super) fn tildify_home(text: &str) -> String {
 
 /// Render a single path for doctor output: `~` for `$HOME`, forward slashes, and
 /// the home prefix matched only on a component boundary (so `/home/foo` never
-/// turns `/home/foobar` into `~bar`). (#437)
+/// turns `/home/foobar` into `~bar`).
 pub(super) fn display_user_path(path: &std::path::Path) -> String {
     let normalized = crate::core::protocol::display_path(&path.to_string_lossy());
     let Some(home) = dirs::home_dir() else {
@@ -64,7 +64,7 @@ pub(super) fn print_check(outcome: &Outcome) {
     } else {
         format!("{RED}✗{RST}")
     };
-    println!("  {mark}  {}", tildify_home(&outcome.line));
+    crate::outln!("  {mark}  {}", tildify_home(&outcome.line));
 }
 
 pub(super) fn path_in_path_env() -> bool {
@@ -237,7 +237,7 @@ pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
 pub(super) fn has_sobre_mcp_entry(content: &str) -> bool {
     // Parse as JSONC: editor config files (VS Code settings.json / mcp.json,
     // Cursor, Windsurf, …) commonly contain comments and trailing commas which
-    // strict JSON rejects. See issue #311.
+    // strict JSON rejects.
     if let Ok(json) = crate::core::jsonc::parse_jsonc(content) {
         // Known container keys across editors that hold a map of MCP servers:
         //   mcpServers       — most agents (Cursor, Claude, Windsurf, …)
@@ -251,7 +251,7 @@ pub(super) fn has_sobre_mcp_entry(content: &str) -> bool {
             }
         }
         // mcp.sobre — OpenCode's schema (https://opencode.ai/config.json)
-        // nests servers DIRECTLY under "mcp", no "servers" level (GH #686).
+        // nests servers DIRECTLY under "mcp", no "servers" level.
         if let Some(servers) = json.get("mcp").and_then(|v| v.as_object())
             && servers.contains_key("sobre")
         {
@@ -308,7 +308,7 @@ pub(super) fn proxy_auth_probe(port: u16) -> bool {
 
 /// Fetches the proxy's live upstreams from the authenticated `/status` endpoint.
 /// Returns `(anthropic, openai)`, or `None` if unreachable or
-/// the response lacks the `upstreams` block. Drives the #449 drift check.
+/// the response lacks the `upstreams` block. Drives the drift check.
 pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String)> {
     let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
     let url = format!("http://127.0.0.1:{port}/status");
@@ -347,7 +347,7 @@ mod tests {
     use super::{display_user_path, has_sobre_mcp_entry, tildify_home};
     use std::path::Path;
 
-    // GH #686: OpenCode's schema (https://opencode.ai/config.json) nests
+    // OpenCode's schema (https://opencode.ai/config.json) nests
     // servers DIRECTLY under "mcp" — `mcp.sobre`, no "servers" level.
     #[test]
     fn opencode_direct_mcp_child_is_recognized() {

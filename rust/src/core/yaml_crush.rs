@@ -1,5 +1,5 @@
-//! Deterministic YAML crusher — structural compaction for YAML documents (#985,
-//! Headroom YAML-compressor port, GitLab Epic #973).
+//! Deterministic YAML crusher — structural compaction for YAML documents
+//! (a port of Headroom's YAML compressor).
 //!
 //! Real-world YAML (Kubernetes manifests, CI configs, OpenAPI specs, Helm values)
 //! is dominated by two redundancies the agent never needs to re-read verbatim:
@@ -21,7 +21,7 @@
 //! self-identifying (re-entry safe) and exactly reversible to the parsed value via
 //! `reconstruct` (test-only). Output is a pure function of the input — `yaml_serde` →
 //! `serde_json::Value` → `json_crush` are all deterministic — so identical input
-//! yields byte-identical output (#498). The crusher never inflates: callers gate
+//! yields byte-identical output. The crusher never inflates: callers gate
 //! on the `beneficial` reduction threshold and a no-op input returns [`None`].
 //!
 //! Exact original *bytes* (comments, key order, formatting) are recovered
@@ -178,7 +178,7 @@ mod tests {
     fn output_is_byte_stable_across_calls() {
         let yaml = manifest_yaml();
         let run = || crush_text_if_beneficial(&yaml).unwrap();
-        assert_eq!(run(), run(), "crush output must be deterministic (#498)");
+        assert_eq!(run(), run(), "crush output must be deterministic");
     }
 
     #[test]

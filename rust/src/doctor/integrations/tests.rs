@@ -9,7 +9,7 @@ fn codex_desktop_note_is_informational_and_never_fails() {
         "the Codex Desktop note is informational, never a failure"
     );
     assert!(
-        note.detail.contains("ctx_shell") && note.detail.contains("every surface"),
+        note.detail.contains("sobre_shell") && note.detail.contains("every surface"),
         "note must steer users to the MCP tools as the reliable cross-surface path: {}",
         note.detail
     );
@@ -74,7 +74,7 @@ fn stale_hook_binary_accepts_bare_path_command() {
     assert!(stale_hook_binary(content, "/anything/sobre").is_none());
 }
 
-/// #708: a configured verbatim hook binary ($HOME/... synced across machines)
+/// A configured verbatim hook binary ($HOME/... synced across machines)
 /// is the expected command — doctor must not flag it stale, or --fix would
 /// rewrite it back to an absolute path and restart the sync ping-pong.
 #[test]

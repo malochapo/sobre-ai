@@ -4,14 +4,13 @@ use crate::core::deep_queries::{ImportInfo, ImportKind};
 fn make_ctx(files: &[&str]) -> ResolverContext {
     let file_paths: Vec<String> = files.iter().map(std::string::ToString::to_string).collect();
     ResolverContext {
-        project_root: PathBuf::from("/project"),
         file_paths: file_paths.clone(),
         tsconfig_paths: HashMap::new(),
         go_module: None,
         dart_package: None,
         file_set: file_paths.iter().cloned().collect(),
         csharp_ns_index: build_csharp_namespace_index(
-            &PathBuf::from("/project"),
+            &std::path::PathBuf::from("/project"),
             &file_paths,
             &HashMap::new(),
         ),
@@ -486,7 +485,7 @@ fn gd_extends_res_gd_resolves() {
 
 #[test]
 fn gd_preload_res_tscn_resolves_when_indexed() {
-    // #315: a `.tscn` that *is* in the index resolves verbatim.
+    // A `.tscn` that *is* in the index resolves verbatim.
     let ctx = make_ctx(&["scenes/Enemy.tscn", "actors/Spawner.gd"]);
     let imp = make_import("res://scenes/Enemy.tscn");
     let results = resolve_imports(&[imp], "actors/Spawner.gd", "gd", &ctx);
@@ -499,7 +498,7 @@ fn gd_preload_res_tscn_resolves_when_indexed() {
 
 #[test]
 fn gd_extensionless_probes_tscn_then_tres() {
-    // #315: `extends "res://actors/Player"` (no extension) probes .gd/.tscn/.tres.
+    // `extends "res://actors/Player"` (no extension) probes .gd/.tscn/.tres.
     let ctx = make_ctx(&["actors/Player.tscn", "main.gd"]);
     let imp = make_import("res://actors/Player");
     let results = resolve_imports(&[imp], "main.gd", "gd", &ctx);
@@ -512,7 +511,7 @@ fn gd_extensionless_probes_tscn_then_tres() {
 
 #[test]
 fn gd_unresolved_but_valid_res_path_still_creates_edge() {
-    // #315: a concrete `res://…tscn` that isn't indexed yet (before scene
+    // A concrete `res://…tscn` that isn't indexed yet (before scene
     // indexing) still yields an edge to the declared path — never external.
     let ctx = make_ctx(&["main.gd"]);
     let imp = make_import("res://scenes/Main.tscn");
@@ -547,7 +546,7 @@ fn gd_user_path_is_external() {
 
 #[test]
 fn tscn_ext_resolves_script_via_gd_resolver() {
-    // #316: `.tscn` files dispatch to the GDScript resolver, so an ext_resource
+    // `.tscn` files dispatch to the GDScript resolver, so an ext_resource
     // `res://…gd` script reference resolves to the indexed script.
     let ctx = make_ctx(&["scenes/Main.tscn", "actors/Player.gd"]);
     let imp = make_import("res://actors/Player.gd");
@@ -559,7 +558,7 @@ fn tscn_ext_resolves_script_via_gd_resolver() {
     assert!(!results[0].is_external);
 }
 
-// --- Lua / Luau (#360) ---
+// --- Lua / Luau ---
 
 #[test]
 fn lua_dotted_require_resolves_from_root() {

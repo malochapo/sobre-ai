@@ -1,4 +1,4 @@
-//! Type-usage extraction (GH #398).
+//! Type-usage extraction.
 //!
 //! C#, Java, Go and Kotlin resolve types in the same namespace/package
 //! **without any import statement**, so import edges alone miss those file
@@ -35,12 +35,12 @@ pub(super) fn extract_type_uses(root: Node, src: &str, ext: &str) -> Vec<TypeUse
 /// typeof_expression, …), method `returns` fields, and `base_list` children
 /// (inheritance / interfaces).
 ///
-/// Expression positions (GH #398 follow-up) — a type used only as the receiver
+/// Expression positions (follow-up) — a type used only as the receiver
 /// of a static call/field or enum value (`Engine.Create()`, `Status.Active`)
 /// or as an attribute (`[ApiController]`) carries no `type` field, yet it still
 /// makes the consuming file depend on the definer. Those are collected here so
 /// the property graph can build the `TypeRef` edge. The def-index resolution in
-/// `ctx_impact` discards any name that is not an actual project type, so this
+/// `sobre_graph action=impact` discards any name that is not an actual project type, so this
 /// stays precise even though it is intentionally broad at the AST level.
 #[cfg(feature = "tree-sitter")]
 fn extract_csharp(root: Node, src: &str) -> Vec<TypeUse> {

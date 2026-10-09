@@ -1,5 +1,4 @@
-//! Post-dispatch side-effect stages for `SobreServer::call_tool_guarded`
-//! (issue #144).
+//! Post-dispatch side-effect stages for `SobreServer::call_tool_guarded`.
 //!
 //! These blocks run *after* a tool produced its (already post-processed) output
 //! and perform pure side effects — they never mutate the text returned to the
@@ -24,9 +23,8 @@ impl SobreServer {
         result_text: &str,
     ) {
         let input = helpers::canonical_args_string(args);
-        let input_md5 = helpers::hash_fast(&input);
-        let output_md5 = helpers::hash_fast(result_text);
-        let agent_id = self.agent_id.read().await.clone();
+        let input_hash = helpers::hash_fast(&input);
+        let output_hash = helpers::hash_fast(result_text);
         let client_name = self.client_name.read().await.clone();
 
         let pending_session_save = {
@@ -34,9 +32,8 @@ impl SobreServer {
             session.record_tool_receipt(
                 name,
                 action,
-                &input_md5,
-                &output_md5,
-                agent_id.as_deref(),
+                &input_hash,
+                &output_hash,
                 Some(&client_name),
             );
 
@@ -51,28 +48,9 @@ impl SobreServer {
             tokio::task::spawn_blocking(move || {
                 let _ = prepared.write_to_disk();
                 // Flush the persistent stub index on the same batch cadence so
-                // recent full deliveries survive a restart as cheap stubs (#955).
+                // recent full deliveries survive a restart as cheap stubs.
                 crate::core::read_stub_index::persist();
             });
-        }
-
-        {
-            let (calls, project_root) = {
-                let session = self.session.read().await;
-                (session.stats.total_tool_calls, session.project_root.clone())
-            };
-
-            if let Some(root) = project_root
-                && crate::tools::autonomy::should_auto_consolidate(&self.autonomy, calls)
-            {
-                let root_clone = root.clone();
-                tokio::task::spawn_blocking(move || {
-                    let _ = crate::core::consolidation_engine::consolidate_latest(
-                        &root_clone,
-                        crate::core::consolidation_engine::ConsolidationBudgets::default(),
-                    );
-                });
-            }
         }
     }
 }

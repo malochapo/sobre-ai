@@ -35,22 +35,6 @@ impl KnowledgeArchetype {
         }
     }
 
-    /// Ebbinghaus stability multiplier (≥ 1.0 slows decay). Structural evidence is
-    /// more durable than inference; only applied when `archetype_aware_decay` is on
-    /// (default off).
-    pub fn stability_multiplier(&self) -> f32 {
-        match self {
-            Self::Architecture => 1.5,
-            Self::Dependency => 1.4,
-            Self::Convention => 1.3,
-            Self::Gotcha => 1.25,
-            Self::Fact => 1.2,
-            Self::Pattern => 1.1,
-            Self::Workflow | Self::Decision | Self::Observation => 1.0,
-            Self::Preference => 0.9,
-        }
-    }
-
     /// Stable lowercase token used as the Open Knowledge Format (OKF) `type`
     /// field and in `sobre_archetype`. Single words, so snake_case == the
     /// serde name; kept as an explicit method to avoid a serde round-trip on
@@ -135,7 +119,7 @@ pub struct KnowledgeFact {
     pub feedback_up: u32,
     pub feedback_down: u32,
     pub last_feedback: Option<DateTime<Utc>>,
-    /// Per-item sensitivity classification (#212). Set at creation from
+    /// Per-item sensitivity classification. Set at creation from
     /// content and enforced by the policy floor at injection time.
     pub sensitivity: SensitivityLevel,
     pub imported_from: Option<String>,
@@ -153,7 +137,7 @@ pub struct Contradiction {
     pub resolution: String,
 }
 
-/// Outcome of a write-time admission decision (#970), returned by
+/// Outcome of a write-time admission decision, returned by
 /// `ProjectKnowledge::remember_admitted`. It is the difference between "the agent
 /// asked to store X" and "what sobre actually persisted".
 #[derive(Debug, Clone)]
@@ -171,8 +155,6 @@ pub enum AdmissionResult {
         confirmations: u32,
         value: String,
     },
-    /// Content salience was below the configured floor; nothing was written.
-    RejectedLowSalience { salience: u32, floor: u32 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

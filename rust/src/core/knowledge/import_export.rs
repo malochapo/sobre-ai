@@ -31,7 +31,7 @@ pub struct ImportResult {
 
 /// Community-compatible simple fact format for import/export interop.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SimpleFactEntry {
+pub(crate) struct SimpleFactEntry {
     pub category: String,
     pub key: String,
     pub value: String,

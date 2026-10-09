@@ -1,8 +1,7 @@
-#[cfg(feature = "embeddings")]
 use std::time::Duration;
 
-/// Shared TLS config for every ureq client so OS/enterprise root CAs are honored
-/// (#643). ureq's default `RootCerts::WebPki` ignores the system store, so requests
+/// Shared TLS config for every ureq client so OS/enterprise root CAs are honored.
+/// ureq's default `RootCerts::WebPki` ignores the system store, so requests
 /// fail with `UnknownIssuer` behind TLS-intercepting corporate proxies. Inject this
 /// into a `ureq::config::Config::builder().tls_config(platform_tls_config())` at each
 /// call site — ureq's builder scope typestate is private, so a shared *builder*
@@ -13,7 +12,6 @@ pub fn platform_tls_config() -> ureq::tls::TlsConfig {
         .build()
 }
 
-#[cfg(feature = "embeddings")]
 /// Agent that honors platform roots and bounds only the connection-setup phases
 /// (DNS/connect/first-byte) — a large but progressing download stays uncapped.
 pub fn ureq_agent_with_timeouts(

@@ -23,13 +23,13 @@ pub fn upstream_ids() -> impl Iterator<Item = &'static str> {
 }
 
 impl ProxyConfig {
-    /// Per-tool live-compress exclusion patterns (#481): protect Serena.
+    /// Per-tool live-compress exclusion patterns: protect Serena.
     #[must_use]
     pub fn live_compress_exclude_patterns(&self) -> Vec<String> {
         default_live_compress_exclude()
     }
 
-    /// Whether `tool_name` is on the live-compress exclusion list (#481) and must
+    /// Whether `tool_name` is on the live-compress exclusion list and must
     /// therefore reach the model intact, like a protected file read. Matching is
     /// case-insensitive substring, mirroring `tool_kind::classify_tool_name`.
     #[must_use]
@@ -101,7 +101,7 @@ impl ProxyConfig {
         }
     }
 
-    /// Re-resolve upstreams for a *running* proxy (#449). For any upstream whose
+    /// Re-resolve upstreams for a *running* proxy. For any upstream whose
     /// currently configured value fails validation, the last good value is
     /// kept instead of rerouting live traffic to the provider default — so a typo
     /// in config.toml can never silently redirect in-flight requests.
@@ -121,7 +121,7 @@ impl ProxyConfig {
 
 /// The resolved provider upstreams a running proxy forwards to. Published
 /// to request handlers via a `tokio::sync::watch` channel so a config change is
-/// picked up live, without a proxy restart (#449).
+/// picked up live, without a proxy restart.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Upstreams {
     pub anthropic: String,
@@ -142,7 +142,7 @@ pub fn upstream_drifted(configured: &str, live: &str) -> bool {
     configured != live
 }
 
-/// Built-in default live-compress exclusion (#481). Serena's code-reading tools
+/// Built-in default live-compress exclusion. Serena's code-reading tools
 /// (`find_symbol`/`find_referencing_symbols`/`search_for_pattern`) return source
 /// bodies the model edits, yet are mis-bucketed as `Search` by name, so the proxy
 /// would otherwise gut them. Protect anything namespaced `serena` by default.
@@ -150,7 +150,7 @@ fn default_live_compress_exclude() -> Vec<String> {
     vec!["serena".to_string()]
 }
 
-pub fn normalize_url(value: &str) -> String {
+pub(crate) fn normalize_url(value: &str) -> String {
     value.trim().trim_end_matches('/').to_string()
 }
 

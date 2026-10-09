@@ -1,7 +1,5 @@
 # Knowledge Policy Contract v1
 
-GitLab: `#2317`
-
 ## Purpose
 
 A versioned governance contract for project knowledge (facts, patterns,
@@ -21,8 +19,6 @@ history, relations) that is:
 The policy is `MemoryPolicy` (`rust/src/core/memory_policy.rs`). Every caller
 uses `MemoryPolicy::default()`: there is no config-file section and no
 environment override for it, so the values below are fixed.
-`MemoryPolicy::validate()` defines the valid value ranges; it is called only
-from unit tests, which assert that the defaults are valid.
 
 ### Knowledge (`KnowledgePolicy`)
 
@@ -45,7 +41,6 @@ from unit tests, which assert that the defaults are valid.
 | `stale_days` | 30 |
 | `similarity_threshold` | 0.85 |
 | `base_stability_days` | 90.0 |
-| `archetype_aware_decay` | false |
 | `prune_unretrieved_after_days` | 90 |
 | `reclaim_headroom_pct` | 0.25 (a full store settles at 75%) |
 
@@ -79,9 +74,9 @@ Checked against the current fact with the same `(category, key)`
 ### Retrieval budgets (bounded, deterministic)
 
 - `recall_facts_limit`: max facts in recall outputs
-- `rooms_limit`: max rooms in `ctx_knowledge action=rooms`
-- `timeline_limit`: max entries in `ctx_knowledge action=timeline`
-- `relations_limit`: max edges in `ctx_knowledge action=relations|relations_diagram`
+- `rooms_limit`: max rooms in `sobre_knowledge action=rooms`
+- `timeline_limit`: max entries in `sobre_knowledge action=timeline`
+- `relations_limit`: max edges in `sobre_knowledge action=relations|relations_diagram`
 
 Results are sorted with stable tie-breaks, then truncated.
 
@@ -113,16 +108,16 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
 
 ## Tool surface
 
-- `ctx_knowledge` (MCP): `rust/src/tools/ctx_knowledge/`,
-  registered in `rust/src/tools/registered/ctx_knowledge.rs`
+- `sobre_knowledge` (MCP): `rust/src/tools/sobre_knowledge/`,
+  registered in `rust/src/tools/registered/sobre_knowledge.rs`
   - `action=policy` with `value=show` (the default): prints the effective
     knowledge and lifecycle values. Any other `value` returns an error.
   - `action=consolidate` (with `dry_run=true` ⇒ preview without writes)
   - `action=restore` (`store` = `facts|history|patterns`, `query`,
     `limit`, default 50) ⇒ lossless undo from the archive
-- From a shell: `sobre call ctx_knowledge --project-root <path> --json
+- From a shell: `sobre call sobre_knowledge --project-root <path> --json
   '{"action":"consolidate"}'` (or `restore`, with the same arguments)
-- Relations: `rust/src/tools/ctx_knowledge_relations.rs` (bounded,
+- Relations: `rust/src/tools/sobre_knowledge_relations.rs` (bounded,
   deterministic outputs)
 
 ## Security & privacy

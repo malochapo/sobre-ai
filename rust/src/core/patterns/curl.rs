@@ -78,7 +78,7 @@ fn compress_json(output: &str) -> Option<String> {
 
     // A top-level array of repeated objects (paginated list responses) is the
     // one shape where the redacting schema below collapses to a useless
-    // `[object(NK); N]`. Defer to the shared generic core (#936): the lossless
+    // `[object(NK); N]`. Defer to the shared generic core: the lossless
     // crusher keeps every datum in a reconstructible form when it at least
     // halves the payload. Objects keep curl's redacting, value-previewing schema
     // (secret keys, short-string previews) — the crusher is value-preserving and
@@ -250,7 +250,7 @@ mod tests {
     fn json_array_of_objects_uses_lossless_crush() {
         // Top-level array with a field constant across all rows: the shared
         // `json_crush` core compacts it losslessly instead of curl's useless
-        // `[object(NK); N]` summary (#936).
+        // `[object(NK); N]` summary.
         let mut json = String::from("[");
         for i in 0..12 {
             if i > 0 {

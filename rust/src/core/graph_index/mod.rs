@@ -14,7 +14,6 @@ use crate::core::signatures;
 mod edges;
 pub(crate) use edges::*;
 #[allow(unreachable_pub)]
-pub(crate) mod file_id;
 #[cfg(test)]
 mod tests;
 
@@ -33,7 +32,7 @@ fn is_filesystem_root(path: &str) -> bool {
 
 /// Returns `true` if `dir` contains a known project marker.
 ///
-/// Delegates to the single TCC-guarded probe in `pathutil` (#356) so a
+/// Delegates to the single TCC-guarded probe in `pathutil` so a
 /// launchd-standalone process never stats marker files under ~/Documents, and
 /// the marker set stays defined in exactly one place (`pathutil::PROJECT_MARKERS`).
 fn dir_has_project_marker(dir: &Path) -> bool {
@@ -44,7 +43,7 @@ fn dir_has_project_marker(dir: &Path) -> bool {
 /// marker. Subdirectories of a real project (e.g. `repo/rust/src`) are
 /// legitimate scan roots even though the marker lives at the repo root —
 /// refusing them produced WARN noise on every grep/ls inside ~/Documents
-/// projects (GL#438). `stop` itself is never checked, so a marker-less
+/// projects. `stop` itself is never checked, so a marker-less
 /// `~/Documents` stays refused.
 fn has_marker_in_ancestry(p: &Path, stop: &Path) -> bool {
     let mut cur = Some(p);
@@ -64,7 +63,7 @@ fn is_safe_scan_root(path: &str) -> bool {
     let normalized = normalize_project_root(path);
     let p = Path::new(&normalized);
 
-    // macOS TCC (#356): a launchd-standalone process must never stat or
+    // macOS TCC: a launchd-standalone process must never stat or
     // enumerate under ~/Documents/Desktop/Downloads. Refuse such roots before
     // any marker probe / read_dir runs. Editor- and CLI-attached processes
     // inherit a TCC grant and keep indexing those projects normally.
@@ -96,7 +95,7 @@ fn is_safe_scan_root(path: &str) -> bool {
             return false;
         }
         // macOS TCC: Documents/Desktop/Downloads pop a privacy prompt the moment
-        // we stat or enumerate inside them (#356). They are never valid scan roots,
+        // we stat or enumerate inside them. They are never valid scan roots,
         // so refuse here before any has_marker stat or read_dir runs.
         if crate::core::pathutil::is_tcc_sensitive_home_dir(p) {
             tracing::warn!(
@@ -121,7 +120,7 @@ fn is_safe_scan_root(path: &str) -> bool {
             "snap",
             "Applications",
             // Cloud-sync roots: scanning these forces on-demand providers to
-            // hydrate (download) every placeholder file/folder (#363). iCloud's
+            // hydrate (download) every placeholder file/folder. iCloud's
             // backing dir (~/Library/Mobile Documents) is already covered by
             // "Library" above.
             "OneDrive",
@@ -132,7 +131,7 @@ fn is_safe_scan_root(path: &str) -> bool {
             let blocked_path = home_path.join(blocked);
             let is_inside_blocked = p == blocked_path || p.starts_with(&blocked_path);
             // Markers may live in an *ancestor*: `repo/rust/src` is a legitimate
-            // scan root of the project rooted at `repo` (GL#438). Walk up to (but
+            // scan root of the project rooted at `repo`. Walk up to (but
             // not past) the blocked dir itself, so `~/Documents` without any
             // project stays refused.
             let has_marker = has_marker_in_ancestry(p, &blocked_path);
@@ -226,9 +225,6 @@ pub struct ProjectIndex {
     pub files: HashMap<String, FileEntry>,
     pub edges: Vec<IndexEdge>,
     pub symbols: HashMap<String, SymbolEntry>,
-    /// Graph-local path interner: one owned allocation per distinct file path.
-    /// Populated during scan; used for O(1) path→id lookups in queries.
-    pub(crate) interner: file_id::PathInterner,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -268,19 +264,7 @@ impl ProjectIndex {
             files: HashMap::new(),
             edges: Vec::new(),
             symbols: HashMap::new(),
-            interner: file_id::PathInterner::new(),
         }
-    }
-
-    /// Rebuild the interner from the current `files` keys. Called after a scan
-    /// and after materialization from the property graph, where `interner` is
-    /// absent.
-    pub(crate) fn rebuild_interner(&mut self) {
-        let mut interner = file_id::PathInterner::with_capacity(self.files.len());
-        for key in self.files.keys() {
-            interner.intern(key);
-        }
-        self.interner = interner;
     }
 
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
@@ -525,7 +509,7 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         // No persisted index yet — the existence/TTL checks above already decided.
         return false;
     };
-    // #735: excluded files must not flag the index stale (a change to CSV seed
+    // Excluded files must not flag the index stale (a change to CSV seed
     // data would otherwise force needless graph rescans forever).
     let index_filter = crate::core::index_filter::IndexFileFilter::effective();
     let walker = ignore::WalkBuilder::new(root_abs)
@@ -648,7 +632,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         .unwrap_or_default();
 
     let cfg = crate::core::config::Config::load();
-    // #735: shared corpus filter — same membership decision as the BM25 walk.
+    // Shared corpus filter — same membership decision as the BM25 walk.
     let index_filter = crate::core::index_filter::IndexFileFilter::resolve(&cfg);
 
     let walker = ignore::WalkBuilder::new(&project_root)
@@ -669,7 +653,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let mut entries_visited = 0usize;
     let mut content_cache: HashMap<String, String> = HashMap::new();
     let mut content_cache_bytes: usize = 0;
-    const CONTENT_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024; // #790: cap at 256MB
+    const CONTENT_CACHE_MAX_BYTES: usize = 256 * 1024 * 1024; // cap at 256MB
     let max_files = crate::core::config::GRAPH_INDEX_MAX_FILES as usize;
     const MAX_ENTRIES_VISITED: usize = 500_000;
     const MAX_FILE_SIZE_BYTES: u64 = 2 * 1024 * 1024; // 2 MB per file
@@ -682,7 +666,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     const SCAN_EST_TRANSIENT_PER_FILE: u64 = 192 * 1024;
     let scan_deadline = std::time::Instant::now() + std::time::Duration::from_mins(5);
 
-    // #934: two-phase scan. Phase 1 walks the tree sequentially (cheap; it
+    // Two-phase scan. Phase 1 walks the tree sequentially (cheap; it
     // carries the traversal caps / timeout / memory early-breaks) and collects
     // the files to index. Phase 2 fans the expensive per-file signature
     // extraction across a rayon pool — pure and thread-safe (the tree-sitter
@@ -784,7 +768,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         targets.push((file_path, rel, ext));
     }
 
-    // #790: admission control — check if parallel fan-out fits memory headroom.
+    // Admission control — check if parallel fan-out fits memory headroom.
     // Degrades to sequential (with per-file pressure breaks) on huge corpora,
     // mirroring BM25's admission gate.
     let target_rels: Vec<String> = targets.iter().map(|(_, r, _)| r.clone()).collect();
@@ -839,7 +823,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         crate::core::memory_guard::jemalloc_purge();
     }
 
-    index.rebuild_interner();
     build_edges_cached(&mut index, &content_cache);
 
     if let Err(e) = index.save() {

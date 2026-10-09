@@ -15,7 +15,7 @@ pub(crate) fn select_mode_with_task(
         }
     }
 
-    // Avoid a redundant disk read: ctx_read::handle re-reads the file anyway.
+    // Avoid a redundant disk read: sobre_read::handle re-reads the file anyway.
     // For files already in the session cache (the common agent-loop case of
     // re-reading a file), reuse the stored token count instead of reading from
     // disk a second time just to pick a mode.

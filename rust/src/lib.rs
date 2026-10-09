@@ -17,10 +17,11 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 pub static malloc_conf: &[u8] = b"background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000\0";
 
 // ---------------------------------------------------------------------------
-// Pillar: Engine — context compression, MCP tools, agent hooks, local UX
+// Engine — context compression, MCP tools, agent hooks
 // ---------------------------------------------------------------------------
 pub mod compound_lexer;
 pub mod core;
+#[cfg(any(test, feature = "test-support"))]
 pub mod engine;
 pub mod hook_handlers;
 pub mod hooks;
@@ -35,14 +36,14 @@ pub mod tool_defs;
 pub mod tools;
 
 // ---------------------------------------------------------------------------
-// Pillar: Gateway — LLM API proxy, org-wide monitoring, budget enforcement
+// Proxy — compresses tool results in the LLM API traffic of wired agents
 // ---------------------------------------------------------------------------
 pub mod proxy;
 pub mod proxy_autostart;
 pub mod proxy_setup;
 
 // ---------------------------------------------------------------------------
-// Shared — CLI, IPC, config, diagnostics, setup
+// Shared — CLI, process helpers, config, diagnostics, setup
 // ---------------------------------------------------------------------------
 pub mod cli;
 pub mod config_io;

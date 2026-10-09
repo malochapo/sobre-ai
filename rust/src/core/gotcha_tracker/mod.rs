@@ -3,9 +3,7 @@ mod model;
 mod persist;
 mod runtime;
 
-pub use detect::{
-    DetectedError, detect_error_pattern, is_correlatable_command, normalize_error_signature,
-};
+pub use detect::{detect_error_pattern, normalize_error_signature};
 pub use model::{
     ErrorEntry, FixEntry, Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStore,
     PendingError, SessionErrorLog,
@@ -14,7 +12,8 @@ pub use runtime::record_shell_outcome;
 
 use chrono::Utc;
 use detect::command_base;
-use model::{DECAY_ARCHIVE_THRESHOLD, MAX_GOTCHAS, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
+pub(crate) use model::MAX_GOTCHAS;
+use model::{DECAY_ARCHIVE_THRESHOLD, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
 
 impl GotchaStore {
     // -- Detection ----------------------------------------------------------
@@ -492,10 +491,13 @@ mod tests {
             "docker build .",
             "git rebase main",
         ] {
-            assert!(is_correlatable_command(cmd), "should correlate: {cmd}");
+            assert!(
+                detect::is_correlatable_command(cmd),
+                "should correlate: {cmd}"
+            );
         }
         for cmd in ["ls -la", "cat README.md", "echo hi", "cd rust", "pwd"] {
-            assert!(!is_correlatable_command(cmd), "should skip: {cmd}");
+            assert!(!detect::is_correlatable_command(cmd), "should skip: {cmd}");
         }
     }
 }

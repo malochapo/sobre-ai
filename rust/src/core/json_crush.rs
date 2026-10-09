@@ -1,5 +1,5 @@
 //! Deterministic JSON crusher — single source of truth for structural JSON
-//! compaction (#934, Headroom "Smart Crusher" port, GitLab #935).
+//! compaction (a port of Headroom's "Smart Crusher").
 //!
 //! Real JSON payloads (API responses, `kubectl get -o json`, DB dumps, RAG
 //! chunks) are dominated by arrays of objects that repeat the same keys and
@@ -14,7 +14,7 @@
 //!   (timestamps, UUIDs — pure noise for an agent) recorded in `_dropped`. The
 //!   exact original is then recovered out-of-band via CCR, never from the text.
 //!
-//! Determinism (#498): the output is a pure function of the input `Value` — no
+//! Determinism: the output is a pure function of the input `Value` — no
 //! timestamps, counters, randomness, or hash-map order leakage (candidate keys
 //! are walked through a [`BTreeSet`], value frequencies through a [`BTreeMap`]).
 //! The crusher never inflates: callers gate on `shorter_only`, and a no-op input
@@ -43,7 +43,7 @@ const MIN_DOMINANCE: f64 = 0.5;
 /// enough that the compact form is at most `1/KEEP_DATA_DIVISOR` of the input;
 /// heterogeneous/low-redundancy data falls through to each caller's own outline.
 /// Single source for the shell (`json_schema`, `curl`) and read (`structured_read`)
-/// paths so the gate can never drift (#936).
+/// paths so the gate can never drift.
 pub const KEEP_DATA_DIVISOR: usize = 2;
 
 /// Result of a crush pass.
@@ -115,7 +115,7 @@ pub fn crush_value_if_beneficial(value: &Value, raw_len: usize) -> Option<String
 
 /// Parse `text` as JSON and losslessly crush it, returning the compact form only
 /// when it at least halves the input ([`KEEP_DATA_DIVISOR`]). The shared gate for
-/// callers that start from raw text (`structured_read`, `ctx_read` aggressive).
+/// callers that start from raw text (`structured_read`, `sobre_read` aggressive).
 /// `None` for non-JSON or low-redundancy input — the caller keeps its own path.
 pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
     let trimmed = text.trim();
@@ -400,7 +400,7 @@ mod tests {
     fn output_is_byte_stable_across_calls() {
         let v = homogeneous();
         let run = || crush_lossless(&v).unwrap().text;
-        assert_eq!(run(), run(), "crush output must be deterministic (#498)");
+        assert_eq!(run(), run(), "crush output must be deterministic");
     }
 
     #[test]

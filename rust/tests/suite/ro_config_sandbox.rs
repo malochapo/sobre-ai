@@ -1,9 +1,9 @@
-//! GH #408 RO-config sandbox gate (brought forward from GL #607).
+//! RO-config sandbox gate (brought forward).
 //!
 //! With the config dir read-only and the data/state/cache categories split out
 //! via `SOBRE_*_DIR`, a full sobre shell cycle must run without writing
-//! anything into the config dir. This is the exact acceptance criterion from
-//! #408 (`--ro $XDG_CONFIG_HOME/sobre`).
+//! anything into the config dir. This is the exact acceptance criterion
+//! (`--ro $XDG_CONFIG_HOME/sobre`).
 //!
 //! `config_dir()` resets its own perms to `0o700` on access, so `chmod 0o500` is
 //! a best-effort RO simulation only — the real gate is the assertion that the

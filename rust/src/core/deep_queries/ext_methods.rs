@@ -1,10 +1,10 @@
-//! C# extension-method extraction (GH #398 follow-up).
+//! C# extension-method extraction (follow-up).
 //!
 //! An extension method (`public static T Foo(this X x, …)`) is invoked as if
 //! it were an instance method (`value.Foo()`). The call site therefore names
 //! neither the defining static class nor any of its types, so import- and
 //! type-usage edges miss the dependency entirely. Capturing the method names
-//! lets `ctx_impact` link `value.Foo()` consumers to the file that defines the
+//! lets `sobre_graph action=impact` link `value.Foo()` consumers to the file that defines the
 //! extension.
 //!
 //! Only C# is handled today; Kotlin/Swift extension functions are a documented

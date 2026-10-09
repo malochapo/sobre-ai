@@ -178,7 +178,7 @@ fn agent_init_unknown_agent_fails() {
         run_with_env(&["init", "--agent", "nonexistent_agent"], &[], None);
     assert_ne!(code, 0, "unknown agent should fail");
     assert!(
-        stderr.contains("Unknown agent"),
+        stderr.contains("unknown agent"),
         "should say unknown: {stderr}"
     );
 }
@@ -254,7 +254,7 @@ fn hook_cursor_wraps_known_commands_without_a_permission_decision() {
     )
     .unwrap();
     // A different command: Cursor double-fires, so a repeated command replays
-    // the first reply for a few seconds (#1032).
+    // the first reply for a few seconds.
     let (stdout, _stderr, _code) = run_hook_test(
         &["hook", "cursor"],
         &[("HOME", &home_s), ("SOBRE_DATA_DIR", &home_s)],

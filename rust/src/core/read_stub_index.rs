@@ -1,18 +1,18 @@
-//! Persistent, conversation-scoped index of fully-delivered file reads (#955).
+//! Persistent, conversation-scoped index of fully-delivered file reads.
 //!
 //! The in-memory [`SessionCache`](crate::core::cache::SessionCache) is wiped on
-//! every daemon restart (and emptied by the idle-TTL clear), so a re-read of an
+//! every MCP restart (and emptied by the idle-TTL clear), so a re-read of an
 //! unchanged file afterwards re-delivers the whole body. This index persists the
 //! *minimal bookkeeping* needed to serve the `[unchanged]` stub — **never the
 //! content** — so a re-read in the SAME conversation collapses to the cheap stub
 //! even across a restart. Content is always re-read from disk; only delivery
-//! bookkeeping persists, so tool-output determinism (#498) is untouched.
+//! bookkeeping persists, so tool-output determinism is untouched.
 //!
 //! ## Correctness
 //! A cold stub (served when the live cache has no entry) is gated harder than a
 //! warm one: it requires a *known, matching* conversation
 //! ([`crate::core::conversation::conversation_allows_cold_stub`]) plus an
-//! mtime+md5 match against the current file. A new chat after a restart cannot
+//! mtime+hash match against the current file. A new chat after a restart cannot
 //! prove the content is in its context, so it gets a cold full read — never a
 //! misleading stub. A host compaction drops the whole index (the conversation's
 //! context was summarised away), mirroring `SessionCache::reset_delivery_flags`.
@@ -55,7 +55,7 @@ impl SerMtime {
 pub struct StubRecord {
     /// Canonical (normalized) path key.
     pub path: String,
-    /// md5 of the delivered content (lossy-UTF-8 view, matching `SessionCache`).
+    /// Hash of the delivered content (lossy-UTF-8 view, matching `SessionCache`).
     pub hash: String,
     mtime: Option<SerMtime>,
     pub line_count: usize,
@@ -85,7 +85,7 @@ impl StubRecord {
             line_count,
             file_ref,
             delivered_conversation,
-            updated_at: now_unix(),
+            updated_at: crate::core::clock::now_unix(),
         }
     }
 
@@ -93,12 +93,6 @@ impl StubRecord {
     pub fn stored_mtime(&self) -> Option<SystemTime> {
         self.mtime.map(SerMtime::to_system)
     }
-}
-
-fn now_unix() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
 
 /// On-disk shape: a sorted record list (sorted for a stable file, though the

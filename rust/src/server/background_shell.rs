@@ -1,7 +1,7 @@
-//! Explicit, in-process background jobs for `ctx_shell`.
+//! Explicit, in-process background jobs for `sobre_shell`.
 //!
 //! The MCP request may complete immediately, but the child keeps the exact
-//! timeout and process-group policy of foreground shell execution. Jobs intentionally live in the daemon: restarting it invalidates
+//! timeout and process-group policy of foreground shell execution. Jobs intentionally live in the MCP server: restarting it invalidates
 //! outstanding jobs rather than silently orphaning subprocesses.
 
 use std::collections::HashMap;
@@ -30,7 +30,7 @@ struct Job {
 
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
-/// How often a foreground run reports progress to the MCP client (#1173).
+/// How often a foreground run reports progress to the MCP client.
 const TICK: Duration = Duration::from_secs(5);
 
 fn prune_finished_jobs(jobs: &mut HashMap<String, Job>, now: Instant) {
@@ -87,7 +87,7 @@ pub fn start(
     extra_env: std::collections::HashMap<String, String>,
     timeout_ms: Option<u64>,
 ) -> String {
-    // IDs are content-addressed so tool responses stay deterministic (#498).
+    // IDs are content-addressed so tool responses stay deterministic.
     // An identical in-flight launch coalesces onto the same job instead of
     // creating duplicate expensive builds/tests.
     let mut env_entries: Vec<_> = extra_env.iter().collect();
@@ -133,7 +133,7 @@ pub fn start(
             &extra_env,
             timeout_ms,
             Some(&worker_cancel),
-            // #1113/#1173: bounded by output, not wall clock — a monitor loop
+            // Bounded by output, not wall clock — a monitor loop
             // emitting a line every 45s must survive. See `idle_keyed`.
             true,
         );
@@ -160,7 +160,7 @@ pub enum ForegroundResult {
     /// the job has been removed from the registry.
     Finished { output: String, exit_code: i32 },
     /// The command was still running at the soft cap and was left running as a
-    /// pollable background job (#1106).
+    /// pollable background job.
     Detached { job_id: String },
 }
 
@@ -170,11 +170,11 @@ pub enum ForegroundResult {
 /// The MCP host aborts a tool call that stays in the foreground too long
 /// (~120s) and hands back a task id that `background_action=status` cannot
 /// resolve. By detaching *before* that deadline we always return a real
-/// `shell_*` job id the caller can poll or cancel (#1106).
+/// `shell_*` job id the caller can poll or cancel.
 ///
 /// `on_tick` is called roughly every `TICK` while the command is still
 /// running, so the caller can emit MCP progress notifications and a 3-minute
-/// build stops being indistinguishable from a hang (#1173).
+/// build stops being indistinguishable from a hang.
 pub fn run_foreground_or_detach(
     command: String,
     cwd: String,
@@ -234,15 +234,30 @@ pub fn status(id: &str) -> Option<JobState> {
         .map(|job| job.state.clone())
 }
 
+/// How long `cancel` waits for the job to stop before answering.
+const CANCEL_WAIT: Duration = Duration::from_secs(2);
+
+/// Ask a job to stop and wait up to two seconds for it, so the answer says
+/// what happened. `Running` comes back only when the job is still stopping.
 pub fn cancel(id: &str) -> Option<JobState> {
-    let mut jobs = JOBS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let job = jobs.get_mut(id)?;
-    if matches!(job.state, JobState::Running) {
+    {
+        let mut jobs = JOBS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let job = jobs.get_mut(id)?;
+        if !matches!(job.state, JobState::Running) {
+            return Some(job.state.clone());
+        }
         job.cancel.store(true, Ordering::Release);
     }
-    Some(job.state.clone())
+    let deadline = Instant::now() + CANCEL_WAIT;
+    loop {
+        let state = status(id)?;
+        if !matches!(state, JobState::Running) || Instant::now() >= deadline {
+            return Some(state);
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 #[cfg(test)]
@@ -356,12 +371,12 @@ mod tests {
             panic!("slow command should detach");
         };
         assert!(job_id.starts_with("shell_"));
-        // The returned id must resolve via status — the core #1106 guarantee.
+        // The returned id must resolve via status — the core guarantee.
         assert!(status(&job_id).is_some());
         cancel(&job_id);
     }
 
-    /// #1173: a `timeout_ms` far beyond the soft cap must NOT keep the command
+    /// A `timeout_ms` far beyond the soft cap must NOT keep the command
     /// in the foreground. Raising the cap past the MCP host's ~120s abort is
     /// what stranded results behind an unresolvable task id; the caller must
     /// still get a real `shell_*` job id at the cap.
@@ -383,7 +398,7 @@ mod tests {
         cancel(&job_id);
     }
 
-    /// #1173: a foreground run reports progress while it waits, so a slow
+    /// A foreground run reports progress while it waits, so a slow
     /// command is distinguishable from a hang. Deliberately slower than the
     /// other tests here — it has to outlive one real [`TICK`].
     #[test]
@@ -443,14 +458,12 @@ mod tests {
             std::collections::HashMap::default(),
             Some(10_000),
         );
-        assert!(matches!(cancel(&id), Some(JobState::Running)));
-        for _ in 0..40 {
-            if let Some(JobState::Cancelled { output }) = status(&id) {
-                assert!(output.contains("command cancelled"));
-                return;
+        // B45: the answer to a cancel is the cancelled job, not "running".
+        match cancel(&id) {
+            Some(JobState::Cancelled { output }) => {
+                assert!(output.contains("command cancelled"), "{output}");
             }
-            std::thread::sleep(Duration::from_millis(25));
+            other => panic!("background job was not cancelled: {other:?}"),
         }
-        panic!("background job was not cancelled");
     }
 }

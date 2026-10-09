@@ -1,4 +1,4 @@
-//! Workspace-scope MCP registration detection (issue #312).
+//! Workspace-scope MCP registration detection.
 //!
 //! Editors such as VS Code, Copilot and Cursor support a project-local
 //! MCP config (e.g. `.vscode/mcp.json`) in addition to the user-global one.

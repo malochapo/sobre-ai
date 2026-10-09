@@ -5,11 +5,106 @@ use serde_json::Value;
 ///
 /// This makes sobre tolerant of the JSONC dialect that editors like VS Code
 /// use for `settings.json` / `mcp.json` (comments + trailing commas are valid
-/// there but rejected by strict JSON). See issue #311.
+/// there but rejected by strict JSON).
 pub fn parse_jsonc(input: &str) -> Result<Value, serde_json::Error> {
     let stripped = strip_json_comments(input);
     let cleaned = strip_trailing_commas(&stripped);
     serde_json::from_str(&cleaned)
+}
+
+/// Renders `new` as an edit of `original`: properties and elements that did
+/// not change keep their text, comments, order and formatting; changed values
+/// are replaced in place; added keys go at the end of their object. Used for
+/// every agent config sobre edits, so the user's file reads as they wrote it
+/// apart from sobre's own entries. Falls back to plain pretty JSON when
+/// `original` does not parse.
+pub fn rewrite_preserving(original: &str, new: &Value) -> String {
+    use jsonc_parser::ParseOptions;
+    use jsonc_parser::cst::CstRootNode;
+
+    let Ok(root) = CstRootNode::parse(original, &ParseOptions::default()) else {
+        return pretty(new);
+    };
+    match root.value() {
+        Some(node) if sync_node(&node, new) => {}
+        _ => root.set_value(to_input(new)),
+    }
+    let mut out = root.to_string();
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out
+}
+
+/// Pretty JSON with a final newline, for files sobre creates.
+pub fn pretty(value: &Value) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default() + "\n"
+}
+
+/// Brings the CST `node` in line with `new` in place. Returns `false` when the
+/// kinds differ, so the caller replaces the node as a whole.
+fn sync_node(node: &jsonc_parser::cst::CstNode, new: &Value) -> bool {
+    if node.to_serde_value().as_ref() == Some(new) {
+        return true;
+    }
+    match (new, node.as_object(), node.as_array()) {
+        (Value::Object(map), Some(obj), _) => {
+            for prop in obj.properties() {
+                let keep = prop.decoded_name().is_some_and(|k| map.contains_key(&k));
+                if !keep {
+                    prop.remove();
+                }
+            }
+            for (key, value) in map {
+                match obj.get(key) {
+                    Some(prop) => {
+                        let synced = prop.value().is_some_and(|v| sync_node(&v, value));
+                        if !synced {
+                            prop.set_value(to_input(value));
+                        }
+                    }
+                    None => {
+                        obj.append(key, to_input(value));
+                    }
+                }
+            }
+            true
+        }
+        (Value::Array(items), _, Some(arr)) => {
+            let elements = arr.elements();
+            for extra in elements.iter().skip(items.len()).rev() {
+                extra.clone().remove();
+            }
+            for (i, value) in items.iter().enumerate() {
+                match elements.get(i) {
+                    Some(el) if sync_node(el, value) => {}
+                    Some(el) => {
+                        el.clone().remove();
+                        arr.insert(i, to_input(value));
+                    }
+                    None => {
+                        arr.append(to_input(value));
+                    }
+                }
+            }
+            true
+        }
+        _ => false,
+    }
+}
+
+fn to_input(value: &Value) -> jsonc_parser::cst::CstInputValue {
+    use jsonc_parser::cst::CstInputValue;
+    match value {
+        Value::Null => CstInputValue::Null,
+        Value::Bool(b) => CstInputValue::Bool(*b),
+        Value::Number(n) => CstInputValue::Number(n.to_string()),
+        Value::String(s) => CstInputValue::String(s.clone()),
+        Value::Array(items) => CstInputValue::Array(items.iter().map(to_input).collect()),
+        Value::Object(map) => {
+            CstInputValue::Object(map.iter().map(|(k, v)| (k.clone(), to_input(v))).collect())
+        }
+    }
 }
 
 fn strip_json_comments(input: &str) -> String {
@@ -181,7 +276,7 @@ mod tests {
         assert!(parse_jsonc("").is_err());
     }
 
-    // --- #311: trailing comma support (VS Code / JSONC dialect) ---
+    // --- trailing comma support (VS Code / JSONC dialect) ---
 
     #[test]
     fn strips_trailing_comma_in_object() {
@@ -231,8 +326,8 @@ mod tests {
     }
 
     #[test]
-    fn issue_311_vscode_settings_with_trailing_comma_and_comments() {
-        // Mirrors the real VS Code user settings.json that triggered #311:
+    fn vscode_settings_with_trailing_comma_and_comments() {
+        // Mirrors the real VS Code user settings.json that broke the strict parser:
         // "trailing comma at line 4 column 5" plus JSONC comments.
         let input = r#"{
   // editor settings
@@ -359,5 +454,72 @@ mod tests {
         );
         let args = v["mcpServers"]["sobre"]["args"].as_array().unwrap();
         assert_eq!(args[1], "/Users/müller/Projekte/größtes-projekt");
+    }
+
+    #[test]
+    fn rewrite_keeps_comments_order_and_trailing_commas() {
+        let original = r#"{
+  // theme first, on purpose
+  "theme": "One Dark",
+  "context_servers": {
+    "other": { "command": "other" }, // keep me
+  },
+  "a_last": 1,
+}
+"#;
+        let mut v = parse_jsonc(original).unwrap();
+        v["context_servers"]["sobre"] = serde_json::json!({ "command": "/bin/sobre" });
+        let out = rewrite_preserving(original, &v);
+
+        assert!(out.contains("// theme first, on purpose"), "{out}");
+        assert!(out.contains("// keep me"), "{out}");
+        let theme = out.find("\"theme\"").unwrap();
+        let servers = out.find("\"context_servers\"").unwrap();
+        let last = out.find("\"a_last\"").unwrap();
+        assert!(
+            theme < servers && servers < last,
+            "key order changed: {out}"
+        );
+        assert_eq!(parse_jsonc(&out).unwrap(), v);
+    }
+
+    #[test]
+    fn rewrite_removing_an_entry_leaves_the_rest_byte_identical() {
+        let original = "{\n  \"mcpServers\": {\n    \"a\": { \"command\": \"a\" },\n    \"sobre\": { \"command\": \"s\" }\n  },\n  \"z\": true\n}\n";
+        let mut v = parse_jsonc(original).unwrap();
+        v["mcpServers"].as_object_mut().unwrap().remove("sobre");
+        let out = rewrite_preserving(original, &v);
+        assert_eq!(
+            out,
+            "{\n  \"mcpServers\": {\n    \"a\": { \"command\": \"a\" }\n  },\n  \"z\": true\n}\n"
+        );
+    }
+
+    #[test]
+    fn rewrite_unchanged_value_returns_the_original_text() {
+        let original = "{ \"b\": 1,   \"a\": [1, 2] } \n";
+        let v = parse_jsonc(original).unwrap();
+        assert_eq!(rewrite_preserving(original, &v), original);
+    }
+
+    #[test]
+    fn rewrite_appends_array_entries_and_handles_kind_changes() {
+        let original = "{\n  \"hooks\": [\n    { \"command\": \"user\" }\n  ],\n  \"x\": 1\n}\n";
+        let mut v = parse_jsonc(original).unwrap();
+        v["hooks"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({ "command": "sobre hook" }));
+        v["x"] = serde_json::json!({ "now": "an object" });
+        let out = rewrite_preserving(original, &v);
+        assert_eq!(parse_jsonc(&out).unwrap(), v);
+        assert!(out.contains("{ \"command\": \"user\" }"), "{out}");
+    }
+
+    #[test]
+    fn rewrite_of_empty_or_invalid_text_writes_pretty_json() {
+        let v = serde_json::json!({ "mcpServers": { "sobre": { "command": "s" } } });
+        assert_eq!(parse_jsonc(&rewrite_preserving("", &v)).unwrap(), v);
+        assert_eq!(parse_jsonc(&rewrite_preserving("{ broken", &v)).unwrap(), v);
     }
 }

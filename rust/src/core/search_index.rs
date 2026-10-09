@@ -1,6 +1,6 @@
-//! Resident line-search index for `ctx_search` (Phase 1 of the efficiency epic).
+//! Resident line-search index for `sobre_search` (Phase 1 of the efficiency epic).
 //!
-//! Historically `ctx_search` walked the filesystem, read every file, and ran a
+//! Historically `sobre_search` walked the filesystem, read every file, and ran a
 //! regex on every line on *every* call — `O(files × lines)`. That is the
 //! 40–200 ms latency floor this module eliminates.
 //!
@@ -8,12 +8,12 @@
 //! common case (an identifier / literal query) collapses to: intersect a few
 //! posting lists in memory → read & regex-verify only the handful of candidate
 //! files. The index never decides matches itself; it only *narrows the file
-//! set*, then `ctx_search` verifies candidates with the exact same regex loop,
+//! set*, then `sobre_search` verifies candidates with the exact same regex loop,
 //! so the returned `file:line` hits are byte-identical to the walk path.
 //!
 //! Design notes:
 //! - The index is built with the *same* walk config and file filters as
-//!   `ctx_search` (see [`crate::tools::ctx_search`]) so the searchable universe
+//!   `sobre_search` (see [`crate::tools::sobre_search`]) so the searchable universe
 //!   is identical — that is what guarantees recall parity.
 //! - Only `[A-Za-z0-9_]` trigrams are indexed. Lookups only ever use trigrams
 //!   from pure-identifier queries, so this is both sufficient and memory-bounded.
@@ -38,7 +38,7 @@ use std::time::Duration;
 use glob::Pattern;
 use ignore::WalkBuilder;
 
-use crate::tools::ctx_search::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
+use crate::tools::sobre_search::{MAX_FILE_SIZE, MAX_WALK_DEPTH, is_binary_ext, is_generated_file};
 
 /// Upper bound on indexed files; larger trees fall back to the walk path.
 const MAX_FILES: usize = 200_000;
@@ -74,7 +74,7 @@ fn pack(b0: u8, b1: u8, b2: u8) -> u32 {
 
 /// How candidate files are narrowed for a literal query. Two tiers, chosen by
 /// corpus size, both providing a *superset* of true matches (zero false
-/// negatives) which `ctx_search` then regex-verifies:
+/// negatives) which `sobre_search` then regex-verifies:
 /// - `Postings`: exact inverted lists `trigram → sorted file ids`. Fast, sparse
 ///   lookups; used while total entries fit [`MAX_POSTING_ENTRIES`].
 /// - `Blooms`: one compact per-file Bloom filter of the file's trigrams. ~3×
@@ -141,7 +141,7 @@ impl FileBloom {
     }
 }
 
-/// Files the corpus walk left out on purpose, so `ctx_search` can say so.
+/// Files the corpus walk left out on purpose, so `sobre_search` can say so.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct WalkSkips {
     /// Binary, minified, lock, map and similar files skipped by name.
@@ -156,7 +156,7 @@ pub struct SearchIndex {
     /// Candidate-narrowing structure (exact postings or compact per-file Bloom).
     narrowing: Narrowing,
     respect_gitignore: bool,
-    /// Files the corpus walk left out, reported by `ctx_search`.
+    /// Files the corpus walk left out, reported by `sobre_search`.
     skips: WalkSkips,
     /// Signature of the on-disk corpus this index was built from — the freshness
     /// truth checked on every [`get_fresh`] (see [`corpus_signature`]).
@@ -165,7 +165,7 @@ pub struct SearchIndex {
 
 impl SearchIndex {
     /// Build the index by walking `root` with the exact same config and filters
-    /// as `ctx_search`, so the searchable file universe is identical.
+    /// as `sobre_search`, so the searchable file universe is identical.
     pub fn build(root: &str, respect_gitignore: bool) -> Option<Self> {
         let mut files: Vec<PathBuf> = Vec::new();
         // Per-file sorted, deduped trigrams. Same memory as the posting lists
@@ -188,11 +188,11 @@ impl SearchIndex {
             sig_sum = sig_sum.wrapping_add(file_sig(path, state));
             file_count += 1;
 
-            // Read the corpus exactly once (issue #148): reuse a fresh cached
-            // copy if a prior `ctx_search`/build already read this file, else
-            // read it now and publish it so the upcoming `ctx_search` verify
+            // Read the corpus exactly once: reuse a fresh cached
+            // copy if a prior `sobre_search`/build already read this file, else
+            // read it now and publish it so the upcoming `sobre_search` verify
             // pass is an in-memory hit instead of a second disk read. Mirrors
-            // ctx_search: a non-UTF-8 file is never searchable, so it is skipped
+            // sobre_search: a non-UTF-8 file is never searchable, so it is skipped
             // for trigrams (but already folded into the signature above).
             let content: std::sync::Arc<str> = if let Some(cached) =
                 state.and_then(|s| crate::core::content_cache::get(path, s))
@@ -425,7 +425,7 @@ fn intersect_sorted(a: &[u32], b: &[u32]) -> Vec<u32> {
 // makes the equality check trustworthy).
 // ---------------------------------------------------------------------------
 
-/// Walk `root` with the *exact* `ctx_search` file universe — same gitignore
+/// Walk `root` with the *exact* `sobre_search` file universe — same gitignore
 /// semantics, depth limit, and binary/generated/secret/size/regular-file guards
 /// — invoking `visit(path, state)` for every eligible regular file with its
 /// `(mtime, size)` identity (`None` only when the platform cannot report mtime).
@@ -445,7 +445,7 @@ where
     // Never auto-index a broad/unsafe root (HOME, filesystem root, a dir with
     // dozens of unrelated subtrees). Mirrors the graph/BM25 guard and stops a
     // walk of the whole home directory — which on Windows would hydrate OneDrive
-    // placeholders (#363).
+    // placeholders.
     if !crate::core::graph_index::is_safe_scan_root_public(root) {
         return None;
     }
@@ -474,7 +474,7 @@ where
             continue;
         }
         // `metadata` (stat) never opens the file, so it cannot block on a
-        // FIFO/socket/device node (#336); those are filtered out here.
+        // FIFO/socket/device node; those are filtered out here.
         let state = match std::fs::metadata(path) {
             Ok(meta) if !meta.file_type().is_file() => continue,
             Ok(meta) if meta.len() > MAX_FILE_SIZE => {
@@ -601,7 +601,7 @@ pub fn get_fresh(root: &str, respect_gitignore: bool) -> Option<Arc<SearchIndex>
     }
 }
 
-/// Drop every resident trigram index (#685 eviction hook). In-flight builds
+/// Drop every resident trigram index (eviction hook). In-flight builds
 /// keep their `building` flag (the entry is reset, not the build thread), so
 /// a running build still installs its result; subsequent searches fall back
 /// to the walk path until the next `ensure_background` rebuilds. Correctness
@@ -664,6 +664,7 @@ pub fn ensure_background(root: &str, respect_gitignore: bool) {
 /// Build the index synchronously and install it in the resident cache.
 /// Returns `true` on success. Useful for CLI prewarm and benchmarks that need a
 /// guaranteed-warm index. Respects the disable env var.
+#[cfg(any(test, feature = "test-support"))]
 pub fn warm_blocking(root: &str, respect_gitignore: bool) -> bool {
     if !respect_gitignore {
         return false;
@@ -703,12 +704,12 @@ enum BuildOutcome {
     Deferred,
 }
 
-/// Build the resident index under a cross-process herd guard (#460).
+/// Build the resident index under a cross-process herd guard.
 ///
 /// The trigram index is RAM-resident (not shareable on disk), so on lock
 /// contention we *defer* the proactive pre-warm instead of running a second
 /// simultaneous file walk: a boot wave of N sessions on one repo then triggers
-/// ~1 walk at a time, not N. Deferring is safe — `ctx_search` still works via
+/// ~1 walk at a time, not N. Deferring is safe — `sobre_search` still works via
 /// its walk fallback, and the per-process `building` flag is cleared so the next
 /// `get_fresh` / `ensure_background` nudge retries once the holder releases. The
 /// short 200 ms wait keeps the common single-session path latency-free.
@@ -769,7 +770,7 @@ mod tests {
     #[test]
     fn build_refuses_to_index_home_directory() {
         // Auto-indexing HOME would walk the entire home tree and, on Windows,
-        // hydrate every OneDrive placeholder (#363). The build must bail out.
+        // hydrate every OneDrive placeholder. The build must bail out.
         if let Some(home) = dirs::home_dir() {
             assert!(
                 SearchIndex::build(&home.to_string_lossy(), true).is_none(),
@@ -820,7 +821,7 @@ mod tests {
     fn build_skips_named_pipe_without_hanging() {
         use std::sync::mpsc;
         use std::time::Duration;
-        // #336: the background index build read every file, so a FIFO in the
+        // The background index build read every file, so a FIFO in the
         // corpus blocked the build thread forever. It must be skipped while the
         // regular files are still indexed, and the build must return.
         let dir = corpus();
@@ -845,7 +846,7 @@ mod tests {
         });
         let paths = rx
             .recv_timeout(Duration::from_secs(5))
-            .expect("SearchIndex::build hung on a FIFO (#336 regression)")
+            .expect("SearchIndex::build hung on a FIFO (regression)")
             .expect("index should build");
         assert!(paths.iter().any(|p| p.ends_with("a.rs")));
         assert!(!paths.iter().any(|p| p.ends_with("pipe.fifo")));
@@ -1167,7 +1168,7 @@ mod tests {
         let root = dir.path().to_string_lossy().to_string();
         // Pre-hold the cross-process lock with *this* (alive) PID and a fresh
         // mtime, so neither the dead-owner nor the staleness reclaim can take it
-        // — exactly the "another session is already building" state from #460.
+        // — exactly the "another session is already building" state.
         let lock_path = data
             .path()
             .join(format!(".{}.lock", search_index_lock_name(&root)));
@@ -1276,7 +1277,7 @@ mod tests {
         .unwrap();
         assert!(
             get_fresh(&root, true).is_none(),
-            "an edited corpus must refuse the stale resident index (#624)"
+            "an edited corpus must refuse the stale resident index"
         );
     }
 }

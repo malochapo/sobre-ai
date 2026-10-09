@@ -20,7 +20,7 @@ pub(super) fn extract_calls(root: Node, src: &str, ext: &str) -> Vec<CallSite> {
         // Rust: calls written inside macro bodies (`println!("{}", greet(x))`,
         // `assert_eq!(foo(), 1)`) are token trees to tree-sitter, not
         // `call_expression`s — a file whose calls all sit inside macros used to
-        // produce ZERO call edges (#658). Recover them at the token level.
+        // produce ZERO call edges. Recover them at the token level.
         if ext == "rs"
             && let Some(call) = parse_macro_interior_call(node, src)
         {
@@ -51,8 +51,6 @@ fn parse_macro_interior_call(node: Node, src: &str) -> Option<CallSite> {
     Some(CallSite {
         callee: node_text(node, src).to_string(),
         line: node.start_position().row + 1,
-        col: node.start_position().column,
-        receiver: None,
         is_method,
     })
 }
@@ -99,45 +97,32 @@ fn parse_call(node: Node, src: &str, ext: &str) -> Option<CallSite> {
 }
 
 /// Lua / Luau call sites. The `function_call`'s `name` field is the callee:
-/// - `f(...)`        -> callee `f`, no receiver
-/// - `t.f(...)`      -> callee `f`, receiver `t` (dot access)
-/// - `t:m(...)`      -> callee `m`, receiver `t`, method call
+/// - `f(...)`        -> callee `f`
+/// - `t.f(...)`      -> callee `f` (dot access)
+/// - `t:m(...)`      -> callee `m`, method call
 #[cfg(feature = "tree-sitter")]
 fn parse_call_lua(node: Node, src: &str) -> Option<CallSite> {
     let line = node.start_position().row + 1;
-    let col = node.start_position().column;
     let name = node.child_by_field_name("name")?;
     match name.kind() {
         "identifier" => Some(CallSite {
             callee: node_text(name, src).to_string(),
             line,
-            col,
-            receiver: None,
             is_method: false,
         }),
         "dot_index_expression" => {
             let field = name.child_by_field_name("field")?;
-            let receiver = name
-                .child_by_field_name("table")
-                .map(|t| node_text(t, src).to_string());
             Some(CallSite {
                 callee: node_text(field, src).to_string(),
                 line,
-                col,
-                receiver,
                 is_method: false,
             })
         }
         "method_index_expression" => {
             let method = name.child_by_field_name("method")?;
-            let receiver = name
-                .child_by_field_name("table")
-                .map(|t| node_text(t, src).to_string());
             Some(CallSite {
                 callee: node_text(method, src).to_string(),
                 line,
-                col,
-                receiver,
                 is_method: true,
             })
         }
@@ -148,15 +133,14 @@ fn parse_call_lua(node: Node, src: &str) -> Option<CallSite> {
 /// C# call sites: `invocation_expression` for method/function calls and
 /// `object_creation_expression` (`new T(...)`) for constructor calls.
 ///
-/// - `foo(...)`            -> callee `foo`,  no receiver
-/// - `obj.Method(...)`     -> callee `Method`, receiver `obj`, method call
-/// - `A.B.Method(...)`     -> callee `Method`, receiver `A.B`,  method call
+/// - `foo(...)`            -> callee `foo`
+/// - `obj.Method(...)`     -> callee `Method`, method call
+/// - `A.B.Method(...)`     -> callee `Method`, method call
 /// - `Method<T>(...)`      -> callee `Method` (generic name reduced to its identifier)
-/// - `new Engine(...)`     -> callee `Engine` (the constructed type), no receiver
+/// - `new Engine(...)`     -> callee `Engine` (the constructed type)
 #[cfg(feature = "tree-sitter")]
 fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
     let line = node.start_position().row + 1;
-    let col = node.start_position().column;
 
     if node.kind() == "object_creation_expression" {
         // `new Foo(...)` / `new Foo<T>(...)` — the callee is the constructed type.
@@ -165,8 +149,6 @@ fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
         return Some(CallSite {
             callee,
             line,
-            col,
-            receiver: None,
             is_method: false,
         });
     }
@@ -176,14 +158,9 @@ fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
     if func.kind() == "member_access_expression" {
         let name_node = func.child_by_field_name("name")?;
         let callee = csharp_simple_name(name_node, src)?;
-        let receiver = func
-            .child_by_field_name("expression")
-            .map(|r| node_text(r, src).to_string());
         return Some(CallSite {
             callee,
             line,
-            col,
-            receiver,
             is_method: true,
         });
     }
@@ -193,8 +170,6 @@ fn parse_call_csharp(node: Node, src: &str) -> Option<CallSite> {
     Some(CallSite {
         callee,
         line,
-        col,
-        receiver: None,
         is_method: false,
     })
 }
@@ -237,7 +212,6 @@ fn csharp_simple_name(node: Node, src: &str) -> Option<String> {
 #[cfg(feature = "tree-sitter")]
 fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
     let line = node.start_position().row + 1;
-    let col = node.start_position().column;
     match node.kind() {
         // Direct call: `func(...)` / `preload(...)`.
         "call" => {
@@ -246,16 +220,12 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
                 Some(CallSite {
                     callee: node_text(func, src).to_string(),
                     line,
-                    col,
-                    receiver: None,
                     is_method: false,
                 })
             } else {
                 find_descendant_by_kind(func, "identifier").map(|id| CallSite {
                     callee: node_text(id, src).to_string(),
                     line,
-                    col,
-                    receiver: None,
                     is_method: false,
                 })
             }
@@ -270,23 +240,19 @@ fn parse_call_gd(node: Node, src: &str) -> Option<CallSite> {
                 .and_then(|p| p.child(0))
                 .map(|r| node_text(r, src).to_string());
             // `X.new()` instantiates class `X`; attribute the reference to the
-            // class so it registers in the call graph / dead-code analysis (#365).
+            // class so it registers in the call graph / dead-code analysis.
             if method == "new"
                 && let Some(class) = receiver
             {
                 return Some(CallSite {
                     callee: class,
                     line,
-                    col,
-                    receiver: None,
                     is_method: false,
                 });
             }
             Some(CallSite {
                 callee: method,
                 line,
-                col,
-                receiver,
                 is_method: true,
             })
         }
@@ -301,22 +267,16 @@ fn parse_call_ts(node: Node, src: &str) -> Option<CallSite> {
         .or_else(|| find_child_by_kind(node, "subscript_expression"))?;
 
     if func.kind() == "member_expression" {
-        let obj =
-            find_child_by_kind(func, "identifier").or_else(|| find_child_by_kind(func, "this"))?;
         let prop = find_child_by_kind(func, "property_identifier")?;
         Some(CallSite {
             callee: node_text(prop, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: Some(node_text(obj, src).to_string()),
             is_method: true,
         })
     } else {
         Some(CallSite {
             callee: node_text(func, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: None,
             is_method: false,
         })
     }
@@ -328,20 +288,15 @@ fn parse_call_rust(node: Node, src: &str) -> Option<CallSite> {
     match func.kind() {
         "field_expression" => {
             let field = find_child_by_kind(func, "field_identifier")?;
-            let receiver = func.child(0).map(|r| node_text(r, src).to_string());
             Some(CallSite {
                 callee: node_text(field, src).to_string(),
                 line: node.start_position().row + 1,
-                col: node.start_position().column,
-                receiver,
                 is_method: true,
             })
         }
         "scoped_identifier" | "identifier" => Some(CallSite {
             callee: node_text(func, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: None,
             is_method: false,
         }),
         _ => None,
@@ -359,10 +314,6 @@ fn parse_call_python(node: Node, src: &str) -> Option<CallSite> {
             let attr = func
                 .child_by_field_name("attribute")
                 .or_else(|| func.child_by_field_name("attr"));
-            let obj = func
-                .child_by_field_name("object")
-                .or_else(|| func.child(0))
-                .map(|r| node_text(r, src).to_string());
             let name = attr
                 .map(|a| node_text(a, src).to_string())
                 .or_else(|| {
@@ -375,16 +326,12 @@ fn parse_call_python(node: Node, src: &str) -> Option<CallSite> {
             Some(CallSite {
                 callee: name,
                 line: node.start_position().row + 1,
-                col: node.start_position().column,
-                receiver: obj,
                 is_method: true,
             })
         }
         "identifier" => Some(CallSite {
             callee: node_text(func, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: None,
             is_method: false,
         }),
         _ => None,
@@ -397,20 +344,15 @@ fn parse_call_go(node: Node, src: &str) -> Option<CallSite> {
     match func.kind() {
         "selector_expression" => {
             let field = find_child_by_kind(func, "field_identifier")?;
-            let obj = func.child(0).map(|r| node_text(r, src).to_string());
             Some(CallSite {
                 callee: node_text(field, src).to_string(),
                 line: node.start_position().row + 1,
-                col: node.start_position().column,
-                receiver: obj,
                 is_method: true,
             })
         }
         "identifier" => Some(CallSite {
             callee: node_text(func, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: None,
             is_method: false,
         }),
         _ => None,
@@ -430,8 +372,6 @@ fn parse_call_java(node: Node, src: &str) -> Option<CallSite> {
         return Some(CallSite {
             callee: node_text(name, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: None,
             is_method: false,
         });
     }
@@ -442,14 +382,9 @@ fn parse_call_java(node: Node, src: &str) -> Option<CallSite> {
         let name = node
             .child_by_field_name("name")
             .or_else(|| find_child_by_kind(node, "identifier"))?;
-        let obj = node
-            .child_by_field_name("object")
-            .map(|o| node_text(o, src).to_string());
         return Some(CallSite {
             callee: node_text(name, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: obj,
             is_method: true,
         });
     }
@@ -458,8 +393,6 @@ fn parse_call_java(node: Node, src: &str) -> Option<CallSite> {
     Some(CallSite {
         callee: node_text(func, src).to_string(),
         line: node.start_position().row + 1,
-        col: node.start_position().column,
-        receiver: None,
         is_method: false,
     })
 }
@@ -472,8 +405,6 @@ fn parse_call_kotlin(node: Node, src: &str) -> Option<CallSite> {
         "identifier" => Some(CallSite {
             callee: node_text(callee, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: None,
             is_method: false,
         }),
         "navigation_expression" => {
@@ -484,35 +415,16 @@ fn parse_call_kotlin(node: Node, src: &str) -> Option<CallSite> {
                 .rev()
                 .find(|child| child.kind() == "identifier")
                 .map(|child| node_text(*child, src).to_string())?;
-            let receiver = children
-                .iter()
-                .find(|child| {
-                    matches!(
-                        child.kind(),
-                        "expression"
-                            | "primary_expression"
-                            | "identifier"
-                            | "navigation_expression"
-                            | "this_expression"
-                            | "super_expression"
-                    )
-                })
-                .map(|child| node_text(*child, src).to_string())
-                .filter(|text| text != &callee_name);
 
             Some(CallSite {
                 callee: callee_name,
                 line: node.start_position().row + 1,
-                col: node.start_position().column,
-                receiver,
                 is_method: true,
             })
         }
         _ => find_descendant_by_kind(callee, "identifier").map(|name| CallSite {
             callee: node_text(name, src).to_string(),
             line: node.start_position().row + 1,
-            col: node.start_position().column,
-            receiver: None,
             is_method: false,
         }),
     }

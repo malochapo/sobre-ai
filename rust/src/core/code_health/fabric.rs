@@ -1,12 +1,12 @@
-//! Code-health interconnection fabric (Phase 3 / #1083).
+//! Code-health interconnection fabric.
 //!
 //! Fans complexity hotspots out across the shared data fabric so health becomes
 //! a *queryable, cross-linked* signal rather than a leaf report:
 //!   - **BM25** gets a `health://complexity/...` chunk per hotspot, so
-//!     `ctx_search action=semantic "complex functions"` surfaces them.
+//!     `sobre_search action=semantic "complex functions"` surfaces them.
 //!   - The **property graph** gets a `health_hotspot` cross-source edge from the
-//!     code file to that URI, so `ctx_read` shows a hotspot hint inline.
-//!   - **Knowledge** gets a `code_health` fact, so `ctx_knowledge` can recall a
+//!     code file to that URI, so `sobre_read` shows a hotspot hint inline.
+//!   - **Knowledge** gets a `code_health` fact, so `sobre_knowledge` can recall a
 //!     function's complexity without re-parsing.
 //!
 //! Crucially this is a *replace-source*, not an append: each pass prunes the
@@ -53,13 +53,13 @@ fn item_id(file: &str, symbol: &str) -> String {
 ///     (`score.hotspots`) — the searchable/recallable set, kept small so the
 ///     index and memory don't bloat.
 ///   - **Property-graph edges** cover *every* over-threshold function (capped at
-///     `MAX_PG_HOTSPOT_EDGES`), so `ctx_read` hints and the dense-search
+///     `MAX_PG_HOTSPOT_EDGES`), so `sobre_read` hints and the dense-search
 ///     complexity boost can see any hotspot symbol's cc. Edges are one cheap row
 ///     each and survive the code-graph mirror (`clear_code_graph` preserves
 ///     cross-source edges).
 ///
 /// Order follows the (pre-sorted) score and a stable worst-first sort, so
-/// repeated builds are byte-identical (#498).
+/// repeated builds are byte-identical.
 pub fn build_artifacts(health: &ProjectHealth) -> ConsolidationArtifacts {
     let mut artifacts = ConsolidationArtifacts::default();
 
@@ -141,7 +141,7 @@ fn pg_hotspots(health: &ProjectHealth) -> Vec<super::Hotspot> {
 /// one SQLite read, no parsing. Its one caller, the dense-search complexity
 /// boost, exists only with `embeddings`; the function is not gated so its test
 /// runs in the default build.
-#[cfg_attr(not(feature = "embeddings"), allow(dead_code))]
+#[cfg_attr(not(feature = "dense"), allow(dead_code))]
 pub fn hotspot_cc(root: &str, symbol: &str) -> Option<u32> {
     let pg = crate::core::property_graph::CodeGraph::open(root).ok()?;
     pg.all_cross_source_edges()
@@ -284,7 +284,7 @@ mod tests {
         // graph / knowledge). Hold the env lock via an isolated data dir so a
         // parallel test flipping `SOBRE_DATA_DIR` mid-apply cannot split
         // the write and the read-back across two different dirs (the
-        // pre-existing full-suite flake reported in #695).
+        // pre-existing full-suite flake).
         let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();
@@ -350,7 +350,7 @@ mod tests {
     }
 
     /// PG edges give per-symbol coverage of *every* over-threshold function, even
-    /// when the score's hotspot list is bounded to fewer (#1084).
+    /// when the score's hotspot list is bounded to fewer.
     #[test]
     fn pg_edges_cover_all_over_threshold_not_just_score() {
         let top = hotspot("src/a.rs", "worst", 1, 40);
@@ -385,7 +385,7 @@ mod tests {
     fn hotspot_cc_reads_back_persisted_edge() {
         // serial_test only orders this module's tests; a test elsewhere that
         // flips `SOBRE_DATA_DIR` can still split apply's write and the
-        // read-back across two dirs (#695). Same guard as the sibling above.
+        // read-back across two dirs. Same guard as the sibling above.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_str().unwrap();

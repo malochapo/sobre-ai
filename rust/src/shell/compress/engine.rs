@@ -22,7 +22,7 @@ pub(in crate::shell) fn compress_and_measure(
         if !result.is_empty() {
             // On failure, label the stderr block so the agent can attribute the
             // error (mirrors `shell::combine_streams`); success keeps the plain
-            // join for byte-stable output (#498).
+            // join for byte-stable output.
             if exit_code != 0 {
                 result.push('\n');
                 result.push_str(crate::shell::STDERR_LABEL);
@@ -41,7 +41,7 @@ pub(in crate::shell) fn compress_and_measure(
 /// A non-zero exit keeps the output verbatim (size-capped via [`truncate_verbatim`]
 /// with safety-needle-preserving head/tail truncation) so the real error always
 /// reaches the model and the agent never has to re-run the command without
-/// sobre (#809 / #810). This generalizes the build-tool-error guard inside
+/// sobre. This generalizes the build-tool-error guard inside
 /// [`compress_if_beneficial`] to ANY non-zero exit. Empty output and explicit
 /// `<lc_safe>` spans keep the normal pipeline (the latter so its markers are
 /// stripped correctly); a succeeding command still compresses as before.
@@ -55,7 +55,7 @@ pub(crate) fn compress_for_outcome(command: &str, output: &str, exit_code: i32) 
 /// Distinct-value ratio at/above which the lossy stage drops an all-present
 /// column. Conservative: only near-unique noise (timestamps, UUIDs) is dropped,
 /// so genuinely varying-but-meaningful columns are kept.
-/// #1129: minimum token savings to justify compression overhead (tee-log pointer
+/// Minimum token savings to justify compression overhead (tee-log pointer
 /// + potential read-back round-trip). Below this floor, verbatim is cheaper.
 const MIN_USEFUL_SAVINGS: usize = 100;
 
@@ -68,8 +68,8 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         return String::new();
     }
 
-    // #709: honour explicit <lc_safe>…</lc_safe> spans. Secret redaction has
-    // already run upstream (ctx_shell::handle → redact_shell_output_secrets), so
+    // Honour explicit <lc_safe>…</lc_safe> spans. Secret redaction has
+    // already run upstream (sobre_shell::handle → redact_shell_output_secrets), so
     // the pipeline order is redact → protect → compress and a marker can never
     // smuggle a secret past redaction. Protected spans pass through verbatim;
     // each unprotected segment flows through the normal pipeline.
@@ -85,7 +85,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     // Folding compiler/test-runner *progress* noise composes with — never
     // replaces — the verbatim token cap: diagnostics stay verbatim, and a log
     // whose diagnostics alone exceed the budget is still head/tail-truncated
-    // with safety-needle preservation (#655).
+    // with safety-needle preservation.
     if is_error_output_from_build_tool(command, output) {
         let base =
             maybe_fold_progress(output, count_tokens(output)).unwrap_or_else(|| output.to_string());
@@ -111,13 +111,13 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         return truncate_verbatim(&base, count_tokens(&base));
     }
 
-    if !is_search_output(command) && crate::tools::ctx_shell::contains_auth_flow(output) {
+    if !is_search_output(command) && crate::tools::sobre_shell::contains_auth_flow(output) {
         return output.to_string();
     }
 
     let original_tokens = count_tokens(output);
 
-    // #1129: small outputs are cheaper verbatim than compressed + tee-log round-trip.
+    // Small outputs are cheaper verbatim than compressed + tee-log round-trip.
     // The tee-log pointer alone costs ~50 tokens; a second read-back call doubles
     // the token cost. Outputs below this floor are never worth compressing.
     if original_tokens < 200 {
@@ -134,7 +134,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         return truncate_verbatim(output, original_tokens);
     }
 
-    // Format-aware passthrough (#342): output already in a compact, token-oriented
+    // Format-aware passthrough: output already in a compact, token-oriented
     // format (TOON) is kept verbatim.
     // Recompressing it saves little and rewrites the exact line/field shape an
     // agent relies on to validate a CLI output contract. This is output-shape
@@ -239,7 +239,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
 
 /// Detects whether the output contains error diagnostics from a build/check/lint tool.
 /// When true, compression is bypassed to preserve file paths, line numbers, and messages.
-/// #848: Deduplicate identical diagnostic lines in build output.
+/// Deduplicate identical diagnostic lines in build output.
 /// MSBuild parallel builds print each warning/error twice: once per build-node
 /// and once in the summary section. This removes exact duplicates while
 /// preserving order (first occurrence wins).
@@ -671,7 +671,7 @@ fn maybe_fold_progress(output: &str, original_tokens: usize) -> Option<String> {
 ///
 /// Chained commands must skip pattern-based compression because each pattern
 /// matcher assumes a single command's output shape — applying the first
-/// segment's pattern to the whole chain silently drops later segments (#1130).
+/// segment's pattern to the whole chain silently drops later segments.
 pub(crate) fn is_chained_command(command: &str) -> bool {
     let mut in_single = false;
     let mut in_double = false;
@@ -691,6 +691,7 @@ pub(crate) fn is_chained_command(command: &str) -> bool {
     false
 }
 
+#[cfg(any(test, feature = "test-support"))]
 pub fn compress_if_beneficial_pub(command: &str, output: &str) -> String {
     compress_if_beneficial(command, output)
 }

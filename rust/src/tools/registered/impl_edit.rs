@@ -7,22 +7,22 @@ use crate::server::tool_trait::{
 };
 use crate::tool_defs::tool_def;
 
-pub(crate) struct CtxEditTool;
+pub(crate) struct SobreEditTool;
 
-impl McpTool for CtxEditTool {
+impl McpTool for SobreEditTool {
     fn name(&self) -> &'static str {
-        "ctx_edit"
+        "sobre_edit"
     }
 
     fn tool_def(&self) -> Tool {
         tool_def(
-            "ctx_edit",
+            "sobre_edit",
             "Search-and-replace edit with race-condition guards — for simple text replacement in a single file.\n\
-             For editing code you've read, prefer ctx_patch (hash-anchored): it never makes you reproduce old text byte-for-byte. Read with ctx_read(mode=\"anchored\") first.\n\
+             For editing code you've read, prefer sobre_patch (hash-anchored): it never makes you reproduce old text byte-for-byte. Read with sobre_read(mode=\"anchored\") first.\n\
              old_string must be unique unless replace_all=true. create=true writes new files.\n\
              backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.\n\
-             ANTIPATTERN: Do NOT loop on failures — switch to ctx_patch (anchored), or verify file content and adjust old_string.\n\
-             For LSP-aware refactoring (rename, move, inline), use ctx_refactor.",
+             ANTIPATTERN: Do NOT loop on failures — switch to sobre_patch (anchored), or verify file content and adjust old_string.\n\
+             For LSP-aware refactoring (rename, move, inline), use sobre_refactor.",
             json!({
                 "type": "object",
                 "properties": {
@@ -49,7 +49,7 @@ impl McpTool for CtxEditTool {
             .ok_or_else(|| ErrorData::invalid_params("new_string is required", None))?;
         let replace_all = get_bool(args, "replace_all").unwrap_or(false);
         let create = get_bool(args, "create").unwrap_or(false);
-        let expected_md5 = get_str(args, "expected_md5");
+        let expected_hash = get_str(args, "expected_hash");
         let expected_size = get_int(args, "expected_size").and_then(|v| u64::try_from(v).ok());
         let expected_mtime_ms =
             get_int(args, "expected_mtime_ms").and_then(|v| u64::try_from(v).ok());
@@ -61,6 +61,7 @@ impl McpTool for CtxEditTool {
             .and_then(|v| usize::try_from(v.max(0)).ok())
             .unwrap_or(200);
         let allow_lossy_utf8 = get_bool(args, "allow_lossy_utf8").unwrap_or(false);
+        let dry_run = get_bool(args, "dry_run").unwrap_or(false);
 
         let edit_params = crate::tools::impl_edit::EditParams {
             path: path.clone(),
@@ -68,7 +69,7 @@ impl McpTool for CtxEditTool {
             new_string,
             replace_all,
             create,
-            expected_md5,
+            expected_hash,
             expected_size,
             expected_mtime_ms,
             backup,
@@ -76,6 +77,7 @@ impl McpTool for CtxEditTool {
             evidence,
             diff_max_lines,
             allow_lossy_utf8,
+            dry_run,
         };
 
         tokio::task::block_in_place(|| {
@@ -88,7 +90,7 @@ impl McpTool for CtxEditTool {
             // Serialize edits to the SAME file via a cheap per-file lock. This
             // lets the (slow) disk read/replace/write run WITHOUT holding the
             // global cache write-lock, so concurrent agents editing different
-            // files never block each other (issue #320). Correctness for same-file
+            // files never block each other. Correctness for same-file
             // edits is still guaranteed by the TOCTOU preimage guard + atomic
             // rename inside run_io.
             let file_lock = crate::core::path_locks::per_file_lock(&path);
@@ -126,9 +128,11 @@ impl McpTool for CtxEditTool {
             // Heavy disk I/O — no global cache lock held here.
             let (output, effect) = crate::tools::impl_edit::run_io(&edit_params, &last_mode);
 
-            // Quality loop (#494): feed success/old_string-miss back into
+            // Quality loop: feed success/old_string-miss back into
             // per-(ext × mode) stats and the one-shot read escalation.
             crate::tools::impl_edit::record_outcome(&edit_params, &last_mode, &output, &effect);
+
+            let wrote = matches!(effect, crate::tools::impl_edit::CacheEffect::Invalidate);
 
             // Apply the deferred cache mutation under a brief exclusive lock.
             if !matches!(effect, crate::tools::impl_edit::CacheEffect::None) {
@@ -141,13 +145,13 @@ impl McpTool for CtxEditTool {
                     }
                     Err(_) => {
                         tracing::warn!(
-                            "ctx_edit: cache write-lock timeout (5s) applying post-edit cache effect for {path}"
+                            "sobre_patch: cache write-lock timeout (5s) applying post-edit cache effect for {path}"
                         );
                     }
                 }
             }
 
-            if let Some(session_lock) = ctx.session.as_ref() {
+            if wrote && let Some(session_lock) = ctx.session.as_ref() {
                 let guard = rt.block_on(tokio::time::timeout(
                     std::time::Duration::from_secs(5),
                     session_lock.write(),
@@ -161,8 +165,6 @@ impl McpTool for CtxEditTool {
                 text: output,
                 original_tokens: 0,
                 saved_tokens: 0,
-                mode: None,
-                path: Some(path),
                 shell_outcome: None,
                 content_blocks: None,
             })

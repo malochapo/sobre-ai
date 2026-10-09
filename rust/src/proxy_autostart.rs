@@ -1,8 +1,5 @@
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::PathBuf;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "macos")]
@@ -10,7 +7,6 @@ const PLIST_LABEL: &str = "com.sobre.proxy";
 #[cfg(target_os = "linux")]
 const SYSTEMD_SERVICE: &str = "sobre-proxy";
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn proxy_pid_from_health(body: &str) -> Option<u32> {
     let health: serde_json::Value = serde_json::from_str(body).ok()?;
     if health.get("status").and_then(serde_json::Value::as_str) != Some("ok") {
@@ -20,7 +16,6 @@ fn proxy_pid_from_health(body: &str) -> Option<u32> {
     (pid > 0).then_some(pid)
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux", test))]
 fn health_identifies_sobre_proxy(body: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(body)
         .ok()
@@ -28,13 +23,8 @@ fn health_identifies_sobre_proxy(body: &str) -> bool {
         .is_some_and(|service| service == "sobre-proxy")
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn port_is_open(port: u16) -> bool {
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok()
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+/// The PID of the sobre proxy answering `/health` on `port`, or `None` when
+/// nothing answers there or the answer is not a sobre proxy's.
 fn proxy_pid_on_port(port: u16) -> Option<u32> {
     let health_url = format!("http://127.0.0.1:{port}/health");
     let response = ureq::get(&health_url)
@@ -48,6 +38,26 @@ fn proxy_pid_on_port(port: u16) -> Option<u32> {
     health_identifies_sobre_proxy(&body).then_some(pid)
 }
 
+/// Stops the sobre proxy answering on `port` (SIGTERM, then SIGKILL after
+/// two seconds) and returns its PID. `None` when no sobre proxy answers there:
+/// a process is only ever signalled after it identified itself as sobre's
+/// proxy, so nothing else on the machine is touched.
+pub(crate) fn stop_proxy_on_port(port: u16) -> Option<u32> {
+    let pid = proxy_pid_on_port(port)?;
+    if pid == std::process::id() {
+        return None;
+    }
+    let _ = crate::ipc::process::terminate_gracefully(pid);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline && crate::ipc::process::is_alive(pid) {
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    if crate::ipc::process::is_alive(pid) {
+        let _ = crate::ipc::process::force_kill(pid);
+    }
+    Some(pid)
+}
+
 /// Stop a proxy already owning `port` before a managed service is started.
 ///
 /// Returns `false` when the listener cannot be positively identified as a
@@ -56,7 +66,7 @@ fn proxy_pid_on_port(port: u16) -> Option<u32> {
 /// loop on `EADDRINUSE`.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn release_proxy_port(port: u16, quiet: bool) -> bool {
-    if !port_is_open(port) {
+    if !crate::proxy_setup::is_proxy_reachable(port) {
         return true;
     }
 
@@ -78,7 +88,7 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     let _ = crate::ipc::process::terminate_gracefully(pid);
     let graceful_deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < graceful_deadline {
-        if !crate::ipc::process::is_alive(pid) && !port_is_open(port) {
+        if !crate::ipc::process::is_alive(pid) && !crate::proxy_setup::is_proxy_reachable(port) {
             if !quiet {
                 eprintln!(
                     "  Handed port {port} from standalone proxy PID {pid} to managed service."
@@ -94,7 +104,7 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     }
     let force_deadline = Instant::now() + Duration::from_secs(1);
     while Instant::now() < force_deadline {
-        if !port_is_open(port) {
+        if !crate::proxy_setup::is_proxy_reachable(port) {
             if !quiet {
                 eprintln!(
                     "  Handed port {port} from standalone proxy PID {pid} to managed service."
@@ -157,7 +167,7 @@ pub fn stop() {
 }
 
 /// Start the installed manager after atomically taking ownership of `port`.
-/// This also handles the case where an IDE/dashboard spawned a standalone
+/// This also handles the case where an MCP server spawned a standalone
 /// proxy while the manager was temporarily unloaded.
 pub fn start_on_port(port: u16) -> bool {
     #[cfg(target_os = "macos")]
@@ -205,7 +215,7 @@ pub fn uninstall(_quiet: bool) {
 
 /// Whether this platform has a proxy-autostart backend (LaunchAgent on macOS,
 /// systemd user service on Linux). Windows and other targets have none, so a
-/// missing autostart there must not be treated as a failure by `doctor` (#416).
+/// missing autostart there must not be treated as a failure by `doctor`.
 pub fn is_supported() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux"))
 }
@@ -264,19 +274,19 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
 
     let plist_path = plist_dir.join(format!("{PLIST_LABEL}.plist"));
     // Stop the registered job first, then take over any standalone proxy an
-    // IDE/dashboard may have spawned while launchd was unloaded. Starting the
+    // MCP server may have spawned while launchd was unloaded. Starting the
     // new job with an occupied port causes an unconditional KeepAlive loop.
     crate::core::launchd::bootout(PLIST_LABEL, &plist_path);
     if !release_proxy_port(port, quiet) {
         return false;
     }
-    // GH #439: proxy logs are STATE — $XDG_STATE_HOME/sobre/logs.
+    // Proxy logs are STATE — $XDG_STATE_HOME/sobre/logs.
     let log_dir = crate::core::paths::state_dir()
         .unwrap_or_else(|_| std::env::temp_dir().join("sobre"))
         .join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
 
-    // #356: wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
+    // Wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
     // so the proxy (a TCC-standalone process) can never trip the privacy prompt.
     let port_arg = format!("--port={port}");
     let program_args = crate::core::tcc_guard_sandbox::program_args_xml(
@@ -284,7 +294,7 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
         "        ",
     );
 
-    // #449: pin the directory layout. A launchd-spawned proxy inherits only
+    // Pin the directory layout. A launchd-spawned proxy inherits only
     // launchd's minimal environment (no HOME, no XDG vars), so it resolves a
     // *different* config/data dir than the CLI that installed it — it never sees
     // the user's config.toml edits (live-upstream reload reads nothing) and
@@ -457,9 +467,10 @@ pub fn find_binary() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{health_identifies_sobre_proxy, proxy_pid_from_health};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    use super::{port_is_open, release_proxy_port};
+    use super::release_proxy_port;
+    use super::{health_identifies_sobre_proxy, proxy_pid_from_health};
+    use crate::proxy_setup::is_proxy_reachable as port_is_open;
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use std::io::{Read, Write};
     #[cfg(any(target_os = "macos", target_os = "linux"))]

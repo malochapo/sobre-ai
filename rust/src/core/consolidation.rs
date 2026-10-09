@@ -22,7 +22,7 @@ pub struct ConsolidationArtifacts {
 }
 
 fn write_edges_to_property_graph(pg: &crate::core::property_graph::CodeGraph, edges: &[IndexEdge]) {
-    // Cross-source edges live in their own table (#682) so external URIs never
+    // Cross-source edges live in their own table so external URIs never
     // pollute the File-node catalog and the exact relation kind + weight survive.
     for edge in edges {
         let _ = pg.upsert_cross_source_edge(&edge.from, &edge.to, &edge.kind, edge.weight);
@@ -69,8 +69,8 @@ pub fn apply_artifacts_to_stores(
         }
     }
 
-    // Cross-source edges → property graph (#682). Evict prior edges of this kind
-    // first so a replace-source's resolved links disappear from `ctx_read` hints.
+    // Cross-source edges → property graph. Evict prior edges of this kind
+    // first so a replace-source's resolved links disappear from `sobre_read` hints.
     if prune.edge_kind.is_some() || !artifacts.edges.is_empty() {
         match crate::core::property_graph::CodeGraph::open(project_root) {
             Ok(pg) => {
@@ -85,14 +85,14 @@ pub fn apply_artifacts_to_stores(
 
     // Knowledge: evict the prior category, then remember the current facts.
     // MUST go through `mutate_locked`: this runs on a background thread, and a
-    // load → modify → blind save here raced parallel `ctx_knowledge remember`
+    // load → modify → blind save here raced parallel `sobre_knowledge remember`
     // calls — the stale snapshot clobbered facts the agent had just committed
-    // (lost update, the exact #326 failure mode).
+    // (the lost-update failure mode).
     if prune.fact_category.is_some() || !artifacts.facts.is_empty() {
         let policy = crate::core::memory_policy::MemoryPolicy::default();
 
         // Replace-sources (prune) use a stable session id so repeated passes stay
-        // byte-identical (#498); additive ingests keep a unique id.
+        // byte-identical; additive ingests keep a unique id.
         let session_id = match &prune.fact_category {
             Some(category) => format!("fabric:{category}"),
             None => format!("provider-ingest-{}", chrono::Utc::now().timestamp()),

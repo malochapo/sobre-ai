@@ -1,18 +1,15 @@
-//! Daemon-safe storage maintenance.
+//! MCP-server-safe storage maintenance.
 //!
 //! Unlike the interactive `sobre doctor --fix` (which reports what it
 //! pruned), these routines are silent (tracing only) so they can run inside the MCP
-//! daemon without corrupting the stdio protocol. They remove accumulated
-//! quarantined BM25 indexes (#2364).
+//! server without corrupting the stdio protocol. They remove accumulated
+//! quarantined BM25 indexes.
 
 use std::path::PathBuf;
 
 /// Result of a quiet maintenance pass.
 #[derive(Debug, Default, Clone, Copy)]
-pub struct MaintenanceResult {
-    pub quarantined_removed: u32,
-    pub bytes_freed: u64,
-}
+pub struct MaintenanceResult {}
 
 const QUARANTINED_FILES: &[&str] = &["bm25_index.bin.zst.quarantined"];
 
@@ -49,7 +46,7 @@ fn prune_quarantined_bm25() -> (u32, u64) {
 }
 
 /// Run a silent maintenance pass: prune quarantined BM25 indexes. Safe to call
-/// from the MCP daemon.
+/// from the MCP server.
 pub fn run_quiet() -> MaintenanceResult {
     let (quarantined_removed, bytes_freed) = prune_quarantined_bm25();
     if quarantined_removed > 0 {
@@ -58,10 +55,7 @@ pub fn run_quiet() -> MaintenanceResult {
              (freed {bytes_freed} bytes)"
         );
     }
-    MaintenanceResult {
-        quarantined_removed,
-        bytes_freed,
-    }
+    MaintenanceResult {}
 }
 
 #[cfg(test)]

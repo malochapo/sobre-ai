@@ -4,7 +4,7 @@
 //! of targeted lookups — the article's `normalize_query` vs `_xfm_q2` example.
 //! This check is **deliberately conservative**: only clearly non-descriptive
 //! function names are reported, keeping the signal high and false positives near
-//! zero. Pure + deterministic so it is safe for read-time annotation (#498).
+//! zero. Pure + deterministic so it is safe for read-time annotation.
 
 use serde::Serialize;
 

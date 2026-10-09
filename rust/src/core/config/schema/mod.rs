@@ -69,7 +69,7 @@ impl ConfigSchema {
     /// help text) with the keys derived from the live `Config` struct. The
     /// struct is the source of truth for *what is valid*, so a field added to
     /// `Config` is recognised by `doctor`'s unknown-key check immediately,
-    /// without anyone remembering to mirror it into `sections_*.rs` (#456).
+    /// without anyone remembering to mirror it into `sections_*.rs`.
     pub fn known_keys(&self) -> Vec<String> {
         let mut keys = Vec::new();
         for (section, schema) in &self.sections {
@@ -95,7 +95,7 @@ impl ConfigSchema {
 
 /// Every TOML key the `Config` struct serialises to, in dot-separated form
 /// (e.g. `search_roots`, `proxy`, `proxy.port`). Derived from
-/// `Config::default()` so validation tracks the struct automatically (#456).
+/// `Config::default` so validation tracks the struct automatically.
 ///
 /// Option fields that default to `None` are omitted by serde and therefore not
 /// listed here; those keys still come from the hand-written schema. Emitting the
@@ -221,7 +221,7 @@ mod tests {
         known.iter().any(|k| k == key) || known.iter().any(|k| key.starts_with(&format!("{k}.")))
     }
 
-    /// #456: every field the `Config` struct actually serialises must be
+    /// Every field the `Config` struct actually serialises must be
     /// accepted by validation, or the hand-written schema has drifted.
     #[test]
     fn known_keys_cover_every_config_struct_field() {
@@ -236,16 +236,13 @@ mod tests {
         );
     }
 
-    /// Spot-check the concrete keys from the #456 report so a future schema/struct
+    /// Spot-check the concrete keys from the report so a future schema/struct
     /// refactor that reintroduces the drift fails loudly.
     #[test]
-    fn known_keys_recognise_reported_456_keys() {
+    fn known_keys_recognise_reported_keys() {
         let known = ConfigSchema::generate().known_keys();
         for key in ["search_roots", "proxy"] {
-            assert!(
-                accepted(&known, key),
-                "validation must recognise '{key}' (#456)"
-            );
+            assert!(accepted(&known, key), "validation must recognise '{key}'");
         }
     }
 
@@ -255,7 +252,7 @@ mod tests {
     /// `Config::default()` and it never appears in `config_derived_keys`: such a
     /// field is settable via `config set` **only** if it was hand-added to a
     /// `sections_*.rs` schema. Forgetting that is the `Unknown config key: <x>`
-    /// regression a user hit before #507. Guard the whole
+    /// regression a user hit. Guard the whole
     /// class so a new `Option` knob can't silently become un-settable again — if you add an `Option` scalar to
     /// `Config`, register it in `sections_*.rs` and list it here.
     #[test]

@@ -37,6 +37,7 @@ impl ProjectKnowledge {
         results.into_iter().map(|(f, _)| f).collect()
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn recall_by_category(&self, category: &str) -> Vec<&KnowledgeFact> {
         self.facts
             .iter()
@@ -128,7 +129,7 @@ impl ProjectKnowledge {
                 let f = &self.facts[idx];
                 let mut relevance = (count as f32 / terms.len() as f32) * f.confidence;
                 // Exact-match boost: an exact hit on the fact key (or category)
-                // should rank above incidental lexical matches (#2363). The +1.0
+                // should rank above incidental lexical matches. The +1.0
                 // dominates the [0,1] coverage*confidence base.
                 let key_lower = f.key.to_lowercase();
                 if key_lower == q {

@@ -1,4 +1,4 @@
-//! Injected-context linter (#960) — keeps sobre's OWN injected context
+//! Injected-context linter — keeps sobre's OWN injected context
 //! (the MCP instructions + advertised tool descriptions) high-signal.
 //!
 //! The Nisi/WorkOS "Case" talk is the motivation: comprehensive prose and
@@ -183,8 +183,7 @@ mod tests {
 
     #[test]
     fn exact_duplicate_line_is_an_error() {
-        let text =
-            "prefer ctx_search over native grep always\nprefer ctx_search over native grep always";
+        let text = "prefer sobre_search over native grep always\nprefer sobre_search over native grep always";
         let findings = lint_rules_text("t", text);
         assert!(
             findings
@@ -195,7 +194,7 @@ mod tests {
 
     #[test]
     fn terse_high_signal_text_has_no_errors() {
-        let text = "• Read/cat -> ctx_read(path, mode)\n• Grep -> ctx_search(pattern, path)";
+        let text = "• Read/cat -> sobre_read(path, mode)\n• Grep -> sobre_search(pattern, path)";
         assert_eq!(error_count(&lint_rules_text("t", text)), 0);
     }
 
@@ -208,7 +207,7 @@ mod tests {
 
     /// The enforced gate: the live injected rules surface must carry zero Error
     /// findings, proving the trim landed and guarding against future re-teaching
-    /// or duplication regressions (#960).
+    /// or duplication regressions.
     #[test]
     fn live_injected_context_has_no_error_findings() {
         let _iso = crate::core::data_dir::isolated_data_dir();

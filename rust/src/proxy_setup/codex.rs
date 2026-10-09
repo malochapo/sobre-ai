@@ -19,7 +19,7 @@ pub(crate) fn uninstall_codex_env(home: &Path, quiet: bool) {
     }
 
     let cleaned = strip_codex_proxy_entries(&existing);
-    let _ = std::fs::write(&config_path, &cleaned);
+    let _ = crate::config_io::write_atomic(&config_path, &cleaned);
     if !quiet {
         println!("  ✓ Removed Codex proxy URL(s) from Codex CLI config");
     }
@@ -100,7 +100,9 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
         return;
     }
 
-    let _ = std::fs::write(config_path, &updated);
+    // The first edit of a file the user had keeps a `.sobre.bak` of it, like
+    // every other agent file sobre edits.
+    let _ = crate::config_io::write_atomic_with_backup(config_path, &updated);
     if !quiet {
         match mode {
             CodexProxyMode::ApiKey => {
@@ -116,7 +118,7 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
 /// Point Codex's built-in OpenAI provider at `value` via the documented top-level
 /// `openai_base_url` key, replacing a stale local value with the canonical
 /// one. A custom *remote* `openai_base_url` the user configured is preserved and
-/// never overwritten in API-key mode (#366). Keys are emitted as top-level keys
+/// never overwritten in API-key mode. Keys are emitted as top-level keys
 /// (before the first `[table]`) so Codex actually reads them.
 pub(crate) fn render_codex_config(existing: &str, entries: &[(&str, String)]) -> String {
     let cleaned = strip_codex_proxy_entries(existing);

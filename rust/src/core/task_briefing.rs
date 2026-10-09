@@ -6,9 +6,6 @@ pub struct TaskBriefing {
     pub completeness_signal: CompletenessSignal,
     pub output_instruction: &'static str,
     pub context_hints: Vec<String>,
-    /// Lab-only: thinking instruction for direct LLM API calls.
-    /// NEVER inject into MCP tool outputs — would override user's model thinking behavior.
-    pub lab_thinking_instruction: &'static str,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -37,14 +34,12 @@ pub fn build_briefing(task: &str, file_context: &[(String, usize)]) -> TaskBrief
     let context_hints = build_context_hints(&classification, file_context);
 
     let output_instruction = classification.task_type.output_format().instruction();
-    let lab_thinking_instruction = classification.task_type.thinking_budget().instruction();
 
     TaskBriefing {
         classification,
         completeness_signal: completeness,
         output_instruction,
         context_hints,
-        lab_thinking_instruction,
     }
 }
 
@@ -141,7 +136,6 @@ mod tests {
         let briefing = build_briefing("add normalized_token_entropy to entropy.rs", &files);
         assert_eq!(briefing.classification.task_type, TaskType::Generate);
         assert!(briefing.output_instruction.contains("code blocks"));
-        assert!(briefing.lab_thinking_instruction.contains("Skip analysis"));
     }
 
     #[test]
@@ -153,7 +147,6 @@ mod tests {
         let briefing = build_briefing("fix the NaN bug in token_entropy", &files);
         assert_eq!(briefing.classification.task_type, TaskType::FixBug);
         assert!(briefing.output_instruction.contains("changed lines"));
-        assert!(!briefing.lab_thinking_instruction.is_empty());
     }
 
     #[test]

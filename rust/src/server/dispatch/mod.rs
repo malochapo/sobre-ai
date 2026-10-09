@@ -12,12 +12,13 @@ impl SobreServer {
     /// Returns (output_text, saved_tokens, shell_outcome, content_blocks).
     /// saved_tokens > 0 indicates the tool already applied internal compression
     /// (shell engine, cache deltas, etc.). shell_outcome is `Some` for
-    /// shell-executing tools so the caller can populate MCP error metadata
-    /// (#389). content_blocks carries image/binary MCP blocks when present.
+    /// shell-executing tools so the caller can populate MCP error metadata.
+    /// content_blocks carries image/binary MCP blocks when present.
     pub(super) async fn dispatch_tool(
         &self,
         name: &str,
         args: Option<&serde_json::Map<String, Value>>,
+        progress: Option<crate::server::progress::ProgressSender>,
     ) -> Result<
         (
             String,
@@ -27,28 +28,7 @@ impl SobreServer {
         ),
         ErrorData,
     > {
-        // Invariant 3 has no universal invoker: there are no hidden tools for
-        // one to reach. `ctx_call` used to sit here — dispatchable, never in
-        // `tools/list`, unwrapping an inner tool name and calling it.
-        self.dispatch_inner(name, args).await
-    }
-
-    /// Dispatches a single tool via the trait-based registry.
-    /// Returns (output_text, saved_tokens, shell_outcome).
-    async fn dispatch_inner(
-        &self,
-        name: &str,
-        args: Option<&serde_json::Map<String, Value>>,
-    ) -> Result<
-        (
-            String,
-            usize,
-            Option<ShellOutcome>,
-            Option<Vec<ContentBlock>>,
-        ),
-        ErrorData,
-    > {
-        if let Some(tool) = self.registry.as_ref().and_then(|r| r.get_arc(name)) {
+        if let Some(tool) = self.registry.get_arc(name) {
             let empty = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty);
             let project_root = {
@@ -56,7 +36,7 @@ impl SobreServer {
                 session.project_root.clone().unwrap_or_default()
             };
 
-            // Lazy, demand-driven index warming (#152): only tools that actually
+            // Lazy, demand-driven index warming: only tools that actually
             // need a prebuilt index trigger a (background, once-per-root) scan.
             // The first heavy pre-warm also warms any configured extra roots once.
             if !project_root.is_empty()
@@ -114,27 +94,34 @@ impl SobreServer {
             }
 
             let crp_mode = crate::tools::CrpMode::effective();
-            let extra_roots = self.session.read().await.extra_roots.clone();
+            let shell_cwd = self.session.read().await.shell_cwd.clone();
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
-                extra_roots,
+                shell_cwd,
                 resolved_paths,
                 crp_mode,
                 cache: Some(self.cache.clone()),
                 session: Some(self.session.clone()),
                 path_errors,
                 bm25_cache: Some(self.bm25_cache.clone()),
-                progress_sender: Some(self.progress_sender.clone()),
+                progress_sender: progress,
             };
             // Run the (synchronous) handler on the dedicated blocking pool under
-            // a watchdog deadline (#271). `block_in_place` would pin one of the
+            // a watchdog deadline. `block_in_place` would pin one of the
             // few core workers and — being synchronous — cannot be interrupted
             // by `tokio::time::timeout` from the same task, so a hung handler
             // would silently swallow the JSON-RPC response and the MCP client
             // would crash with "Cannot read properties of undefined (reading
             // 'invoke')". `spawn_blocking` keeps the core workers free and lets
             // the watchdog always return a response.
-            let output = self.run_tool_handler(name, tool, args_map, ctx).await?;
+            let reports_failures = tool.text_reports_failures();
+            let mut output = self.run_tool_handler(name, tool, args_map, ctx).await?;
+            if output.shell_outcome.is_none()
+                && reports_failures
+                && crate::server::tool_trait::reports_failure(&output.text)
+            {
+                output.shell_outcome = Some(crate::server::tool_trait::ShellOutcome::Failed);
+            }
 
             // Image/binary content blocks bypass all text processing.
             if output.content_blocks.is_some() {
@@ -147,28 +134,6 @@ impl SobreServer {
                 ));
             }
 
-            if let Some(ref path) = output.path {
-                {
-                    // Skip ledger record for ctx_read — it's recorded in post_dispatch
-                    // with correct final token counts after terse compression.
-                    if name != "ctx_read" {
-                        let sent_tokens = if output.original_tokens > 0 {
-                            output.original_tokens.saturating_sub(output.saved_tokens)
-                        } else {
-                            crate::core::tokens::count_tokens(&output.text)
-                        };
-                        let orig = if output.original_tokens > 0 {
-                            output.original_tokens
-                        } else {
-                            sent_tokens
-                        };
-                        let mode_str = output.mode.as_deref().unwrap_or("full");
-                        let mut ledger = self.ledger.write().await;
-                        ledger.record(path, mode_str, orig, sent_tokens);
-                        ledger.save_debounced();
-                    }
-                }
-            }
             self.record_call(name, output.original_tokens, output.saved_tokens)
                 .await;
 
@@ -177,12 +142,9 @@ impl SobreServer {
             return Ok((raw_text, saved, output.shell_outcome, None));
         }
 
-        // Unknown tool (#712): suggest the closest registered name so a typo
-        // (`ctx_raed`) costs the agent a hint instead of a blind retry.
-        let suggestion = self
-            .registry
-            .as_ref()
-            .and_then(|r| crate::core::levenshtein::closest(name, r.names()))
+        // Unknown tool: suggest the closest registered name so a typo
+        // (`sobre_raed`) costs the agent a hint instead of a blind retry.
+        let suggestion = crate::core::levenshtein::closest(name, self.registry.names())
             .map(|s| format!(" — did you mean '{s}'?"))
             .unwrap_or_default();
         Err(ErrorData::invalid_params(
@@ -192,7 +154,7 @@ impl SobreServer {
     }
 
     /// Execute a (synchronous) tool handler on the blocking pool under a
-    /// watchdog deadline (#271).
+    /// watchdog deadline.
     ///
     /// The handler is `Send + 'static` (it owns an `Arc<dyn McpTool>`, a cloned
     /// arg map and the `ToolContext`), so it runs via `spawn_blocking` on the
@@ -217,7 +179,7 @@ impl SobreServer {
     ///
     /// On timeout the join handle is **aborted** — the blocking-pool thread
     /// receives a cancellation signal so it does not permanently leak a pool
-    /// slot (#1018). A clean error is always returned so the MCP client gets a
+    /// slot. A clean error is always returned so the MCP client gets a
     /// JSON-RPC reply. A handler panic is isolated and surfaced as an error too.
     async fn watchdog_join(
         name: &str,
@@ -233,12 +195,12 @@ impl SobreServer {
                 // The JoinHandle was moved into `select!` — when this branch
                 // wins, Tokio drops the handle which sets the task's cancelled
                 // flag. For `spawn_blocking` this means the thread will be
-                // reclaimed once it returns (#1018).
+                // reclaimed once it returns.
                 crate::core::io_health::record_freeze();
                 tracing::error!(
                     tool = name,
                     timeout_secs = limit.as_secs(),
-                    "tool watchdog fired — handler cancelled to reclaim pool slot (#1018)"
+                    "tool watchdog fired — handler cancelled to reclaim pool slot"
                 );
                 Err(ErrorData::internal_error(
                     format!(
@@ -280,7 +242,7 @@ impl SobreServer {
 
     /// Watchdog deadline for a single tool handler, or `None` to disable it.
     ///
-    /// `ctx_shell` runs arbitrary user commands (builds, long
+    /// `sobre_shell` runs arbitrary user commands (builds, long
     /// test suites) and already enforces its own command timeout, so a generic
     /// watchdog would wrongly abort a legitimate long-running command. Every
     /// other tool is bounded so a hang can never swallow the JSON-RPC response.
@@ -303,7 +265,7 @@ fn watchdog_from_secs(secs: u64) -> Option<Duration> {
     (secs > 0).then(|| Duration::from_secs(secs))
 }
 
-/// Default per-tool watchdog budget (#271). Long enough that no legitimate
+/// Default per-tool watchdog budget. Long enough that no legitimate
 /// read/search/graph call ever hits it, short enough that a hang degrades to a
 /// clean error instead of a dropped request.
 const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 120;
@@ -345,8 +307,8 @@ mod tests {
     #[test]
     fn watchdog_disabled_for_long_running_shell_tools() {
         assert!(
-            SobreServer::handler_watchdog("ctx_shell").is_none(),
-            "ctx_shell runs arbitrary user commands and must not be watchdog-bounded"
+            SobreServer::handler_watchdog("sobre_shell").is_none(),
+            "sobre_shell runs arbitrary user commands and must not be watchdog-bounded"
         );
     }
 
@@ -370,7 +332,7 @@ mod tests {
     async fn watchdog_returns_error_on_hung_handler() {
         use std::sync::atomic::{AtomicBool, Ordering};
         // A hung handler must surface as a clean error (not a dropped request),
-        // which is the core #271 guarantee. The stop flag lets the simulated
+        // which is the core guarantee. The stop flag lets the simulated
         // hang exit promptly after the assertion so the runtime shuts down fast.
         let stop = std::sync::Arc::new(AtomicBool::new(false));
         let stop_in = stop.clone();
@@ -405,7 +367,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn watchdog_none_awaits_handler_to_completion() {
         let join = tokio::task::spawn_blocking(|| Ok(ToolOutput::simple("ok".to_string())));
-        let result = SobreServer::watchdog_join("ctx_shell", join, None).await;
+        let result = SobreServer::watchdog_join("sobre_shell", join, None).await;
         assert_eq!(result.unwrap().text, "ok");
     }
 
@@ -420,7 +382,7 @@ mod tests {
         );
     }
 
-    /// #712: a typo'd tool name must return a "did you mean" hint from the
+    /// A typo'd tool name must return a "did you mean" hint from the
     /// live registry instead of a bare unknown-tool error; a name nowhere
     /// near any registered tool must stay suggestion-free.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -428,22 +390,22 @@ mod tests {
         let server = crate::tools::create_server();
 
         let err = server
-            .dispatch_tool("ctx_raed", None)
+            .dispatch_tool("sobre_raed", None, None)
             .await
             .expect_err("typo'd tool must error");
         assert!(
-            err.message.contains("Unknown tool: ctx_raed"),
+            err.message.contains("Unknown tool: sobre_raed"),
             "unexpected message: {}",
             err.message
         );
         assert!(
-            err.message.contains("did you mean 'ctx_read'"),
+            err.message.contains("did you mean 'sobre_read'"),
             "missing suggestion: {}",
             err.message
         );
 
         let err = server
-            .dispatch_tool("zzz_qqq_www", None)
+            .dispatch_tool("zzz_qqq_www", None, None)
             .await
             .expect_err("unrelated name must error");
         assert!(
@@ -451,5 +413,31 @@ mod tests {
             "no confident suggestion for garbage: {}",
             err.message
         );
+    }
+
+    /// B29: a tool whose text reports a failure comes back as a failure, so
+    /// the client sets `isError` instead of reading an error as a success.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn failure_text_marks_the_call_failed() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let server = crate::tools::create_server();
+        let mut args = serde_json::Map::new();
+        args.insert("action".into(), serde_json::json!("bogus"));
+        let (text, _, outcome, _) = server
+            .dispatch_tool("sobre_graph", Some(&args), None)
+            .await
+            .expect("dispatch");
+        assert!(text.starts_with("Unknown action"), "{text}");
+        assert_eq!(
+            outcome,
+            Some(crate::server::tool_trait::ShellOutcome::Failed)
+        );
+
+        args.insert("action".into(), serde_json::json!("status"));
+        let (_, _, outcome, _) = server
+            .dispatch_tool("sobre_graph", Some(&args), None)
+            .await
+            .expect("dispatch");
+        assert_eq!(outcome, None, "a normal answer is not a failure");
     }
 }

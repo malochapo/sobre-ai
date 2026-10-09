@@ -34,16 +34,24 @@ pub fn offset_of(content: &str, line: u32, character: u32) -> Result<usize, Stri
     ))
 }
 
-/// Apply a resolved `RangeEdit` to disk (headless). Reads the file, optionally
-/// verifies `expected_hash` against the *current* bytes covered by `range`
-/// (mismatch → `CONFLICT`), replaces the range with `text`, writes atomically,
-/// and returns the post-edit range + a compact diff.
+/// Apply a resolved `RangeEdit` to disk (headless). Under the file's edit
+/// lock: reads the file, optionally verifies `expected_hash` against the
+/// *current* bytes covered by `range` (mismatch → `CONFLICT`), replaces the
+/// range with `text`, and writes through the edit tools' boundary (symlink
+/// refusal, preimage guard, file mode kept). Returns the post-edit range and a
+/// compact diff.
 pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
-    let content = std::fs::read_to_string(&edit.abs_path)
-        .map_err(|e| format!("FILE_NOT_FOUND: {}: {e}", edit.abs_path))?;
+    let path = std::path::Path::new(&edit.abs_path);
+    let file_lock = crate::core::path_locks::per_file_lock(&edit.abs_path);
+    let _guard = file_lock
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let cap = crate::core::limits::max_read_bytes();
+    let pre = crate::tools::edit_io::read_preimage(path, cap, false).map_err(strip_error)?;
+    let content = pre.text.as_str();
 
-    let start = offset_of(&content, edit.range.start_line, edit.range.start_char)?;
-    let end = offset_of(&content, edit.range.end_line, edit.range.end_char)?;
+    let start = offset_of(content, edit.range.start_line, edit.range.start_char)?;
+    let end = offset_of(content, edit.range.end_line, edit.range.end_char)?;
     if end < start {
         return Err("POSITION_OUT_OF_RANGE: end before start".to_string());
     }
@@ -63,7 +71,17 @@ pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
     new_content.push_str(&edit.text);
     new_content.push_str(&content[end..]);
 
-    write_file_atomic(&edit.abs_path, &new_content)?;
+    crate::tools::edit_io::ensure_preimage_still_matches(path, &pre.fp, cap)
+        .map_err(strip_error)?;
+    crate::tools::edit_io::write_atomic_bytes_with_permissions(
+        path,
+        new_content.as_bytes(),
+        Some(&pre.permissions),
+    )
+    .map_err(strip_error)?;
+    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
+        bt.record_edit(&edit.abs_path);
+    }
 
     let new_range = range_after_write(&content[..start], &edit.text);
     Ok(EditResult {
@@ -72,47 +90,6 @@ pub fn local_range_write(edit: &RangeEdit) -> Result<EditResult, String> {
         edited_text: edit.text.clone(),
         diff: build_range_diff(&edit.rel_path, old, &edit.text),
     })
-}
-
-/// Walk up from a file path to the nearest ancestor directory containing `.git`
-/// (best-effort project-root detection; `nearest_project_root` does not exist in
-/// this repo). Returns None if no `.git` ancestor is found.
-fn nearest_git_root(abs_path: &str) -> Option<String> {
-    let mut dir = std::path::Path::new(abs_path).parent();
-    while let Some(d) = dir {
-        if d.join(".git").exists() {
-            return Some(d.to_string_lossy().to_string());
-        }
-        dir = d.parent();
-    }
-    None
-}
-
-/// Build a file's structure overview from the tree-sitter symbol index
-/// (headless `symbols_overview` default, spec v2a §5.2). Best-effort: returns
-/// an empty vec when no graph is available.
-pub fn overview_from_index(abs_path: &str) -> Vec<crate::lsp::backend::SymbolOverviewItem> {
-    use crate::core::graph_provider;
-    let Some(project_root) = nearest_git_root(abs_path) else {
-        return Vec::new();
-    };
-    let Some(open) = graph_provider::open_or_build(&project_root) else {
-        return Vec::new();
-    };
-    let rel = abs_path
-        .strip_prefix(&project_root)
-        .map_or(abs_path, |s| s.trim_start_matches('/'));
-    let mut items: Vec<_> = open
-        .find_symbols("", Some(rel), None)
-        .into_iter()
-        .map(|s| crate::lsp::backend::SymbolOverviewItem {
-            name: s.name,
-            kind: s.kind,
-            line: s.start_line as u32,
-        })
-        .collect();
-    items.sort_by_key(|i| i.line);
-    items
 }
 
 /// Compute the 0-based range the freshly written `text` now occupies, given the
@@ -151,28 +128,17 @@ fn build_range_diff(path: &str, old: &str, new: &str) -> String {
     out
 }
 
-fn write_file_atomic(path: &str, content: &str) -> Result<(), String> {
-    let p = std::path::Path::new(path);
-    let parent = p
-        .parent()
-        .ok_or_else(|| "invalid path (no parent directory)".to_string())?;
-    let filename = p
-        .file_name()
-        .ok_or_else(|| "invalid path (no filename)".to_string())?
-        .to_string_lossy();
-    let pid = std::process::id();
-    let tmp = parent.join(format!(".{filename}.sobre.v2a.tmp.{pid}"));
-    std::fs::write(&tmp, content.as_bytes())
-        .map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
-    std::fs::rename(&tmp, p).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp);
-        format!("atomic write failed: {e}")
-    })
+/// The edit boundary's errors carry an `ERROR: ` prefix; callers add their own.
+fn strip_error(e: String) -> String {
+    match e.strip_prefix("ERROR: ") {
+        Some(rest) => rest.to_string(),
+        None => e,
+    }
 }
 
 /// Zero-dependency backend that carries only the Trait default-apply for the
-/// three edit methods (used by ctx_refactor when no IDE is reachable). The five
-/// mandatory read methods are unsupported here (edits never call them).
+/// three edit methods. The read methods need a language server and are
+/// unsupported here (edits never call them).
 pub struct HeadlessBackend;
 
 impl crate::lsp::backend::LspBackend for HeadlessBackend {
@@ -183,7 +149,6 @@ impl crate::lsp::backend::LspBackend for HeadlessBackend {
         &mut self,
         _u: &lsp_types::Uri,
         _p: lsp_types::Position,
-        _s: &str,
     ) -> Result<Vec<lsp_types::Location>, String> {
         Err("references requires a backend".into())
     }
@@ -198,7 +163,6 @@ impl crate::lsp::backend::LspBackend for HeadlessBackend {
         &mut self,
         _u: &lsp_types::Uri,
         _p: lsp_types::Position,
-        _s: &str,
     ) -> Result<Vec<lsp_types::Location>, String> {
         Err("implementations requires a backend".into())
     }
@@ -271,13 +235,6 @@ mod tests {
         assert!(res.applied);
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "aaa\nNEW\nccc\n");
         assert_eq!(res.edited_text, "NEW");
-    }
-
-    #[test]
-    fn overview_from_index_is_empty_without_graph() {
-        // A path outside any project root must degrade to empty, not panic.
-        let items = overview_from_index("/nonexistent/Nope.rs");
-        assert!(items.is_empty());
     }
 
     #[test]

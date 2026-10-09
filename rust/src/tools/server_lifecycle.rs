@@ -49,14 +49,14 @@ impl SobreServer {
         let session = Arc::new(RwLock::new(session));
 
         // Indices are NOT built eagerly here. A freshly connected agent that sits
-        // idle — or only uses ctx_read/ctx_shell/ctx_tree — must pay zero indexing
+        // idle — or only uses sobre_read/sobre_shell/sobre_tree — must pay zero indexing
         // cost. Heavy/search tools warm their indices lazily on first use via
-        // `index_orchestrator::ensure_warm_for_tool`, driven from dispatch (#152).
+        // `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
         // An eager full graph + BM25 scan on every `new()` pegged a CPU core on
         // each server start; multiplied across multiple agents and stdio respawns
-        // it was the root cause of the idle-high-CPU report (#453).
+        // it was the root cause of the idle-high-CPU report.
 
-        // Rehydrate the persistent stub index (#955) so the first unchanged
+        // Rehydrate the persistent stub index so the first unchanged
         // re-read after this restart can collapse to the `[unchanged]` stub
         // instead of re-delivering the whole file — gated by conversation +
         // mtime/md5 so it can never serve a stale or cross-chat stub.
@@ -79,39 +79,18 @@ impl SobreServer {
             crate::core::eviction_orchestrator::on_memory_pressure,
         ));
 
-        let presence_root = startup
-            .project_root
-            .as_deref()
-            .or(startup.shell_cwd.as_deref())
-            .unwrap_or(".");
-        let presence_agent_id =
-            match crate::core::agents::AgentRegistry::register_mcp_process(presence_root) {
-                Ok(agent_id) => Some(agent_id),
-                Err(error) => {
-                    tracing::warn!("sobre: failed to register MCP agent presence: {error}");
-                    None
-                }
-            };
-
         Self {
             cache,
             session,
             call_count: Arc::new(AtomicUsize::new(0)),
             cache_ttl_secs: ttl,
             last_call: Arc::new(RwLock::new(Instant::now())),
-            agent_id: Arc::new(RwLock::new(None)),
-            presence_agent_id: Arc::new(RwLock::new(presence_agent_id)),
             client_name: Arc::new(RwLock::new(String::new())),
             autonomy: Arc::new(autonomy::AutonomyState::new()),
             refetch_signals: Arc::new(RwLock::new(
                 crate::core::refetch_signals::RefetchSignals::default(),
             )),
-            ledger: Arc::new(RwLock::new(
-                crate::core::context_ledger::ContextLedger::load(),
-            )),
-            registry: Some(std::sync::Arc::new(
-                crate::server::registry::build_registry(),
-            )),
+            registry: std::sync::Arc::new(crate::server::registry::build_registry()),
             startup_project_root: startup.project_root,
             startup_shell_cwd: startup.shell_cwd,
             peer: Arc::new(tokio::sync::RwLock::new(None)),
@@ -119,7 +98,6 @@ impl SobreServer {
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_list_attempts: Arc::new(std::sync::atomic::AtomicU32::new(0)),
             bm25_cache,
-            progress_sender: Arc::new(std::sync::Mutex::new(None)),
             _eviction_target: eviction_target,
         }
     }
@@ -139,7 +117,7 @@ impl SobreServer {
             let count = cache.clear();
             // The persisted stub index outlives the warm-cache clear, so a
             // same-conversation re-read after idle still collapses to the stub
-            // via the cold fallback (#955). Flush it now for durability.
+            // via the cold fallback. Flush it now for durability.
             crate::core::read_stub_index::persist();
             if count > 0 {
                 tracing::info!(
@@ -153,26 +131,11 @@ impl SobreServer {
 
     /// Aggressive cleanup on connection drop: save session, consolidate knowledge, clear caches.
     pub async fn shutdown(&self) {
-        if let Some(agent_id) = self.presence_agent_id.read().await.clone()
-            && let Err(error) = crate::core::agents::AgentRegistry::finish_persistent(&agent_id)
-        {
-            tracing::warn!("sobre: failed to finish MCP agent presence: {error}");
-        }
-        {
-            let session = self.session.read().await;
-            let has_insights = !session.findings.is_empty() || !session.decisions.is_empty();
-            let root = session.project_root.clone();
-            drop(session);
-
-            if has_insights && let Some(ref root) = root {
-                crate::tools::startup::auto_consolidate_knowledge(root);
-            }
-        }
         {
             let mut session = self.session.write().await;
             let _ = session.save();
         }
-        // Flush the persistent stub index (#955) so an unchanged re-read survives
+        // Flush the persistent stub index so an unchanged re-read survives
         // this restart as a cheap stub instead of a full re-delivery.
         crate::core::read_stub_index::persist();
         {
