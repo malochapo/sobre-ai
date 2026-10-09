@@ -78,7 +78,7 @@ was added.
 | G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #58) |
 | J | Editing and shell tools | done (#59, #60) |
-| K | Reading and search tools | done (#61, #PRNUM) |
+| K | Reading and search tools | done (#61, #62) |
 | L | Graph, session, knowledge, review, `gain` | open |
 | M | Code: dense-only code in the default build, leftovers, Windows lints | open |
 | P | CI and release | open |
@@ -787,10 +787,10 @@ documented:
     `start_line`/`limit` returns those lines as on disk (endings kept,
     no numbers); nothing is appended to a raw read.
 - [x] **K7 Batch `queries[]` ignores the top-level `include`, `exclude` and
-  `exclude_pattern`** (`tools/registered/sobre_search.rs:564`). (#PRNUM)
+  `exclude_pattern`** (`tools/registered/sobre_search.rs:564`). (#62)
   Done: a query's own filters win; the top-level ones apply to every query
   that sets none.
-- [x] **K8 `find_related` fails in its default form.** (#PRNUM)
+- [x] **K8 `find_related` fails in its default form.** (#62)
   - It reads the raw `file_path`, not the resolved path, while the index
     stores relative keys: an absolute path gets "no indexed chunk found"
     (`tools/registered/sobre_search.rs:417`).
@@ -802,11 +802,11 @@ documented:
 - [x] **K9 `sobre_search` honours parameters `tools/list` does not show.**
   *Invariant 3.* `languages`, `path_glob` and `ignore_gitignore`
   (`tools/registered/sobre_search.rs:205,318-319,536`); `languages:["python"]`
-  changes the results. Decision 7. (#PRNUM)
+  changes the results. Decision 7. (#62)
   Done: removed, with `mode` in the default build. A test reads each
   handler's source and fails on any argument it reads that its schema does
   not declare.
-- [x] **K10 Secrets are masked by some tools and not others.** (#PRNUM) For the same
+- [x] **K10 Secrets are masked by some tools and not others.** (#62) For the same
   `api_key = "sk-ant-…"`, `sobre_read` and a regex search show
   `[REDACTED:…]`; `action=symbol` (`tools/impl_symbol.rs`), the semantic
   search (`core/bm25_index/chunking.rs:268`) and `sobre_compose`'s symbol
@@ -816,11 +816,11 @@ documented:
   - `sobre_tree` computes its "original" with a second walk that skips
     neither vendor directories nor git-ignored files
     (`tools/sobre_tree.rs:36,118-147`): `node_modules` counts as saved.
-    Done in #PRNUM: the original is the listed entries as plain paths.
+    Done in #62: the original is the listed entries as plain paths.
   - A windowed `sobre_read` records the whole file as the original
     (`tools/registered/sobre_read.rs:811-812,936`): `lines:1-3` logs 1,800
     tokens original, 51 sent. Done in #61: a window claims no saving.
-- [x] **K12 `sobre_tree` counts and labels.** (#PRNUM)
+- [x] **K12 `sobre_tree` counts and labels.** (#62)
   - Directories at the depth limit show `(0)`.
   - A directory holding only `.env`, and any `depth:0` call, say "(empty
     directory)".
@@ -833,13 +833,13 @@ documented:
 - [x] **K13 `sobre_outline` on a directory caps before it filters.** The
   600-file cap applies before `match`/`kind`
   (`tools/sobre_outline/dir.rs:24,75`): a symbol in file 651 gives "No
-  symbols matching", with no note. (#PRNUM)
+  symbols matching", with no note. (#62)
   Done: the filter runs first; 20,000 files are scanned at most, and the
   output says which cap stopped it.
 - [x] **K14 Glob `*` crosses `/`.** `src/*.ts` matches
   `src/a/b/c/f0.ts` in `sobre_glob` (`tools/sobre_glob.rs:89`) and in
   `sobre_search`'s `include`/`exclude` (`tools/sobre_search.rs:574`). Fix:
-  `require_literal_separator`. (#PRNUM)
+  `require_literal_separator`. (#62)
   Done: one glob reading for both tools, as `rg --glob`: `*.ts` names a
   file at any depth, `src/*.ts` is a path from the root and `*` stays in
   one directory.
@@ -851,7 +851,7 @@ documented:
 - [x] **K16 B62's guard compares the raw path argument**
   (`tools/registered/sobre_search.rs:350`). With a different case or `\` on
   Windows, or `/var` against `/private/var` on macOS, it misses and the
-  symbol lookup moves to the nearest git root. Likely. (#PRNUM)
+  symbol lookup moves to the nearest git root. Likely. (#62)
   Done: both sides are canonicalized before the comparison.
 
 - [x] **K17 `sobre_read paths=[…]` does not name the files.** (#61) Full
@@ -959,7 +959,7 @@ documented:
     (`hook_handlers/observe.rs:76-86`).
   - `sobre_review`'s diff review ignores `depth`
     (`tools/registered/sobre_review.rs:186`); `review` and `checklist` resolve the
-    raw path, skipping the B37 rule. The second half is done in #PRNUM:
+    raw path, skipping the B37 rule. The second half is done in #62:
     their `path` is resolved as every tool's is.
   - `recall` with both `category` and `query` ignores the query
     (`tools/sobre_knowledge/remember.rs:299-319`).
@@ -1103,7 +1103,7 @@ down, in `.md` files in the repository.
   - `sobre_search`: `languages`, `path_glob`, `ignore_gitignore`, `mode`
     in the default build, the aliases `grep`/`pattern`/`search`/`related`,
     and a fallback that takes any unknown string argument as the pattern
-    (`tools/registered/sobre_search.rs:153-197`). Removed in #PRNUM; an
+    (`tools/registered/sobre_search.rs:153-197`). Removed in #62; an
     unlisted `action` is refused.
   - `sobre_patch`: `expected_hash`, `backup`, `backup_path`, `evidence`,
     `diff_max_lines`, `validate_syntax`, `expected_size`,
@@ -1113,9 +1113,9 @@ down, in `.md` files in the repository.
     `replace_unique`, and `name_path`/`end_line`/`expected_hash` on
     `replace_symbol`.
   - `sobre_review`: `project_root`, `root`. `sobre_read`: `full-compact`.
-    Removed in #PRNUM, with `root` from the dispatcher's path keys;
+    Removed in #62, with `root` from the dispatcher's path keys;
     `sobre_refactor` now declares the `dry_run` it reads.
-  - Decision 7. A test (#PRNUM) fails on any argument a handler reads that
+  - Decision 7. A test (#62) fails on any argument a handler reads that
     its schema does not declare.
 - [ ] **N4 About 30 environment variables are undocumented**; about 9 are.
   - One changes behaviour: `SOBRE_WRAPPED` makes `sobre -c` pass through
