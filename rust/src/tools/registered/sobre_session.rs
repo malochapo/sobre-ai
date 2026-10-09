@@ -31,10 +31,15 @@ impl McpTool for SobreSessionTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "status|load|save|task|finding|decision|list|export|import|… (invalid action lists all)"
+                        "enum": [
+                            "status", "task", "finding", "decision", "save", "load", "list",
+                            "reset", "cleanup", "resume", "snapshot", "restore", "diff",
+                            "export", "import", "output_stats"
+                        ],
+                        "description": "status: this session. task|finding|decision: record one (value). save: write it to disk. load: a saved session (session_id, or this project's latest). list: this project's saved sessions. reset: save, then start a new one. cleanup: delete sessions older than 7 days. resume: a block to continue from. snapshot: save a compaction snapshot; restore: read one back (session_id, or this project's latest). diff: compare two sessions (value='id_a id_b [json]'). export|import: a JSON bundle (path, format, write). output_stats: how often compressed output kept paths and identifiers intact, this process"
                     },
                     "value": { "type": "string" },
-                    "session_id": { "type": "string", "description": "Omit for latest" },
+                    "session_id": { "type": "string", "description": "load, restore: omit for this project's latest" },
                     "path": { "type": "string", "description": "export: file to write; import: bundle to read" },
                     "format": { "type": "string", "description": "export: json|summary" },
                     "write": { "type": "boolean", "description": "export: also save the bundle (default location under the data directory)" }

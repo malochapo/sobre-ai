@@ -1130,7 +1130,7 @@ The standard asked for: every environment variable, config key, command and
 tool listed with its behaviour and options, and the architecture written
 down, in `.md` files in the repository.
 
-- [ ] **N1 There is no architecture document.** What exists: the layout in
+- [x] **N1 There is no architecture document.** (#PRNUM) What exists: the layout in
   `rust/README.md:40-60`, the in-process lock order in
   `rust/LOCK_ORDERING.md`, and the contracts. Missing: the processes and
   their lifetimes, the request flows, the compression pipeline and how an
@@ -1151,7 +1151,9 @@ down, in `.md` files in the repository.
   10. security model;
   11. index of the reference pages;
   12. how to change it (the invariants, the generated pages).
-- [ ] **N2 `mcp-tools.md` lists parameter names only.** The generator
+  Done: `docs/architecture.md`, on that outline; `rust/LOCK_ORDERING.md`
+  gains the server's `roots_gate`.
+- [x] **N2 `mcp-tools.md` lists parameter names only.** (#PRNUM) The generator
   (`core/reference_docs.rs:108-135`) prints no type, description, enum,
   default, conditional requirement, annotation, or the parameter the dense
   build adds.
@@ -1164,7 +1166,10 @@ down, in `.md` files in the repository.
   - `action` is a free string in `sobre_knowledge`, `sobre_session` and
     `sobre_graph`, not an enum.
   - Decision 9.
-- [ ] **N3 Undeclared parameters, aliases and fallbacks.** *Invariant 3.*
+  Done: the generator prints each tool's annotations and a table of its
+  parameters (type, enum, default, description), the requirements that
+  depend on `action` or `mode`, and the parameter the dense build adds.
+- [x] **N3 Undeclared parameters, aliases and fallbacks.** (#59, #62) *Invariant 3.*
   - `sobre_search`: `languages`, `path_glob`, `ignore_gitignore`, `mode`
     in the default build, the aliases `grep`/`pattern`/`search`/`related`,
     and a fallback that takes any unknown string argument as the pattern
@@ -1182,7 +1187,7 @@ down, in `.md` files in the repository.
     `sobre_refactor` now declares the `dry_run` it reads.
   - Decision 7. A test (#62) fails on any argument a handler reads that
     its schema does not declare.
-- [ ] **N4 About 30 environment variables are undocumented**; about 9 are.
+- [x] **N4 About 30 environment variables are undocumented** (#PRNUM); about 9 are.
   - One changes behaviour: `SOBRE_WRAPPED` makes `sobre -c` pass through
     (`shell/reentry.rs:7-19`). It is a re-entry guard sobre sets on its own
     children; it should be documented as that.
@@ -1208,7 +1213,11 @@ down, in `.md` files in the repository.
     `SOBRE_WRAPPED=1`, the forwarded agent variables; the LaunchAgent pins
     `SOBRE_*_DIR` and `HOME`; the systemd unit only `RUST_LOG=info`.
   - Decision 9.
-- [ ] **N5 There is no command reference.**
+  Done: `core/env_vars.rs` lists every variable by kind (location,
+  secret, host, platform, set by sobre, tests); a test fails when the code
+  reads one it does not list; `env-vars.md` is generated from it.
+  `SECURITY.md` names `SOBRE_PROXY_TOKEN`.
+- [x] **N5 There is no command reference.** (#PRNUM)
   - The README covers about 60 % of the commands and flags; `sobre help
     all` misses about 10 flags (`doctor --gate`, `doctor integrations
     --fix`, `call --json-file`, `embeddings provision --force`, `proxy -p`,
@@ -1220,7 +1229,15 @@ down, in `.md` files in the repository.
     `doctor overhead` or `lint-context`.
   - The hook contract per host is not described.
   - Decision 8.
-- [ ] **N6 Factual errors in the README.**
+  Done: `cli/spec.rs`, one table of commands, arguments and flags, checks
+  every command line (an unknown flag, a missing value or an extra argument
+  exits 2 before anything runs), prints `sobre help all` and each
+  `sobre <command> --help`, and generates `cli.md` with the exit codes.
+  A test fails when a handler reads a flag the table does not declare.
+  Aliases nobody documented are gone: `init --dry-run`, `index
+  --project-root`, `config set --force`/`-f`, `proxy start --autostart`,
+  `help full`/`--all`/`-a`. `doctor --fix` that fails now exits 1.
+- [x] **N6 Factual errors in the README.** (#PRNUM)
   - Logs are said to be in the state dir (`README.md:341`); `crash.log`
     is in the data dir (`core/crash_log.rs:22`).
   - "Two people on one machine get different ports" is false on macOS
@@ -1239,7 +1256,12 @@ down, in `.md` files in the repository.
     never is (H5).
   - "`proxy disable` stops it": it does not stop a proxy the MCP server
     started (H15).
-- [ ] **N7 Config keys: what `config-keys.md` does not say.**
+  Done: the README says where `crash.log` is and that compression comes
+  back after two quiet minutes; `search_roots` entries are expanded
+  (`~`, `$HOME`) and canonicalized on the multi-root route too. The port,
+  `doctor --fix`, `claude mcp add-json` and `proxy disable` items were
+  fixed with H11, H13, H5 and H15.
+- [x] **N7 Config keys: what `config-keys.md` does not say.** (#PRNUM)
   - The value syntax of `config set` (booleans `true|1|yes…`, arrays
     comma-separated), and that no command removes a key.
   - A file that does not parse is ignored whole (warning on stderr); an
@@ -1255,7 +1277,14 @@ down, in `.md` files in the repository.
   - `proxy.upstreams`: the defaults, live reload, validation.
   - A built-in rule: the proxy never compresses results of tools whose name
     contains `serena` (`core/config/proxy.rs:25-42,147-150`).
-- [ ] **N8 Files sobre writes that no document lists.**
+  Done: `config-keys.md` opens with how the file is read, the `config
+  set` syntax (`default` removes a key) and `config init`'s backup; the
+  schema descriptions now say what `passthrough_commands` matches (and the
+  built-in list is generated), what `ignore` covers, the
+  `embedding_model` aliases, `shell_timeout_secs`' rules, the upstream
+  defaults, validation and reload, and the `serena` rule. The struct docs
+  defer to the schema.
+- [x] **N8 Files sobre writes that no document lists.** (#PRNUM)
   `memory/archive/`, `read_cache/stub_index.json`, `detected_model.json`,
   `active_transcript.json`, `last_compaction.json`, `diagnostics.json`,
   `doctor/latest.json`, `.mcp-startup.lock`, `starts.log`, `proxy.log`,
@@ -1263,11 +1292,15 @@ down, in `.md` files in the repository.
   Also unlisted: the language servers `sobre_refactor` needs
   (rust-analyzer, typescript-language-server, pylsp, gopls;
   `lsp/config.rs:20-35`) and the 27 languages `sobre_outline` parses.
-- [ ] **N9 `rust/README.md`'s layout omits** `doctor/`, `uninstall/`,
+  Done: `docs/architecture.md` lists every file and directory sobre
+  writes, the language servers and the languages it parses.
+- [x] **N9 `rust/README.md`'s layout omits** (#PRNUM) `doctor/`, `uninstall/`,
   `proxy_setup/`, `proxy_autostart.rs`, `lsp/`, `ipc/`, `engine/`,
   `tool_defs/`, `mcp_stdio.rs`, `config_io.rs`, `compound_lexer.rs`,
   `rewrite_registry.rs`, `terminal_ui.rs`.
 
+  Done: the layout lists every module; the feature notes name every
+  feature.
 ## Publishing
 
 Checked: nothing publishes documentation outside the repository.

@@ -1,8 +1,5 @@
 //! `sobre proxy …` — proxy lifecycle and live upstreams.
 
-#[allow(clippy::wildcard_imports)]
-use super::*;
-
 /// The port named by `--port N`, `--port=N`, `-p N` or `-p=N`. A missing or
 /// unparseable value is a usage error (exit 2).
 fn port_flag(rest: &[String]) -> Option<u16> {
@@ -31,9 +28,6 @@ fn proxy_port(rest: &[String]) -> u16 {
         .or_else(crate::proxy_setup::last_started_port)
         .unwrap_or_else(crate::proxy_setup::default_port)
 }
-
-const USAGE: &str =
-    "Usage: sobre proxy <start|stop|restart|status|enable|disable|cleanup|token> [--port N]";
 
 /// Stops a standalone/foreground proxy identified by its `/health` answer.
 /// Returns true if a sobre proxy was answering on `port`. Shared by `stop` and
@@ -79,41 +73,22 @@ fn print_live_upstreams_and_drift(v: &serde_json::Value, cfg: &crate::core::conf
 
 pub(crate) fn cmd_proxy(rest: &[String]) {
     {
-        // `--help` anywhere must never execute the verb.
-        if wants_help(rest) {
-            crate::outln!("{USAGE}");
-            crate::outln!();
-            crate::outln!("Commands:");
-            crate::outln!(
-                "  start     Run the compression proxy (foreground; -d/--detach for background; --autostart installs a service)"
-            );
-            crate::outln!("  stop      Unload the autostart unit and stop the proxy process");
-            crate::outln!(
-                "  restart   Reload the autostart unit, or restart the proxy process (re-reads config.toml)"
-            );
-            crate::outln!("  status    Show proxy config, process and live upstreams");
-            crate::outln!(
-                "  enable    Enable the proxy: config flag, autostart service, agent wiring (--force rewires agents that point elsewhere)"
-            );
-            crate::outln!("  disable   Disable the proxy and restore the original endpoint");
-            crate::outln!("  cleanup   Remove stale proxy URLs from AI tool configs");
-            crate::outln!("  token     Print the current proxy Bearer token (for HTTP clients)");
-            return;
-        }
         let Some(sub) = rest.first().map(String::as_str) else {
-            crate::errln!("{USAGE}");
+            crate::errln!("{}", crate::cli::spec::group_text("proxy"));
             std::process::exit(2);
         };
+        if matches!(sub, "--help" | "-h" | "help") {
+            crate::outln!("{}", crate::cli::spec::group_text("proxy"));
+            return;
+        }
+        // `--help` after the verb prints its entry and never runs it.
+        let path = format!("proxy {sub}");
+        if crate::cli::spec::COMMANDS.iter().any(|c| c.path == path) {
+            crate::cli::spec::check_or_exit(&path, &rest[1..]);
+        }
         match sub {
             "start" => {
                 let port = port_flag(rest).unwrap_or_else(crate::proxy_setup::default_port);
-                let autostart = rest.iter().any(|a| a == "--autostart");
-                if autostart {
-                    if !crate::proxy_autostart::install(port, false) {
-                        std::process::exit(1);
-                    }
-                    return;
-                }
                 let detach = rest.iter().any(|a| a == "--detach" || a == "-d");
                 if detach {
                     start_detached(port);
@@ -297,7 +272,10 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
                 }
             }
             other => {
-                crate::errln!("Unknown proxy command '{other}'.\n{USAGE}");
+                crate::errln!(
+                    "sobre proxy: unknown command '{other}'\n{}",
+                    crate::cli::spec::group_text("proxy")
+                );
                 std::process::exit(2);
             }
         }

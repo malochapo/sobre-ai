@@ -43,14 +43,18 @@ pub(crate) fn provision(force: bool) -> Result<(), String> {
 }
 
 pub(crate) fn cmd_embeddings(rest: &[String]) {
+    let args = rest.get(1..).unwrap_or_default();
     match rest.first().map(String::as_str) {
         Some("provision") => {
-            if let Err(e) = provision(rest.iter().any(|a| a == "--force")) {
+            crate::cli::spec::check_or_exit("embeddings provision", args);
+            if let Err(e) = provision(args.iter().any(|a| a == "--force")) {
                 eprintln!("Provisioning failed: {e}");
                 std::process::exit(1);
             }
         }
+        Some("--help" | "-h") => print!("{}", crate::cli::spec::group_text("embeddings")),
         Some("status") | None => {
+            crate::cli::spec::check_or_exit("embeddings status", args);
             // Nothing to provision here, so nothing to report but that.
             #[cfg(not(feature = "dense"))]
             println!(

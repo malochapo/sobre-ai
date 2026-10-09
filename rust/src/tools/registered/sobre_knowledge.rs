@@ -35,7 +35,15 @@ action=consolidate imports this session's findings and decisions, runs lifecycle
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "remember|recall|search|pattern|gotcha|relate|relations|consolidate|restore|status|timeline|rooms|wakeup|remove|export|import (also: feedback, unrelate, relations_diagram, health, lifecycle_report, policy, embeddings_*)"
+                        "enum": [
+                            "remember", "recall", "search", "status", "rooms", "timeline",
+                            "wakeup", "remove", "feedback", "pattern", "gotcha",
+                            "relate", "unrelate", "relations", "relations_diagram",
+                            "consolidate", "restore", "health", "lifecycle_report", "policy",
+                            "export", "import",
+                            "embeddings_status", "embeddings_reset", "embeddings_reindex"
+                        ],
+                        "description": "remember: save a fact (value). recall: facts matching query, or the recent ones. search: facts and saved sessions (query). status, rooms: what is stored, by category. timeline: a category's history. wakeup: a short briefing. remove: delete a fact (category, key). feedback: value=up|down on a fact (category, key). pattern: record a code pattern (pattern_type, value). gotcha: record a pitfall (trigger, resolution). relate|unrelate|relations|relations_diagram: links between facts (category, key; query=category/key; value=kind). consolidate: import this session's findings and decisions. restore: bring back archived items. health, lifecycle_report, policy: store limits and upkeep. export|import: a bundle (path). embeddings_*: the semantic index (dense build)"
                     },
                     "trigger": { "type": "string", "description": "gotcha trigger pattern" },
                     "resolution": { "type": "string", "description": "gotcha resolution/fix" },
@@ -64,7 +72,23 @@ action=consolidate imports this session's findings and decisions, runs lifecycle
                     },
                     {
                         "if": { "properties": { "action": { "const": "pattern" } }, "required": ["action"] },
-                        "then": { "required": ["value"] }
+                        "then": { "required": ["pattern_type", "value"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "enum": ["remove", "feedback", "relations", "relations_diagram"] } }, "required": ["action"] },
+                        "then": { "required": ["category", "key"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "enum": ["relate", "unrelate"] } }, "required": ["action"] },
+                        "then": { "required": ["category", "key", "query"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "timeline" } }, "required": ["action"] },
+                        "then": { "required": ["category"] }
+                    },
+                    {
+                        "if": { "properties": { "action": { "const": "import" } }, "required": ["action"] },
+                        "then": { "required": ["path"] }
                     },
                     {
                         "if": { "properties": { "action": { "const": "search" } }, "required": ["action"] },
@@ -218,7 +242,7 @@ action=consolidate imports this session's findings and decisions, runs lifecycle
             return Ok(text_output(text));
         }
         if action == "import" {
-            let Some(path) = io_path.or_else(|| query.clone()) else {
+            let Some(path) = io_path else {
                 return Ok(text_output(
                     "ERROR: import requires `path` (a file or an OKF directory)".to_string(),
                 ));

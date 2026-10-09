@@ -171,6 +171,8 @@ pub mod homeostasis;
 pub mod pricing;
 
 pub mod edit_quality;
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) mod env_vars;
 pub mod http_client;
 pub mod import_resolver;
 pub mod index_admission;

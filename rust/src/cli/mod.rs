@@ -6,6 +6,7 @@ pub(crate) mod embeddings_cmd;
 mod index_cmd;
 mod init_cmd;
 pub(crate) mod prompt;
+pub(crate) mod spec;
 pub(crate) use call_cmd::cmd_call;
 pub use config_cmd::*;
 pub(crate) use index_cmd::cmd_index;

@@ -268,8 +268,9 @@ above, it condenses the prose in tool and shell output (each condensed output
 says so), shortens the tool descriptions from 0.4, and adds an `OUTPUT STYLE`
 line to the MCP instructions that asks the agent to write its own replies more
 tersely, from "concise" to "raw-dense". When the agent keeps re-reading or
-re-running to get back what was cut, `sobre` lowers compression for the rest of
-the session and says so.
+re-running to get back what was cut (three such calls in two minutes), `sobre`
+lowers compression, says so, and goes back to the configured level once two
+minutes pass without one.
 
 ## Local embeddings
 
@@ -424,6 +425,26 @@ other argument is an error, and nothing is removed.
 - **Windows.** No `make` and no proxy login service (see [Proxy](#proxy)).
   `uninstall` cannot delete the `sobre.exe` it runs from: delete it by hand
   afterwards.
+
+## Reference
+
+Everything below lives in this repository; nothing is published elsewhere.
+
+- [Architecture](docs/architecture.md): the processes, how a request flows,
+  where state lives, the security model.
+- [MCP tools](docs/reference/generated/mcp-tools.md): every tool, action and
+  parameter.
+- [Configuration keys](docs/reference/generated/config-keys.md): every key, its
+  type, default and effect.
+- [Commands](docs/reference/generated/cli.md): every command, option and exit
+  code (`sobre help all` prints the same).
+- [Environment variables](docs/reference/generated/env-vars.md): every variable
+  `sobre` reads or sets.
+- [Contracts](docs/contracts/): the on-disk formats other tools may rely on.
+- [Invariants](INVARIANTS.md): the rules every change is held to.
+- [Rust crate](rust/README.md): building, testing and the source layout.
+
+The four reference pages are generated from the code; `rust/README.md` says how.
 
 ## License
 

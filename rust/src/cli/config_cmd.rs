@@ -1,24 +1,46 @@
 use crate::core::config;
 
 pub fn cmd_config(args: &[String]) {
+    let rest = args.get(1..).unwrap_or_default();
     match args.first().map(String::as_str) {
         None | Some("show") => {
+            crate::cli::spec::check_or_exit(
+                if args.is_empty() {
+                    "config"
+                } else {
+                    "config show"
+                },
+                rest,
+            );
             crate::outln!("{}", show());
             crate::outln!(
                 "\nChange a key with `sobre config set <key> <value>`; `sobre config init`\nwrites the file with every key documented. `sobre doctor` flags unknown keys."
             );
         }
-        Some("init") => init_config(),
-        Some("set") => {
-            if args.len() < 3 {
-                crate::errln!("Usage: sobre config set <key> <value>");
-                std::process::exit(2);
-            }
-            write_config_key(&args[1], &args[2], args);
+        Some("init") => {
+            crate::cli::spec::check_or_exit("config init", rest);
+            init_config();
         }
-        Some("path") => cmd_config_path(),
-        _ => {
-            crate::errln!("Usage: sobre config [show|set <key> <value>|path|init]");
+        Some("set") => {
+            crate::cli::spec::check_or_exit("config set", rest);
+            let words: Vec<&String> = rest.iter().filter(|a| !a.starts_with('-')).collect();
+            let [key, value] = words.as_slice() else {
+                crate::errln!(
+                    "usage: {}",
+                    crate::cli::spec::usage(crate::cli::spec::command("config set"))
+                );
+                std::process::exit(2);
+            };
+            write_config_key(key, value, args);
+        }
+        Some("path") => {
+            crate::cli::spec::check_or_exit("config path", rest);
+            cmd_config_path();
+        }
+        Some("--help" | "-h") => print!("{}", crate::cli::spec::group_text("config")),
+        Some(other) => {
+            crate::errln!("sobre config: unknown command '{other}'");
+            crate::errln!("{}", crate::cli::spec::group_text("config"));
             std::process::exit(2);
         }
     }

@@ -21,12 +21,7 @@ pub(crate) fn detect_project_root(args: &[String]) -> String {
         {
             return normalize_explicit_root(v);
         }
-        if let Some(v) = a.strip_prefix("--project-root=")
-            && !v.trim().is_empty()
-        {
-            return normalize_explicit_root(v);
-        }
-        if (a == "--root" || a == "--project-root")
+        if a == "--root"
             && let Some(v) = it.peek()
             && !v.starts_with("--")
             && !v.trim().is_empty()
