@@ -9,7 +9,8 @@
 //! relevant to the cue.
 //!
 //! We apply this to code: seed activation at the files/symbols a task names,
-//! then spread it across the project graph (imports, calls, co-access). The
+//! then spread it across the project's file graph and the learned co-access
+//! edges (`cooccurrence`). The
 //! resulting activation is an associative relevance signal that complements
 //! lexical BM25 — it surfaces files that are *structurally* close to the seeds
 //! even when they share no query terms.
@@ -98,7 +99,7 @@ pub fn related_ranked(
         .into_iter()
         .filter(|(node, _)| !seeds.contains_key(node))
         .collect();
-    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     ranked.truncate(top_k);
     ranked
 }
