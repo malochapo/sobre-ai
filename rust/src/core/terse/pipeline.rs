@@ -1,8 +1,6 @@
-//! Central compression pipeline — the single entry point for ALL integration modes.
-//!
-//! This ensures Hybrid and Full MCP modes get identical compression behavior.
-//! The pipeline orchestrates Layer 1 + Layer 2 and produces a `TerseResult`
-//! with full attribution.
+//! The terse pipeline: the one entry point for generic compression of tool
+//! and command output, used by the MCP tool results and by the shell
+//! compression engine alike.
 
 use super::TerseResult;
 use super::counter;
@@ -11,15 +9,10 @@ use super::residual;
 use crate::core::config::CompressionLevel;
 
 const MAX_TERSE_INPUT_BYTES: usize = 64_000;
-const TERSE_BUDGET_MS: u128 = 500;
 
-/// Runs the full compression pipeline on tool/command output.
-///
-/// This is the **single entry point** for all integration modes:
-/// - Full MCP: called from `server/mod.rs` after tool execution
-/// - Hybrid: MCP for reads + CLI for shell compression
-///
-/// Safety: skips compression for inputs > 64KB and enforces a 500ms budget.
+/// Runs the pipeline on tool or command output; `pattern_compressed` is a
+/// pattern compressor's output for it, when one ran. Inputs over 64 KB are
+/// returned unchanged.
 pub fn compress(
     input: &str,
     level: &CompressionLevel,
@@ -30,8 +23,8 @@ pub fn compress(
     }
 
     // Structured-data fast path: tool/command output that is a single JSON
-    // document (API responses, `gh api`, `cargo --message-format=json`, MCP
-    // bridge results) compacts losslessly far better than the token engine.
+    // document (API responses, `gh api`, `cargo --message-format=json`)
+    // compacts losslessly far better than the token engine.
     // sobre_read outputs carry a header line, so they never match here —
     // only genuine pure-JSON payloads do, keeping file reads byte-exact.
     if let Some(compact) = crate::core::structured_compact::compact_json(input) {
@@ -46,9 +39,7 @@ pub fn compress(
         }
     }
 
-    let deadline = std::time::Instant::now();
-
-    let mut result = match pattern_compressed {
+    match pattern_compressed {
         Some(after_patterns) => compress_with_patterns(input, after_patterns, level),
         // Fenced code blocks (``` / ~~~) carry verbatim source — diffs, file
         // excerpts, edit evidence. The dictionary/line-score layers
@@ -58,68 +49,7 @@ pub fn compress(
             Some(fenced) => fenced,
             None => compress_direct(input, level),
         },
-    };
-
-    if deadline.elapsed().as_millis() < TERSE_BUDGET_MS {
-        use std::sync::OnceLock;
-        static CDC_ENABLED: OnceLock<bool> = OnceLock::new();
-        let cdc = *CDC_ENABLED.get_or_init(|| false);
-        if cdc {
-            result.output = reorder_cdc_stable(&result.output);
-        }
     }
-
-    result
-}
-
-/// Reorders compressed output at CDC boundaries so stable blocks (imports,
-/// type definitions, module headers) appear before volatile content.
-/// Stable-first ordering improves LLM prompt-cache hit rates because caches
-/// are prefix-matched.
-fn reorder_cdc_stable(output: &str) -> String {
-    let chunks = crate::core::rabin_karp::chunk(output);
-    if chunks.len() < 3 {
-        return output.to_string();
-    }
-
-    let bytes = output.as_bytes();
-    let mut stable = Vec::new();
-    let mut volatile = Vec::new();
-
-    for c in &chunks {
-        let end = (c.offset + c.length).min(bytes.len());
-        let text = String::from_utf8_lossy(&bytes[c.offset..end]);
-        let first_line = text.lines().next().unwrap_or("").trim();
-        let is_stable = first_line.starts_with("use ")
-            || first_line.starts_with("import ")
-            || first_line.starts_with("from ")
-            || first_line.starts_with("#include")
-            || first_line.starts_with("require")
-            || first_line.starts_with("pub mod ")
-            || first_line.starts_with("mod ")
-            || first_line.starts_with("export ")
-            || first_line.starts_with("//!")
-            || first_line.starts_with("///");
-
-        if is_stable {
-            stable.push(text.into_owned());
-        } else {
-            volatile.push(text.into_owned());
-        }
-    }
-
-    if stable.is_empty() || volatile.is_empty() {
-        return output.to_string();
-    }
-
-    let mut result = String::with_capacity(output.len());
-    for s in &stable {
-        result.push_str(s);
-    }
-    for v in &volatile {
-        result.push_str(v);
-    }
-    result
 }
 
 /// Returns true when `line` opens/closes a fenced code block (CommonMark:
