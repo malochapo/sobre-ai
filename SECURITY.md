@@ -36,9 +36,14 @@ run, be read or be written is the agent host's decision, not `sobre`'s (see
 
 What it does defend against:
 
-- **Secret leakage into context.** Secret-shaped values (API keys, tokens,
-  private keys) are masked as `[REDACTED:…]` in what `sobre` returns and in the
-  full outputs it keeps for `sobre_expand`. Those outputs are written with
+- **Secret leakage into context.** Secret-shaped values are masked as
+  `[REDACTED:…]` in what `sobre` returns and in the full outputs it keeps for
+  `sobre_expand`: private keys of every type (the whole block), known token
+  formats (provider API keys, GitHub, GitLab, Slack, Stripe and npm tokens,
+  AWS key IDs, JWTs, database URLs, bearer tokens), and long values under
+  key, token, secret or password names. Masking is pattern matching, not a
+  guarantee: a short value, a secret under an unrelated name, or a read window
+  that starts inside a key's body can go through. Those outputs are written with
   owner-only permissions and deleted after 24 hours. `sobre_read` with
   `raw=true` returns a file's bytes unmasked, on request.
 - **Other local users.** The proxy listens on `127.0.0.1` only and refuses

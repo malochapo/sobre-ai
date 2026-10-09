@@ -655,9 +655,9 @@ pub fn ensure_background(root: &str, respect_gitignore: bool) {
     }
 }
 
-/// Build the index synchronously and install it in the resident cache.
-/// Returns `true` on success. Useful for CLI prewarm and benchmarks that need a
-/// guaranteed-warm index. Respects the disable env var.
+/// Build the index synchronously and install it in the resident cache, for
+/// tests and benches that need a warm index. Returns `true` on success, and
+/// `false` when `respect_gitignore` is off: that walk never uses the index.
 #[cfg(any(test, feature = "test-support"))]
 pub fn warm_blocking(root: &str, respect_gitignore: bool) -> bool {
     if !respect_gitignore {

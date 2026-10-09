@@ -901,7 +901,7 @@ pub fn disk_status(project_root: &str) -> DiskStatusAll {
 pub fn status_json(project_root: &str) -> String {
     // Compute disk status first — may do SQLite I/O and must NOT hold L2
     // (per-project Mutex) while doing so, or the background index worker
-    // cannot call finish_ok / set worker_running = false (#deadlock).
+    // cannot call finish_ok / set worker_running = false, and both deadlock.
     let disk = disk_status(project_root);
     let state = entry_for(project_root);
     let s = state

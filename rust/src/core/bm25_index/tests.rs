@@ -801,17 +801,16 @@ fn rebuild_incremental_dispatches_parallel_and_matches_sequential() {
     assert_same_index(&seq, &public);
 }
 
-/// CI build-time regression gate for the parallel incremental rebuild
-/// Off by default — wall-clock timing is meaningless
-/// under the concurrent local / nextest runner — so it no-ops unless the CI job
-/// sets `SOBRE_PERF_GATE=1` and runs it on a quiet, single-threaded runner.
+/// Opt-in timing check for the parallel incremental rebuild. Wall-clock
+/// timing means nothing under the parallel test runner, so it no-ops unless
+/// `SOBRE_PERF_GATE=1` is set; run it on a quiet machine.
 /// Asserts the parallel rebuild is not slower than the sequential one
 /// (best-of-3, generous noise slack) and stays under a catastrophic-blowup
 /// ceiling, without depending on a specific core count.
 #[test]
 fn parallel_incremental_rebuild_perf_gate() {
     if std::env::var("SOBRE_PERF_GATE").as_deref() != Ok("1") {
-        return; // CI-only gate; no-op elsewhere to avoid timing flakes
+        return; // opt-in: no-op unless SOBRE_PERF_GATE=1
     }
 
     let td = tempdir().expect("tempdir");

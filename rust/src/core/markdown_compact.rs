@@ -324,7 +324,6 @@ fn score_line(
         || line.contains("SHOULD")
         || line.contains("BLOCKING")
         || line.contains("WARNING")
-        || line.contains("sobre")
     {
         score += 10.0;
     }
