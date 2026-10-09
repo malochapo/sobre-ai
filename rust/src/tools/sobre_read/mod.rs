@@ -491,7 +491,9 @@ fn handle_with_options_resolved_preread(
             )
         }
     };
-    settle(cache, path, result)
+    let out = settle(cache, path, result);
+    record_read(path, &out, cache.get(path).map_or(0, |e| e.original_tokens));
+    out
 }
 
 /// What a read still has to render once the cache lock is released: a view
@@ -588,8 +590,9 @@ pub(crate) fn finish(
 }
 
 /// What every read records once its output is known: the mode last served,
-/// whether the full content is what the agent now holds, the shared-block
-/// dedup of lossy summaries, and the read in the bounce tracker.
+/// whether the full content is what the agent now holds, and the
+/// shared-block dedup of lossy summaries. The caller records the read with
+/// [`record_read`].
 pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutput) -> ReadOutput {
     if let Some(entry) = cache.get_mut(path) {
         entry.last_mode.clone_from(&result.resolved_mode);
@@ -616,17 +619,15 @@ pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutpu
         }
     }
 
-    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
-        let original_tokens = cache.get(path).map_or(0, |e| e.original_tokens);
-        bt.record_read(
-            path,
-            &result.resolved_mode,
-            result.output_tokens,
-            original_tokens,
-        );
-    }
-
     result
+}
+
+/// Records a served read in the bounce tracker. Called with no session
+/// lock held where the caller can release it first (LOCK_ORDERING.md).
+pub(crate) fn record_read(path: &str, out: &ReadOutput, original_tokens: usize) {
+    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
+        bt.record_read(path, &out.resolved_mode, out.output_tokens, original_tokens);
+    }
 }
 
 /// Attempt to serve a `mode="full"` cache hit (`[unchanged …]`) using only a

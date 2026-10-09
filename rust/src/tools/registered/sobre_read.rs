@@ -497,7 +497,9 @@ fn read_through_cache(
     aggressiveness: Option<f64>,
     protect: &[String],
 ) -> Result<(String, String, usize, Option<String>), String> {
-    use crate::tools::sobre_read::{Prepared, ReadTuning, finish, prepare, render, settle};
+    use crate::tools::sobre_read::{
+        Prepared, ReadTuning, finish, prepare, record_read, render, settle,
+    };
 
     let file_lock = per_file_lock(path);
     let _file_guard = {
@@ -527,17 +529,20 @@ fn read_through_cache(
 
     let tuning = ReadTuning::resolve(aggressiveness, protect);
     let contention = || format!("cache lock contention for {path} — retry in a moment");
+    // The bounce tracker is a static lock: taken only with no cache lock held.
+    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
+        bt.next_seq();
+    }
     let job = {
         let mut cache = write_lock_within(cache_lock, std::time::Duration::from_secs(10))
             .ok_or_else(contention)?;
-        if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
-            bt.next_seq();
-        }
         match prepare(&mut cache, path, mode, fresh, crp_mode, task, tuning, None) {
             Prepared::Done(out) => {
                 let out = settle(&mut cache, path, out);
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
                 let file_ref = cache.file_ref_map().get(path).cloned();
+                drop(cache);
+                record_read(path, &out, orig);
                 return Ok((out.content, out.resolved_mode, orig, file_ref));
             }
             Prepared::Render(job) => job,
@@ -563,6 +568,8 @@ fn read_through_cache(
     let out = settle(&mut cache, path, out);
     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
     let file_ref = cache.file_ref_map().get(path).cloned();
+    drop(cache);
+    record_read(path, &out, orig);
     Ok((out.content, out.resolved_mode, orig, file_ref))
 }
 
