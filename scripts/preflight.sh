@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# The checks CI runs, runnable locally. CI calls this same script, so a green
-# run here means the same gates pass there.
+# The checks CI runs, runnable locally. CI's lint job calls this same script;
+# `full` adds the tests CI runs on Linux. CI also runs cargo-deny
+# (rust/deny.toml), which this script does not.
 #
 #   scripts/preflight.sh        lint only (fmt, clippy, doc, generated docs, file size)
-#   scripts/preflight.sh full   lint + the whole test suite
+#   scripts/preflight.sh full   lint + the whole test suite, and the library
+#                               tests of the build with embeddings
 set -euo pipefail
 
 cd "$(dirname "$0")/../rust"
@@ -19,6 +21,7 @@ step ../scripts/loc-gate.sh
 
 if [[ "${1:-}" == "full" ]]; then
   step cargo test --locked
+  step cargo test --locked --features dense --lib
 fi
 
 printf '\npreflight: all checks passed\n'
