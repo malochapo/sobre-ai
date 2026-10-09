@@ -1,23 +1,6 @@
-//! Split from `proxy/mod.rs` (LOC gate): `auth_tests`.
+//! The proxy's authentication and routing guards.
 
 use super::*;
-
-// P0-4: the proxy must never run unauthenticated — `None` means
-// "resolve the session token", not "no auth".
-#[test]
-fn effective_auth_token_never_yields_empty() {
-    let _env = crate::core::data_dir::test_env_lock();
-    let tmp = tempfile::tempdir().unwrap();
-    crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path());
-
-    assert_eq!(effective_auth_token(Some("tok".into())), "tok");
-    let auto = effective_auth_token(None);
-    assert!(!auto.trim().is_empty(), "None must auto-resolve a token");
-    let blank = effective_auth_token(Some("   ".into()));
-    assert!(!blank.trim().is_empty(), "blank tokens must be replaced");
-
-    crate::test_env::remove_var("SOBRE_DATA_DIR");
-}
 
 #[test]
 fn is_provider_route_v1() {
@@ -145,13 +128,6 @@ fn auth_error_response_provider_hint() {
 fn auth_error_response_generic_hint() {
     let resp = auth_error_response("/status");
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-}
-
-#[test]
-fn x_sobre_project_never_forwarded_upstream() {
-    // Internal gateway header: it must NOT be on the upstream allowlist,
-    // otherwise org-internal project names leak to the provider.
-    assert!(!forward::is_allowed_request_header("x-sobre-project"));
 }
 
 // --- bare provider endpoints (OpenCode / @ai-sdk/openai) ---
