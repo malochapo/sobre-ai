@@ -22,11 +22,13 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
         cleanup_old_tee_logs(&tee_dir);
     }
 
+    // ASCII only: the id must pass `sobre_expand`'s resolver
+    // (`[A-Za-z0-9_-]`), whatever script the command is written in.
     let cmd_slug: String = command
         .chars()
         .take(40)
         .map(|c| {
-            if c.is_alphanumeric() || c == '-' {
+            if c.is_ascii_alphanumeric() || c == '-' {
                 c
             } else {
                 '_'
@@ -143,6 +145,23 @@ mod tests {
                 .count()
         });
         assert_eq!(hits, 1, "exactly one racer should win the cleanup slot");
+    }
+
+    /// J7: a command in another script still gets an id `sobre_expand`
+    /// resolves.
+    #[test]
+    fn a_non_ascii_command_gets_a_resolvable_id() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let path = save_tee("grep -r ünïcödé 日本", "some output").expect("tee saved");
+        let id = std::path::Path::new(&path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap();
+        assert!(id.is_ascii(), "{id}");
+        assert!(
+            crate::proxy::ccr::resolve_tee(id).is_some(),
+            "{id} must resolve"
+        );
     }
 
     /// An identical re-run keeps its name; a re-run with other output gets its

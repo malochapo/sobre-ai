@@ -70,7 +70,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "u64?",
             serde_json::json!(null),
-            "Shell command timeout (seconds) for normal commands. null = built-in 2-minute default",
+            "sobre_shell stops a command after this many seconds without new output (null = 120; builds and tests get at least 600; a call's timeout_ms wins)",
         ),
     );
 

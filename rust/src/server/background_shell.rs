@@ -87,23 +87,14 @@ pub fn start(
     extra_env: std::collections::HashMap<String, String>,
     timeout_ms: Option<u64>,
 ) -> String {
-    // IDs are content-addressed so tool responses stay deterministic.
-    // An identical in-flight launch coalesces onto the same job instead of
-    // creating duplicate expensive builds/tests.
-    let mut env_entries: Vec<_> = extra_env.iter().collect();
-    env_entries.sort_unstable_by(|a, b| a.0.cmp(b.0));
-    let env_key = env_entries
-        .into_iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect::<Vec<_>>()
-        .join("\0");
-    let material = format!(
-        "{command}\0{cwd}\0{}\0{env_key}",
-        timeout_ms.unwrap_or_default()
-    );
+    // One id per launch: starting the same command again while the first
+    // run is going is a second run, and a foreground run of it never touches
+    // a background job's result.
+    static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let id = format!(
-        "shell_{}",
-        &blake3::hash(material.as_bytes()).to_hex()[..16]
+        "shell_{}_{}",
+        std::process::id(),
+        NEXT_ID.fetch_add(1, Ordering::Relaxed)
     );
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = Arc::clone(&cancel);
@@ -112,9 +103,6 @@ pub fn start(
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         prune_finished_jobs(&mut jobs, Instant::now());
-        if matches!(jobs.get(&id).map(|job| &job.state), Some(JobState::Running)) {
-            return id;
-        }
         jobs.insert(
             id.clone(),
             Job {
@@ -447,6 +435,23 @@ mod tests {
             std::thread::sleep(Duration::from_millis(25));
         }
         panic!("background job did not complete");
+    }
+
+    /// J9: the same command started twice is two jobs.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn each_launch_gets_its_own_job() {
+        let launch = || {
+            start(
+                "sleep 5".to_string(),
+                ".".to_string(),
+                std::collections::HashMap::default(),
+                Some(10_000),
+            )
+        };
+        let (a, b) = (launch(), launch());
+        assert_ne!(a, b);
+        let _ = (cancel(&a), cancel(&b));
     }
 
     #[test]

@@ -29,7 +29,7 @@ impl McpTool for SobreShellTool {
                     "command": { "type": "string", "description": "Shell command" },
                     "raw": { "type": "boolean", "description": "Skip compression (verbatim)" },
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
-                    "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms." },
+                    "timeout_ms": { "type": "integer", "description": "Stop the command once it has printed nothing for this long, in ms (max 3600000); a command runs at most 1 hour. NOT the inline wait: a command still running at the ~110s foreground cap detaches to a pollable shell_* job." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
                     "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
                     "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background sobre_shell job." },

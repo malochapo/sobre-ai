@@ -102,9 +102,10 @@ pub struct Config {
     /// = automatic absolute-path resolution.
     #[serde(default)]
     pub hook_binary: Option<String>,
-    /// Timeout in seconds for shell commands. `None` resolves to the built-in
-    /// 2-minute default. Heavy builds and tests, which sobre recognises, always
-    /// get at least the 10-minute heavy ceiling.
+    /// Seconds `sobre_shell` lets a command run without new output. `None`
+    /// resolves to the built-in 2-minute default. Heavy builds and tests,
+    /// which sobre recognises, always get at least the 10-minute heavy
+    /// ceiling; a call's `timeout_ms` wins.
     #[serde(default)]
     pub shell_timeout_secs: Option<u64>,
     /// Globs for files kept out of the index and of project walks, on top of

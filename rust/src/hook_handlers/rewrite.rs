@@ -90,6 +90,7 @@ pub(super) fn candidate(cmd: &str, binary: &str) -> Option<String> {
     if cmd.is_empty()
         || cmd.starts_with("sobre ")
         || cmd.starts_with(&format!("{binary} "))
+        || cmd.starts_with(&format!("{} ", crate::hooks::shell_word(binary)))
         || cmd.contains('\n')
         || cmd.contains("<<")
         || cmd.contains("$(")
@@ -108,16 +109,26 @@ pub(super) fn candidate(cmd: &str, binary: &str) -> Option<String> {
     {
         return None;
     }
-    Some(wrap_single_command(cmd, binary))
+    wrap_single_command(cmd, binary)
 }
 
-fn wrap_single_command(cmd: &str, binary: &str) -> String {
+/// `<binary> -c '<cmd>'`. On Windows the host may run it through cmd or
+/// PowerShell, which quote differently: only a command and a binary path
+/// that need no quoting beyond plain double quotes are wrapped there; any
+/// other runs as written.
+fn wrap_single_command(cmd: &str, binary: &str) -> Option<String> {
     if cfg!(windows) {
-        let escaped = cmd.replace('"', "\\\"");
-        format!("{binary} -c \"{escaped}\"")
+        let needs_care = |s: &str| s.contains(['"', '\'', '`', '$', '%', ' ']);
+        if needs_care(binary) || cmd.contains(['"', '\'', '`', '$', '%']) {
+            return None;
+        }
+        Some(format!("{binary} -c \"{cmd}\""))
     } else {
         let escaped = cmd.replace('\'', "'\\''");
-        format!("{binary} -c '{escaped}'")
+        Some(format!(
+            "{} -c '{escaped}'",
+            crate::hooks::shell_word(binary)
+        ))
     }
 }
 
@@ -151,6 +162,22 @@ mod tests {
             candidate("cargo test --lib", BIN).as_deref(),
             Some("sobre -c 'cargo test --lib'")
         );
+    }
+
+    /// J12: the wrapper names a binary whose path holds a space as one word
+    /// (on Windows, where cmd and PowerShell quote differently, the command
+    /// runs as written).
+    #[test]
+    fn a_binary_path_with_a_space_stays_one_word() {
+        let wrapped = candidate("git status", "/Users/Jane Doe/bin/sobre");
+        if cfg!(windows) {
+            assert_eq!(wrapped, None);
+        } else {
+            assert_eq!(
+                wrapped.as_deref(),
+                Some("'/Users/Jane Doe/bin/sobre' -c 'git status'")
+            );
+        }
     }
 
     #[test]
