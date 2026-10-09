@@ -354,54 +354,6 @@ impl ProjectIndex {
     }
 }
 
-/// Load the best available graph index, trying multiple root path variants.
-/// If no valid index exists, automatically scans the project to build one.
-/// This is the primary entry point — ensures zero-config usage.
-pub fn load_or_build(project_root: &str) -> ProjectIndex {
-    // Prefer stable absolute roots. Using "." as a cache key is fragile because
-    // it depends on the process cwd and can accidentally load the wrong project.
-    let root_abs = if project_root.trim().is_empty() || project_root == "." {
-        std::env::current_dir().ok().map_or_else(
-            || ".".to_string(),
-            |p| normalize_project_root(&p.to_string_lossy()),
-        )
-    } else {
-        normalize_project_root(project_root)
-    };
-
-    if !is_safe_scan_root(&root_abs) {
-        return ProjectIndex::new(&root_abs);
-    }
-
-    // Try the absolute/root-normalized path first.
-    if let Some(idx) = ProjectIndex::load(&root_abs)
-        && !idx.files.is_empty()
-    {
-        if index_looks_stale(&idx, &root_abs) {
-            tracing::warn!("[graph_index: stale index detected for {root_abs}; rebuilding]");
-            return scan(&root_abs);
-        }
-        return idx;
-    }
-
-    // CWD fallback: only use if CWD is a subdirectory of root_abs (same project)
-    if let Ok(cwd) = std::env::current_dir() {
-        let cwd_str = normalize_project_root(&cwd.to_string_lossy());
-        if cwd_str != root_abs
-            && cwd_str.starts_with(&root_abs)
-            && let Some(idx) = ProjectIndex::load(&cwd_str)
-            && !idx.files.is_empty()
-        {
-            if index_looks_stale(&idx, &cwd_str) {
-                return scan(&cwd_str);
-            }
-            return idx;
-        }
-    }
-
-    scan(&root_abs)
-}
-
 fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
     let paths: Vec<&String> = index.files.keys().collect();
     is_stale(root_abs, &index.last_scan, &paths, |rel| {
@@ -465,8 +417,9 @@ pub(crate) fn is_stale(
     }
 
     let root_path = Path::new(root_abs);
-    // Sample up to 20 files for existence check (avoid scanning all files in large indices)
-    for rel in paths.iter().take(20) {
+    // A removed file: every indexed path is checked (a stat each), since the
+    // walk below only sees the files that are there.
+    for rel in paths {
         let rel = rel.trim_start_matches(['/', '\\']);
         if rel.is_empty() {
             continue;
@@ -674,12 +627,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
 
-    let extra_ignores: Vec<glob::Pattern> = cfg
-        .ignore
-        .iter()
-        .filter_map(|p| glob::Pattern::new(p).ok())
-        .collect();
-
     let mut scanned = 0usize;
     let mut reused = 0usize;
     let mut entries_visited = 0usize;
@@ -692,11 +639,12 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     /// Maximum phase-2 fan-out. Actual batches shrink with guardian headroom.
     const SCAN_BATCH_FILES: usize = 500;
     const SCAN_MIN_BATCH_FILES: usize = 1;
-    // Per-file scan: content string (~20 KB avg) + SHA-256 state +
+    // Per-file scan: content string (~20 KB avg) + content hash +
     // signature extraction + line/token counts. Lighter than BM25
     // because no chunk splitting or lowered-token vectors are built.
     const SCAN_EST_TRANSIENT_PER_FILE: u64 = 192 * 1024;
-    let scan_deadline = std::time::Instant::now() + std::time::Duration::from_mins(5);
+    const SCAN_WALK_TIMEOUT: Duration = Duration::from_mins(5);
+    let scan_deadline = std::time::Instant::now() + SCAN_WALK_TIMEOUT;
 
     // Two-phase scan. Phase 1 walks the tree sequentially (cheap; it
     // carries the traversal caps / timeout / memory early-breaks) and collects
@@ -719,8 +667,9 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         if entries_visited.is_multiple_of(5000) {
             if std::time::Instant::now() > scan_deadline {
                 tracing::warn!(
-                    "[graph_index: scan timeout (120s) after {entries_visited} entries — \
+                    "[graph_index: scan timeout ({}s) after {entries_visited} entries — \
                      saving partial index with {} files]",
+                    SCAN_WALK_TIMEOUT.as_secs(),
                     targets.len()
                 );
                 break;
@@ -780,9 +729,6 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         }
 
         let rel = make_relative(&file_path, &project_root);
-        if extra_ignores.iter().any(|p| p.matches(&rel)) {
-            continue;
-        }
         if index_filter.is_excluded(&rel.replace('\\', "/")) {
             continue;
         }

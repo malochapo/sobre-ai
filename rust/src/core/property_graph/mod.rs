@@ -1,9 +1,6 @@
-//! Property Graph Engine — SQLite-backed code knowledge graph.
-//!
-//! Stores nodes (File, Symbol, Module) and edges (imports, calls, defines,
-//! exports) extracted by `deep_queries` + `import_resolver`.  Provides
-//! efficient traversal queries for impact analysis, architecture discovery,
-//! and graph-driven context loading.
+//! The code graph's store, in SQLite: file and symbol nodes, file edges
+//! (imports, modules, type uses, co-change, siblings) as the `graph_index`
+//! scan extracts them (`sync`), and the queries over them (`queries`).
 
 mod cross_source;
 mod edge;
@@ -255,14 +252,13 @@ impl CodeGraph {
         node::symbol_count(&self.conn)
     }
 
-    /// Count of `file` nodes (accurate on both builder paths). Backed by
-    /// `node::file_count`.
+    /// Count of `file` nodes.
     pub fn file_node_count(&self) -> anyhow::Result<usize> {
         node::file_count(&self.conn)
     }
 
-    /// Every symbol node with its line span (unfiltered). Backend for the
-    /// call-graph symbol table after the `graph_index` teardown.
+    /// Every symbol node with its line span (unfiltered): the call graph's
+    /// symbol table.
     pub fn all_symbols(&self) -> anyhow::Result<Vec<Node>> {
         node::all_symbols(&self.conn)
     }
@@ -383,6 +379,7 @@ mod tests {
     /// A file reached by a weak path and a strong one is weighed by the strong
     /// one, whichever comes first: the answer is the same on every run.
     #[test]
+    #[allow(clippy::many_single_char_names)] // graph test nodes: t, x, y, z
     fn impact_keeps_the_strongest_path() {
         let g = test_graph();
 
