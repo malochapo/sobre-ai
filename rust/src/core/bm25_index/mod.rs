@@ -44,14 +44,14 @@ pub fn persist_ceiling_bytes() -> u64 {
 
 /// Outcome of persisting a BM25 index to disk. Distinguishes a real write from a
 /// size-capped refusal so callers never mistake "refused to persist" for
-/// success (the bug behind the perpetual "index warming" report).
+/// success.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveOutcome {
     /// Written to disk. Carries the compressed (zstd) size in bytes.
     Persisted { compressed_bytes: u64 },
     /// Built fine but NOT written — the compressed size exceeds the disk
     /// ceiling. The in-memory index is still usable for this process; callers
-    /// should surface the remedy (raise the cap / add ignore patterns) instead
+    /// should surface the remedy (add ignore patterns) instead
     /// of silently rebuilding on every call.
     SkippedTooLarge {
         compressed_bytes: u64,
@@ -80,7 +80,7 @@ pub enum ChunkKind {
     Class,
     Method,
     Other,
-    // -- External source kinds (Context Engine) --
+    // Chunks ingested from outside the source tree (`ingest_content_chunks`).
     Issue,
     PullRequest,
     WikiPage,
@@ -728,28 +728,9 @@ fn is_safe_bm25_root(root: &Path) -> bool {
     super::graph_index::is_safe_scan_root_public(&root.to_string_lossy())
 }
 
+/// Whether the index no longer matches the files: one indexed file is gone
+/// or changed (mtime, size), or a file to index is not in it yet.
 fn bm25_index_looks_stale(index: &BM25Index, root: &Path) -> bool {
-    if index.chunks.is_empty() {
-        return false;
-    }
-
-    if index.files.is_empty() {
-        let mut seen = std::collections::HashSet::<&str>::new();
-        for chunk in &index.chunks {
-            let rel = chunk.file_path.trim_start_matches(['/', '\\']);
-            if rel.is_empty() {
-                continue;
-            }
-            if !seen.insert(rel) {
-                continue;
-            }
-            if !root.join(rel).exists() {
-                return true;
-            }
-        }
-        return false;
-    }
-
     for (rel, old_state) in &index.files {
         let abs = root.join(rel);
         if !abs.exists() {
@@ -815,11 +796,10 @@ fn list_code_files(root: &Path) -> Vec<String> {
         .filter_entry(crate::core::walk_filter::keep_entry)
         .build();
 
-    let mut ignore_patterns: Vec<glob::Pattern> = DEFAULT_BM25_IGNORES
+    let ignore_patterns: Vec<glob::Pattern> = DEFAULT_BM25_IGNORES
         .iter()
         .filter_map(|p| glob::Pattern::new(p).ok())
         .collect();
-    ignore_patterns.extend(cfg.ignore.iter().filter_map(|p| glob::Pattern::new(p).ok()));
 
     let mut files: Vec<String> = Vec::new();
     let mut filtered_out = 0usize;
@@ -843,8 +823,7 @@ fn list_code_files(root: &Path) -> Vec<String> {
             continue;
         }
         // Match on forward slashes so globs behave identically on Windows;
-        // the index key keeps the platform separator (existing indexes stay
-        // valid).
+        // the index key keeps the platform separator.
         if filter.is_excluded(&rel.replace('\\', "/")) {
             filtered_out += 1;
             continue;

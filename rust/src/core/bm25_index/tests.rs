@@ -219,6 +219,19 @@ fn bm25_index_is_stale_when_any_indexed_file_is_missing() {
     assert!(bm25_index_looks_stale(&idx, root));
 }
 
+/// An index built while the project had no files is stale once one appears.
+#[test]
+fn empty_index_is_stale_when_a_file_appears() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    let idx = BM25Index::build_from_directory(root);
+    assert!(idx.chunks.is_empty());
+    assert!(!bm25_index_looks_stale(&idx, root));
+
+    std::fs::write(root.join("a.rs"), "pub fn a() {}\n").expect("write a.rs");
+    assert!(bm25_index_looks_stale(&idx, root));
+}
+
 #[test]
 #[cfg(unix)]
 fn bm25_incremental_rebuild_reuses_unchanged_files_without_reading() {
@@ -532,14 +545,11 @@ fn postcard_roundtrip_and_garbage_is_graceful() {
         "chunk count survives round-trip"
     );
 
-    // (b) corrupt/legacy bytes must NOT panic — decode returns Err,
+    // (b) corrupt bytes must NOT panic — decode returns Err,
     //     which load() maps via .ok()? to None (→ rebuild), never a crash.
     let garbage = b"\x00\x01\x02not-a-valid-postcard-index\xff\xff";
     let res: Result<BM25Index, _> = postcard::from_bytes(garbage);
-    assert!(
-        res.is_err(),
-        "corrupt/legacy bytes must decode to Err, not panic"
-    );
+    assert!(res.is_err(), "corrupt bytes must decode to Err, not panic");
 }
 
 #[test]
@@ -841,7 +851,7 @@ fn parallel_incremental_rebuild_perf_gate() {
         par.as_secs_f64() / seq.as_secs_f64().max(f64::MIN_POSITIVE)
     );
 
-    // CI-safe gate (plan: "großzügiges CI-sicheres Budget"). The parallel path
+    // A generous, CI-safe budget. The parallel path
     // must not be *dramatically* slower than sequential: a 2x ceiling flags a path
     // that serialized and piled on overhead (e.g. a deadlock-y merge), while
     // tolerating scheduler noise and low-core CI runners where a small fixture's
