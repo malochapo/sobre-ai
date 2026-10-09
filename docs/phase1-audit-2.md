@@ -82,7 +82,7 @@ was added.
 | L | Graph, session, knowledge, review, `gain` | done (#63, #64) |
 | M | Code: dense-only code in the default build, leftovers, Windows lints | done (#59, #65) |
 | P | CI and release | done (#65) but P1, which needs the GitHub account |
-| N | Documentation: complete reference and architecture, written last | open |
+| N | Documentation: complete reference and architecture, written last | done (#PRNUM) |
 
 Three findings went first, in their own PR (#51): H12 (a local user
 could get commands run through the hooks' shared `/tmp` directory), H1
@@ -1169,6 +1169,12 @@ down, in `.md` files in the repository.
   Done: the generator prints each tool's annotations and a table of its
   parameters (type, enum, default, description), the requirements that
   depend on `action` or `mode`, and the parameter the dense build adds.
+  `action` is an enum in every tool, listing each action the handler
+  accepts, with its required parameters. Two more aliases went
+  (decision 7): `sobre_session action=show` and `sobre_knowledge`'s
+  `content`, and `import` no longer takes its path from `query`. The
+  per-turn prefix grew from 4996 to 5109 tokens; its pinned budget
+  (`core/context_overhead.rs`) says why.
 - [x] **N3 Undeclared parameters, aliases and fallbacks.** (#59, #62) *Invariant 3.*
   - `sobre_search`: `languages`, `path_glob`, `ignore_gitignore`, `mode`
     in the default build, the aliases `grep`/`pattern`/`search`/`related`,
@@ -1293,7 +1299,10 @@ down, in `.md` files in the repository.
   (rust-analyzer, typescript-language-server, pylsp, gopls;
   `lsp/config.rs:20-35`) and the 27 languages `sobre_outline` parses.
   Done: `docs/architecture.md` lists every file and directory sobre
-  writes, the language servers and the languages it parses.
+  writes, the language servers and the languages it parses; the README's
+  table of directories is corrected. `sobre_session action=cleanup` now
+  deletes a session's compaction snapshot with it (they were never
+  deleted).
 - [x] **N9 `rust/README.md`'s layout omits** (#PRNUM) `doctor/`, `uninstall/`,
   `proxy_setup/`, `proxy_autostart.rs`, `lsp/`, `ipc/`, `engine/`,
   `tool_defs/`, `mcp_stdio.rs`, `config_io.rs`, `compound_lexer.rs`,

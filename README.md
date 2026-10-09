@@ -373,11 +373,13 @@ The same layout on every platform, under your home directory:
 | Directory | Holds | Override |
 |---|---|---|
 | `~/.config/sobre` | `config.toml` | `SOBRE_CONFIG_DIR`, `XDG_CONFIG_HOME` |
-| `~/.local/share/sobre` | the usage ledger, sessions, memory, search and graph indexes, checkpoints, the proxy token, the managed ONNX Runtime | `SOBRE_DATA_DIR`, `XDG_DATA_HOME` |
-| `~/.local/state/sobre` | logs, the debug log, the full outputs behind compressed ones (kept 24 hours), the hooks' shared state (`hooks/`) and the proxy wiring record (`proxy_wiring.json`) | `SOBRE_STATE_DIR`, `XDG_STATE_HOME` |
+| `~/.local/share/sobre` | the usage ledger, sessions, knowledge, search and graph indexes, checkpoints, the proxy token, the crash log (`logs/crash.log`), the managed ONNX Runtime | `SOBRE_DATA_DIR`, `XDG_DATA_HOME` |
+| `~/.local/state/sobre` | the full outputs behind compressed ones (`tee/`, kept 24 hours), the hooks' shared state (`hooks/`), the debug log, the proxy's log, port and wiring record (`proxy_wiring.json`) | `SOBRE_STATE_DIR`, `XDG_STATE_HOME` |
 | `~/.cache/sobre` | embedding models | `SOBRE_CACHE_DIR`, `XDG_CACHE_HOME` |
 
-`SOBRE_*_DIR` names the directory itself; `XDG_*_HOME` names its parent. With
+`SOBRE_*_DIR` names the directory itself; `XDG_*_HOME` names its parent.
+[docs/architecture.md](docs/architecture.md#6-state-and-data-layout) lists every
+file. With
 `debug_log = true`, `sobre` writes a readable log of tool calls and of what its
 hooks changed; `sobre doctor` prints where.
 

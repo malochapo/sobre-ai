@@ -28,8 +28,7 @@ impl McpTool for SobreGraphTool {
              Calls: callers|callees symbol='fn' → every call site with file:line \
              (depth≤5, path scopes to a file); trace symbol→to=call chain.\n\
              symbol symbol='fn' (or path=\"file.rs::fn\") returns the definition. \
-             diagram kind=deps|calls (Mermaid). build re-scans the project; status says \
-             whether the graph is current.\n\
+             diagram kind=deps|calls (Mermaid). build re-scans; status: is it current.\n\
              For understanding code use sobre_compose FIRST.",
             json!({
                 "type": "object",

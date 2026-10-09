@@ -196,7 +196,7 @@ sobre config set <key> <value> [--yes]
 |---|---|
 | `-y, --yes` | Skip the confirmation a change that widens what sobre does asks for |
 
-Booleans take true/false (also yes/no, on/off, 1/0); a list takes comma-separated values. The value is checked before the file is written. No command removes a key: edit the file.
+Booleans take true/false (also yes/no, on/off, 1/0); a list takes comma-separated values. The value is checked before the file is written; the file keeps its comments. `default`, an empty value or the key's default value removes the key, so its default applies. Exits 2 on an unknown key or a value sobre would not use.
 
 ## `sobre config path`
 

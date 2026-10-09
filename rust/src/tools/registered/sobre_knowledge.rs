@@ -23,13 +23,11 @@ impl McpTool for SobreKnowledgeTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "sobre_knowledge",
-            "Persistent memory across sessions — remember decisions, patterns, and facts for recall.\n\
-             WORKFLOW: save after completing significant tasks; recall at session start.\n\
-             action=remember value='Y' saves a fact (key optional — derived from value; content= is an accepted alias).\n\
-             action=recall query='X' retrieves it (bare recall lists recent facts). action=status shows all categories.\n\
-action=consolidate imports this session's findings and decisions, runs lifecycle, then frees 25% facts/history/patterns capacity.\n\
-             action=gotcha trigger='X' resolution='Y' for known pitfalls.\n\
-             mode=semantic|exact for recall. category groups related facts.",
+            "Facts that outlive the session: decisions, patterns, pitfalls.\n\
+             remember value= saves one (key derived when omitted); recall query= finds them \
+             (bare: the recent ones); search query= also searches saved sessions; status lists \
+             categories. consolidate imports this session's findings and decisions. \
+             category groups facts; mode=semantic|exact for recall.",
             json!({
                 "type": "object",
                 "properties": {
@@ -43,32 +41,31 @@ action=consolidate imports this session's findings and decisions, runs lifecycle
                             "export", "import",
                             "embeddings_status", "embeddings_reset", "embeddings_reindex"
                         ],
-                        "description": "remember: save a fact (value). recall: facts matching query, or the recent ones. search: facts and saved sessions (query). status, rooms: what is stored, by category. timeline: a category's history. wakeup: a short briefing. remove: delete a fact (category, key). feedback: value=up|down on a fact (category, key). pattern: record a code pattern (pattern_type, value). gotcha: record a pitfall (trigger, resolution). relate|unrelate|relations|relations_diagram: links between facts (category, key; query=category/key; value=kind). consolidate: import this session's findings and decisions. restore: bring back archived items. health, lifecycle_report, policy: store limits and upkeep. export|import: a bundle (path). embeddings_*: the semantic index (dense build)"
+                        "description": "wakeup=briefing; rooms=categories; feedback value=up|down; relate value=kind, query=category/key; restore=archived items; embeddings_*=dense build"
                     },
-                    "trigger": { "type": "string", "description": "gotcha trigger pattern" },
-                    "resolution": { "type": "string", "description": "gotcha resolution/fix" },
+                    "trigger": { "type": "string", "description": "gotcha: when it bites" },
+                    "resolution": { "type": "string", "description": "gotcha: the fix" },
                     "severity": { "type": "string", "description": "gotcha: critical|warning|info" },
                     "category": { "type": "string", "description": "Fact category (remember: default general)" },
                     "key": { "type": "string" },
                     "value": { "type": "string" },
-                    "content": { "type": "string", "description": "Alias for value (remember)" },
-                    "query": { "type": "string", "description": "Query for recall/search/relate/restore" },
+                    "query": { "type": "string", "description": "recall, search, restore filter" },
                     "mode": { "type": "string", "description": "auto|exact|semantic|hybrid" },
                     "as_of": { "type": "string", "description": "YYYY-MM-DD date filter" },
                     "pattern_type": { "type": "string" },
                     "examples": { "type": "array", "items": { "type": "string" } },
                     "confidence": { "type": "number", "description": "0.0-1.0" },
                     "store": { "type": "string", "description": "restore: facts|history|patterns (default: all)" },
-                    "limit": { "type": "number", "description": "restore: max items to recover (default 50)" },
-                    "dry_run": { "type": "boolean", "description": "consolidate: preview imports/reclaim without writing" },
-                    "format": { "type": "string", "description": "export: json|okf (okf = portable Markdown bundle)" },
-                    "path": { "type": "string", "description": "export/import: bundle directory (OKF) or file path" },
+                    "limit": { "type": "number", "description": "restore: max items (default 50)" },
+                    "dry_run": { "type": "boolean", "description": "consolidate: preview only" },
+                    "format": { "type": "string", "description": "export: json|okf (Markdown)" },
+                    "path": { "type": "string", "description": "export/import: file, or OKF directory" },
                     "merge": { "type": "string", "description": "import: replace|append|skip-existing (default skip-existing)" }
                 },
                 "allOf": [
                     {
                         "if": { "properties": { "action": { "const": "remember" } }, "required": ["action"] },
-                        "then": { "anyOf": [{ "required": ["value"] }, { "required": ["content"] }] }
+                        "then": { "required": ["value"] }
                     },
                     {
                         "if": { "properties": { "action": { "const": "pattern" } }, "required": ["action"] },
@@ -113,9 +110,7 @@ action=consolidate imports this session's findings and decisions, runs lifecycle
             .ok_or_else(|| ErrorData::invalid_params("action is required", None))?;
         let category = get_str(args, "category");
         let key = get_str(args, "key");
-        // `content` is the wording our own workflow docs use for remember;
-        // accept it as an alias so agents following those docs succeed.
-        let value = get_str(args, "value").or_else(|| get_str(args, "content"));
+        let value = get_str(args, "value");
         let query = get_str(args, "query");
         let mode = get_str(args, "mode");
         let as_of = get_str(args, "as_of");

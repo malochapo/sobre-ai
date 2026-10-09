@@ -70,7 +70,7 @@ For file CONTENT search use sobre_search.
 Code graph: file dependencies and function calls.
 Files: neighbors=imports±direction, impact path=file or type → files that depend on it (depth, default 5), changes → files affected by uncommitted changes, path path→to=dependency chain, related.
 Calls: callers|callees symbol='fn' → every call site with file:line (depth≤5, path scopes to a file); trace symbol→to=call chain.
-symbol symbol='fn' (or path="file.rs::fn") returns the definition. diagram kind=deps|calls (Mermaid). build re-scans the project; status says whether the graph is current.
+symbol symbol='fn' (or path="file.rs::fn") returns the definition. diagram kind=deps|calls (Mermaid). build re-scans; status: is it current.
 For understanding code use sobre_compose FIRST.
 
 | Parameter | Type | Required | Description |
@@ -84,7 +84,7 @@ For understanding code use sobre_compose FIRST.
 | `symbol` | string |  | Function (symbol\|callers\|callees\|trace) |
 | `to` | string |  | Target file (path) or function (trace) |
 
-- When `action` is `related` or `impact` or `neighbors` or `path`: requires `path`.
+- When `action` is `related`, `impact`, `neighbors` or `path`: requires `path`.
 - When `action` is `symbol`: requires `symbol` or `path`.
 - When `action` is `path`: requires `path` and `to`.
 - When `action` is `callers` or `callees`: requires `symbol`.
@@ -92,41 +92,35 @@ For understanding code use sobre_compose FIRST.
 
 ## `sobre_knowledge`
 
-Persistent memory across sessions — remember decisions, patterns, and facts for recall.
-WORKFLOW: save after completing significant tasks; recall at session start.
-action=remember value='Y' saves a fact (key optional — derived from value; content= is an accepted alias).
-action=recall query='X' retrieves it (bare recall lists recent facts). action=status shows all categories.
-action=consolidate imports this session's findings and decisions, runs lifecycle, then frees 25% facts/history/patterns capacity.
-action=gotcha trigger='X' resolution='Y' for known pitfalls.
-mode=semantic|exact for recall. category groups related facts.
+Facts that outlive the session: decisions, patterns, pitfalls.
+remember value= saves one (key derived when omitted); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; status lists categories. consolidate imports this session's findings and decisions. category groups facts; mode=semantic|exact for recall.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `action` | one of `remember`, `recall`, `search`, `status`, `rooms`, `timeline`, `wakeup`, `remove`, `feedback`, `pattern`, `gotcha`, `relate`, `unrelate`, `relations`, `relations_diagram`, `consolidate`, `restore`, `health`, `lifecycle_report`, `policy`, `export`, `import`, `embeddings_status`, `embeddings_reset`, `embeddings_reindex` | yes | remember: save a fact (value). recall: facts matching query, or the recent ones. search: facts and saved sessions (query). status, rooms: what is stored, by category. timeline: a category's history. wakeup: a short briefing. remove: delete a fact (category, key). feedback: value=up\|down on a fact (category, key). pattern: record a code pattern (pattern_type, value). gotcha: record a pitfall (trigger, resolution). relate\|unrelate\|relations\|relations_diagram: links between facts (category, key; query=category/key; value=kind). consolidate: import this session's findings and decisions. restore: bring back archived items. health, lifecycle_report, policy: store limits and upkeep. export\|import: a bundle (path). embeddings_*: the semantic index (dense build) |
+| `action` | one of `remember`, `recall`, `search`, `status`, `rooms`, `timeline`, `wakeup`, `remove`, `feedback`, `pattern`, `gotcha`, `relate`, `unrelate`, `relations`, `relations_diagram`, `consolidate`, `restore`, `health`, `lifecycle_report`, `policy`, `export`, `import`, `embeddings_status`, `embeddings_reset`, `embeddings_reindex` | yes | wakeup=briefing; rooms=categories; feedback value=up\|down; relate value=kind, query=category/key; restore=archived items; embeddings_*=dense build |
 | `as_of` | string |  | YYYY-MM-DD date filter |
 | `category` | string |  | Fact category (remember: default general) |
 | `confidence` | number |  | 0.0-1.0 |
-| `content` | string |  | Alias for value (remember) |
-| `dry_run` | boolean |  | consolidate: preview imports/reclaim without writing |
+| `dry_run` | boolean |  | consolidate: preview only |
 | `examples` | array of string |  |  |
-| `format` | string |  | export: json\|okf (okf = portable Markdown bundle) |
+| `format` | string |  | export: json\|okf (Markdown) |
 | `key` | string |  |  |
-| `limit` | number |  | restore: max items to recover (default 50) |
+| `limit` | number |  | restore: max items (default 50) |
 | `merge` | string |  | import: replace\|append\|skip-existing (default skip-existing) |
 | `mode` | string |  | auto\|exact\|semantic\|hybrid |
-| `path` | string |  | export/import: bundle directory (OKF) or file path |
+| `path` | string |  | export/import: file, or OKF directory |
 | `pattern_type` | string |  |  |
-| `query` | string |  | Query for recall/search/relate/restore |
-| `resolution` | string |  | gotcha resolution/fix |
+| `query` | string |  | recall, search, restore filter |
+| `resolution` | string |  | gotcha: the fix |
 | `severity` | string |  | gotcha: critical\|warning\|info |
 | `store` | string |  | restore: facts\|history\|patterns (default: all) |
-| `trigger` | string |  | gotcha trigger pattern |
+| `trigger` | string |  | gotcha: when it bites |
 | `value` | string |  |  |
 
-- When `action` is `remember`: requires `value` or `content`.
+- When `action` is `remember`: requires `value`.
 - When `action` is `pattern`: requires `pattern_type` and `value`.
-- When `action` is `remove` or `feedback` or `relations` or `relations_diagram`: requires `category` and `key`.
-- When `action` is `relate` or `unrelate`: requires `category` and `key` and `query`.
+- When `action` is `remove`, `feedback`, `relations` or `relations_diagram`: requires `category` and `key`.
+- When `action` is `relate` or `unrelate`: requires `category`, `key` and `query`.
 - When `action` is `timeline`: requires `category`.
 - When `action` is `import`: requires `path`.
 - When `action` is `search`: requires `query`.
@@ -170,12 +164,12 @@ Safe file edit. Anchored ops use line+hash from sobre_read(mode="anchored"); CON
 | `start_hash` | string |  |  |
 | `start_line` | integer |  |  |
 
-- When `op` is `set_line`: requires `op` and `line` and `hash` and `new_text`.
-- When `op` is `replace_lines`: requires `op` and `start_line` and `end_line` and `new_text`.
-- When `op` is `replace_unique`: requires `op` and `old_text` and `new_text`.
+- When `op` is `set_line`: requires `op`, `line`, `hash` and `new_text`.
+- When `op` is `replace_lines`: requires `op`, `start_line`, `end_line` and `new_text`.
+- When `op` is `replace_unique`: requires `op`, `old_text` and `new_text`.
 - When `op` is `replace_symbol`: requires `op` and `new_text`.
 - When `op` is `create`: requires `op` and `new_text`.
-- When `op` is `replace_all`: requires `op` and `find` and `replace`.
+- When `op` is `replace_all`: requires `op`, `find` and `replace`.
 
 ## `sobre_read`
 
@@ -215,7 +209,7 @@ ANTIPATTERN: not for symbol discovery — use sobre_search action=symbol, sobre_
 | `path` | string |  | File; for symbol edits, the file name_path is looked up in |
 | `text` | string |  | Sibling text to insert (auto-indented) |
 
-- When `action` is `rename`: requires `action` and `path` and `new_name`.
+- When `action` is `rename`: requires `action`, `path` and `new_name`.
 - When `action` is `references`: requires `action` and `path`.
 - When `action` is `definition`: requires `action` and `path`.
 - When `action` is `implementations`: requires `action` and `path`.
@@ -266,19 +260,16 @@ Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | r
 
 ## `sobre_session`
 
-Session memory. save at session end, load at start, status = snapshot;
-task|finding|decision record progress (value=text).
-export returns the session as a redacted JSON bundle (write=true or path= also saves it); import path= loads one.
-ANTIPATTERN: permanent project knowledge → sobre_knowledge.
+This session's task, findings and decisions; status shows them, save/load keep them across processes. export returns a redacted JSON bundle (write=true or path= also saves it); import path= loads one. Lasting facts: sobre_knowledge.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `action` | one of `status`, `task`, `finding`, `decision`, `save`, `load`, `list`, `reset`, `cleanup`, `resume`, `snapshot`, `restore`, `diff`, `export`, `import`, `output_stats` | yes | status: this session. task\|finding\|decision: record one (value). save: write it to disk. load: a saved session (session_id, or this project's latest). list: this project's saved sessions. reset: save, then start a new one. cleanup: delete sessions older than 7 days. resume: a block to continue from. snapshot: save a compaction snapshot; restore: read one back (session_id, or this project's latest). diff: compare two sessions (value='id_a id_b [json]'). export\|import: a JSON bundle (path, format, write). output_stats: how often compressed output kept paths and identifiers intact, this process |
+| `action` | one of `status`, `task`, `finding`, `decision`, `save`, `load`, `list`, `reset`, `cleanup`, `resume`, `snapshot`, `restore`, `diff`, `export`, `import`, `output_stats` | yes | task\|finding\|decision record value. reset=save, start anew. cleanup=drop sessions >7 days. snapshot/restore=compaction snapshot. diff value='id_a id_b [json]' |
 | `format` | string |  | export: json\|summary |
 | `path` | string |  | export: file to write; import: bundle to read |
 | `session_id` | string |  | load, restore: omit for this project's latest |
 | `value` | string |  |  |
-| `write` | boolean |  | export: also save the bundle (default location under the data directory) |
+| `write` | boolean |  | export: also save it in the data directory |
 
 ## `sobre_shell`
 

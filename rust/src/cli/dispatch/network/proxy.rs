@@ -281,9 +281,9 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
         }
     }
     /// Fork a child process running `sobre proxy start --port=N` with
-    /// stdout/stderr redirected to a log file, then exit the parent immediately.
-    /// The child's PID is written to the proxy PID file so `sobre proxy stop`
-    /// can find and kill it.
+    /// stdout/stderr appended to `<state>/proxy.log`, then exit the parent
+    /// immediately. Only the port is recorded (`proxy.port`); `sobre proxy
+    /// stop` asks `/health` on it for the PID.
     fn start_detached(port: u16) {
         let exe = std::env::current_exe().unwrap_or_else(|_| "sobre".into());
         // The log lives in sobre's state dir, never a shared temporary one.

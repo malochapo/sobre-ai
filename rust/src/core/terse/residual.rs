@@ -1,6 +1,6 @@
 //! Layer 2: Pattern-aware residual compression.
 //!
-//! Runs AFTER pattern compression (95+ command-specific patterns) to apply
+//! Runs AFTER pattern compression (the command-specific patterns) to apply
 //! terse compression only on the residual text that patterns didn't touch.
 
 use super::counter;

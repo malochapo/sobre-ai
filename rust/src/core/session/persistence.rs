@@ -223,6 +223,8 @@ impl SessionState {
                     && session.updated_at < cutoff
                     && std::fs::remove_file(&path).is_ok()
                 {
+                    // Its compaction snapshot goes with it.
+                    let _ = std::fs::remove_file(dir.join(format!("{filename}_snapshot.txt")));
                     removed += 1;
                 }
             }
