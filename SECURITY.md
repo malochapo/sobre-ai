@@ -2,16 +2,29 @@
 
 ## Supported versions
 
-Only the latest release gets fixes. There is no advisory process and no
-coordinated-disclosure timeline.
+`sobre` is in pre-release: the 0.1.x release candidates (`v0.1.0-rc.N`).
+Only the newest release gets fixes; older ones are not patched.
 
-If you find a vulnerability, open a GitHub issue on this repository. Do **not**
-report it to lean-ctx: this is an independent fork, and its maintainers are not
-responsible for defects introduced here.
+## Reporting a vulnerability
 
-If the issue also affects upstream lean-ctx, report it to
-[lean-ctx](https://github.com/yvgude/lean-ctx) through their own process — that
-is their call to make, not ours.
+Report it privately, through GitHub's private vulnerability reporting on this
+repository: the **Security** tab, then **Report a vulnerability**. Please do
+not open a public issue for a vulnerability.
+
+The report, the fix and the advisory stay private until a release fixes the
+issue; the advisory is then published. There is no guaranteed response time.
+
+## What sobre is
+
+A single binary that runs on your machine, as your user:
+
+- a local MCP server that your agent starts and talks to over stdio;
+- a command-line tool;
+- hooks that your agent runs around its own tools;
+- an opt-in local proxy between your agent and its model provider.
+
+There is no `sobre` service, no account and no cloud component. A report
+about any of the four parts above is in scope.
 
 ## Threat model
 
@@ -54,4 +67,4 @@ each started by you:
   `org/repo` without `@revision` follows that repo's `main` branch.
 
 There is no telemetry, no update check and no usage reporting. If you find code
-that contradicts this, it is a bug — report it.
+that contradicts this, it is a bug: report it.
