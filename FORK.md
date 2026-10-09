@@ -45,7 +45,7 @@ The goal of the fork is **subtraction**, not addition. Categories removed:
 | Web fetching (`ctx_url_read`), LLM-backed features, multi-agent coordination | Outside the scope of a local context layer |
 | Web dashboard, background daemon and HTTP server | One local process per agent session; no listening service besides the opt-in proxy |
 | Addon marketplace, plugin system, OCLA event bus, WASM runtime | Extension machinery with no extensions to run |
-| JetBrains backend, and agents beyond eight | Support only what two maintainers can test |
+| JetBrains backend, and every agent but nine (Claude Code, Codex, Copilot CLI, Cursor, Gemini CLI, OpenCode, VS Code, Windsurf, Zed) | Support only what two maintainers can test |
 | Shared session mode | One machine, one person |
 | Learning loop (mode predictor, feedback, bandits, threshold learning) | Stores that were written but never read back |
 | Cognition loop, knowledge bridge, episodic and procedural memory, findings recorded automatically from tool output | Background or hidden writers the agent never asked for; memory holds only what the agent remembers |

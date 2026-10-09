@@ -60,8 +60,7 @@ it on the first build.
 cargo build --release --manifest-path rust/Cargo.toml
 ```
 
-The default build is local-only. Optional local embeddings and GPU execution
-providers are opt-in:
+The default build is local-only. Optional local embeddings are opt-in:
 
 ```bash
 cargo build --release --manifest-path rust/Cargo.toml --features dense

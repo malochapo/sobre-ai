@@ -8,6 +8,8 @@ default-members = ["."]
 name = "sobre"
 version = "0.1.0"
 edition = "2024"
+# The toolchain pinned in rust-toolchain.toml; older compilers are untested.
+rust-version = "1.99"
 autobins = false
 description = "sobre: a local context layer for AI coding agents — 15 MCP tools that read, search and run commands with compressed, labelled output, plus cross-session memory. Runs entirely on your machine."
 license = "Apache-2.0"
