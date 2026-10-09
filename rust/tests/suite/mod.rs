@@ -26,7 +26,6 @@ mod entrypoints_wired;
 mod hardening_ir_traits;
 mod hn_hardening_scenarios;
 mod home_dotdir_firewall;
-mod http_server_streamable;
 mod init_doctor_clean;
 mod init_uninstall_round_trip;
 mod integration_tests;

@@ -1,52 +1,15 @@
-use std::sync::Arc;
-
-use axum::body::Body;
-use axum::http::{Request, StatusCode};
-use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
 use serde_json::json;
 
-type LocalSessionManager =
-    rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
-
-fn jsonrpc_call(tool: &str, arguments: &serde_json::Value) -> String {
-    json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {
-            "name": tool,
-            "arguments": arguments
-        }
-    })
-    .to_string()
-}
-
-async fn call_tool_json(
-    svc: &StreamableHttpService<sobre::tools::SobreServer, LocalSessionManager>,
+/// Calls `tool` through the full MCP request pipeline and returns its text.
+async fn call_tool(
+    engine: &sobre::engine::ContextEngine,
     tool: &str,
     arguments: serde_json::Value,
-) -> serde_json::Value {
-    let req = Request::builder()
-        .method("POST")
-        .uri("/")
-        .header("Host", "localhost")
-        .header("Accept", "application/json, text/event-stream")
-        .header("Content-Type", "application/json")
-        .body(Body::from(jsonrpc_call(tool, &arguments)))
-        .expect("request");
-
-    let resp = svc.handle(req).await;
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    let bytes = axum::body::to_bytes(Body::new(resp.into_body()), usize::MAX)
+) -> String {
+    engine
+        .call_tool_text(tool, Some(arguments))
         .await
-        .expect("read body");
-    let v: serde_json::Value = serde_json::from_slice(&bytes).expect("json");
-    assert!(
-        v.get("error").is_none(),
-        "expected jsonrpc result, got error: {v}"
-    );
-    v
+        .unwrap_or_else(|e| panic!("{tool} failed: {e:#}"))
 }
 
 /// Poll `cond` up to ~10s. The memory stores are persisted on a background
@@ -80,21 +43,11 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
 
     let root = sobre::core::pathutil::safe_canonicalize_or_self(dir.path());
     let root_str = root.to_string_lossy().to_string();
-    let base = sobre::tools::SobreServer::new_with_project_root(Some(&root_str));
-
-    let service_factory = move || Ok(base.clone());
-    let cfg = StreamableHttpServerConfig::default()
-        .with_stateful_mode(false)
-        .with_json_response(true);
-    let svc = StreamableHttpService::new(
-        service_factory,
-        Arc::new(LocalSessionManager::default()),
-        cfg,
-    );
+    let engine = sobre::engine::ContextEngine::with_project_root(&root);
 
     // 1) Establish project context (tool pipeline).
-    let _ = call_tool_json(
-        &svc,
+    let _ = call_tool(
+        &engine,
         "sobre_read",
         json!({
             "path": file_path.to_string_lossy().to_string(),
@@ -104,8 +57,8 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
     .await;
 
     // 2) Knowledge: remember.
-    let _ = call_tool_json(
-        &svc,
+    let _ = call_tool(
+        &engine,
         "sobre_knowledge",
         json!({
             "action": "remember",
@@ -116,8 +69,8 @@ async fn memory_benchmark_suite_persists_core_artifacts() {
         }),
     )
     .await;
-    let _ = call_tool_json(
-        &svc,
+    let _ = call_tool(
+        &engine,
         "sobre_knowledge",
         json!({
             "action": "remember",

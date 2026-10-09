@@ -1,607 +1,118 @@
-use std::{
-    future::Future,
-    marker::PhantomData,
-    sync::{Arc, Mutex},
-};
+//! The stdio transport `sobre mcp` serves on.
+//!
+//! The transport is rmcp's own newline-delimited JSON-RPC transport
+//! ([`AsyncRwTransport`]): it skips a line that is not JSON and a notification
+//! outside MCP without closing the session, and answers well-formed JSON that
+//! is not a JSON-RPC message with an `Invalid Request` error.
+//!
+//! The one thing this module adds is a length cap on stdin. The transport
+//! reads a line into memory until its newline, however long it gets; the
+//! length limit rmcp offers (`JsonRpcMessageCodec::new_with_max_length`)
+//! applies to the codec, which the transport does not read through. So stdin
+//! goes through [`LineCap`], which fails the read once a line passes
+//! [`MAX_MESSAGE_BYTES`]. The transport treats that as the end of the stream
+//! and the session closes, so a host that never sends a newline cannot grow
+//! the server's memory without bound.
 
-use futures::{SinkExt, StreamExt};
-use rmcp::{
-    service::{RoleServer, RxJsonRpcMessage, ServiceRole, TxJsonRpcMessage},
-    transport::Transport,
-};
-use serde::{Serialize, de::DeserializeOwned};
-use thiserror::Error;
-use tokio::{
-    io::{AsyncRead, AsyncWrite},
-    sync::Mutex as AsyncMutex,
-};
-use tokio_util::{
-    bytes::{Buf, BufMut, BytesMut},
-    codec::{Decoder, Encoder, FramedRead, FramedWrite},
-};
+use std::io;
+use std::pin::Pin;
+use std::task::{Context, Poll, ready};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum WireProtocol {
-    JsonLine,
-    ContentLength,
+use rmcp::RoleServer;
+use rmcp::transport::async_rw::AsyncRwTransport;
+use tokio::io::{AsyncRead, ReadBuf, Stdin, Stdout};
+
+/// The longest MCP message the server reads: 32 MiB.
+pub const MAX_MESSAGE_BYTES: usize = 32 * 1024 * 1024;
+
+/// The server's transport over this process's stdin and stdout.
+pub fn stdio_transport() -> AsyncRwTransport<RoleServer, LineCap<Stdin>, Stdout> {
+    AsyncRwTransport::new_server(
+        LineCap::new(tokio::io::stdin(), MAX_MESSAGE_BYTES),
+        tokio::io::stdout(),
+    )
 }
 
-#[derive(Debug, Clone)]
-struct SharedProtocol(Arc<Mutex<Option<WireProtocol>>>);
-
-impl SharedProtocol {
-    fn new() -> Self {
-        Self(Arc::new(Mutex::new(None)))
-    }
-
-    fn get(&self) -> Option<WireProtocol> {
-        *self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-    }
-
-    fn set_if_unset(&self, protocol: WireProtocol) {
-        let mut guard = self
-            .0
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if guard.is_none() {
-            *guard = Some(protocol);
-        }
-    }
+/// A reader that fails with [`io::ErrorKind::InvalidData`] once a line runs
+/// past `max` bytes without a newline.
+pub struct LineCap<R> {
+    inner: R,
+    max: usize,
+    line_len: usize,
 }
 
-pub type TransportWriter<Role, W> =
-    FramedWrite<W, HybridJsonRpcMessageCodec<TxJsonRpcMessage<Role>>>;
-
-pub struct HybridStdioTransport<Role: ServiceRole, R: AsyncRead, W: AsyncWrite> {
-    read: FramedRead<R, HybridJsonRpcMessageCodec<RxJsonRpcMessage<Role>>>,
-    write: Arc<AsyncMutex<Option<TransportWriter<Role, W>>>>,
-}
-
-impl<Role: ServiceRole, R, W> HybridStdioTransport<Role, R, W>
-where
-    R: Send + AsyncRead + Unpin,
-    W: Send + AsyncWrite + Unpin + 'static,
-{
-    pub fn new(read: R, write: W) -> Self {
-        let protocol = SharedProtocol::new();
-        let read = FramedRead::new(
-            read,
-            HybridJsonRpcMessageCodec::<RxJsonRpcMessage<Role>>::new(protocol.clone()),
-        );
-        let write = Arc::new(AsyncMutex::new(Some(FramedWrite::new(
-            write,
-            HybridJsonRpcMessageCodec::<TxJsonRpcMessage<Role>>::new(protocol),
-        ))));
-        Self { read, write }
-    }
-}
-
-impl<R, W> HybridStdioTransport<RoleServer, R, W>
-where
-    R: Send + AsyncRead + Unpin,
-    W: Send + AsyncWrite + Unpin + 'static,
-{
-    pub fn new_server(read: R, write: W) -> Self {
-        Self::new(read, write)
-    }
-}
-
-impl<Role: ServiceRole, R, W> Transport<Role> for HybridStdioTransport<Role, R, W>
-where
-    R: Send + AsyncRead + Unpin,
-    W: Send + AsyncWrite + Unpin + 'static,
-{
-    type Error = std::io::Error;
-
-    fn send(
-        &mut self,
-        item: TxJsonRpcMessage<Role>,
-    ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
-        let lock = self.write.clone();
-        async move {
-            let mut write = lock.lock().await;
-            if let Some(ref mut write) = *write {
-                write.send(item).await.map_err(Into::into)
-            } else {
-                Err(std::io::Error::new(
-                    std::io::ErrorKind::NotConnected,
-                    "Transport is closed",
-                ))
-            }
-        }
-    }
-
-    fn receive(&mut self) -> impl Future<Output = Option<RxJsonRpcMessage<Role>>> + Send {
-        let next = self.read.next();
-        async {
-            next.await.and_then(|result| {
-                result
-                    .inspect_err(|error| {
-                        tracing::error!("Error reading from stream: {}", error);
-                    })
-                    .ok()
-            })
-        }
-    }
-
-    async fn close(&mut self) -> Result<(), Self::Error> {
-        let mut write = self.write.lock().await;
-        drop(write.take());
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct HybridJsonRpcMessageCodec<T> {
-    _marker: PhantomData<fn() -> T>,
-    next_index: usize,
-    max_length: usize,
-    is_discarding: bool,
-    protocol: SharedProtocol,
-}
-
-impl<T> HybridJsonRpcMessageCodec<T> {
-    fn new(protocol: SharedProtocol) -> Self {
+impl<R> LineCap<R> {
+    pub fn new(inner: R, max: usize) -> Self {
         Self {
-            _marker: PhantomData,
-            next_index: 0,
-            max_length: 32 * 1024 * 1024, // 32 MiB — prevents OOM from oversized messages
-            is_discarding: false,
-            protocol,
+            inner,
+            max,
+            line_len: 0,
         }
     }
 }
 
-fn without_carriage_return(s: &[u8]) -> &[u8] {
-    if let Some(&b'\r') = s.last() {
-        &s[..s.len() - 1]
-    } else {
-        s
-    }
-}
-
-fn is_standard_method(method: &str) -> bool {
-    matches!(
-        method,
-        "initialize"
-            | "ping"
-            | "prompts/get"
-            | "prompts/list"
-            | "resources/list"
-            | "resources/read"
-            | "resources/subscribe"
-            | "resources/unsubscribe"
-            | "resources/templates/list"
-            | "tools/call"
-            | "tools/list"
-            | "completion/complete"
-            | "logging/setLevel"
-            | "roots/list"
-            | "sampling/createMessage"
-    ) || is_standard_notification(method)
-}
-
-fn is_standard_notification(method: &str) -> bool {
-    matches!(
-        method,
-        "notifications/cancelled"
-            | "notifications/initialized"
-            | "notifications/message"
-            | "notifications/progress"
-            | "notifications/prompts/list_changed"
-            | "notifications/resources/list_changed"
-            | "notifications/resources/updated"
-            | "notifications/roots/list_changed"
-            | "notifications/tools/list_changed"
-    )
-}
-
-fn should_ignore_notification(json_value: &serde_json::Value, method: &str) -> bool {
-    let is_notification = json_value.get("id").is_none();
-    if is_notification && !is_standard_method(method) {
-        tracing::trace!(
-            "Ignoring non-MCP notification '{}' for compatibility",
-            method
-        );
-        return true;
-    }
-
-    matches!(
-        (
-            method.starts_with("notifications/"),
-            is_standard_notification(method)
-        ),
-        (true, false)
-    )
-}
-
-fn try_parse_with_compatibility<T: DeserializeOwned>(
-    payload: &[u8],
-    context: &str,
-) -> Result<Option<T>, HybridCodecError> {
-    if let Ok(line_str) = std::str::from_utf8(payload) {
-        match serde_json::from_slice(payload) {
-            Ok(item) => Ok(Some(item)),
-            Err(error) => {
-                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(line_str)
-                    && let Some(method) =
-                        json_value.get("method").and_then(serde_json::Value::as_str)
-                    && should_ignore_notification(&json_value, method)
-                {
-                    return Ok(None);
-                }
-
-                tracing::debug!(
-                    "Failed to parse message {}: {} | Error: {}",
-                    context,
-                    line_str,
-                    error
-                );
-                Err(HybridCodecError::Serde(error))
-            }
+impl<R: AsyncRead + Unpin> AsyncRead for LineCap<R> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let start = buf.filled().len();
+        ready!(Pin::new(&mut this.inner).poll_read(cx, buf))?;
+        let too_long = buf.filled()[start..].iter().any(|&byte| {
+            this.line_len = if byte == b'\n' { 0 } else { this.line_len + 1 };
+            this.line_len > this.max
+        });
+        if too_long {
+            // A read that fails must not have filled anything.
+            buf.set_filled(start);
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("MCP message longer than {} bytes", this.max),
+            )));
         }
-    } else {
-        serde_json::from_slice(payload)
-            .map(Some)
-            .map_err(HybridCodecError::Serde)
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum HybridCodecError {
-    #[error("max line length exceeded")]
-    MaxLineLengthExceeded,
-    #[error("missing Content-Length header")]
-    MissingContentLength,
-    #[error("invalid Content-Length value: {0}")]
-    InvalidContentLength(String),
-    #[error("invalid header frame: {0}")]
-    InvalidHeaderFrame(String),
-    #[error("serde error {0}")]
-    Serde(#[from] serde_json::Error),
-    #[error("io error {0}")]
-    Io(#[from] std::io::Error),
-}
-
-impl From<HybridCodecError> for std::io::Error {
-    fn from(value: HybridCodecError) -> Self {
-        match value {
-            HybridCodecError::MaxLineLengthExceeded
-            | HybridCodecError::MissingContentLength
-            | HybridCodecError::InvalidContentLength(_)
-            | HybridCodecError::InvalidHeaderFrame(_) => {
-                std::io::Error::new(std::io::ErrorKind::InvalidData, value)
-            }
-            HybridCodecError::Serde(error) => error.into(),
-            HybridCodecError::Io(error) => error,
-        }
-    }
-}
-
-fn looks_like_content_length_frame(buf: &BytesMut) -> bool {
-    let prefix = &buf[..buf.len().min(32)];
-    prefix
-        .windows(b"content-length".len())
-        .next()
-        .is_some_and(|candidate| candidate.eq_ignore_ascii_case(b"content-length"))
-}
-
-fn find_header_terminator(buf: &BytesMut) -> Option<(usize, usize)> {
-    if let Some(index) = buf.windows(4).position(|window| window == b"\r\n\r\n") {
-        return Some((index, 4));
-    }
-    buf.windows(2)
-        .position(|window| window == b"\n\n")
-        .map(|index| (index, 2))
-}
-
-fn parse_content_length(header: &str) -> Result<usize, HybridCodecError> {
-    for raw_line in header.lines() {
-        let line = raw_line.trim_end_matches('\r');
-        let Some((name, value)) = line.split_once(':') else {
-            continue;
-        };
-        if name.trim().eq_ignore_ascii_case("content-length") {
-            return value
-                .trim()
-                .parse::<usize>()
-                .map_err(|_| HybridCodecError::InvalidContentLength(value.trim().to_string()));
-        }
-    }
-
-    Err(HybridCodecError::MissingContentLength)
-}
-
-impl<T: DeserializeOwned> HybridJsonRpcMessageCodec<T> {
-    fn decode_content_length(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
-        // Loop so a skipped (malformed) frame body resyncs onto the next framed
-        // message already buffered, instead of stalling until more bytes arrive.
-        loop {
-            let Some((header_end, delimiter_len)) = find_header_terminator(buf) else {
-                return Ok(None);
-            };
-
-            let header = std::str::from_utf8(&buf[..header_end])
-                .map_err(|error| HybridCodecError::InvalidHeaderFrame(error.to_string()))?;
-            let content_length = parse_content_length(header)?;
-            if content_length > self.max_length {
-                return Err(HybridCodecError::MaxLineLengthExceeded);
-            }
-            let body_start = header_end + delimiter_len;
-            let frame_len = body_start
-                .checked_add(content_length)
-                .ok_or(HybridCodecError::MaxLineLengthExceeded)?;
-            if buf.len() < frame_len {
-                return Ok(None);
-            }
-
-            let frame = buf.split_to(frame_len);
-            let payload = &frame[body_start..];
-            self.protocol.set_if_unset(WireProtocol::ContentLength);
-
-            match try_parse_with_compatibility(payload, "decode_content_length") {
-                Ok(Some(item)) => return Ok(Some(item)),
-                // An ignored notification — fall through and scan the next frame.
-                Ok(None) => {}
-                // Skip a malformed body instead of fusing the transport (see
-                // `decode_json_line`). The Content-Length framing stayed
-                // intact, so the next frame in the buffer is still recoverable.
-                Err(err) => {
-                    tracing::warn!("skipping malformed Content-Length frame: {err}");
-                }
-            }
-        }
-    }
-
-    fn decode_json_line(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
-        loop {
-            let read_to = std::cmp::min(self.max_length.saturating_add(1), buf.len());
-            let newline_offset = buf[self.next_index..read_to]
-                .iter()
-                .position(|byte| *byte == b'\n');
-
-            match (self.is_discarding, newline_offset) {
-                (true, Some(offset)) => {
-                    buf.advance(offset + self.next_index + 1);
-                    self.is_discarding = false;
-                    self.next_index = 0;
-                }
-                (true, None) => {
-                    buf.advance(read_to);
-                    self.next_index = 0;
-                    if buf.is_empty() {
-                        return Ok(None);
-                    }
-                }
-                (false, Some(offset)) => {
-                    let newline_index = offset + self.next_index;
-                    self.next_index = 0;
-                    let line = buf.split_to(newline_index + 1);
-                    let line = &line[..line.len() - 1];
-                    let payload = without_carriage_return(line);
-                    self.protocol.set_if_unset(WireProtocol::JsonLine);
-
-                    match try_parse_with_compatibility(payload, "decode_json_line") {
-                        Ok(Some(item)) => return Ok(Some(item)),
-                        // An ignored notification — keep scanning for a real frame.
-                        Ok(None) => {}
-                        // A single malformed line must NOT tear down the transport.
-                        // Returning Err here makes `FramedRead` fuse the stream
-                        // (`has_errored`), so the next poll yields `None`; rmcp then
-                        // exits with `QuitReason::Closed`, the agent respawns us, and
-                        // the fresh process pays another index build — the respawn /
-                        // idle-CPU churn. The bad line is already consumed
-                        // (`split_to` above), so we just skip it and resync on the
-                        // next newline-delimited frame.
-                        Err(err) => {
-                            tracing::warn!("skipping malformed JSON-RPC line: {err}");
-                        }
-                    }
-                }
-                (false, None) if buf.len() > self.max_length => {
-                    self.is_discarding = true;
-                    return Err(HybridCodecError::MaxLineLengthExceeded);
-                }
-                (false, None) => {
-                    self.next_index = read_to;
-                    return Ok(None);
-                }
-            }
-        }
-    }
-}
-
-impl<T: DeserializeOwned> Decoder for HybridJsonRpcMessageCodec<T> {
-    type Item = T;
-    type Error = HybridCodecError;
-
-    fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
-        match self.protocol.get() {
-            Some(WireProtocol::ContentLength) => self.decode_content_length(buf),
-            Some(WireProtocol::JsonLine) => self.decode_json_line(buf),
-            None => {
-                if looks_like_content_length_frame(buf) {
-                    self.decode_content_length(buf)
-                } else {
-                    self.decode_json_line(buf)
-                }
-            }
-        }
-    }
-
-    fn decode_eof(&mut self, buf: &mut BytesMut) -> Result<Option<T>, HybridCodecError> {
-        match self.protocol.get() {
-            Some(WireProtocol::ContentLength) if !buf.is_empty() => self.decode_content_length(buf),
-            _ => Ok(if let Some(frame) = self.decode(buf)? {
-                Some(frame)
-            } else {
-                self.next_index = 0;
-                if buf.is_empty() || buf == &b"\r"[..] {
-                    None
-                } else {
-                    let line = buf.split_to(buf.len());
-                    let payload = without_carriage_return(&line);
-                    // At true stream end a malformed trailing frame is discarded
-                    // (clean close) rather than surfaced as a transport error.
-                    match try_parse_with_compatibility(payload, "decode_eof") {
-                        Ok(item) => item,
-                        Err(err) => {
-                            tracing::warn!("discarding malformed trailing frame at EOF: {err}");
-                            None
-                        }
-                    }
-                }
-            }),
-        }
-    }
-}
-
-impl<T: Serialize> Encoder<T> for HybridJsonRpcMessageCodec<T> {
-    type Error = HybridCodecError;
-
-    fn encode(&mut self, item: T, buf: &mut BytesMut) -> Result<(), HybridCodecError> {
-        let payload = serde_json::to_vec(&item)?;
-
-        match self.protocol.get().unwrap_or(WireProtocol::ContentLength) {
-            WireProtocol::ContentLength => {
-                buf.extend_from_slice(
-                    format!("Content-Length: {}\r\n\r\n", payload.len()).as_bytes(),
-                );
-                buf.extend_from_slice(&payload);
-            }
-            WireProtocol::JsonLine => {
-                buf.extend_from_slice(&payload);
-                buf.put_u8(b'\n');
-            }
-        }
-
-        Ok(())
+        Poll::Ready(Ok(()))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncReadExt;
 
-    use tokio_util::bytes::BytesMut;
-
-    fn sample_message() -> serde_json::Value {
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {
-                    "name": "probe",
-                    "version": "0.0.0"
-                }
-            }
-        })
+    async fn read_all(input: &[u8], max: usize) -> io::Result<Vec<u8>> {
+        let mut out = Vec::new();
+        LineCap::new(input, max).read_to_end(&mut out).await?;
+        Ok(out)
     }
 
-    #[test]
-    fn decodes_json_line_and_marks_protocol() {
-        let protocol = SharedProtocol::new();
-        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol.clone());
-        let payload = serde_json::to_vec(&sample_message()).unwrap();
-        let mut buf = BytesMut::from(&payload[..]);
-        buf.put_u8(b'\n');
-
-        let item = codec.decode(&mut buf).unwrap();
-        assert!(item.is_some());
-        assert_eq!(protocol.get(), Some(WireProtocol::JsonLine));
+    #[tokio::test]
+    async fn lines_within_the_cap_pass_through_unchanged() {
+        let input = b"12345678\n1234\n12345678";
+        assert_eq!(read_all(input, 8).await.unwrap(), input);
     }
 
-    #[test]
-    fn decodes_content_length_and_marks_protocol() {
-        let protocol = SharedProtocol::new();
-        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol.clone());
-        let payload = serde_json::to_vec(&sample_message()).unwrap();
-        let mut frame = BytesMut::new();
-        frame.extend_from_slice(format!("Content-Length: {}\r\n\r\n", payload.len()).as_bytes());
-        frame.extend_from_slice(&payload);
-
-        let item = codec.decode(&mut frame).unwrap();
-        assert!(item.is_some());
-        assert_eq!(protocol.get(), Some(WireProtocol::ContentLength));
+    #[tokio::test]
+    async fn a_line_past_the_cap_fails_the_read() {
+        let err = read_all(b"1234\n123456789\n", 8).await.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 
-    #[test]
-    fn encodes_using_content_length_when_protocol_is_detected() {
-        let protocol = SharedProtocol::new();
-        protocol.set_if_unset(WireProtocol::ContentLength);
-        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
-        let mut buf = BytesMut::new();
-        codec
-            .encode(
-                serde_json::json!({"jsonrpc":"2.0","id":1,"result":{"ok":true}}),
-                &mut buf,
-            )
-            .unwrap();
-
-        assert!(
-            std::str::from_utf8(&buf)
-                .unwrap()
-                .starts_with("Content-Length: ")
-        );
-    }
-
-    #[test]
-    fn decode_skips_malformed_json_line_and_recovers() {
-        // A bad line followed by a valid frame: the codec must skip the bad one
-        // and return the valid frame in the same decode pass — never an Err that
-        // would fuse the transport and trigger an MCP-server respawn.
-        let protocol = SharedProtocol::new();
-        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
-        let good = serde_json::to_vec(&sample_message()).unwrap();
-        let mut buf = BytesMut::new();
-        buf.extend_from_slice(b"{ this is : not valid json }\n");
-        buf.extend_from_slice(&good);
-        buf.put_u8(b'\n');
-
-        let item = codec
-            .decode(&mut buf)
-            .expect("a malformed line must not be a hard transport error");
-        assert!(item.is_some(), "valid frame after a bad line must decode");
-    }
-
-    #[test]
-    fn decode_malformed_json_line_alone_is_not_a_transport_error() {
-        // A lone malformed line yields Ok(None) (stream stays alive), not Err.
-        let protocol = SharedProtocol::new();
-        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
-        let mut buf = BytesMut::from(&b"{ not valid json }\n"[..]);
-
-        let item = codec
-            .decode(&mut buf)
-            .expect("a malformed line must not be a hard transport error");
-        assert!(item.is_none());
-    }
-
-    #[test]
-    fn decode_skips_malformed_content_length_frame_and_recovers() {
-        // Same guarantee for the Content-Length wire protocol: a bad body is
-        // skipped and the next well-framed message is still delivered.
-        let protocol = SharedProtocol::new();
-        protocol.set_if_unset(WireProtocol::ContentLength);
-        let mut codec = HybridJsonRpcMessageCodec::<serde_json::Value>::new(protocol);
-
-        let bad_body = b"{ not json }";
-        let good_body = serde_json::to_vec(&sample_message()).unwrap();
-        let mut buf = BytesMut::new();
-        buf.extend_from_slice(format!("Content-Length: {}\r\n\r\n", bad_body.len()).as_bytes());
-        buf.extend_from_slice(bad_body);
-        buf.extend_from_slice(format!("Content-Length: {}\r\n\r\n", good_body.len()).as_bytes());
-        buf.extend_from_slice(&good_body);
-
-        let item = codec
-            .decode(&mut buf)
-            .expect("a malformed CL frame must not be a hard transport error");
-        assert!(item.is_some(), "valid CL frame after a bad one must decode");
+    #[tokio::test]
+    async fn the_count_carries_across_reads_until_a_newline() {
+        // Reads of 4 bytes each: the second line spans three of them.
+        let (mut client, server) = tokio::io::duplex(4);
+        let writer = tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            let _ = client.write_all(b"ab\n0123456789\n").await;
+        });
+        let mut out = Vec::new();
+        let err = LineCap::new(server, 8)
+            .read_to_end(&mut out)
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        writer.await.unwrap();
     }
 }
