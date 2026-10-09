@@ -110,13 +110,23 @@ pub(super) fn wait_collecting(mut child: Child, max_bytes: usize) -> Output {
     }
 }
 
+/// The exit code a shell would report for `status`: the process's own code,
+/// or `128 + signal` for a process a signal ended (Unix).
+pub(crate) fn exit_code(status: std::process::ExitStatus) -> i32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    status.code().unwrap_or(1)
+}
+
 /// A synthetic failed `ExitStatus`, used only when `Child::wait()` itself
 /// errors (e.g. the process was already reaped by another waiter) and there
-/// is no real status to report. The previous fallback shelled out to
-/// `Command::new("false").status()` to manufacture one, which panicked via
-/// `.expect()` wherever no `false` binary exists on `PATH` — Windows, and
-/// minimal/scratch containers. `ExitStatusExt::from_raw` builds the status
-/// value directly, with no subprocess involved, so it can't fail.
+/// is no real status to report. Built directly, with no subprocess, so it
+/// cannot fail.
 #[cfg(unix)]
 fn synthetic_failure_status() -> std::process::ExitStatus {
     use std::os::unix::process::ExitStatusExt;
@@ -551,7 +561,7 @@ fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
     let status = cmd.status();
 
     match status {
-        Ok(s) => s.code().unwrap_or(1),
+        Ok(s) => exit_code(s),
         Err(e) => {
             tracing::error!("sobre: failed to execute: {e}");
             127
@@ -571,7 +581,7 @@ fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
     let status = cmd.status();
 
     match status {
-        Ok(s) => s.code().unwrap_or(1),
+        Ok(s) => exit_code(s),
         Err(e) => {
             eprintln!("sobre: failed to execute '{command}': {e}");
             127
@@ -675,6 +685,17 @@ mod exec_tests {
             stderr.contains("more bytes of stderr not kept"),
             "{stderr:.200}"
         );
+    }
+
+    /// A command killed by a signal reports `128 + signal`, as the shell
+    /// itself would, not a plain 1.
+    #[cfg(unix)]
+    #[test]
+    fn a_signal_exit_reports_128_plus_the_signal() {
+        let output = super::wait_collecting(piped(&["kill -TERM $$"]), 1024);
+        assert_eq!(super::exit_code(output.status), 128 + 15);
+        let output = super::wait_collecting(piped(&["exit 3"]), 1024);
+        assert_eq!(super::exit_code(output.status), 3);
     }
 
     #[test]

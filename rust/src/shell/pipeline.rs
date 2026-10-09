@@ -82,7 +82,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
 
     let output = wait_collecting(child, exec_byte_cap(command));
 
-    let exit_code = output.status.code().unwrap_or(1);
+    let exit_code = super::exec::exit_code(output.status);
     let stdout =
         super::platform::resolve_carriage_returns(&super::platform::decode_output(&output.stdout));
     let stderr =
