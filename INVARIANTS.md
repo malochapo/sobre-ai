@@ -1,4 +1,4 @@
-# The five invariants
+# The six invariants
 
 These are not guidelines. They are the definition of the project. A change that
 breaks one of them is out of scope no matter how good it is — and if we ever
@@ -143,6 +143,34 @@ Masking secrets in `sobre`'s own output (`[REDACTED:…]`) stays: it governs wha
 
 `sobre` is therefore exactly as permissive, and exactly as strict, as the host
 it runs in. That is the intended position.
+
+## 6. Use what exists; write only what is sobre's own
+
+**What a maintained library already does, `sobre` uses. It does not rewrite
+it, copy it, fork it or vendor it.** `sobre`'s own code is what no library
+provides: the compression, the tools' behaviour, the agent integration.
+
+- **A dependency before a local implementation**, even a small one: the MCP
+  protocol, parsers, file formats, HTTP, locking, path lookup, string
+  algorithms. Prefer a crate already in the dependency tree; a new, heavy
+  dependency for a small need is justified in its PR, since a dependency is a
+  cost too.
+- **No vendored copy and no `[patch]`.** A bug in a dependency is fixed
+  upstream. Until the fix ships, the workaround is the smallest change in
+  `sobre`'s own code, next to a comment that links the upstream issue, and it
+  goes when the fix ships.
+- **A local implementation that stays says why**, in a comment next to it: the
+  feature the library lacks, the measured cost, or the rule it would break
+  (determinism, invariant 4). "It is only a few lines" is not a reason.
+
+> The failure mode this prevents: private copies of libraries that drift from
+> upstream, miss its fixes and end up owned by nobody — a vendored MCP SDK
+> three major versions behind for a six-line fix, hand-written parsers for
+> formats whose parser is already a dependency.
+
+The code written before this rule is inventoried, with a verdict for each
+case, in issue #69. Each item there is either replaced or given its written
+reason.
 
 ## Process rules (not invariants, but not optional either)
 
