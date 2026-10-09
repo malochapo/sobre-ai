@@ -1,6 +1,5 @@
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use tokio::sync::RwLock;
 
@@ -29,8 +28,6 @@ impl SobreServer {
     }
 
     pub(crate) fn new_with_startup(project_root: Option<&str>, startup_cwd: Option<&Path>) -> Self {
-        let ttl = crate::core::config::IDLE_CACHE_TTL_SECS;
-
         // Purge stale graph indices on startup to prevent serving outdated data
         crate::core::graph_index::ProjectIndex::purge_stale_indices();
 
@@ -50,9 +47,6 @@ impl SobreServer {
         // idle — or only uses sobre_read/sobre_shell/sobre_tree — must pay zero indexing
         // cost. Heavy/search tools warm their indices lazily on first use via
         // `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
-        // An eager full graph + BM25 scan on every `new()` pegged a CPU core on
-        // each server start; multiplied across multiple agents and stdio respawns
-        // it was the root cause of the idle-high-CPU report.
 
         // Rehydrate the persistent stub index so the first unchanged
         // re-read after this restart can collapse to the `[unchanged]` stub
@@ -65,7 +59,7 @@ impl SobreServer {
             Arc::new(std::sync::Mutex::new(None));
 
         // Register every server-local cache with the single process-wide guardian.
-        // The registry stores weak targets, so closed HTTP/MCP sessions are not retained.
+        // The registry stores weak targets, so a dropped server is not retained.
         let eviction_target = std::sync::Arc::new(
             crate::core::eviction_orchestrator::EvictionOrchestrator::new(
                 cache.clone(),
@@ -80,10 +74,7 @@ impl SobreServer {
         Self {
             cache,
             session,
-            call_count: Arc::new(AtomicUsize::new(0)),
-            cache_ttl_secs: ttl,
             last_call: Arc::new(RwLock::new(Instant::now())),
-            client_name: Arc::new(RwLock::new(String::new())),
             autonomy: Arc::new(autonomy::AutonomyState::new()),
             refetch_signals: Arc::new(RwLock::new(
                 crate::core::refetch_signals::RefetchSignals::default(),
@@ -101,13 +92,12 @@ impl SobreServer {
         }
     }
 
-    /// Clears the cache and saves the session if the TTL idle threshold has been exceeded.
+    /// Clears the cache and saves the session after
+    /// [`IDLE_CACHE_TTL_SECS`](crate::core::config::IDLE_CACHE_TTL_SECS) idle.
     pub async fn check_idle_expiry(&self) {
-        if self.cache_ttl_secs == 0 {
-            return;
-        }
+        let ttl = crate::core::config::IDLE_CACHE_TTL_SECS;
         let last = *self.last_call.read().await;
-        if last.elapsed().as_secs() >= self.cache_ttl_secs {
+        if last.elapsed().as_secs() >= ttl {
             {
                 let mut session = self.session.write().await;
                 let _ = session.save();
@@ -120,8 +110,7 @@ impl SobreServer {
             crate::core::read_stub_index::persist();
             if count > 0 {
                 tracing::info!(
-                    "Cache auto-cleared after {}s idle ({count} file(s))",
-                    self.cache_ttl_secs
+                    "Cache auto-cleared after {ttl}s idle ({count} file(s))"
                 );
             }
         }

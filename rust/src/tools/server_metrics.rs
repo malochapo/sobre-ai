@@ -1,5 +1,3 @@
-use std::sync::atomic::Ordering;
-
 use super::server::SobreServer;
 
 impl SobreServer {
@@ -25,8 +23,4 @@ impl SobreServer {
         }
     }
 
-    /// Increments the tool-call counter.
-    pub fn increment_call_count(&self) {
-        self.call_count.fetch_add(1, Ordering::Relaxed);
-    }
 }

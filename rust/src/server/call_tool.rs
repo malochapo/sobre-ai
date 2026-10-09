@@ -185,13 +185,6 @@ impl SobreServer {
 
         self.save_session_when_due().await;
 
-        let skip_checkpoint = matches!(name, "sobre_session" | "sobre_knowledge");
-
-        // The only place that advances `call_count`.
-        if !skip_checkpoint {
-            self.increment_call_count();
-        }
-
         // A machine-readable invocation (e.g. sobre_outline format=json) must
         // return a byte-exact, parseable payload: the body captured before
         // terse compression and the compression notice, as the tool returned it.
