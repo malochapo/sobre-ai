@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#51, #PRNUM) |
+| G | Regressions and half-done phase-1 fixes | in progress (#51, #52) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -162,7 +162,7 @@ documented:
     `~/.copilot/hooks` behind. `tests/suite/init_uninstall_round_trip.rs`
     runs `init` twice, once more from a moved binary, then `uninstall`,
     over nine agents, and compares the whole HOME.
-- [x] **G2 The observe-hook refresh takes over other tools' hooks.** (#PRNUM)
+- [x] **G2 The observe-hook refresh takes over other tools' hooks.** (#52)
   *Regression: E19.*
   - `refresh_command` (`hooks/agents/mod.rs:13-26`) points every hook
     command containing `hook observe` at sobre (`hooks/agents/claude.rs:118`,
@@ -176,7 +176,7 @@ documented:
     configured `hook_binary`. The refresh, every host's installer and
     `uninstall` use it; they used five different substring tests, which
     also matched `/home/sobre/bin/acme hook observe`.
-- [x] **G3 `config init` writes `[proxy]` under `[proxy.upstreams]`.** (#PRNUM)
+- [x] **G3 `config init` writes `[proxy]` under `[proxy.upstreams]`.** (#52)
   *Regression: C11.*
   - The live `[proxy.upstreams]` header comes first, then the commented
     `# [proxy]` keys (`core/config/render.rs:68-77`).
