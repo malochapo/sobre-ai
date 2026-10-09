@@ -272,7 +272,7 @@ impl SobreReadTool {
         let mut delta_explicit_note: Option<String> = None;
         if !fresh
             && explicit_mode
-            && (mode == "full" || mode == "full-compact" || mode.starts_with("lines:"))
+            && (mode == "full" || mode.starts_with("lines:"))
             && let Ok(cache) = cache_lock.try_read()
         {
             let decision = crate::tools::sobre_read::resolve_explicit_delta_mode(
@@ -540,7 +540,7 @@ fn read_through_cache(
     };
 
     if !fresh
-        && matches!(mode, "full" | "full-compact" | "auto")
+        && matches!(mode, "full" | "auto")
         && let Ok(cache) = cache_lock.try_read()
         && let Some(out) = crate::tools::sobre_read::try_stub_hit_readonly(&cache, path)
     {

@@ -39,8 +39,8 @@ pub fn handle(
 
     let max = max_results.min(MAX_RESULTS);
 
-    // Support both simple (`*.rs`) and recursive (`**/*.ts`) patterns.
-    let glob_matcher = match glob::Pattern::new(pattern) {
+    // `*.rs` names a file at any depth; `src/*.rs` is a path from the root.
+    let glob_matcher = match crate::tools::sobre_search::compile_glob(pattern) {
         Ok(m) => m,
         Err(e) => return (format!("ERROR: invalid glob pattern '{pattern}': {e}"), 0),
     };
@@ -88,7 +88,7 @@ pub fn handle(
         let rel_path = path.strip_prefix(root).unwrap_or(path);
         let rel_str = rel_path.to_string_lossy();
 
-        if glob_matcher.matches(&rel_str) {
+        if crate::tools::sobre_search::glob_matches(&glob_matcher, &rel_str) {
             let short_path =
                 protocol::shorten_path_relative(&path.to_string_lossy(), &root.to_string_lossy());
             matches.push(short_path);
@@ -146,6 +146,28 @@ mod tests {
         let (all, _) = handle("*.txt", &dir.path().to_string_lossy(), true, 100);
         assert!(all.contains("6 files matched"), "{all}");
         assert!(!all.contains("stopped at max_results"), "{all}");
+    }
+
+    /// K14: `*` stays within one directory; a glob without `/` names a file
+    /// at any depth.
+    #[test]
+    fn star_does_not_cross_a_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("src/a/b")).unwrap();
+        std::fs::write(dir.path().join("src/top.ts"), "x").unwrap();
+        std::fs::write(dir.path().join("src/a/b/deep.ts"), "x").unwrap();
+        let root = dir.path().to_string_lossy();
+
+        let (one_level, _) = handle("src/*.ts", &root, true, 100);
+        assert!(one_level.contains("top.ts"), "{one_level}");
+        assert!(!one_level.contains("deep.ts"), "{one_level}");
+
+        let (any_depth, _) = handle("*.ts", &root, true, 100);
+        assert!(any_depth.contains("top.ts"), "{any_depth}");
+        assert!(any_depth.contains("deep.ts"), "{any_depth}");
+
+        let (recursive, _) = handle("src/**/*.ts", &root, true, 100);
+        assert!(recursive.contains("deep.ts"), "{recursive}");
     }
 
     #[test]

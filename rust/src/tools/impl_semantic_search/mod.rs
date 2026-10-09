@@ -57,8 +57,6 @@ pub(crate) fn handle(
     path: &str,
     top_k: usize,
     crp_mode: CrpMode,
-    languages: Option<&[String]>,
-    path_glob: Option<&str>,
     mode: Option<&str>,
     workspace: Option<bool>,
 ) -> String {
@@ -68,10 +66,7 @@ pub(crate) fn handle(
     };
     let root = root_buf.as_path();
 
-    let filter = match SearchFilter::new(languages, path_glob) {
-        Ok(f) => f.with_subdir(subdir),
-        Err(e) => return format!("ERR: invalid filter: {e}"),
-    };
+    let filter = SearchFilter::default().with_subdir(subdir);
 
     let compact = crp_mode.is_tdd();
     let mode = match SearchMode::parse(mode) {
@@ -211,10 +206,13 @@ pub(crate) fn handle_find_related(
         return "ERR: empty index. Try action=reindex first.".to_string();
     }
 
+    // The index keys files by their path relative to the root; an absolute
+    // or `./`-prefixed path names the same file.
+    let key = crate::core::index_paths::graph_relative_key(file_path, &root.to_string_lossy());
     let source_chunk = index
         .chunks
         .iter()
-        .find(|c| c.file_path == file_path && c.start_line <= line && c.end_line >= line);
+        .find(|c| c.file_path == key && c.start_line <= line && c.end_line >= line);
 
     let Some(source_chunk) = source_chunk else {
         return format!(
@@ -227,60 +225,62 @@ pub(crate) fn handle_find_related(
     let source_start = source_chunk.start_line;
 
     let compact = crp_mode != CrpMode::Off;
-    let (engine, results) = related_chunks(&query_text, root, &index, top_k + 5, compact);
-
-    let lines: Vec<String> = results
-        .into_iter()
-        .filter(|l| !l.contains(&format!("{source_file}:{source_start}-")))
-        .take(top_k)
-        .collect();
+    let (engine, count, body) = related_chunks(
+        &query_text,
+        root,
+        &index,
+        (&source_file, source_start),
+        top_k,
+        compact,
+    );
 
     let header = if compact {
-        format!(
-            "find_related({file_path}:{line},{engine}) → {} results\n",
-            lines.len()
-        )
+        format!("find_related({file_path}:{line},{engine}) → {count} results\n")
     } else {
         format!("Find related to {file_path}:{line} ({engine} search on the chunk's text)\n")
     };
-    format!("{header}{}", lines.join(""))
+    format!("{header}{body}")
 }
 
-/// Rank chunks against `text`, one line each. Hybrid when this build has
-/// embeddings, BM25 otherwise; returns which one ran.
+/// The `top_k` chunks most like `text`, the `source` chunk itself
+/// (`(file, start line)`) left out, formatted. Hybrid when this build has
+/// embeddings, BM25 otherwise; returns which one ran and how many results.
 fn related_chunks(
     text: &str,
     root: &Path,
     index: &BM25Index,
+    source: (&str, usize),
     top_k: usize,
     compact: bool,
-) -> (&'static str, Vec<String>) {
-    let Ok(filter) = SearchFilter::new(None, None) else {
-        return ("bm25", Vec::new());
-    };
+) -> (&'static str, usize, String) {
+    let is_source = |file: &str, start: usize| file == source.0 && start == source.1;
+    let filter = SearchFilter::default();
     #[cfg(feature = "dense")]
     {
         let cfg = crate::core::hybrid_search::HybridConfig::default();
-        match hybrid_ranked(text, root, index, top_k, &filter, &cfg) {
-            Ok(r) => {
+        match hybrid_ranked(text, root, index, top_k + 1, &filter, &cfg) {
+            Ok(mut r) => {
                 let engine = if r.degraded.is_some() {
                     "bm25+graph, dense index not built"
                 } else {
                     "hybrid"
                 };
+                r.results.retain(|h| !is_source(&h.file_path, h.start_line));
+                r.results.truncate(top_k);
                 let body = crate::core::hybrid_search::format_hybrid_results(&r.results, compact);
-                (engine, body.lines().map(|l| format!("{l}\n")).collect())
+                (engine, r.results.len(), body)
             }
-            Err(e) => ("hybrid", vec![format!("ERR: {e}\n")]),
+            Err(e) => ("hybrid", 0, format!("ERR: {e}\n")),
         }
     }
     #[cfg(not(feature = "dense"))]
     {
         let _ = root;
-        let mut results = index.search(text, filtered_candidate_k(top_k, filter.is_active()));
+        let mut results = index.search(text, filtered_candidate_k(top_k + 1, filter.is_active()));
+        results.retain(|r| !is_source(&r.file_path, r.start_line));
         results.truncate(top_k);
         let body = format_search_results(&results, compact);
-        ("bm25", body.lines().map(|l| format!("{l}\n")).collect())
+        ("bm25", results.len(), body)
     }
 }
 

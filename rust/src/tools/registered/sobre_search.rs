@@ -3,7 +3,7 @@ use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, get_str_array, get_usize,
+    McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, get_usize,
 };
 use crate::tool_defs::tool_def;
 
@@ -21,21 +21,23 @@ enum SearchAction {
 }
 
 impl SearchAction {
-    /// An explicit `action` wins; otherwise the engine is inferred from which
-    /// field the caller set, so older call sites (`pattern`/`query`/`name`)
-    /// keep working unchanged. Unknown `action` values fall through to inference.
-    fn resolve(args: &Map<String, Value>) -> Self {
+    /// An explicit `action` wins, and must be one the schema lists; without
+    /// one, the engine follows the field the caller set (`handle`/`name`,
+    /// `pattern`, `file_path`+`line`, `query`), regex by default.
+    fn resolve(args: &Map<String, Value>) -> Result<Self, String> {
         if let Some(a) = get_str(args, "action") {
-            match a.trim().to_ascii_lowercase().as_str() {
-                "regex" | "grep" | "pattern" => return Self::Regex,
-                "semantic" | "search" => return Self::Semantic,
-                "symbol" => return Self::Symbol,
-                "reindex" => return Self::Reindex,
-                "find_related" | "related" => return Self::FindRelated,
-                _ => {}
-            }
+            return match a.as_str() {
+                "regex" => Ok(Self::Regex),
+                "semantic" => Ok(Self::Semantic),
+                "symbol" => Ok(Self::Symbol),
+                "reindex" => Ok(Self::Reindex),
+                "find_related" => Ok(Self::FindRelated),
+                other => Err(format!(
+                    "Unknown action '{other}': regex, semantic, symbol, reindex or find_related"
+                )),
+            };
         }
-        if args.contains_key("handle") {
+        Ok(if args.contains_key("handle") {
             Self::Symbol
         } else if args.contains_key("pattern") {
             Self::Regex
@@ -47,7 +49,7 @@ impl SearchAction {
             Self::Semantic
         } else {
             Self::Regex
-        }
+        })
     }
 }
 
@@ -76,8 +78,8 @@ impl McpTool for SobreSearchTool {
                 "handle": { "type": "string" },
                 "path": { "type": "string" },
                 "paths": { "type": "array", "items": { "type": "string" } },
-                "include": { "type": "string", "description": "Glob, e.g. *.rs" },
-                "exclude": { "type": "string" },
+                "include": { "type": "string", "description": "Glob of files to search: *.rs at any depth, src/*.rs from the root, *.{rs,ts} for several" },
+                "exclude": { "type": "string", "description": "Glob of files to skip, read as include" },
                 "exclude_pattern": { "type": "string" },
                 "anchored": { "type": "boolean" },
                 "max_results": { "type": "integer" },
@@ -139,7 +141,8 @@ impl McpTool for SobreSearchTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        match SearchAction::resolve(args) {
+        let action = SearchAction::resolve(args).map_err(|e| ErrorData::invalid_params(e, None))?;
+        match action {
             SearchAction::Regex => handle_regex(args, ctx),
             SearchAction::Semantic => handle_semantic(args, ctx),
             SearchAction::Symbol => handle_symbol(args, ctx),
@@ -149,33 +152,6 @@ impl McpTool for SobreSearchTool {
     }
 }
 
-/// Known argument keys for sobre_search — used by the lenient fallback to detect
-/// unrecognized keys that weaker models may use instead of `pattern`.
-const KNOWN_KEYS: &[&str] = &[
-    "action",
-    "pattern",
-    "query",
-    "name",
-    "handle",
-    "path",
-    "paths",
-    "include",
-    "exclude",
-    "exclude_pattern",
-    "anchored",
-    "max_results",
-    "top_k",
-    "mode",
-    "file",
-    "kind",
-    "file_path",
-    "line",
-    "languages",
-    "path_glob",
-    "workspace",
-    "ignore_gitignore",
-];
-
 /// `action=regex` (default) — exact-pattern search over one or more roots.
 fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
     // Batch mode — `queries: [{pattern, include?, exclude?}]` runs multiple
@@ -183,26 +159,16 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     if let Some(Value::Array(queries)) = args.get("queries") {
         return handle_batch_queries(queries, args, ctx);
     }
-    // Lenient fallback: if `pattern` is missing, accept the first unrecognized
-    // string value as the pattern. Handles weak models that use keys like
-    // "search_term", "text", "regex", etc. instead of the documented "pattern".
-    let pattern = get_str(args, "pattern")
-        .or_else(|| {
-            args.iter()
-                .find(|(k, v)| !KNOWN_KEYS.contains(&k.as_str()) && v.is_string())
-                .and_then(|(_, v)| v.as_str().map(String::from))
-        })
-        .ok_or_else(|| {
-            ErrorData::invalid_params(
-                "pattern is required. Example: sobre_search(pattern=\"fn main\", path=\"/src\")",
-                None,
-            )
-        })?;
+    let pattern = get_str(args, "pattern").ok_or_else(|| {
+        ErrorData::invalid_params(
+            "pattern is required. Example: sobre_search(pattern=\"fn main\", path=\"/src\")",
+            None,
+        )
+    })?;
     let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
         .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
     let include = get_str(args, "include");
     let max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
-    let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
     // Opt-in N:hh line anchors on each hit for direct sobre_patch edits.
     let anchored = get_bool(args, "anchored").unwrap_or(false);
     // Negative filters — `exclude` (path glob, complement of `include`)
@@ -211,7 +177,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let exclude_pattern = get_str(args, "exclude_pattern");
 
     let crp = ctx.crp_mode;
-    let respect = !no_gitignore;
+    let respect = true;
 
     if !resolved.is_multi {
         return search_single(
@@ -314,9 +280,13 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         .ok_or_else(|| ErrorData::invalid_params("query is required for action=semantic", None))?;
     let path = resolve_path_or_root(ctx)?;
     let top_k = get_usize(args, "top_k").unwrap_or(10).min(1000);
-    let mode = get_str(args, "mode");
-    let languages = get_str_array(args, "languages");
-    let path_glob = get_str(args, "path_glob");
+    // Dense and hybrid ranking exist only in builds with local embeddings,
+    // where the schema declares `mode`.
+    let mode = if cfg!(feature = "dense") {
+        get_str(args, "mode")
+    } else {
+        None
+    };
     let workspace = get_bool(args, "workspace").unwrap_or(false);
     prime_bm25_cache(ctx);
 
@@ -326,14 +296,12 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
             &path,
             top_k,
             ctx.crp_mode,
-            languages.as_deref(),
-            path_glob.as_deref(),
             mode.as_deref(),
             Some(workspace),
         )
     });
 
-    Ok(semantic_output(result))
+    Ok(semantic_output(&result))
 }
 
 /// When `path` or `file` is an absolute path under a different project,
@@ -346,10 +314,13 @@ fn resolve_symbol_root(args: &Map<String, Value>, session_root: &str) -> String 
 
     // A file inside the session's project keeps that project: the detected
     // root (the nearest git root) may be an ancestor with no graph of its own.
+    // Compared canonically, so case, `\` and symlinked prefixes still match.
+    let canon = |p: &str| crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(p));
+    let session = canon(session_root);
     if let Some(abs_path) = candidate
-        && !std::path::Path::new(&abs_path).starts_with(session_root)
+        && !canon(&abs_path).starts_with(&session)
         && let Some(detected) = crate::core::protocol::detect_project_root(&abs_path)
-        && detected != session_root
+        && canon(&detected) != session
     {
         return detected;
     }
@@ -368,6 +339,8 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
     if let Some(handle) = get_str(args, "handle") {
         let (result, original) =
             crate::tools::impl_symbol::render_by_handle(&handle, &effective_root);
+        // Secrets are masked as `sobre_read` masks them.
+        let result = crate::core::redaction::redact_text(&result);
         let sent = crate::core::tokens::count_tokens(&result);
         return Ok(ToolOutput {
             text: result,
@@ -386,6 +359,7 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
 
     let (result, original) =
         crate::tools::impl_symbol::handle(&name, file.as_deref(), kind.as_deref(), &effective_root);
+    let result = crate::core::redaction::redact_text(&result);
     let sent = crate::core::tokens::count_tokens(&result);
     Ok(ToolOutput {
         text: result,
@@ -404,7 +378,7 @@ fn handle_reindex(ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
     let result =
         tokio::task::block_in_place(|| crate::tools::impl_semantic_search::handle_reindex(&path));
 
-    Ok(semantic_output(result))
+    Ok(semantic_output(&result))
 }
 
 /// `action=find_related` — context neighbors for a source location, via core.
@@ -434,14 +408,15 @@ fn handle_find_related(
         )
     });
 
-    Ok(semantic_output(result))
+    Ok(semantic_output(&result))
 }
 
 /// Shared `ToolOutput` shape for the semantic-engine branches (token accounting
-/// is handled inside the core fns, mirroring the former standalone tool).
-fn semantic_output(text: String) -> ToolOutput {
+/// is handled inside the core fns, mirroring the former standalone tool). The
+/// chunk snippets they quote have their secrets masked as `sobre_read` does.
+fn semantic_output(text: &str) -> ToolOutput {
     ToolOutput {
-        text,
+        text: crate::core::redaction::redact_text(text),
         original_tokens: 0,
         saved_tokens: 0,
         shell_outcome: None,
@@ -533,11 +508,15 @@ fn handle_batch_queries(
 
     let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
         .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
-    let no_gitignore = get_bool(args, "ignore_gitignore").unwrap_or(false);
     let anchored = get_bool(args, "anchored").unwrap_or(false);
     let crp = ctx.crp_mode;
-    let respect = !no_gitignore;
+    let respect = true;
     let roots = &resolved.roots;
+    // A query's own filters win; the top-level ones apply to every query
+    // that sets none.
+    let top_include = get_str(args, "include");
+    let top_exclude = get_str(args, "exclude");
+    let top_exclude_pattern = get_str(args, "exclude_pattern");
     let global_max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
     let per_query_max = (global_max / queries.len()).max(5);
     let per_search_max = (per_query_max / roots.len()).max(5);
@@ -561,9 +540,10 @@ fn handle_batch_queries(
             ));
             continue;
         };
-        let include = get_str(obj, "include");
-        let exclude = get_str(obj, "exclude");
-        let exclude_pattern = get_str(obj, "exclude_pattern");
+        let include = get_str(obj, "include").or_else(|| top_include.clone());
+        let exclude = get_str(obj, "exclude").or_else(|| top_exclude.clone());
+        let exclude_pattern =
+            get_str(obj, "exclude_pattern").or_else(|| top_exclude_pattern.clone());
 
         let label = if queries.len() > 1 {
             format!(
@@ -650,47 +630,50 @@ mod tests {
 
     #[test]
     fn explicit_action_selects_engine() {
-        // An explicit action always wins, including synonyms.
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("semantic"))])),
-            SearchAction::Semantic
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("symbol"))])),
-            SearchAction::Symbol
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("grep"))])),
-            SearchAction::Regex
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("related"))])),
-            SearchAction::FindRelated
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("reindex"))])),
-            SearchAction::Reindex
-        );
+        for (action, engine) in [
+            ("regex", SearchAction::Regex),
+            ("semantic", SearchAction::Semantic),
+            ("symbol", SearchAction::Symbol),
+            ("reindex", SearchAction::Reindex),
+            ("find_related", SearchAction::FindRelated),
+        ] {
+            assert_eq!(
+                SearchAction::resolve(&args(&[("action", json!(action))])),
+                Ok(engine)
+            );
+        }
+    }
+
+    /// Decision 7: an action the schema does not list is refused, synonyms
+    /// included.
+    #[test]
+    fn an_unlisted_action_is_refused() {
+        for action in ["grep", "pattern", "search", "related", "bogus"] {
+            assert!(
+                SearchAction::resolve(&args(&[("action", json!(action))])).is_err(),
+                "{action}"
+            );
+        }
     }
 
     #[test]
-    fn action_inferred_from_fields_for_backward_compat() {
-        // Older call sites set only one of these fields and no action.
+    fn action_inferred_from_fields() {
+        // A call that sets one of these fields and no action.
         assert_eq!(
             SearchAction::resolve(&args(&[("pattern", json!("fn .*"))])),
-            SearchAction::Regex
+            Ok(SearchAction::Regex)
         );
         assert_eq!(
             SearchAction::resolve(&args(&[("query", json!("user auth"))])),
-            SearchAction::Semantic
+            Ok(SearchAction::Semantic)
         );
         assert_eq!(
             SearchAction::resolve(&args(&[("name", json!("handle"))])),
-            SearchAction::Symbol
+            Ok(SearchAction::Symbol)
         );
         assert_eq!(
             SearchAction::resolve(&args(&[("file_path", json!("a.rs")), ("line", json!(10))])),
-            SearchAction::FindRelated
+            Ok(SearchAction::FindRelated)
         );
     }
 
@@ -699,38 +682,62 @@ mod tests {
         // A bare `handle` (no action) must route to the symbol engine.
         assert_eq!(
             SearchAction::resolve(&args(&[("handle", json!("src/lib.rs#Config::load@L22"))])),
-            SearchAction::Symbol
+            Ok(SearchAction::Symbol)
         );
     }
 
     #[test]
-    fn pattern_wins_over_query_and_unknown_action_falls_back_to_inference() {
+    fn pattern_wins_over_query() {
         // A regex caller that also carries a stray query must stay regex.
         assert_eq!(
             SearchAction::resolve(&args(&[("pattern", json!("x")), ("query", json!("y"))])),
-            SearchAction::Regex
-        );
-        // Unknown action value → infer from fields (here: symbol).
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("bogus")), ("name", json!("f"))])),
-            SearchAction::Symbol
+            Ok(SearchAction::Regex)
         );
         // Nothing recognizable → default regex (the empty-call default).
-        assert_eq!(SearchAction::resolve(&args(&[])), SearchAction::Regex);
+        assert_eq!(SearchAction::resolve(&args(&[])), Ok(SearchAction::Regex));
     }
 
-    #[test]
-    fn lenient_fallback_does_not_grab_known_keys() {
-        use super::{KNOWN_KEYS, get_str};
+    /// K7: the top-level `include` applies to every query that sets none.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn top_level_include_applies_to_each_query() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.rs"), "needle\n").unwrap();
+        std::fs::write(dir.path().join("b.py"), "needle\n").unwrap();
+        let ctx = super::ToolContext {
+            project_root: crate::core::pathutil::safe_canonicalize_or_self(dir.path())
+                .to_string_lossy()
+                .into_owned(),
+            ..Default::default()
+        };
+        let a = args(&[
+            ("queries", json!([{ "pattern": "needle" }])),
+            ("include", json!("*.rs")),
+        ]);
+        let queries = a["queries"].as_array().unwrap().clone();
+        let out = super::handle_batch_queries(&queries, &a, &ctx)
+            .unwrap()
+            .text;
+        assert!(out.contains("a.rs"), "{out}");
+        assert!(!out.contains("b.py"), "{out}");
+    }
 
-        // If only known keys are present (but pattern is missing), fallback
-        // should NOT pick them up — it returns None.
-        let a = args(&[("path", json!("/src")), ("max_results", json!(10))]);
-        let pattern = get_str(&a, "pattern").or_else(|| {
-            a.iter()
-                .find(|(k, v)| !KNOWN_KEYS.contains(&k.as_str()) && v.is_string())
-                .and_then(|(_, v)| v.as_str().map(String::from))
-        });
-        assert_eq!(pattern, None);
+    /// K16: a file inside the session's project keeps that project even when
+    /// the session root is spelled through a symlink.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_session_root_keeps_its_files() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let project = repo.join("sub");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("a.rs"), "fn a() {}\n").unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&project, &link).unwrap();
+
+        let file = project.canonicalize().unwrap().join("a.rs");
+        let session = link.to_string_lossy().to_string();
+        let a = args(&[("path", json!(file.to_string_lossy()))]);
+        assert_eq!(super::resolve_symbol_root(&a, &session), session);
     }
 }

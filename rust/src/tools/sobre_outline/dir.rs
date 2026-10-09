@@ -10,6 +10,9 @@ use super::{FileSymbols, OutlineOpts, filter_signatures, render_one};
 
 /// Hard ceiling on files included, so a huge tree can't blow up the output.
 const MAX_FILES: usize = 600;
+/// Ceiling on files parsed while looking for matches, so a filter over a
+/// huge tree stays bounded; reaching it is said.
+const MAX_SCANNED: usize = 20_000;
 /// Skip individual files larger than this — outlining a multi-MB generated file
 /// is rarely the intent and parsing it is needlessly expensive.
 const MAX_FILE_BYTES: u64 = 1_500_000;
@@ -18,7 +21,10 @@ pub(super) fn outline_dir(dir: &str, opts: &OutlineOpts) -> (String, usize) {
     let (files, total_tokens, truncated) = collect(dir, opts);
 
     if opts.as_json {
-        return (super::json::dir_json(dir, &files, truncated), total_tokens);
+        return (
+            super::json::dir_json(dir, &files, truncated != Truncation::None),
+            total_tokens,
+        );
     }
 
     if files.is_empty() {
@@ -36,10 +42,14 @@ pub(super) fn outline_dir(dir: &str, opts: &OutlineOpts) -> (String, usize) {
             out.push('\n');
         }
     }
-    if truncated {
-        out.push_str(&format!(
+    match truncated {
+        Truncation::None => {}
+        Truncation::Listed => out.push_str(&format!(
             "[truncated at {MAX_FILES} files — narrow the path for the rest]\n"
-        ));
+        )),
+        Truncation::Scanned => out.push_str(&format!(
+            "[stopped after parsing {MAX_SCANNED} files — narrow the path for the rest]\n"
+        )),
     }
     // Located symbols are addressable as stable handles: one self-
     // describing hint for the whole listing (path is each file's group header).
@@ -49,10 +59,22 @@ pub(super) fn outline_dir(dir: &str, opts: &OutlineOpts) -> (String, usize) {
     (out.clone(), total_tokens)
 }
 
+/// Whether a directory outline stopped before the end of the tree.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Truncation {
+    None,
+    /// More than [`MAX_FILES`] files had symbols to list.
+    Listed,
+    /// [`MAX_SCANNED`] files were parsed without reaching the end.
+    Scanned,
+}
+
 /// Walk `dir` (gitignore/vendor aware), extract + filter per file, and return
 /// the files with ≥1 surviving symbol — sorted by relative path for
-/// determinism — plus the full-read token baseline and whether the cap hit.
-fn collect(dir: &str, opts: &OutlineOpts) -> (Vec<FileSymbols>, usize, bool) {
+/// determinism — plus the full-read token baseline and where it stopped.
+/// The `match`/`kind` filters apply before the cap: a symbol in the 651st
+/// file is found.
+fn collect(dir: &str, opts: &OutlineOpts) -> (Vec<FileSymbols>, usize, Truncation) {
     let mut paths: Vec<std::path::PathBuf> = ignore::WalkBuilder::new(dir)
         .hidden(true)
         .git_ignore(true)
@@ -71,14 +93,16 @@ fn collect(dir: &str, opts: &OutlineOpts) -> (Vec<FileSymbols>, usize, bool) {
         })
         .collect();
     paths.sort();
-    let truncated = paths.len() > MAX_FILES;
-    paths.truncate(MAX_FILES);
 
     let root = std::path::Path::new(dir);
     let mut files = Vec::new();
     let mut total_tokens = 0usize;
-
-    for path in paths {
+    let mut truncated = Truncation::None;
+    for (scanned, path) in paths.into_iter().enumerate() {
+        if scanned == MAX_SCANNED {
+            truncated = Truncation::Scanned;
+            break;
+        }
         if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_FILE_BYTES) {
             continue;
         }
@@ -97,6 +121,10 @@ fn collect(dir: &str, opts: &OutlineOpts) -> (Vec<FileSymbols>, usize, bool) {
             .collect();
         if filtered.is_empty() {
             continue;
+        }
+        if files.len() == MAX_FILES {
+            truncated = Truncation::Listed;
+            break;
         }
         total_tokens += count_tokens(&content);
         files.push(FileSymbols {

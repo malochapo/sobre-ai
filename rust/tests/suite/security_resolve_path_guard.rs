@@ -6,7 +6,7 @@ fn dispatch_inner_pre_resolves_paths() {
         "dispatch_inner must resolve paths for registry-dispatched tools"
     );
 
-    for key in ["path", "project_root", "root"] {
+    for key in ["path", "to", "project_root"] {
         assert!(
             dispatch_mod.contains(&format!("\"{key}\"")),
             "dispatch_inner must pre-resolve the '{key}' parameter"

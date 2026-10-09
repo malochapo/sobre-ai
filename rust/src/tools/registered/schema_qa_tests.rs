@@ -164,3 +164,97 @@ fn patch_schema_encodes_per_op_required_params() {
         "ops":[{"op":"set_line","path":"a","line":1,"hash":"aa","new_text":"x"}]
     })));
 }
+
+/// Decision 7: every argument a handler reads is in its tool's schema, so
+/// what `tools/list` shows is everything the tool honours (invariant 3). The
+/// sources are each tool's handler and the modules it hands its arguments to.
+#[test]
+fn every_argument_a_handler_reads_is_declared() {
+    let sources: &[(&str, &[&str])] = &[
+        ("sobre_checkpoint", &[include_str!("sobre_checkpoint.rs")]),
+        ("sobre_compose", &[include_str!("sobre_compose.rs")]),
+        (
+            "sobre_expand",
+            &[
+                include_str!("sobre_expand.rs"),
+                include_str!("../sobre_expand.rs"),
+            ],
+        ),
+        (
+            "sobre_glob",
+            &[
+                include_str!("sobre_glob.rs"),
+                include_str!("../../server/multi_path.rs"),
+            ],
+        ),
+        ("sobre_graph", &[include_str!("sobre_graph.rs")]),
+        ("sobre_knowledge", &[include_str!("sobre_knowledge.rs")]),
+        ("sobre_outline", &[include_str!("sobre_outline.rs")]),
+        (
+            "sobre_patch",
+            &[
+                include_str!("sobre_patch.rs"),
+                include_str!("../sobre_patch/symbol.rs"),
+            ],
+        ),
+        (
+            "sobre_read",
+            &[include_str!("sobre_read.rs"), include_str!("batch_read.rs")],
+        ),
+        (
+            "sobre_refactor",
+            &[
+                include_str!("sobre_refactor.rs"),
+                include_str!("../sobre_refactor/mod.rs"),
+            ],
+        ),
+        ("sobre_review", &[include_str!("sobre_review.rs")]),
+        (
+            "sobre_search",
+            &[
+                include_str!("sobre_search.rs"),
+                include_str!("../../server/multi_path.rs"),
+            ],
+        ),
+        ("sobre_session", &[include_str!("sobre_session.rs")]),
+        ("sobre_shell", &[include_str!("sobre_shell.rs")]),
+        ("sobre_tree", &[include_str!("sobre_tree.rs")]),
+    ];
+    let reads = regex::Regex::new(
+        r#"(?:get_(?:str|bool|int|f64|usize|u64|str_array)\(\s*args\s*,\s*|args\.get\(\s*|args\.contains_key\(\s*|str_field\(\s*args\s*,\s*|require_resolved_path\(\s*ctx\s*,\s*args\s*,\s*|ctx\s*\.resolved_path\(\s*|ctx\s*\.path_error\(\s*)"([a-z_]+)""#,
+    )
+    .unwrap();
+    let registry = crate::server::registry::build_registry();
+    let mut seen = HashSet::new();
+    for (tool, files) in sources {
+        let def = registry
+            .get_arc(tool)
+            .unwrap_or_else(|| panic!("{tool} is not registered"))
+            .tool_def();
+        let declared: HashSet<&str> = def
+            .input_schema
+            .get("properties")
+            .and_then(Value::as_object)
+            .map(|p| p.keys().map(String::as_str).collect())
+            .unwrap_or_default();
+        for src in *files {
+            for key in reads.captures_iter(src).map(|c| c.get(1).unwrap().as_str()) {
+                // Read only under `cfg!(feature = "dense")`, where the schema
+                // declares it.
+                if *tool == "sobre_search" && key == "mode" && !cfg!(feature = "dense") {
+                    continue;
+                }
+                assert!(
+                    declared.contains(key),
+                    "{tool} reads `{key}`, which its schema does not declare"
+                );
+            }
+        }
+        seen.insert(*tool);
+    }
+    assert_eq!(
+        seen.len(),
+        registry.names().len(),
+        "every registered tool is checked"
+    );
+}
