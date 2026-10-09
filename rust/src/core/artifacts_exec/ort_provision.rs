@@ -27,7 +27,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 #[cfg(feature = "dense")]
-use super::binhash::sha256_file;
+use super::binhash::{sha256_bytes, sha256_file};
 
 /// Managed ONNX Runtime version. Must satisfy `1.{ort::MINOR_VERSION}.x` of
 /// the `ort` crate compiled into this binary (guarded by a test when the
@@ -250,14 +250,6 @@ fn extract_zip_member(bytes: &[u8], member: &str) -> Result<Vec<u8>, String> {
     file.read_to_end(&mut out)
         .map_err(|e| format!("zip extract failed: {e}"))?;
     Ok(out)
-}
-
-#[cfg(feature = "dense")]
-fn sha256_bytes(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(bytes);
-    crate::core::hasher::hex_encode(&hasher.finalize())
 }
 
 /// One-line status for doctor / `embeddings status`.

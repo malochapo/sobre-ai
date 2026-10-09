@@ -4,6 +4,7 @@ mod log;
 mod parser;
 mod status;
 
+use crate::core::patterns::compact_lines;
 use parser::extract_git_subcommand;
 
 macro_rules! static_regex {
@@ -81,18 +82,6 @@ fn extract_change_stats(output: &str) -> String {
     } else {
         String::new()
     }
-}
-
-fn compact_lines(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
-    )
 }
 
 pub fn compress(command: &str, output: &str) -> Option<String> {

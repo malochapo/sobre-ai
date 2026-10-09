@@ -455,11 +455,11 @@ mod tests {
         let multi: ReadMode = "lines:620-622,1214-1218".parse().unwrap();
         assert!(
             multi.is_precise_pinned_read(),
-            "a comma multi-select is still a precise pinned read (#843)"
+            "a comma multi-select is still a precise pinned read"
         );
         assert!(
             !multi.allows_raw_cap(),
-            "a comma multi-select is a selection view and is never raw-capped (#361)"
+            "a comma multi-select is a selection view and is never raw-capped"
         );
         // Classified identically to the single-range form.
         let single: ReadMode = "lines:620-622".parse().unwrap();

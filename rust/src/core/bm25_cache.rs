@@ -39,12 +39,12 @@ impl Bm25CacheEntry {
 
 /// `(mtime, size)` fingerprint of the persisted BM25 index file for `root`.
 pub(crate) fn index_fingerprint(root: &Path) -> IndexFingerprint {
-    match std::fs::metadata(BM25Index::index_file_path(root)) {
-        Ok(m) => IndexFingerprint {
+    match BM25Index::index_file_path(root).map(std::fs::metadata) {
+        Some(Ok(m)) => IndexFingerprint {
             mtime: m.modified().ok(),
             size: m.len(),
         },
-        Err(_) => IndexFingerprint::default(),
+        _ => IndexFingerprint::default(),
     }
 }
 

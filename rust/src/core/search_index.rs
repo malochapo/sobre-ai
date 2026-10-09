@@ -846,7 +846,7 @@ mod tests {
         });
         let paths = rx
             .recv_timeout(Duration::from_secs(5))
-            .expect("SearchIndex::build hung on a FIFO (#336 regression)")
+            .expect("SearchIndex::build hung on a FIFO (regression)")
             .expect("index should build");
         assert!(paths.iter().any(|p| p.ends_with("a.rs")));
         assert!(!paths.iter().any(|p| p.ends_with("pipe.fifo")));
@@ -1277,7 +1277,7 @@ mod tests {
         .unwrap();
         assert!(
             get_fresh(&root, true).is_none(),
-            "an edited corpus must refuse the stale resident index (#624)"
+            "an edited corpus must refuse the stale resident index"
         );
     }
 }

@@ -1,3 +1,5 @@
+use crate::core::patterns::compact_lines;
+
 macro_rules! static_regex {
     ($pattern:expr_2021) => {{
         static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -246,18 +248,6 @@ fn compress_tinker(output: &str) -> String {
         "{}\n... ({} more lines)",
         lines[..8].join("\n"),
         lines.len() - 8
-    )
-}
-
-fn compact_lines(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
     )
 }
 

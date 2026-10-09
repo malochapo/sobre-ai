@@ -326,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_311_vscode_settings_with_trailing_comma_and_comments() {
+    fn vscode_settings_with_trailing_comma_and_comments() {
         // Mirrors the real VS Code user settings.json that broke the strict parser:
         // "trailing comma at line 4 column 5" plus JSONC comments.
         let input = r#"{

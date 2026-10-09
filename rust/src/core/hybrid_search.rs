@@ -550,10 +550,7 @@ mod tests {
             output.contains("(rrf: 0.5898)"),
             "absent rank-source must render a clean header, got: {output}"
         );
-        assert!(
-            !output.contains(", )"),
-            "must not emit a dangling ', )' (#509)"
-        );
+        assert!(!output.contains(", )"), "must not emit a dangling ', )'");
     }
 
     #[test]

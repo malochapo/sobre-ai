@@ -154,12 +154,7 @@ bytes: {}\n",
             let current_root_hash = crate::core::project_hash::hash_project_root(&root);
             let current_identity_hash = crate::core::project_hash::project_identity(&root)
                 .as_deref()
-                .map(|s| {
-                    use md5::{Digest, Md5};
-                    let mut h = Md5::new();
-                    h.update(s.as_bytes());
-                    crate::core::hasher::hex_encode(&h.finalize())
-                });
+                .map(crate::core::hasher::hash_str);
 
             let mut warning: Option<String> = None;
             if let Some(ref exported) = bundle.project.project_root_hash
@@ -377,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn finding_cyrillic_with_em_dash_issue_272() {
+    fn finding_cyrillic_with_em_dash() {
         let value = "ruff: pyproject.toml dev-group \u{2014} >=0.15.14,<0.16.0 (был 0.14.x)";
         let (file, line, text) = parse_finding_value(value);
         assert_eq!(file.as_deref(), Some("ruff: pyproject.toml dev-group"));

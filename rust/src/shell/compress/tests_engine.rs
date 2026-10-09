@@ -188,7 +188,7 @@ fn chained_git_fetch_preserves_worktree_output() {
     let compressed = super::engine::compress_if_beneficial_pub(cmd, output);
     assert!(
         compressed.contains("worktree") || compressed.contains("Preparing"),
-        "#1130: worktree output must survive chain compression, got: {compressed}"
+        "worktree output must survive chain compression, got: {compressed}"
     );
 }
 
@@ -203,6 +203,6 @@ fn small_output_stays_verbatim() {
     let compressed = super::engine::compress_if_beneficial_pub(cmd, &output);
     assert_eq!(
         compressed, output,
-        "#1129: output under 200 tokens must stay verbatim, got: {compressed}"
+        "output under 200 tokens must stay verbatim, got: {compressed}"
     );
 }

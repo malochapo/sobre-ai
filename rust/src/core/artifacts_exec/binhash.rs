@@ -9,6 +9,11 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
+/// Lowercase hex SHA-256 of a byte buffer.
+pub fn sha256_bytes(bytes: &[u8]) -> String {
+    crate::core::hasher::hex_encode(&Sha256::digest(bytes))
+}
+
 /// Stream-hash a file and return its lowercase hex SHA-256. Streaming (8 KiB
 /// chunks) keeps memory flat regardless of binary size.
 pub fn sha256_file(path: &Path) -> Result<String, String> {

@@ -28,7 +28,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(crate) struct FileFingerprint {
     pub(crate) size: u64,
     pub(crate) mtime_ms: u64,
-    pub(crate) md5: String,
+    pub(crate) hash: String,
 }
 
 /// A file read for editing: its fingerprint, permissions, raw bytes, decoded
@@ -125,7 +125,7 @@ pub(crate) fn fingerprint_from_bytes(bytes: &[u8], meta: &std::fs::Metadata) -> 
     FileFingerprint {
         size: bytes.len() as u64,
         mtime_ms: meta.modified().map_or(0, system_time_to_millis),
-        md5: crate::core::hasher::hash_hex(bytes),
+        hash: crate::core::hasher::hash_hex(bytes),
     }
 }
 
@@ -184,14 +184,14 @@ pub(crate) fn ensure_preimage_still_matches(
     let now = fingerprint_from_bytes(&bytes, &meta);
     if &now != expected {
         return Err(format!(
-            "ERROR: file changed since read (TOCTOU guard). Re-read and retry: {}\nexpected: size={}, mtime_ms={}, md5={}\nactual:   size={}, mtime_ms={}, md5={}",
+            "ERROR: file changed since read (TOCTOU guard). Re-read and retry: {}\nexpected: size={}, mtime_ms={}, hash={}\nactual:   size={}, mtime_ms={}, hash={}",
             path.display(),
             expected.size,
             expected.mtime_ms,
-            expected.md5,
+            expected.hash,
             now.size,
             now.mtime_ms,
-            now.md5
+            now.hash
         ));
     }
     Ok(())
@@ -267,6 +267,6 @@ mod tests {
         let a = read_preimage(&path, cap, false).unwrap().fp;
         let b = read_preimage(&path, cap, false).unwrap().fp;
         assert_eq!(a, b, "same bytes → same fingerprint");
-        assert_eq!(a.md5, crate::core::hasher::hash_hex(b"hello\n"));
+        assert_eq!(a.hash, crate::core::hasher::hash_hex(b"hello\n"));
     }
 }

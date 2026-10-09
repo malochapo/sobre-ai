@@ -69,11 +69,11 @@ fn tool_of_command(command: &str) -> Option<&'static str> {
 
 impl DiagnosticsStore {
     fn load_from_disk() -> Self {
-        let Ok(raw) = std::fs::read_to_string(store_path()) else {
+        let Some(Ok(raw)) = store_path().map(std::fs::read_to_string) else {
             return Self::default();
         };
         let mut store: Self = serde_json::from_str(&raw).unwrap_or_default();
-        store.expire(now_unix());
+        store.expire(crate::core::clock::now_unix());
         store
     }
 
@@ -132,7 +132,7 @@ impl DiagnosticsStore {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        let path = store_path();
+        let path = store_path().ok_or_else(|| std::io::Error::other("no data dir"))?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -143,16 +143,12 @@ impl DiagnosticsStore {
     }
 }
 
-fn store_path() -> PathBuf {
-    crate::core::data_dir::sobre_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join(STORE_FILE)
-}
-
-fn now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
+fn store_path() -> Option<PathBuf> {
+    Some(
+        crate::core::data_dir::sobre_data_dir()
+            .ok()?
+            .join(STORE_FILE),
+    )
 }
 
 fn global() -> &'static Mutex<DiagnosticsStore> {
@@ -240,7 +236,7 @@ fn cap_message(msg: &str) -> String {
 /// Cargo/rustc: severity line (`error[E0308]: ...` / `warning: ...`) followed
 /// by a location line (`  --> src/main.rs:12:5`).
 fn parse_cargo(output: &str) -> Vec<Diagnostic> {
-    let now = now_unix();
+    let now = crate::core::clock::now_unix();
     let mut out = Vec::new();
     let mut pending: Option<(Severity, String)> = None;
 
@@ -287,7 +283,7 @@ fn parse_cargo(output: &str) -> Vec<Diagnostic> {
 /// tsc emits two formats:
 /// `src/a.ts(12,5): error TS2304: ...` and `src/a.ts:12:5 - error TS2304: ...`
 fn parse_tsc(output: &str) -> Vec<Diagnostic> {
-    let now = now_unix();
+    let now = crate::core::clock::now_unix();
     let mut out = Vec::new();
     for line in output.lines() {
         let line = line.trim();
@@ -339,7 +335,7 @@ fn parse_tsc(output: &str) -> Vec<Diagnostic> {
 
 /// eslint (stylish): file header line, then `  12:5  error  msg  rule`.
 fn parse_eslint(output: &str) -> Vec<Diagnostic> {
-    let now = now_unix();
+    let now = crate::core::clock::now_unix();
     let mut out = Vec::new();
     let mut current_file: Option<String> = None;
 
@@ -484,14 +480,14 @@ error: aborting due to 1 previous error
     fn expiry_drops_stale_entries() {
         let mut store = DiagnosticsStore::default();
         store.replace_for_tool("cargo", parse_cargo(CARGO_OUT));
-        store.expire(now_unix() + TTL_SECS + 10);
+        store.expire(crate::core::clock::now_unix() + TTL_SECS + 10);
         assert!(store.diagnostics.is_empty());
     }
 
     #[test]
     fn severity_prefers_error_over_warning() {
         let mut store = DiagnosticsStore::default();
-        let now = now_unix();
+        let now = crate::core::clock::now_unix();
         store.replace_for_tool(
             "cargo",
             vec![

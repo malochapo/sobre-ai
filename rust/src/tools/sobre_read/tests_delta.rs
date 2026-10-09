@@ -126,14 +126,14 @@ Content for section {i}."
     );
     assert!(
         !cache.is_full_delivered(&p),
-        "full_content_delivered must be cleared after a non-full read (#841)"
+        "full_content_delivered must be cleared after a non-full read"
     );
 
     // 3. Full read -- must re-deliver actual content, NOT the [unchanged] stub.
     let full2 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
     assert!(
         !full2.content.contains("[unchanged"),
-        "full read after a task read must deliver the body, not stub (#841): {}",
+        "full read after a task read must deliver the body, not stub: {}",
         full2.content
     );
     assert!(

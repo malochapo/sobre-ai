@@ -14,7 +14,8 @@ pub use runtime::record_shell_outcome;
 
 use chrono::Utc;
 use detect::command_base;
-use model::{DECAY_ARCHIVE_THRESHOLD, MAX_GOTCHAS, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
+pub(crate) use model::MAX_GOTCHAS;
+use model::{DECAY_ARCHIVE_THRESHOLD, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
 
 impl GotchaStore {
     // -- Detection ----------------------------------------------------------

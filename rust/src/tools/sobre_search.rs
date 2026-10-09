@@ -1078,7 +1078,7 @@ mod tests {
         });
         let out = rx
             .recv_timeout(Duration::from_secs(5))
-            .expect("sobre_search hung on a FIFO (#336 regression)");
+            .expect("sobre_search hung on a FIFO (regression)");
 
         assert!(
             out.contains("real.txt"),

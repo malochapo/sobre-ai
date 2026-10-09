@@ -630,6 +630,20 @@ pub fn try_specific_pattern(cmd: &str, output: &str) -> Option<String> {
         .and_then(|(_, handle)| handle(c, output))
 }
 
+/// The non-empty lines of `text`, capped at `max` with a "... (N more lines)"
+/// tail. Shared by the per-tool patterns.
+pub(crate) fn compact_lines(text: &str, max: usize) -> String {
+    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
+    if lines.len() <= max {
+        return lines.join("\n");
+    }
+    format!(
+        "{}\n... ({} more lines)",
+        lines[..max].join("\n"),
+        lines.len() - max
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -32,7 +32,7 @@ pub fn run() {
 
     let enters_mcp = args.len() == 1 || args.get(1).is_some_and(|a| a == "mcp");
     if !enters_mcp {
-        crate::core::logging::init_logging();
+        crate::core::logging::init_logging("warn");
     }
 
     if args.len() > 1 {

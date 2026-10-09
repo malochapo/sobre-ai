@@ -152,7 +152,7 @@ pub fn reexec_under_seatbelt_if_needed() {
         .args(&args)
         .env(SEATBELT_SENTINEL, "1")
         .exec();
-    tracing::warn!("#356 seatbelt re-exec failed, continuing unwrapped: {err}");
+    tracing::warn!("seatbelt re-exec failed, continuing unwrapped: {err}");
 }
 
 /// `true` if `sandbox-exec` exists and successfully runs a no-op under

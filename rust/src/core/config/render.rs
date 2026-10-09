@@ -228,7 +228,7 @@ mod tests {
 
         assert_eq!(
             actual, expected,
-            "render → parse must reproduce the config exactly (#443)"
+            "render → parse must reproduce the config exactly"
         );
     }
 
@@ -258,7 +258,7 @@ mod tests {
         let first = render_annotated_config(&cfg, &schema);
         let second = render_annotated_config(&cfg, &schema);
 
-        assert_eq!(first, second, "render must be deterministic (#498)");
+        assert_eq!(first, second, "render must be deterministic");
         assert!(first.contains("# sobre configuration"));
         assert!(
             first.contains("search_roots"),

@@ -1,5 +1,3 @@
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::path::Path;
 
 /// Computes a composite hash from the project root path and any detected
@@ -16,24 +14,22 @@ pub(crate) fn hash_project_root(root: &str) -> String {
     // other. `normalize_tool_path` is a no-op for clean POSIX
     // paths, so non-Windows hashes are unaffected.
     let root = crate::core::pathutil::normalize_tool_path(root);
-    let mut hasher = DefaultHasher::new();
-    root.hash(&mut hasher);
+    composite_hash(&root, project_identity(&root).as_deref())
+}
 
-    if let Some(identity) = project_identity(&root) {
-        identity.hash(&mut hasher);
+/// Short BLAKE3 of a normalized root and its identity marker, if any.
+fn composite_hash(root: &str, identity: Option<&str>) -> String {
+    match identity {
+        Some(identity) => crate::core::hasher::hash_short(&format!("{root}\n{identity}")),
+        None => crate::core::hasher::hash_short(root),
     }
-
-    format!("{:016x}", hasher.finish())
 }
 
 /// Path-only hash (no identity markers), the baseline the composite hash
 /// must differ from when an identity exists.
 #[cfg(test)]
 fn hash_path_only(root: &str) -> String {
-    let root = crate::core::pathutil::normalize_tool_path(root);
-    let mut hasher = DefaultHasher::new();
-    root.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    crate::core::hasher::hash_short(&crate::core::pathutil::normalize_tool_path(root))
 }
 
 /// Extracts a stable project identity string from well-known config files.
@@ -302,20 +298,10 @@ mod tests {
         )
         .unwrap();
 
-        let hash_a = {
-            let mut hasher = DefaultHasher::new();
-            shared_path.hash(&mut hasher);
-            let id = project_identity(dir_a.path().to_str().unwrap()).unwrap();
-            id.hash(&mut hasher);
-            format!("{:016x}", hasher.finish())
-        };
-        let hash_b = {
-            let mut hasher = DefaultHasher::new();
-            shared_path.hash(&mut hasher);
-            let id = project_identity(dir_b.path().to_str().unwrap()).unwrap();
-            id.hash(&mut hasher);
-            format!("{:016x}", hasher.finish())
-        };
+        let id_a = project_identity(dir_a.path().to_str().unwrap());
+        let hash_a = composite_hash(shared_path, id_a.as_deref());
+        let id_b = project_identity(dir_b.path().to_str().unwrap());
+        let hash_b = composite_hash(shared_path, id_b.as_deref());
 
         assert_ne!(
             hash_a, hash_b,

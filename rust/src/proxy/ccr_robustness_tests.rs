@@ -164,7 +164,7 @@ fn read_stub_bookkeeping_survives_restart_without_storing_content() {
         std::fs::read_to_string(dir.path().join("read_cache").join("stub_index.json")).unwrap();
     assert!(
         !on_disk.contains(secret),
-        "the index must hold bookkeeping only, never file content (#955)"
+        "the index must hold bookkeeping only, never file content"
     );
     rsi::clear_for_test();
 }

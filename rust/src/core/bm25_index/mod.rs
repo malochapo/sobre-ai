@@ -581,7 +581,7 @@ impl BM25Index {
             );
         }
 
-        let dir = index_dir(root);
+        let dir = index_dir(root).ok_or_else(|| std::io::Error::other("no data dir"))?;
         std::fs::create_dir_all(&dir)?;
 
         // Stream postcard → zstd → file to avoid holding the full
@@ -630,7 +630,7 @@ impl BM25Index {
     }
 
     pub fn load(root: &Path) -> Option<Self> {
-        let dir = index_dir(root);
+        let dir = index_dir(root)?;
         let max_bytes = max_bm25_cache_bytes();
 
         let zst_path = dir.join("bm25_index.bin.zst");
@@ -684,8 +684,8 @@ impl BM25Index {
         built
     }
 
-    pub fn index_file_path(root: &Path) -> PathBuf {
-        index_dir(root).join("bm25_index.bin.zst")
+    pub fn index_file_path(root: &Path) -> Option<PathBuf> {
+        Some(index_dir(root)?.join("bm25_index.bin.zst"))
     }
 
     /// Ingest external `ContentChunk`s into the BM25 index.
@@ -794,7 +794,7 @@ fn bounded_zstd_decode(compressed: &[u8], max_bytes: u64) -> Option<Vec<u8>> {
     Some(buf)
 }
 
-fn index_dir(root: &Path) -> PathBuf {
+fn index_dir(root: &Path) -> Option<PathBuf> {
     crate::core::index_namespace::vectors_dir(root)
 }
 

@@ -2,11 +2,9 @@ mod compaction;
 mod heuristics;
 mod paths;
 mod persistence;
-pub mod playbook;
 mod state;
 mod types;
 
-pub use playbook::Playbook;
 pub use types::{
     Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, PreparedSave, SessionState,
     SessionStats, SessionSummary, TaskInfo,

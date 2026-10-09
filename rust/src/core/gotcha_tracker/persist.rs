@@ -4,8 +4,8 @@ use std::path::PathBuf;
 impl GotchaStore {
     pub fn load(project_root: &str) -> Self {
         let hash = crate::core::project_hash::hash_project_root(project_root);
-        let path = gotcha_path(&hash);
-        if let Ok(content) = std::fs::read_to_string(&path)
+        if let Some(path) = gotcha_path(&hash)
+            && let Ok(content) = std::fs::read_to_string(&path)
             && let Ok(mut store) = serde_json::from_str::<GotchaStore>(&content)
         {
             store.apply_decay();
@@ -26,7 +26,7 @@ impl GotchaStore {
 
     pub fn save(&self, project_root: &str) -> Result<(), String> {
         let hash = crate::core::project_hash::hash_project_root(project_root);
-        let path = gotcha_path(&hash);
+        let path = gotcha_path(&hash).ok_or("no data dir")?;
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -37,12 +37,14 @@ impl GotchaStore {
     }
 }
 
-fn gotcha_path(project_hash: &str) -> PathBuf {
-    crate::core::data_dir::sobre_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("knowledge")
-        .join(project_hash)
-        .join("gotchas.json")
+fn gotcha_path(project_hash: &str) -> Option<PathBuf> {
+    Some(
+        crate::core::data_dir::sobre_data_dir()
+            .ok()?
+            .join("knowledge")
+            .join(project_hash)
+            .join("gotchas.json"),
+    )
 }
 
 #[cfg(test)]

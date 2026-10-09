@@ -294,7 +294,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
             checks.push((
                 "gotchas".to_string(),
                 g.gotchas.len(),
-                policy.gotcha.max_gotchas_per_project,
+                crate::core::gotcha_tracker::MAX_GOTCHAS,
             ));
         }
 
@@ -375,7 +375,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
 /// is behind and the operator should compact it.
 pub(crate) fn capacity_hint(critical: bool, project_root: Option<&str>) -> String {
     if !critical {
-        return "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup #970, 90-day prune #972)".to_string();
+        return "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup, 90-day prune)".to_string();
     }
     let root = project_root.unwrap_or("<project>");
     format!(

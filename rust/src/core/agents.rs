@@ -88,22 +88,31 @@ impl AgentRegistry {
 
     /// Atomically registers this MCP process in the shared on-disk registry.
     pub fn register_mcp_process(project_root: &str) -> Result<String, String> {
-        mutate_persistent(|registry| {
+        Self::mutate_locked(|registry| {
             registry.cleanup_stale(24);
             registry.register("mcp", Some("context-engine"), project_root)
         })
+        .map(|(_, id)| id)
     }
 
     /// Atomically refreshes a registered MCP process heartbeat.
     pub fn heartbeat_persistent(agent_id: &str) -> Result<(), String> {
-        mutate_persistent(|registry| registry.update_heartbeat(agent_id))
+        Self::mutate_locked(|registry| registry.update_heartbeat(agent_id)).map(|_| ())
     }
 
     /// Atomically marks a registered MCP process as finished.
     pub fn finish_persistent(agent_id: &str) -> Result<(), String> {
-        mutate_persistent(|registry| {
+        Self::mutate_locked(|registry| {
             registry.set_status(agent_id, AgentStatus::Finished, Some("connection closed"));
         })
+        .map(|_| ())
+    }
+
+    /// Points an existing entry at the project the session settled on.
+    pub fn set_project_root(&mut self, agent_id: &str, project_root: &str) {
+        if let Some(agent) = self.agents.iter_mut().find(|a| a.agent_id == agent_id) {
+            project_root.clone_into(&mut agent.project_root);
+        }
     }
 
     pub fn update_heartbeat(&mut self, agent_id: &str) {
@@ -213,21 +222,6 @@ impl Default for AgentRegistry {
 fn agents_dir() -> Result<PathBuf, String> {
     let dir = crate::core::data_dir::sobre_data_dir()?;
     Ok(dir.join("agents"))
-}
-
-fn mutate_persistent<T>(mutate: impl FnOnce(&mut AgentRegistry) -> T) -> Result<T, String> {
-    let dir = agents_dir()?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let _lock = FileLock::acquire(&dir.join("registry.lock"))?;
-    let path = dir.join("registry.json");
-    let mut registry = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|content| serde_json::from_str(&content).ok())
-        .unwrap_or_default();
-    let result = mutate(&mut registry);
-    let json = serde_json::to_string_pretty(&registry).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())?;
-    Ok(result)
 }
 
 fn generate_short_id() -> String {
@@ -392,7 +386,7 @@ mod tests {
         assert!(ids.contains(&"live"), "live same-project agent must remain");
         assert!(
             !ids.contains(&"ghost"),
-            "dead-pid agent must be pruned from the active list (#419)"
+            "dead-pid agent must be pruned from the active list"
         );
     }
 

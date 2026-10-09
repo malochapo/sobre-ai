@@ -27,7 +27,6 @@ pub mod memory_capacity;
 pub mod memory_guard;
 pub mod memory_lifecycle;
 pub mod memory_policy;
-pub mod memory_salience;
 pub mod prospective_memory;
 
 // ---------------------------------------------------------------------------
@@ -88,6 +87,7 @@ pub mod spreading_activation;
 // Domain: Session & Handoff
 // ---------------------------------------------------------------------------
 pub mod ccp_session_bundle;
+pub mod clock;
 pub mod session;
 pub mod session_diff;
 

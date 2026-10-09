@@ -988,7 +988,7 @@ mod verbatim_classification_tests {
     fn compound_cd_then_cat_is_verbatim() {
         assert!(
             is_verbatim_output("cd /repo && cat file.yaml"),
-            "cd && cat must be verbatim (#980)"
+            "cd && cat must be verbatim"
         );
     }
 

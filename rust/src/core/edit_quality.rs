@@ -164,12 +164,6 @@ impl EditQualityStore {
     }
 }
 
-fn now_unix() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
-}
-
 fn global() -> &'static Mutex<EditQualityStore> {
     STORE.get_or_init(|| Mutex::new(EditQualityStore::default()))
 }
@@ -232,7 +226,7 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
     if success {
         store.record_success(&ext, last_mode);
     } else {
-        let now = now_unix();
+        let now = crate::core::clock::now_unix();
         store.record_failure(&ext, last_mode, now);
         if last_mode != esc.target_mode() {
             let norm = crate::core::pathutil::normalize_tool_path(path);
@@ -260,7 +254,7 @@ fn consume_escalation(path: &str, anchored: bool) -> bool {
     let Ok(mut store) = global().lock() else {
         return false;
     };
-    let now = now_unix();
+    let now = crate::core::clock::now_unix();
     if anchored {
         store.take_pending_anchored_escalation(&norm, now)
     } else {

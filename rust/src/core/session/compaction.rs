@@ -114,14 +114,6 @@ impl SessionState {
             ));
         }
 
-        // ACE playbook: restore the delta log (top entries by
-        // salience, stable IDs) so resumed sessions keep accumulated
-        // strategies/pitfalls without re-summarization loss.
-        let playbook_block = self.playbook.render(12);
-        if !playbook_block.is_empty() {
-            lines.push(playbook_block.trim_end().to_string());
-        }
-
         lines.join("\n")
     }
 

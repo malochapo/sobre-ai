@@ -107,7 +107,7 @@ fn codex_home_with_auth(auth_json: &str) -> (tempfile::TempDir, std::path::PathB
 }
 
 #[test]
-fn proxy_enable_respects_codex_auth_mode_554() {
+fn proxy_enable_respects_codex_auth_mode() {
     // An explicit CODEX_API_KEY forces API-key mode regardless of auth.json, which
     // would invalidate the ChatGPT-login halves of this test.
     if std::env::var("CODEX_API_KEY").is_ok_and(|v| !v.trim().is_empty()) {
@@ -141,7 +141,7 @@ fn proxy_enable_respects_codex_auth_mode_554() {
         let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
         assert!(
             !cfg.contains("model_provider = \"sobre-chatgpt\""),
-            "a ChatGPT login must stay native — no model_provider pin (#597), got:\n{cfg}"
+            "a ChatGPT login must stay native — no model_provider pin, got:\n{cfg}"
         );
         assert!(
             !cfg.contains("chatgpt_base_url"),

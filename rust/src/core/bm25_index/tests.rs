@@ -471,7 +471,7 @@ fn save_writes_project_root_marker() {
     let index = BM25Index::build_from_directory(root);
     index.save(root).expect("save");
 
-    let dir = crate::core::index_namespace::vectors_dir(root);
+    let dir = crate::core::index_namespace::vectors_dir(root).expect("data dir");
     let marker = dir.join("project_root.txt");
     assert!(marker.exists(), "project_root.txt marker should exist");
     let content = std::fs::read_to_string(&marker).expect("read marker");
@@ -499,7 +499,7 @@ fn save_load_roundtrip_uses_zstd() {
     assert!(index.doc_count > 0, "should have indexed chunks");
     index.save(root).expect("save");
 
-    let dir = crate::core::index_namespace::vectors_dir(root);
+    let dir = crate::core::index_namespace::vectors_dir(root).expect("data dir");
     let zst = dir.join("bm25_index.bin.zst");
     assert!(zst.exists(), "should write .bin.zst");
 
