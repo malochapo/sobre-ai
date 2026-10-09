@@ -2,7 +2,9 @@
 
 ## Goal
 
-Make graph-driven tooling **reproducible** (CI/proofs), **deterministic** (stable ordering), **bounded** (output caps), and **safe-by-default**.
+`sobre_graph` answers are **deterministic** (stable ordering), **bounded**
+(capped lists) and built from a graph that is **current** when the answer is
+given.
 
 This contract covers:
 
@@ -17,11 +19,14 @@ This contract covers:
 
 ## Build triggers & freshness
 
-### Auto-build (zero-config)
+### Automatic build
 
-- Tools **may** auto-build the property graph when it is missing/empty:
-  - `sobre_graph action=impact|changes` (auto-build if empty or built by an
-    older engine)
+- Every `sobre_graph` action except `build` and `status` opens the graph
+  through `open_or_build` (`rust/src/core/graph_provider.rs`): it builds the
+  graph when there is none, and rebuilds it first when it is stale (a file's
+  content changed since the build, or the build is older than 48 hours).
+- A build that takes longer than 30 s goes on in the background; the action
+  then says the graph is not ready yet.
 
 ### Explicit rebuild
 
@@ -41,19 +46,21 @@ This contract covers:
 
 ### Freshness check
 
-- `sobre_graph action=status` reports whether the graph looks **fresh** or **stale**.
+- `sobre_graph action=status` reports whether the graph looks **fresh** or
+  **stale**, or **unknown** when the build recorded no metadata.
 - Staleness is determined by comparing build metadata (git head/dirty) to current repo state when available.
 
 ## Determinism (MUST)
 
-Same repo snapshot + same policies ⇒ same **logical outputs** (stable ordering + stable truncation).
+Same repo snapshot ⇒ same **logical outputs** (stable ordering + stable truncation).
 
 Rules:
 
 - File enumeration during `build` is **sorted** lexicographically (relative paths).
 - Resolved import targets are **sorted + deduplicated** before inserting edges.
 - Traversal adjacency lists are **sorted + deduplicated** (BFS/DFS becomes deterministic).
-- Output lists are **stable-sorted**, then **truncated** with explicit `truncated` markers.
+- The `impact` and `changes` file lists are **stable-sorted**, then
+  **truncated** with an explicit `truncated` flag.
 
 ## Output format (tools)
 
@@ -73,12 +80,10 @@ When `format=json`:
 
 ## Boundedness (MUST)
 
-`sobre_graph action=impact` affected-file lists are capped by `IMPACT_AFFECTED_FILES_LIMIT`
-(`rust/src/core/budgets.rs`) to prevent DoS/token-burn. `sobre_graph` outputs
-are not budgeted.
+The `impact` and `changes` affected-file lists are capped by
+`IMPACT_AFFECTED_FILES_LIMIT` (200, `rust/src/core/budgets.rs`). Other
+`sobre_graph` outputs have no cap.
 
-## Security & privacy
+## Storage
 
-- Graph DB + meta are written **only** under `<data_dir>/graphs/<project_hash>/`.
-- No secrets must appear in graph artifacts, logs, or exports.
-
+Graph DB + meta are written **only** under `<data_dir>/graphs/<project_hash>/`.

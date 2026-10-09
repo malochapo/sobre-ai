@@ -20,7 +20,7 @@ accessor function.
 | L2 | per-project `ProjectBuild` | `core/index_orchestrator.rs` (inner) | `Arc<Mutex<ProjectBuild>>` | Individual project build progress |
 | L4 | `Config::CACHE` | `core/config/loader.rs` (fn-local in `Config::load_arc`) | `Mutex<Option<(Arc<Config>, Option<String>)>>` | Shared config plus the content hash of the file it was built from; rebuilt only when the hash changes |
 | L17 | `FILE_LOCKS` | `core/path_locks.rs` (fn-local in `per_file_lock`) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-file serialization of reads and edits for concurrent subagents |
-| L22 | `BACKENDS` | `lsp/router.rs` | `LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>>` | Per-language language-server client registry; on a miss the client is started from the built-in server table while the lock is held. Independent leaf lock |
+| L22 | `BACKENDS` | `lsp/router.rs` | `LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>>` | Language-server clients, one per language and project root; on a miss the client is started from the built-in server table while the lock is held, and each request runs under it. Independent leaf lock |
 | L27 | `CACHE` (git) | `core/git_cache.rs` | `LazyLock<Mutex<GitCache>>` | Cached git metadata (branch, status) |
 | L33 | `CACHE` (search) | `core/search_index.rs` | `OnceLock<Mutex<HashMap<String, CacheEntry>>>` | Search index query cache |
 | L38 | `GLOBAL_TRACKER` | `core/bounce_tracker.rs` | `OnceLock<Mutex<BounceTracker>>` | Tracks repeated tool-call bounces |
@@ -32,7 +32,7 @@ accessor function.
 | L58 | `STORE` (conversation) | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Option<Cached>>>` | Cached current conversation id with its refresh instant; independent leaf lock, never held together with L57 |
 | L62 | `TARGETS` | `core/eviction_orchestrator.rs` | `LazyLock<Mutex<EvictionRegistry>>` | Registry of live `EvictionOrchestrator` weak refs: `register()`/`on_memory_pressure()` lock it only to clone/upgrade the target list, then drop it before calling `on_pressure()` on each target; never held while any other lock is acquired |
 | L66 | `JOBS` | `server/background_shell.rs` | `LazyLock<Mutex<HashMap<String, Job>>>` | Content-addressed background shell jobs; held only to insert, inspect, or remove a job, released before executing or joining its worker thread; independent leaf lock |
-| L67 | `BUILD_GATE` | `core/graph_provider.rs` | `LazyLock<Mutex<()>>` | Serializes synchronous graph-index builds; acquired with `try_lock()` and held only while the spawned builder is awaited |
+| L67 | `BUILD_GATE` | `core/graph_provider.rs` | `LazyLock<Mutex<()>>` | Serializes synchronous graph-index builds; acquired with a `try_lock()` loop (30s deadline) and held only while the spawned builder is awaited |
 | L87 | `CACHE` (ANN) | `core/ann_cache.rs` (fn-local) | `OnceLock<Mutex<Option<Cached>>>` | Cached approximate-nearest-neighbour index keyed by a vector fingerprint; independent leaf lock |
 | L88 | `CACHE` (content) | `core/content_cache.rs` | `OnceLock<Mutex<Cache>>` | Bounded file-content cache shared by the search-index build and `sobre_search`, validated by `(mtime, size)`; independent leaf lock |
 | L89 | `STORE` (diagnostics) | `core/diagnostics_store.rs` | `OnceLock<Mutex<DiagnosticsStore>>` | Active compiler/linter diagnostics (TTL- and size-bounded) used as a context-priority signal; independent leaf lock |
@@ -110,54 +110,52 @@ never held simultaneously. L41 (`KNOWLEDGE_LOCKS`) follows the same pattern.
 
 ### Per-file Path Lock (L17)
 
-L17 lives in the shared `core::path_locks` registry (`per_file_lock`) and is used by **both**
-`sobre_read` (`tools/registered/sobre_read.rs`) and the edit path, `sobre_patch`
-(`tools/registered/sobre_patch.rs`, `tools/sobre_patch/`; its `replace_unique` op runs through the
-string-replacement engine in `tools/registered/impl_edit.rs` and `tools/impl_edit.rs`). The outer `Mutex<HashMap>` is held
-briefly to clone the per-path `Arc<Mutex<()>>`, then dropped before the per-file lock is
-acquired. The per-file lock is acquired before the session cache lock. This serializes
-concurrent operations on the *same* path; operations on different files proceed independently.
+L17 lives in the shared `core::path_locks` registry (`per_file_lock`) and is used by
+`sobre_read` (`tools/registered/sobre_read.rs`), by `sobre_patch`
+(`tools/registered/sobre_patch.rs`: the anchored ops in `tools/sobre_patch/`, `replace_unique` and
+`replace_all` through the string-replacement engine in `tools/impl_edit.rs`), and by the symbol
+edits of `sobre_refactor` and `sobre_patch op=replace_symbol` (`lsp/edit_apply.rs`). The outer
+`Mutex<HashMap>` is held briefly to clone the per-path `Arc<Mutex<()>>`, then dropped before the
+per-file lock is acquired. The per-file lock is acquired before the session cache lock. This
+serializes concurrent operations on the *same* path; operations on different files proceed
+independently.
 
-**Edit path:** `sobre_patch` acquires the L17 per-file lock (bounded `try_lock()` loop, 30s
-deadline) and then performs **all** disk I/O — read preimage, apply, TOCTOU recheck, atomic
-rename — *without* holding the session cache write-lock. The cache lock is taken only twice,
-each briefly and with a 5s timeout: a shared `read()` to fetch the recorded read mode before the
-I/O, and an exclusive `write()` to apply the deferred `CacheEffect` (invalidate / store-full)
-after the I/O. Same-file edit correctness is guaranteed by the TOCTOU preimage guard plus the
-atomic temp-file rename inside `run_io`, not by the cache lock. The `replace_all` operation
-holds the per-file lock with a blocking `lock()` for the write, then invalidates the cache
-entry under a brief write lock (2s timeout).
+**Edit path (`sobre_patch`, `locked_edit`):** acquires the L17 per-file lock (bounded
+`try_lock()` loop, 30s deadline) and then performs **all** disk I/O — read preimage, apply,
+TOCTOU recheck, atomic rename — *without* holding the session cache lock. The cache lock is
+taken only twice, each briefly and with a 5s timeout: a shared `read()` to fetch the recorded
+read mode before the I/O, and an exclusive `write()` to apply the deferred `CacheEffect`
+(invalidate / store-full) after the I/O. After a write, the session lock is taken (5s timeout)
+to mark the file modified. Same-file edit correctness is guaranteed by the TOCTOU preimage
+guard plus the atomic temp-file rename inside `run_io`, not by the cache lock.
 
-**Read path (spawned thread):** `sobre_read`'s slow path runs in a spawned thread:
+**Symbol edits (`lsp/edit_apply.rs`):** hold the per-file lock with a blocking `lock()` for the
+read-check-write of one range; no cache or session lock is taken there.
 
-1. **Phase 1 (shared lock):** Try the `[unchanged]` stub under `cache.try_read()`; on a hit,
-   return without taking the write lock.
-2. **Phase 2a (no lock):** Disk I/O (`read_file_lossy`) under the per-file lock only, *without*
-   the cache lock.
-3. **Phase 2b-i (brief write lock, 10s deadline):** prepare cache state, resolve the mode,
-   check for hits.
-4. **Phase 2b-ii (no lock):** heavy computation (parsing, compression, redaction).
-5. **Phase 2b-iii (brief write lock, 5s deadline):** store the result and metadata; on timeout
-   the result is returned without caching.
+**Read path (`sobre_read`, `read_through_cache`):** before it, the session lock is read
+(`try_read_owned()` loop, 8s deadline) for the session's task and released. Then, on the
+blocking pool where the handler runs:
 
-**Bounded waits:** lock acquisitions inside the spawned thread use `try_lock()`/`try_write()`
-loops with deadlines, inside a 30s `recv_timeout` guard. When `recv_timeout` fires, a
-cancellation flag is set so the thread exits promptly instead of holding locks.
+1. **Per-file lock:** `try_lock()` loop, 25s deadline.
+2. **Shared cache lock:** try the `[unchanged]` stub under `cache.try_read()`; on a hit, return
+   without taking the write lock.
+3. **Cache write lock (10s deadline):** `prepare` — cache lookup, the disk read and every mode
+   that needs no rendering.
+4. **No cache lock:** render a compressed view (parsing, compression).
+5. **Cache write lock (5s deadline):** store the result and metadata; on timeout the result is
+   returned without caching.
+
+After the per-file and cache locks are released, the session lock is taken for writing (10s
+timeout) to record the read.
 
 ```
-thread::spawn {
-    L17 outer (FILE_LOCKS map)        — held briefly to clone Arc, then dropped
-     └─► L17 inner (per-file Mutex)   — try_lock() with deadline
-          ├─► Phase 1:   cache.try_read()  — stub hit? → return early
-          ├─► Phase 2a:  read_file_lossy() — disk I/O, NO cache lock
-          ├─► Phase 2b-i:   cache.try_write() — brief prepare
-          ├─► Phase 2b-ii:  compute            — NO cache lock
-          └─► Phase 2b-iii: cache.try_write() — brief store
-}
+L17 outer (FILE_LOCKS map)        — held briefly to clone Arc, then dropped
+ └─► L17 inner (per-file Mutex)   — try_lock() with deadline
+      ├─► cache.try_read()        — stub hit? → return early
+      ├─► cache write (≤10s)      — prepare: lookup, disk read
+      ├─► render                  — NO cache lock
+      └─► cache write (≤5s)       — store
 ```
-
-The inline fast path (no thread) keeps the Phase 1 read-lock stub check and otherwise calls
-`handle_with_task_resolved_tuned` under the write lock.
 
 ### Worker Thread Tuning
 

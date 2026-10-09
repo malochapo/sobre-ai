@@ -5,10 +5,9 @@ description: How to work through sobre's sobre_* MCP tools — orienting in a co
 
 # sobre
 
-sobre is a local MCP server and CLI that answers file, search and
-shell requests with the smallest output that still does the job. Everything
-runs on this machine. Native tools keep working; the sobre_* tools are cheaper
-when they fit.
+sobre is a local MCP server and CLI that aims to answer file, search and
+shell requests with less output. Everything runs on this machine. Native tools
+keep working; prefer the sobre_* tools when they fit.
 
 ## Orient before reading
 
@@ -33,11 +32,11 @@ when they fit.
 | `anchored` | full text with `N:hash` anchors for `sobre_patch` |
 | `lines:N-M` | a window (`lines:5,10-20` for several) |
 | `diff` | what changed since this session last read the file |
-| `task` | the parts relevant to a task |
+| `task` | the parts relevant to the session's task (`sobre_session action=task`) |
 | `raw=true` | the bytes on disk: no cache, framing or redaction |
 
-Re-reading an unchanged file returns a short stub (~13 tokens); pass
-`fresh=true` to force the content again.
+Re-reading an unchanged file returns a one-line `[unchanged]` stub; pass
+`fresh=true` to get the content again.
 
 ## Search
 
@@ -66,20 +65,23 @@ is not understanding more.
    (`name`, `new_text`) for a whole function or type. `op="create"` writes a
    new file. `ops=[...]` applies several edits, across files if needed;
    `dry_run=true` shows the diff and writes nothing.
-3. `CONFLICT` means the file changed under you: read it again.
+3. `CONFLICT` means those lines changed: the current ones come back with fresh
+   anchors to retry with.
 
-Native Read → Edit also works. `sobre_refactor` finds references and
-definitions through the language server, and previews a rename (it writes
-nothing; apply the edits with `sobre_patch`). `sobre_checkpoint` snapshots your changes in a
-history separate from the user's git, and can restore them.
+Native Read → Edit also works. `sobre_refactor` finds references, definitions
+and implementations through the language server, and previews a rename (the
+preview writes nothing; apply its edits with `sobre_patch`). `sobre_checkpoint`
+snapshots your changes in a history separate from the user's git, and can
+restore them.
 
 ## Shell
 
-- `sobre_shell(command)` compresses build, test and log output; errors carry
-  `[exit:N]` and are never dropped.
+- `sobre_shell(command)` compresses build, test and log output; a failed
+  command ends with `[exit:N]`.
 - Long jobs: `run_in_background=true` returns a `job_id`; check it with
   `sobre_shell(background_action="status", job_id=...)`, stop it with
-  `background_action="cancel"`.
+  `background_action="cancel"`. A command still running after about 110 s
+  moves to the background the same way.
 - sobre runs every command as given; what may run is your host's decision.
 - Multi-line scripts: write them to a file, then run the file.
 - Where the host supports hooks, the output of your native shell commands may

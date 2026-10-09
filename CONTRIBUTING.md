@@ -1,21 +1,18 @@
 # Contributing
 
-`sobre` is a personal project under active reduction. It is not looking for
-feature contributions right now, and most of the work in flight is *removing*
-code rather than adding it. If you have found a bug, an issue is welcome.
+`sobre` is a small personal project and is not looking for feature
+contributions. If you have found a bug, an issue is welcome. Any change is held
+to the rules in [INVARIANTS.md](INVARIANTS.md).
 
 There is no CLA. Contributions are under Apache-2.0, like the rest of the
 repository.
 
 ## Working in this codebase
 
-The code is inherited from a much larger product and is being cut down. Two
-consequences shape every change:
+Two rules shape every change:
 
-**Names lie.** A module called `addons` held artifact-execution infrastructure,
-not a marketplace. A file called `cheatsheet_cmd.rs` held the implementation of
-an unrelated live command. Read what a thing does before acting on what it is
-called.
+**Names lie.** A module's name can say less than what it holds, or something
+else. Read what a thing does before acting on what it is called.
 
 **The compiler is the only reliable oracle.** Grep decides what to *attempt*;
 only the compiler decides whether it worked.
@@ -28,7 +25,10 @@ cargo check --all-targets --features dense # with local embeddings
 
 CI checks both builds. The one local gate that mirrors it is
 `scripts/preflight.sh` (fmt, clippy on both builds, rustdoc, generated docs,
-file size); `scripts/preflight.sh full` adds the whole test suite. The git
+file size); `scripts/preflight.sh full` adds the whole test suite and the
+library tests of the build with embeddings. CI also checks dependency licences
+and advisories with cargo-deny (`rust/deny.toml`), which the script does not:
+run `cargo deny check` from `rust/` for that. The git
 hooks are opt-in: `make setup-hooks` points git at `.githooks/`, whose
 pre-commit checks formatting and whose pre-push runs `scripts/preflight.sh`
 (`SKIP_PREFLIGHT=1 git push` skips it).
@@ -59,19 +59,30 @@ Run the whole thing, not `--lib`. The library tests are the bulk of the count,
 but a good deal of behaviour is pinned by the integration suites under
 `rust/tests/`, and `--lib` never touches them.
 
-The suite is green on Linux, macOS and Windows, and every pull request into
-`develop` or `main` must keep it so. A failure is a real failure: fix it, never
-skip it.
+Every pull request into `develop` or `main` must keep the suite green on Linux,
+macOS and Windows. A failure is a real failure: fix it, never skip it.
+
+## Contracts
+
+Each file in `docs/contracts/` is listed, with its status, in
+`core::contracts::contract_docs()`. A frozen one (`usage-ledger-v1.md`) does
+not change: a new version goes in a new `-v2.md` file. A typo fix in a frozen
+file updates `docs/contracts/frozen-hashes.json`:
+
+```bash
+cd rust && SOBRE_UPDATE_FROZEN_HASHES=1 cargo test --test main contracts_frozen
+```
 
 ## Removing code
 
-Most changes here are deletions. What works:
+What works:
 
 1. **Neutralise behaviour first, keep the shape.** Make the function return the
    constant it now always returns, leave its signature alone. This compiles
    immediately and reaches the intended behaviour.
 2. **Let the compiler enumerate what died.** Note that `dead_code` does not see
-   `pub` items re-exported from `lib.rs`, so it will not find everything.
+   `pub` items, and the modules in `lib.rs` are `pub`, so it will not find
+   everything.
 3. **Cut, with an assertion on the block's bounds.** Pattern-based bulk edits
    silently eat the wrong lines; assert on the first and last line of what you
    are deleting.

@@ -8,7 +8,7 @@ history of consolidations) that is:
 - **bounded**: stores and outputs have fixed caps,
 - **deterministic**: stable ordering and stable semantics,
 - **replayable**: a replaced value stays reachable (`recall as_of`),
-- **safe**: no secret leakage; surfaces are policy-gated.
+- **redacted**: a value is scanned for secrets before it is stored.
 
 ## Version
 
@@ -48,11 +48,11 @@ their defaults are in the same file. None of it is configurable.
 ### Facts
 
 - A fact is addressed by `(category, key)`.
-- Current vs archived:
+- Current vs superseded:
   - current: `valid_until == None`
-  - archived: `valid_until != None`
-- An update must not lose the previous state: `recall` with `as_of` returns
-  the version valid at that date, archived or current.
+  - superseded: `valid_until != None`
+- An update keeps the previous state: while a superseded version is still in
+  the store, `recall` with `as_of` returns the version valid at that date.
 
 ### Contradictions
 
@@ -80,13 +80,21 @@ deterministic and bounded (`rust/src/core/memory_lifecycle.rs`), parameterised
 by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
 `similarity_threshold` and `max_facts`.
 
-### Lossless eviction (MUST)
+### Eviction and archives
 
-- **No hard drop.** Every store (facts, history) evicts
-  only through the capacity manager
-  (`rust/src/core/memory_capacity.rs::reclaim_store`). The evicted tail is
-  archived **before** removal. Facts are archived at
-  `memory/archive/archive-*.json`; history under
+- **Capacity reclaim.** A store (facts, history) over its cap goes through
+  the capacity manager (`rust/src/core/memory_capacity.rs::reclaim_store`),
+  which archives the evicted tail **before** removing it: when the archive
+  cannot be written, nothing is removed.
+- **Lifecycle compaction** (`rust/src/core/memory_lifecycle.rs::run_lifecycle`)
+  removes facts of low confidence, stale facts, and facts never retrieved for
+  `prune_unretrieved_after_days`, then archives them; a failed archive write
+  is ignored.
+- **Consolidation** merges near-duplicate current facts of one category
+  (word similarity at least `similarity_threshold`): the lower-confidence one
+  is dropped without an archive, its confirmations added to the one kept.
+- Facts are archived at `memory/archive/archive-*.json`, shared by every
+  project; history under
   `memory/archive/<store>/<project-hash>/archive-*.json`
   (`rust/src/core/memory_archive.rs`).
 - **One formula plus hysteresis.** `reclaim_target(max, reclaim_headroom_pct)`
@@ -97,8 +105,8 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
   facts by `is_current` then output ranking, history newest first.
 - **Archive reachability.** `ArchiveConfig::default()` sets both `max_files`
   and `rehydrate_reach` to 16, so every retained facts archive is reachable:
-  a `recall` that matches no current fact brings matching archived facts
-  back.
+  a `recall` that matches no current fact brings up to 3 matching archived
+  facts back into the current project, whichever project archived them.
 
 ## Tool surface
 
@@ -111,6 +119,6 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
 
 ## Security & privacy
 
-- No secrets in knowledge, artifacts or logs; redaction and path boundaries
-  apply to memory I/O as well.
-- Outputs are bounded so policies do not cause token burn.
+- `remember` scans a value for secrets and redacts them before storing it
+  (`rust/src/tools/sobre_knowledge/remember.rs`).
+- Recall outputs are capped by `recall_facts_limit`.
