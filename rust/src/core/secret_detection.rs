@@ -1,3 +1,10 @@
+//! Secret detection: which secret shapes a text holds, and the same text with
+//! them masked.
+//!
+//! [`scan_and_redact`] masks everything [`crate::core::redaction::redact_text`]
+//! masks, plus quoted key/value secrets of 20 characters or more; what it
+//! returns alongside names each shape it found.
+
 use std::sync::OnceLock;
 
 use regex::Regex;
@@ -15,23 +22,24 @@ pub struct SecretMatch {
 }
 
 fn aws_key_re() -> &'static Regex {
-    static_regex!(r"AKIA[0-9A-Z]{16}")
+    static_regex!(r"\bAKIA[0-9A-Z]{16}")
 }
 
-fn private_key_re() -> &'static Regex {
-    static_regex!(r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----")
+/// The BEGIN line of any PEM or PGP private key.
+pub(crate) fn private_key_re() -> &'static Regex {
+    static_regex!(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----")
 }
 
 fn github_token_re() -> &'static Regex {
-    static_regex!(r"gh[ps]_[A-Za-z0-9_]{36,}")
+    static_regex!(r"\bgh[ps]_[A-Za-z0-9_]{36,}")
 }
 
 fn anthropic_key_re() -> &'static Regex {
-    static_regex!(r"sk-ant-[A-Za-z0-9_\-]{20,}")
+    static_regex!(r"\bsk-ant-[A-Za-z0-9_\-]{20,}")
 }
 
 fn openai_key_re() -> &'static Regex {
-    static_regex!(r"sk-[A-Za-z0-9]{20,}")
+    static_regex!(r"\bsk-[A-Za-z0-9]{20,}")
 }
 
 // Word boundaries for the generic key/value patterns: the keyword must
@@ -52,46 +60,58 @@ fn high_entropy_b64_re() -> &'static Regex {
 }
 
 fn gitlab_pat_re() -> &'static Regex {
-    static_regex!(r"glpat-[A-Za-z0-9_\-]{20,}")
+    static_regex!(r"\bglpat-[A-Za-z0-9_\-]{20,}")
 }
 
 fn jwt_re() -> &'static Regex {
-    static_regex!(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}")
+    static_regex!(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}")
 }
 
 fn slack_token_re() -> &'static Regex {
-    static_regex!(r"xox[bpas]-[0-9a-zA-Z\-]{10,}")
+    static_regex!(r"\bxox[bpas]-[0-9a-zA-Z\-]{10,}")
 }
 
 fn stripe_key_re() -> &'static Regex {
-    static_regex!(r"[sr]k_live_[0-9a-zA-Z]{10,}")
+    static_regex!(r"\b[sr]k_live_[0-9a-zA-Z]{10,}")
 }
 
 fn db_url_re() -> &'static Regex {
-    static_regex!(r"(?:postgres|mysql|mongodb|redis)://[^\s]+:[^\s]+@")
+    static_regex!(r"\b(?:postgres|mysql|mongodb|redis)://[^\s]+:[^\s]+@")
 }
 
 fn npm_token_re() -> &'static Regex {
-    static_regex!(r"npm_[A-Za-z0-9]{10,}")
+    static_regex!(r"\bnpm_[A-Za-z0-9]{10,}")
 }
 
 fn github_fine_grained_re() -> &'static Regex {
-    static_regex!(r"github_pat_[A-Za-z0-9_]{20,}")
+    static_regex!(r"\bgithub_pat_[A-Za-z0-9_]{20,}")
 }
 
-const BUILTIN_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
+/// Secrets recognised by their own shape (a vendor prefix, a URL with
+/// credentials), whatever key they are assigned to: `(name, label, regex)`.
+/// The whole match is the secret. [`crate::core::redaction::redact_text`]
+/// masks each one as `[REDACTED:<label>]`.
+pub(crate) const TOKEN_SHAPES: &[(&str, &str, fn() -> &'static Regex)] = &[
+    (
+        "github_fine_grained",
+        "GitHub token",
+        github_fine_grained_re,
+    ),
+    ("anthropic_key", "Anthropic key", anthropic_key_re),
+    ("openai_key", "OpenAI key", openai_key_re),
+    ("gitlab_pat", "GitLab token", gitlab_pat_re),
+    ("jwt", "JWT", jwt_re),
+    ("slack_token", "Slack token", slack_token_re),
+    ("stripe_key", "Stripe key", stripe_key_re),
+    ("db_url", "Database URL credentials", db_url_re),
+    ("npm_token", "npm token", npm_token_re),
+];
+
+/// Shapes reported by name; `redact_text` masks each of them.
+const DETECTED_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
     ("aws_key", aws_key_re),
     ("private_key", private_key_re),
     ("github_token", github_token_re),
-    ("github_fine_grained", github_fine_grained_re),
-    ("anthropic_key", anthropic_key_re),
-    ("openai_key", openai_key_re),
-    ("gitlab_pat", gitlab_pat_re),
-    ("jwt", jwt_re),
-    ("slack_token", slack_token_re),
-    ("stripe_key", stripe_key_re),
-    ("db_url", db_url_re),
-    ("npm_token", npm_token_re),
 ];
 
 /// Key/value patterns with a kept prefix (group 1) and a guarded value
@@ -113,7 +133,11 @@ fn guarded_match_is_benign(caps: &regex::Captures) -> bool {
 fn collect_matches(content: &str) -> Vec<SecretMatch> {
     let mut matches = Vec::new();
 
-    for &(name, regex_fn) in BUILTIN_PATTERNS {
+    let named = DETECTED_PATTERNS
+        .iter()
+        .copied()
+        .chain(TOKEN_SHAPES.iter().map(|&(name, _, re)| (name, re)));
+    for (name, regex_fn) in named {
         for _ in regex_fn().find_iter(content) {
             matches.push(SecretMatch { pattern_name: name });
         }
@@ -134,20 +158,12 @@ pub fn detect_secrets(content: &str) -> Vec<SecretMatch> {
     collect_matches(content)
 }
 
-/// Detects secrets in `content` and masks each one as `[REDACTED:<pattern>]`.
+/// Detects secrets in `content` and masks them: everything
+/// [`crate::core::redaction::redact_text`] masks, then the guarded key/value
+/// patterns as `[REDACTED:<pattern>]`.
 pub fn scan_and_redact(content: &str) -> (String, Vec<SecretMatch>) {
     let matches = collect_matches(content);
-    if matches.is_empty() {
-        return (content.to_string(), matches);
-    }
-
-    let mut redacted = content.to_string();
-    for &(name, regex_fn) in BUILTIN_PATTERNS {
-        redacted = regex_fn()
-            .replace_all(&redacted, format!("[REDACTED:{name}]").as_str())
-            .to_string();
-    }
-
+    let mut redacted = crate::core::redaction::redact_text(content);
     for &(name, regex_fn) in GUARDED_PATTERNS {
         let re = regex_fn();
         redacted = re
@@ -278,7 +294,7 @@ mod tests {
         let input = "key = AKIAIOSFODNN7EXAMPLE";
         let (redacted, matches) = scan_and_redact(input);
         assert!(!matches.is_empty());
-        assert!(redacted.contains("[REDACTED:aws_key]"));
+        assert!(redacted.contains("[REDACTED:AWS key]"));
         assert!(!redacted.contains("AKIAIOSFODNN7EXAMPLE"));
     }
 
@@ -289,6 +305,25 @@ mod tests {
         assert!(matches.len() >= 2);
         assert!(matches.iter().any(|m| m.pattern_name == "aws_key"));
         assert!(matches.iter().any(|m| m.pattern_name == "openai_key"));
+    }
+
+    /// The whole key is masked, not only its header line.
+    #[test]
+    fn scan_and_redact_masks_the_private_key_body() {
+        let input = "$ cat id_ed25519\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----\n$ ls";
+        let (out, matches) = scan_and_redact(input);
+        assert!(matches.iter().any(|m| m.pattern_name == "private_key"));
+        assert!(!out.contains("b3BlbnNzaC1rZXktdjEAAAAA"), "{out}");
+        assert!(out.starts_with("$ cat id_ed25519\n"), "{out}");
+        assert!(out.ends_with("\n$ ls"), "{out}");
+    }
+
+    /// A known token prefix inside a longer word is not a token.
+    #[test]
+    fn token_prefixes_need_a_word_boundary() {
+        let input = "kiosk-internationalization and task-abcdefghijklmnopqrstuvwxyz";
+        assert!(detect_secrets(input).is_empty(), "{input}");
+        assert_eq!(scan_and_redact(input).0, input);
     }
 
     #[test]
