@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::core::graph_provider::{self, EdgeInfo};
 use crate::core::index_paths;
-use crate::core::protocol::shorten_path;
+use crate::core::protocol::display_path;
 use crate::core::tokens::count_tokens;
 
 /// One adjacency entry: a neighbour reached via an edge of `kind`/`weight`.
@@ -340,7 +340,7 @@ pub fn neighbors(
         return serde_json::to_string_pretty(&val).unwrap_or_else(|_| "{}".to_string());
     }
 
-    let mut out = format!("Neighbors of {}\n", shorten_path(&node));
+    let mut out = format!("Neighbors of {}\n", display_path(&node));
     out.push_str(&format!(
         "\nOutgoing ({}) — this file depends on / references:\n",
         outgoing.len()
@@ -351,7 +351,7 @@ pub fn neighbors(
         for n in &outgoing {
             out.push_str(&format!(
                 "  -> {:<48} {:<10} conf {:.2}\n",
-                shorten_path(&n.node),
+                display_path(&n.node),
                 n.kind,
                 edge_confidence(&n.kind, n.weight)
             ));
@@ -367,7 +367,7 @@ pub fn neighbors(
         for n in &incoming {
             out.push_str(&format!(
                 "  <- {:<48} {:<10} conf {:.2}\n",
-                shorten_path(&n.node),
+                display_path(&n.node),
                 n.kind,
                 edge_confidence(&n.kind, n.weight)
             ));
@@ -419,8 +419,8 @@ pub fn shortest_path(
         }
         return format!(
             "No path between {} and {} — they live in different components of the dependency graph.",
-            shorten_path(&na),
-            shorten_path(&nb)
+            display_path(&na),
+            display_path(&nb)
         );
     };
 
@@ -452,11 +452,11 @@ pub fn shortest_path(
 
     let mut out = format!(
         "Shortest path {} -> {} ({} hops):\n\n",
-        shorten_path(&na),
-        shorten_path(&nb),
+        display_path(&na),
+        display_path(&nb),
         hops
     );
-    out.push_str(&format!("  {}\n", shorten_path(&chain[0])));
+    out.push_str(&format!("  {}\n", display_path(&chain[0])));
     for w in chain.windows(2) {
         let (dir, kind, conf) = adj.edge_between(&w[0], &w[1]).unwrap_or((
             Direction::Forward,
@@ -468,7 +468,7 @@ pub fn shortest_path(
             dir.arrow(),
             kind,
             conf,
-            shorten_path(&w[1])
+            display_path(&w[1])
         ));
     }
     let tokens = count_tokens(&out);

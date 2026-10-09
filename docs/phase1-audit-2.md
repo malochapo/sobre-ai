@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #53, #54) |
+| G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #PRNUM) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -230,8 +230,8 @@ documented:
     (which also fixes the window half of K3). A streamed `lines:` now reads
     like the in-memory one: comma parts in the order given, `N` one line,
     `N-` to the end.
-- [ ] **G8 Shell output is condensed with no way back.** *Regression: B58;
-  invariant 5.*
+- [x] **G8 Shell output is condensed with no way back.** *Regression: B58;
+  invariant 5.* (#PRNUM)
   - Terse post-processing (`server/post_process.rs:19-28`,
     `tools/registered/sobre_shell.rs:279`) runs after the decision to keep the
     full output. Failed commands, small outputs, background status and
@@ -240,6 +240,11 @@ documented:
   - `passthrough_commands` promises output "passed through uncompressed".
   - Fix: keep the full output whenever the text changes, and never touch a
     passthrough command's output.
+  - Done. `sobre_shell` condenses its own output before it decides whether
+    to keep the full one, so any condensed answer carries its
+    `sobre_expand` id; the dispatch stage no longer touches shell output.
+    Output of a command the policy protects (`passthrough_commands`, the
+    built-in passthrough and verbatim commands) is never condensed.
 - [x] **G9 A relative path follows a `cd` into another checkout.** (#53)
   *Regression: B37 extended it to `ops[]`.*
   - After `cd vendor/lib` in `sobre_shell` (a nested repository or a
@@ -252,12 +257,15 @@ documented:
     whose `commondir` leads there. A nested repository or a submodule is
     another repository, and relative paths stay in the project. (Edit
     results already name the file; the path is not printed in full.)
-- [ ] **G10 `sobre_session restore` can return another project's snapshot.**
+- [x] **G10 `sobre_session restore` can return another project's snapshot.**
   *Regression: B38 missed this path.* It filters snapshots on a substring
   of the process's working directory (`core/session/compaction.rs:394-420`,
   `tools/registered/sobre_session.rs:262`); `list` shows every project's.
-- [ ] **G11 Graph outputs print bare file names.** *Regression: B63 fixed
-  `impact` only.* `neighbors`, `path`, `related` and the `symbol` header
+  (#PRNUM) Done: `restore` without an id takes the latest snapshot of a
+  session of this project; `list` shows this project's sessions.
+- [x] **G11 Graph outputs print bare file names.** *Regression: B63 fixed
+  `impact` only.* (#PRNUM) Done: project-relative paths everywhere, the
+  symbol shortlist that asks for `<file>::<name>` included. `neighbors`, `path`, `related` and the `symbol` header
   still call `shorten_path` (`tools/sobre_graph_primitives.rs`,
   `tools/registered/sobre_graph.rs:108-118,238`).
 - [x] **G12 Search and glob stop at `max_results` without saying so.** (#54)
@@ -274,7 +282,7 @@ documented:
     ends with what the walk never looks at. The note no longer mentions
     `ignore_gitignore` (an undeclared parameter, decision 7): it says what
     was skipped for the walk that ran.
-- [ ] **G13 Persisted hashes use `DefaultHasher`.** *Regression: D17 moved
+- [x] **G13 Persisted hashes use `DefaultHasher`.** (#PRNUM) *Regression: D17 moved
   the keys to BLAKE3 but not these.* `DefaultHasher` is not stable across
   Rust releases, so a toolchain update makes every stored hash mismatch.
   - Gotcha ids (`core/gotcha_tracker/model.rs:252`, matched at
@@ -284,7 +292,8 @@ documented:
     (`core/call_graph.rs:462`, saved at `:172`, compared at `:131`): both
     rebuild.
   - Fix: `core::hasher`.
-- [ ] **G14 Lot D left duplicates and a fallback into the project.**
+  - Done: all three use `hasher::hash_short` (BLAKE3).
+- [x] **G14 Lot D left duplicates and a fallback into the project.** (#PRNUM)
   *Regression: D18 says both are gone.*
   - `graph_dir` falls back to `<project>/.sobre/` when the data dir cannot
     be resolved (`core/property_graph/mod.rs:30-43`); `CodeGraph::open`
@@ -300,6 +309,20 @@ documented:
   - Found while fixing H12: the proxy's log directory falls back to
     `<tmp>/sobre` when the state dir cannot be resolved
     (`proxy_autostart.rs:285`, `cli/dispatch/network/proxy.rs:325`).
+  - Done. `graph_dir` and `model_directory` fail without a data or cache
+    dir instead of falling back; the proxy refuses to start without a
+    state dir rather than log to `/tmp`. The pattern modules use
+    `compact_lines`, the session token `hasher::hex_encode`, and the
+    Windows test import is gated like its user.
+- [x] **G16 `sobre_shell` and `sobre_read` inject context nobody asked
+  for.** *Regression: B11 removed the AUTO CONTEXT prefix (phase-1
+  decision 2), not this second injector.* Found while fixing G8. (#PRNUM)
+  - Every saved shell output was indexed by keyword
+    (`core/relevance_tracker.rs`, 551 lines). A later `sobre_shell` or
+    `sobre_read` whose words matched got up to 2,000 tokens of those old
+    outputs appended, under `--- PROACTIVE CONTEXT ---`.
+  - Done. Removed, with the tracker and its three constants, as the AUTO
+    CONTEXT prefix was: a tool answers what it was asked.
 - [x] **G15 `uninstall` leaves a proxy running on a port other than the
   default.** (#51) *Regression: C12 left this path.* `uninstall` stops the proxy
   on `default_port()` (`uninstall/binary.rs:13-24`), not on the port

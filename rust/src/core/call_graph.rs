@@ -459,11 +459,10 @@ fn resolve_path(relative: &str, project_root: &str) -> String {
     joined.to_string_lossy().to_string()
 }
 
+/// A file's content hash, saved with the call graph and compared on the next
+/// load: stable across Rust toolchains.
 fn simple_hash(content: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    crate::core::hasher::hash_short(content)
 }
 
 #[cfg(test)]

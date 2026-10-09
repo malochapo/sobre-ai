@@ -280,10 +280,15 @@ fn install_launchagent(binary: &str, port: u16, quiet: bool) -> bool {
     if !release_proxy_port(port, quiet) {
         return false;
     }
-    // Proxy logs are STATE — $XDG_STATE_HOME/sobre/logs.
-    let log_dir = crate::core::paths::state_dir()
-        .unwrap_or_else(|_| std::env::temp_dir().join("sobre"))
-        .join("logs");
+    // Proxy logs are STATE — $XDG_STATE_HOME/sobre/logs, never a shared
+    // temporary directory.
+    let Ok(state_dir) = crate::core::paths::state_dir() else {
+        if !quiet {
+            eprintln!("Cannot resolve sobre's state directory for the proxy logs");
+        }
+        return false;
+    };
+    let log_dir = state_dir.join("logs");
     let _ = std::fs::create_dir_all(&log_dir);
 
     // Wrap the launchd invocation in a deny-~/Documents seatbelt sandbox
@@ -470,6 +475,7 @@ mod tests {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use super::release_proxy_port;
     use super::{health_identifies_sobre_proxy, proxy_pid_from_health};
+    #[cfg(unix)]
     use crate::proxy_setup::is_proxy_reachable as port_is_open;
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use std::io::{Read, Write};

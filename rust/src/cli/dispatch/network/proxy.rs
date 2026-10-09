@@ -300,8 +300,11 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
     /// can find and kill it.
     fn start_detached(port: u16) {
         let exe = std::env::current_exe().unwrap_or_else(|_| "sobre".into());
-        let log_dir =
-            crate::core::paths::state_dir().unwrap_or_else(|_| std::env::temp_dir().join("sobre"));
+        // The log lives in sobre's state dir, never a shared temporary one.
+        let log_dir = crate::core::paths::state_dir().unwrap_or_else(|e| {
+            crate::errln!("Cannot resolve sobre's state directory for the proxy log: {e}");
+            std::process::exit(1);
+        });
         let _ = std::fs::create_dir_all(&log_dir);
         let log_path = log_dir.join("proxy.log");
         let log_file = std::fs::OpenOptions::new()

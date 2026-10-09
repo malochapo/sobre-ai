@@ -11,7 +11,6 @@ pub mod markdown_compact;
 pub mod preservation;
 pub mod protect;
 pub mod rabin_karp;
-pub mod relevance_tracker;
 pub mod runtime_flags;
 pub mod structured_read;
 pub mod tabular_crush;

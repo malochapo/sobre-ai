@@ -51,7 +51,7 @@ fn compress_install(output: &str) -> String {
         return "ok (already satisfied)".to_string();
     }
 
-    compact_output(trimmed, 5)
+    super::compact_lines(trimmed, 5)
 }
 
 fn compress_list(output: &str) -> String {
@@ -119,7 +119,7 @@ fn compress_uninstall(output: &str) -> String {
         .collect();
 
     if removed.is_empty() {
-        return compact_output(trimmed, 3);
+        return super::compact_lines(trimmed, 3);
     }
 
     let names: Vec<String> = removed
@@ -141,7 +141,7 @@ fn compress_uninstall(output: &str) -> String {
 }
 
 fn compress_show(output: &str) -> String {
-    compact_output(output, 10)
+    super::compact_lines(output, 10)
 }
 
 fn compress_check(output: &str) -> String {
@@ -156,23 +156,11 @@ fn compress_check(output: &str) -> String {
         .collect();
 
     if broken.is_empty() {
-        return compact_output(trimmed, 5);
+        return super::compact_lines(trimmed, 5);
     }
     format!(
         "{} broken dependencies:\n{}",
         broken.len(),
         broken.join("\n")
-    )
-}
-
-fn compact_output(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
     )
 }
