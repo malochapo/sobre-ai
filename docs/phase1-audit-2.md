@@ -75,7 +75,7 @@ was added.
 
 | Lot | Scope | Status |
 |---|---|---|
-| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #53) |
+| G | Regressions and half-done phase-1 fixes | in progress (#51, #52, #53, #54) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
@@ -212,17 +212,24 @@ documented:
   space.** *Regression: B29.* `is_section_label`
   (`server/tool_trait.rs:138-141`) rejects any label with a space.
   (#53) Done: a `[path]` label may hold spaces.
-- [ ] **G6 Instruction files ignore `start_line`/`limit`.**
+- [x] **G6 Instruction files ignore `start_line`/`limit`.**
   *Regression: B3.* The window applied at `tools/registered/sobre_read.rs:182`
   is replaced by `full` at `:214`. `AGENTS.md start_line=3 limit=2` returns
-  40 lines.
-- [ ] **G7 Some windows on files over 4 MB still fail.** *Regression: B2.*
+  40 lines. (#54) Done: an instruction file is read whole only when the
+  agent asked for no mode, no window and no aggressiveness.
+- [x] **G7 Some windows on files over 4 MB still fail.** *Regression: B2.*
+  (#54)
   - `BufRead::lines()` stops at the first invalid UTF-8 byte; the fallback
     `read_file_lossy` refuses the file as too large, and the error tells
     the agent to read it in windows, so it loops (`tools/sobre_read/mod.rs:194,252`).
   - A 5 MB log with one Latin-1 byte fails both `lines:1-3` and
     `anchored` with `start_line`.
   - Comma multi-ranges (`lines:1-3,9-12`) are never streamed.
+  - Done. The streamed window reads bytes and turns an invalid UTF-8 byte
+    into U+FFFD, as the whole-file read does, and drops a leading BOM
+    (which also fixes the window half of K3). A streamed `lines:` now reads
+    like the in-memory one: comma parts in the order given, `N` one line,
+    `N-` to the end.
 - [ ] **G8 Shell output is condensed with no way back.** *Regression: B58;
   invariant 5.*
   - Terse post-processing (`server/post_process.rs:19-28`,
@@ -253,7 +260,7 @@ documented:
   `impact` only.* `neighbors`, `path`, `related` and the `symbol` header
   still call `shorten_path` (`tools/sobre_graph_primitives.rs`,
   `tools/registered/sobre_graph.rs:108-118,238`).
-- [ ] **G12 Search and glob stop at `max_results` without saying so.**
+- [x] **G12 Search and glob stop at `max_results` without saying so.** (#54)
   *Regression: B49 fixed the count wording only; invariant 5.*
   - 300 matches in 30 files come back as `20 matches in 2 files (3
     searched)`; "searched" counts the files read before the cap
@@ -262,6 +269,11 @@ documented:
     exist (`tools/sobre_glob.rs:70,115`).
   - The "not searched: hidden files, symlinks…" note appears only when
     nothing matched.
+  - Done. The count reads `N of M files searched`; a search or glob that
+    stops at `max_results` says so and how to get the rest; every answer
+    ends with what the walk never looks at. The note no longer mentions
+    `ignore_gitignore` (an undeclared parameter, decision 7): it says what
+    was skipped for the walk that ran.
 - [ ] **G13 Persisted hashes use `DefaultHasher`.** *Regression: D17 moved
   the keys to BLAKE3 but not these.* `DefaultHasher` is not stable across
   Rust releases, so a toolchain update makes every stored hash mismatch.

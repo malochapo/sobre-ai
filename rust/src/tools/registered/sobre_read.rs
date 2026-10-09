@@ -179,6 +179,7 @@ impl SobreReadTool {
         // The resolution lives in `apply_line_window`/`resolve_line_window` so
         // the runtime path and the unit tests share one implementation and can
         // never drift (aliases, explicit mode, line 1).
+        let mode_before_window = mode.clone();
         apply_line_window(
             &mut mode,
             &mut fresh,
@@ -187,6 +188,7 @@ impl SobreReadTool {
             get_int(args, "offset"),
             get_int(args, "limit"),
         );
+        let windowed = mode != mode_before_window;
 
         let gate_result = crate::server::context_gate::pre_dispatch_read(
             path,
@@ -210,8 +212,10 @@ impl SobreReadTool {
         }
 
         // An instruction file (SKILL.md, AGENTS.md, rules) is read whole when
-        // the agent did not pick a mode; a mode it picked is honoured.
-        let mut mode = if !explicit_mode && crate::tools::sobre_read::is_instruction_file(path) {
+        // the agent asked for nothing in particular; a mode, a line window or
+        // an aggressiveness it picked is honoured.
+        let picked = explicit_mode || windowed || aggressiveness.is_some();
+        let mut mode = if !picked && crate::tools::sobre_read::is_instruction_file(path) {
             "full".to_string()
         } else {
             mode

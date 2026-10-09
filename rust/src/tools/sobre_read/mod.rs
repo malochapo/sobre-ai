@@ -173,33 +173,54 @@ fn parse_disk_anchor_range(payload: &str) -> Option<(usize, usize)> {
     Some((start, end))
 }
 
-/// Streams `path` line-by-line and extracts only `[start, end]` (1-based,
-/// inclusive) without ever holding the whole file in memory — the
-/// anchored-window counterpart to [`read_file_lossy`]. Every line is
-/// still counted (one cheap UTF-8 pass, no per-line allocation outside the
-/// requested window) so the caller can report the true total. Returns `None`
-/// on anything that isn't a clean streamed text read (I/O error, a binary
-/// file, invalid UTF-8 anywhere in the file) so the caller can fall back to
-/// the existing, more permissive `read_file_lossy` path — behaviour never
-/// regresses, it just doesn't always get the fast path.
-fn read_line_window(path: &str, start: usize, end: usize) -> Option<LineWindow> {
+/// Streams `path` and keeps the lines inside any of `ranges` (1-based,
+/// inclusive) with their numbers, plus the file's total line count, without
+/// ever holding the whole file in memory. As in [`read_file_lossy`], a
+/// leading BOM is dropped and an invalid UTF-8 byte becomes U+FFFD rather
+/// than failing the read: a window is how a file over the size limit is
+/// read, so it must not fail where the whole read would succeed. `None` on
+/// an I/O error or a binary file.
+fn read_line_ranges(
+    path: &str,
+    ranges: &[(usize, usize)],
+) -> Option<(Vec<(usize, String)>, usize)> {
     if crate::core::binary_detect::is_binary_file(path) {
         return None;
     }
     use std::io::BufRead;
-    let file = open_with_retry(path).ok()?;
-    let reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::new(open_with_retry(path).ok()?);
+    let mut buf = Vec::new();
     let mut total = 0usize;
-    let mut collected = Vec::new();
-    for line in reader.lines() {
-        let line = line.ok()?;
+    let mut kept = Vec::new();
+    loop {
+        buf.clear();
+        if reader.read_until(b'\n', &mut buf).ok()? == 0 {
+            break;
+        }
         total += 1;
-        if total >= start && total <= end {
-            collected.push(line);
+        if ranges.iter().any(|&(s, e)| total >= s && total <= e) {
+            let mut line: &[u8] = &buf;
+            line = line.strip_suffix(b"\n").unwrap_or(line);
+            line = line.strip_suffix(b"\r").unwrap_or(line);
+            if total == 1 {
+                line = line.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(line);
+            }
+            kept.push((total, String::from_utf8_lossy(line).into_owned()));
         }
     }
+    Some((kept, total))
+}
+
+/// The single span `[start, end]` of `path`, streamed: the anchored-window
+/// counterpart to [`read_file_lossy`].
+fn read_line_window(path: &str, start: usize, end: usize) -> Option<LineWindow> {
+    let (kept, total) = read_line_ranges(path, &[(start, end)])?;
     Some(LineWindow {
-        body: collected.join("\n"),
+        body: kept
+            .into_iter()
+            .map(|(_, line)| line)
+            .collect::<Vec<_>>()
+            .join("\n"),
         total_lines: total,
         start: start.min(total.max(1)),
         end: end.min(total),
@@ -243,35 +264,31 @@ fn try_disk_anchored_window(
     })
 }
 
-/// A `lines:N-M` window of a file over the read size limit, streamed like an
+/// A `lines:` window of a file over the read size limit, streamed like an
 /// anchored one: a window is the way to read such a file, so the limit must
-/// not refuse it. Smaller files take the normal, cached path.
+/// not refuse it. Read like the in-memory `lines:` (`extract_line_range`):
+/// comma-separated parts in the order given, `N` one line, `N-` to the end.
+/// Smaller files take the normal, cached path.
 fn disk_lines_window(path: &str, range: &str, short: &str) -> Option<ReadOutput> {
     let too_large = std::fs::metadata(path)
         .is_ok_and(|m| m.len() > crate::core::limits::max_read_bytes() as u64);
-    if !too_large || range.contains(',') {
+    if !too_large {
         return None;
     }
-    let (start, end) = match range.split_once('-') {
-        Some((s, e)) => (
-            s.trim().parse::<usize>().ok()?.max(1),
-            e.trim().parse::<usize>().ok()?,
-        ),
-        None => (range.trim().parse::<usize>().ok()?.max(1), usize::MAX),
-    };
-    let window = read_line_window(path, start, end)?;
-    let body = if window.body.is_empty() {
+    let ranges = parse_line_ranges(range)?;
+    let (kept, total) = read_line_ranges(path, &ranges)?;
+    let mut selected = Vec::new();
+    for &(start, end) in &ranges {
+        for (n, line) in kept.iter().filter(|(n, _)| *n >= start && *n <= end) {
+            selected.push(format!("{n:>4}| {line}"));
+        }
+    }
+    let body = if selected.is_empty() {
         "No lines matched the range.".to_string()
     } else {
-        window
-            .body
-            .lines()
-            .enumerate()
-            .map(|(i, line)| format!("{:>4}| {line}", window.start + i))
-            .collect::<Vec<_>>()
-            .join("\n")
+        selected.join("\n")
     };
-    let out = format!("{short} {}L lines:{range}\n{body}", window.total_lines);
+    let out = format!("{short} {total}L lines:{range}\n{body}");
     let out = crate::core::redaction::redact_text(&out);
     let sent = count_tokens(&out);
     Some(ReadOutput {
@@ -280,6 +297,28 @@ fn disk_lines_window(path: &str, range: &str, short: &str) -> Option<ReadOutput>
         output_tokens: sent,
         is_cache_hit: false,
     })
+}
+
+/// `lines:` parts as 1-based inclusive spans; `None` when one does not parse.
+fn parse_line_ranges(range: &str) -> Option<Vec<(usize, usize)>> {
+    range
+        .split(',')
+        .map(|part| {
+            let part = part.trim();
+            if let Some((s, e)) = part.split_once('-') {
+                let start = s.trim().parse::<usize>().ok()?.max(1);
+                let end = if e.trim().is_empty() {
+                    usize::MAX
+                } else {
+                    e.trim().parse::<usize>().ok()?
+                };
+                Some((start, end))
+            } else {
+                let n = part.parse::<usize>().ok()?;
+                Some((n, n))
+            }
+        })
+        .collect()
 }
 
 /// Opens a file, retrying once after a brief pause on NotFound.

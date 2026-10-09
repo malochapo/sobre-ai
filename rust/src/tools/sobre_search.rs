@@ -121,6 +121,9 @@ pub fn handle_filtered(
     let mut files_skipped_special = 0u32;
     let mut files_skipped_type = 0u32;
     let mut deadline_hit = false;
+    // Set when the search stopped at `max_results`: files were left unread,
+    // or the last one read may hold more matches.
+    let mut stopped_at_cap = false;
     // Set when any hit gained an `∈name@Lstart` enclosing tag, so the
     // self-describing legend is emitted only when it is actually needed.
     let mut any_enclosing = false;
@@ -212,6 +215,7 @@ pub fn handle_filtered(
     let deadline = Some(Instant::now() + SEARCH_DEADLINE);
     for path in &files {
         if matches.len() >= max_results {
+            stopped_at_cap = true;
             break;
         }
 
@@ -310,6 +314,7 @@ pub fn handle_filtered(
                     matches.push(format!("{short_path}:{} {}{}", i + 1, shown, tag));
                 }
                 if matches.len() >= max_results {
+                    stopped_at_cap = true;
                     break;
                 }
             }
@@ -352,10 +357,7 @@ pub fn handle_filtered(
         if files_skipped_type > 0 {
             msg.push_str(&format!(" ({})", type_skip_note(files_skipped_type)));
         }
-        msg.push_str(
-            " (not searched: hidden files, symlinks, .gitignore'd paths and node_modules; \
-             ignore_gitignore=true includes the last two)",
-        );
+        msg.push_str(&format!(" ({})", not_searched_note(respect_gitignore)));
         if deadline_hit {
             msg.push_str(
                 " (search stopped at the time budget — refine the pattern or scope with path=)",
@@ -377,9 +379,10 @@ pub fn handle_filtered(
     };
 
     let mut result = format!(
-        "{} matches in {} files ({files_searched} searched)",
+        "{} matches in {} files ({files_searched} of {} files searched)",
         matches.len(),
-        matched_files.len()
+        matched_files.len(),
+        files.len()
     );
     if matched_files.len() > 1 {
         if matched_files.len() <= 10 {
@@ -432,6 +435,13 @@ pub fn handle_filtered(
             SEARCH_DEADLINE.as_secs()
         ));
     }
+    if stopped_at_cap {
+        result.push_str(&format!(
+            "\n(stopped at max_results={max_results}: more matches may exist — raise \
+             max_results or narrow the pattern or path)"
+        ));
+    }
+    result.push_str(&format!("\n({})", not_searched_note(respect_gitignore)));
 
     // Determinism contract: the hint must be a pure function of the
     // results. A show-once AtomicBool here made the first call differ from
@@ -443,6 +453,16 @@ pub fn handle_filtered(
     }
 
     SearchOutcome::from_observed(result, raw_tokens_accum)
+}
+
+/// What a search or glob walk never looks at, said with every answer
+/// (invariant 5: skipped files are named).
+pub(crate) fn not_searched_note(respect_gitignore: bool) -> &'static str {
+    if respect_gitignore {
+        "not searched: hidden files, symlinks, .gitignore'd paths and node_modules"
+    } else {
+        "not searched: hidden files and symlinks"
+    }
 }
 
 fn type_skip_note(count: u32) -> String {
@@ -995,6 +1015,46 @@ mod tests {
             out.contains("longIdentifierAlpha"),
             "identifiers should appear raw by default: {out}"
         );
+    }
+
+    /// G12: a search that stops at `max_results` says so and counts against
+    /// every candidate file; a complete one does not, and both name what the
+    /// walk never looks at.
+    #[test]
+    fn stopping_at_max_results_is_said() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..30 {
+            let body = (0..10)
+                .map(|j| format!("needle {i} {j}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            std::fs::write(dir.path().join(format!("f{i:02}.txt")), body).unwrap();
+        }
+        let search = |max| {
+            handle_filtered(
+                "needle",
+                dir.path().to_string_lossy().as_ref(),
+                None,
+                max,
+                CrpMode::Off,
+                true,
+                false,
+                None,
+                None,
+            )
+            .text
+        };
+        let capped = search(20);
+        assert!(capped.contains("of 30 files searched"), "{capped}");
+        assert!(capped.contains("stopped at max_results=20"), "{capped}");
+        assert!(capped.contains("not searched: hidden files"), "{capped}");
+        let all = search(1000);
+        assert!(
+            all.starts_with("300 matches in 30 files (30 of 30 files searched)"),
+            "{all}"
+        );
+        assert!(!all.contains("stopped at max_results"), "{all}");
+        assert!(all.contains("not searched: hidden files"), "{all}");
     }
 
     #[test]

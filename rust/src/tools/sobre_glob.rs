@@ -47,6 +47,7 @@ pub fn handle(
 
     let mut matches = Vec::new();
     let mut files_walked = 0u32;
+    let mut stopped_at_cap = false;
 
     // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
     // disabling gitignore is the escape hatch to look inside them.
@@ -68,6 +69,7 @@ pub fn handle(
 
     for entry in walker.filter_map(std::result::Result::ok) {
         if matches.len() >= max {
+            stopped_at_cap = true;
             break;
         }
 
@@ -93,13 +95,11 @@ pub fn handle(
         }
     }
 
+    let not_walked = crate::tools::sobre_search::not_searched_note(respect_gitignore)
+        .replace("not searched", "not walked");
     if matches.is_empty() {
         return (
-            format!(
-                "0 files matched '{pattern}' in {files_walked} files walked (not walked: \
-                 hidden files, symlinks, .gitignore'd paths and node_modules; \
-                 ignore_gitignore=true includes the last two)"
-            ),
+            format!("0 files matched '{pattern}' in {files_walked} files walked ({not_walked})"),
             0,
         );
     }
@@ -111,10 +111,17 @@ pub fn handle(
     let output = matches.join("\n");
     let raw_tokens = count_tokens(&output);
 
-    let footer = format!(
+    let mut footer = format!(
         "\n\n{} files matched (walked {files_walked})",
         matches.len()
     );
+    if stopped_at_cap {
+        footer.push_str(&format!(
+            "\n(stopped at max_results={max}: more files may match — raise max_results \
+             or narrow the pattern)"
+        ));
+    }
+    footer.push_str(&format!("\n({not_walked})"));
     let full_output = format!("{output}{footer}");
 
     // A plain file list carries no compression overhead, so the original token
@@ -125,6 +132,21 @@ pub fn handle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// G12: a glob that stops at `max_results` says so.
+    #[test]
+    fn stopping_at_max_results_is_said() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..6 {
+            std::fs::write(dir.path().join(format!("f{i}.txt")), "x").unwrap();
+        }
+        let (capped, _) = handle("*.txt", &dir.path().to_string_lossy(), true, 3);
+        assert!(capped.contains("stopped at max_results=3"), "{capped}");
+        assert!(capped.contains("not walked: hidden files"), "{capped}");
+        let (all, _) = handle("*.txt", &dir.path().to_string_lossy(), true, 100);
+        assert!(all.contains("6 files matched"), "{all}");
+        assert!(!all.contains("stopped at max_results"), "{all}");
+    }
 
     #[test]
     fn glob_results_are_deterministically_ordered() {
