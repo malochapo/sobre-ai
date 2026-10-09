@@ -201,9 +201,7 @@ pub fn import_bundle_v1_into_session(
         files_touched: imported.files_touched.clone(),
         evidence: imported.evidence.clone(),
         stats: imported.stats.clone(),
-        last_consolidate_ts: None,
         extra_roots: Vec::new(),
-        playbook: crate::core::session::Playbook::default(),
         last_flush: None,
     };
 

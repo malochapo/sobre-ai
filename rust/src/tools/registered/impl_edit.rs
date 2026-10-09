@@ -49,7 +49,7 @@ impl McpTool for SobreEditTool {
             .ok_or_else(|| ErrorData::invalid_params("new_string is required", None))?;
         let replace_all = get_bool(args, "replace_all").unwrap_or(false);
         let create = get_bool(args, "create").unwrap_or(false);
-        let expected_md5 = get_str(args, "expected_md5");
+        let expected_hash = get_str(args, "expected_hash");
         let expected_size = get_int(args, "expected_size").and_then(|v| u64::try_from(v).ok());
         let expected_mtime_ms =
             get_int(args, "expected_mtime_ms").and_then(|v| u64::try_from(v).ok());
@@ -69,7 +69,7 @@ impl McpTool for SobreEditTool {
             new_string,
             replace_all,
             create,
-            expected_md5,
+            expected_hash,
             expected_size,
             expected_mtime_ms,
             backup,

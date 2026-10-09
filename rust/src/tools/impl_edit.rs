@@ -19,7 +19,7 @@ pub struct EditParams {
     pub replace_all: bool,
     pub create: bool,
     /// Optional preimage guards. If provided, sobre_edit fails if the current file preimage differs.
-    pub expected_md5: Option<String>,
+    pub expected_hash: Option<String>,
     pub expected_size: Option<u64>,
     pub expected_mtime_ms: Option<u64>,
     /// Optional backup before writing.
@@ -61,12 +61,12 @@ fn verify_expected_preimage(pre: &FilePreimage, params: &EditParams) -> Result<(
             params.path, expected, pre.fp.mtime_ms
         ));
     }
-    if let Some(expected) = params.expected_md5.as_deref()
-        && expected != pre.fp.md5
+    if let Some(expected) = params.expected_hash.as_deref()
+        && expected != pre.fp.hash
     {
         return Err(format!(
-            "ERROR: preimage mismatch for {}: expected_md5={}, actual_md5={}",
-            params.path, expected, pre.fp.md5
+            "ERROR: preimage mismatch for {}: expected_hash={}, actual_hash={}",
+            params.path, expected, pre.fp.hash
         ));
     }
     Ok(())
@@ -507,14 +507,14 @@ fn do_replace(
     let post_fp = FileFingerprint {
         size: new_content.len() as u64,
         mtime_ms: post_mtime_ms,
-        md5: crate::core::hasher::hash_hex(new_content.as_bytes()),
+        hash: crate::core::hasher::hash_hex(new_content.as_bytes()),
     };
 
     let mut out = format!(
         "✓ {short}: {replaced_str}, {delta_str} lines ({old_tokens}→{new_tokens} tok)\n\
-preimage: bytes={}, mtime_ms={}, md5={}\n\
-postimage: bytes={}, mtime_ms={}, md5={}",
-        pre.fp.size, pre.fp.mtime_ms, pre.fp.md5, post_fp.size, post_fp.mtime_ms, post_fp.md5
+preimage: bytes={}, mtime_ms={}, hash={}\n\
+postimage: bytes={}, mtime_ms={}, hash={}",
+        pre.fp.size, pre.fp.mtime_ms, pre.fp.hash, post_fp.size, post_fp.mtime_ms, post_fp.hash
     );
     if let Some(bp) = backup_path {
         out.push_str(&format!("\nbackup: {bp}"));
@@ -702,7 +702,7 @@ mod tests {
             new_string: new.to_string(),
             replace_all,
             create,
-            expected_md5: None,
+            expected_hash: None,
             expected_size: None,
             expected_mtime_ms: None,
             backup: false,
@@ -948,11 +948,11 @@ mod tests {
     }
 
     #[test]
-    fn expected_md5_mismatch_fails_without_writing() {
+    fn expected_hash_mismatch_fails_without_writing() {
         let f = make_temp("aaa\n");
         let mut cache = SessionCache::new();
         let mut p = mk_params(f.path(), "aaa", "bbb", false, false);
-        p.expected_md5 = Some("deadbeef".to_string());
+        p.expected_hash = Some("deadbeef".to_string());
         let result = handle(&mut cache, &p);
         assert!(
             result.contains("preimage mismatch"),

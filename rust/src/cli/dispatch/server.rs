@@ -63,7 +63,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
     drop(startup_lock);
 
     let result = rt.block_on(async {
-        core::logging::init_mcp_logging();
+        core::logging::init_logging("info");
 
         tracing::info!("sobre v{} MCP server starting", env!("CARGO_PKG_VERSION"));
 

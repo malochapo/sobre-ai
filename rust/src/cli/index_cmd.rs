@@ -50,13 +50,15 @@ fn build(project_root: &str, force: bool) {
 
     if force {
         let root = Path::new(project_root);
-        let _ = std::fs::remove_file(crate::core::bm25_index::BM25Index::index_file_path(root));
+        if let Some(path) = crate::core::bm25_index::BM25Index::index_file_path(root) {
+            let _ = std::fs::remove_file(path);
+        }
         // C4: purge the property graph (graph.db + wal/shm + meta) and
         // the call-graph cache so the rebuild starts clean.
         crate::core::graph_index::purge_index(project_root);
-        let _ = std::fs::remove_file(
-            crate::core::index_namespace::vectors_dir(root).join("embeddings.bin"),
-        );
+        if let Some(dir) = crate::core::index_namespace::vectors_dir(root) {
+            let _ = std::fs::remove_file(dir.join("embeddings.bin"));
+        }
     }
 
     crate::core::index_orchestrator::ensure_all_background(project_root);

@@ -51,8 +51,6 @@ fn report(session_id: Option<String>, session_items: usize) -> KnowledgeConsolid
     KnowledgeConsolidationReport {
         session_id,
         session_items,
-        imported_decisions: session_items / 2,
-        imported_findings: session_items - session_items / 2,
         facts: 7,
         active_facts: 5,
         archived_facts: 2,

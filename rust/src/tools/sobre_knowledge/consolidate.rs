@@ -1,8 +1,6 @@
 //! Consolidation engine: session import, fact lifecycle, lossless capacity
 //! reclaim and the consolidation reports.
 
-use chrono::{DateTime, Utc};
-
 use crate::core::consolidation_engine::{ConsolidateOptions, ImportCounts, import_session_into};
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_archive::MemoryStore;
@@ -15,8 +13,6 @@ use crate::core::session::SessionState;
 pub(crate) struct KnowledgeConsolidationReport {
     pub session_id: Option<String>,
     pub session_items: usize,
-    pub imported_decisions: usize,
-    pub imported_findings: usize,
     pub facts: usize,
     pub active_facts: usize,
     pub archived_facts: usize,
@@ -42,13 +38,9 @@ pub(crate) fn consolidate_project_knowledge(
     consolidate_project_knowledge_with(project_root, &ConsolidateOptions::manual())
 }
 
-/// Canonical consolidation engine (Phase 4). Every driver — CLI/MCP, the
-/// scheduled post-dispatch pass ([`crate::core::consolidation_engine::consolidate_latest`]),
-/// and startup auto-consolidate — funnels through here, parameterised by
-/// [`ConsolidateOptions`], so session import, fact keys, lifecycle and the
-/// lossless per-store capacity reclaim behave identically. Session loads are
-/// project-scoped (not cwd-scoped), and `opts.dry_run` previews without mutating
-/// knowledge, archives or the session.
+/// Consolidation: session import, fact lifecycle and the lossless per-store
+/// capacity reclaim. Session loads are project-scoped (not cwd-scoped), and
+/// `opts.dry_run` previews without mutating knowledge, archives or the session.
 pub(crate) fn consolidate_project_knowledge_with(
     project_root: &str,
     opts: &ConsolidateOptions,
@@ -57,55 +49,21 @@ pub(crate) fn consolidate_project_knowledge_with(
     let session = SessionState::load_latest_for_project_root(project_root);
 
     if opts.dry_run {
-        return Ok(dry_run_report(
-            project_root,
-            session.as_ref(),
-            opts,
-            &policy,
-        ));
-    }
-
-    // Incremental (startup) mode advances a per-session watermark; when nothing
-    // is new, skip entirely so there is no history churn or watermark bump.
-    let watermark = if opts.incremental {
-        session.as_ref().and_then(|s| s.last_consolidate_ts)
-    } else {
-        None
-    };
-    if opts.incremental
-        && let Some(s) = session.as_ref()
-        && !has_new_session_items(s, watermark)
-    {
-        return Ok(KnowledgeConsolidationReport {
-            session_id: Some(s.id.clone()),
-            ..Default::default()
-        });
+        return Ok(dry_run_report(project_root, session.as_ref(), &policy));
     }
 
     let (_knowledge, report) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        run_consolidation_locked(knowledge, session.as_ref(), opts, &policy, watermark)
+        run_consolidation_locked(knowledge, session.as_ref(), &policy)
     })
     .map_err(|e| format!("Consolidation done but save failed: {e}"))?;
-    let report = report?;
-
-    // Advance the watermark only after the knowledge write succeeded.
-    if opts.incremental
-        && let Some(mut s) = session
-    {
-        s.last_consolidate_ts = Some(Utc::now());
-        let _ = s.save();
-    }
-
-    Ok(report)
+    report
 }
 
 /// The locked read-modify-write body of a real consolidation run.
 fn run_consolidation_locked(
     knowledge: &mut ProjectKnowledge,
     session: Option<&SessionState>,
-    opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
-    watermark: Option<DateTime<Utc>>,
 ) -> Result<KnowledgeConsolidationReport, String> {
     let mut imported = ImportCounts::default();
     let mut session_id = None;
@@ -113,7 +71,7 @@ fn run_consolidation_locked(
 
     if let Some(s) = session {
         session_id = Some(s.id.clone());
-        imported = import_session_into(knowledge, s, opts, policy, watermark);
+        imported = import_session_into(knowledge, s, policy);
 
         let task_desc = s
             .task
@@ -127,20 +85,13 @@ fn run_consolidation_locked(
         history_compacted += knowledge.consolidate(&summary, vec![s.id.clone()], policy)?;
     }
 
-    let lifecycle = if opts.run_lifecycle {
-        knowledge.run_memory_lifecycle(policy)?
-    } else {
-        LifecycleReport::default()
-    };
+    let lifecycle = knowledge.run_memory_lifecycle(policy)?;
 
     // Lossless capacity reclaim for the non-fact stores (facts settle inside the
     // lifecycle). History is already bounded per consolidate; the explicit pass
     // also compacts a pre-existing over-cap history when no session was imported.
-    let mut patterns_compacted = 0usize;
-    if opts.reclaim_stores {
-        patterns_compacted = reclaim_patterns(knowledge, policy)?;
-        history_compacted += reclaim_history(knowledge, policy)?;
-    }
+    let patterns_compacted = reclaim_patterns(knowledge, policy)?;
+    history_compacted += reclaim_history(knowledge, policy)?;
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
     let headroom = policy.lifecycle.reclaim_headroom_pct;
@@ -148,8 +99,6 @@ fn run_consolidation_locked(
     Ok(KnowledgeConsolidationReport {
         session_id,
         session_items: imported.total(),
-        imported_decisions: imported.decisions,
-        imported_findings: imported.findings,
         facts: knowledge.facts.len(),
         active_facts,
         archived_facts,
@@ -172,7 +121,6 @@ fn run_consolidation_locked(
 fn dry_run_report(
     project_root: &str,
     session: Option<&SessionState>,
-    opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
 ) -> KnowledgeConsolidationReport {
     let mut knowledge =
@@ -183,19 +131,14 @@ fn dry_run_report(
     let mut session_id = None;
     if let Some(s) = session {
         session_id = Some(s.id.clone());
-        let watermark = if opts.incremental {
-            s.last_consolidate_ts
-        } else {
-            None
-        };
         // remember() is in-memory only, so importing into the clone is side
         // effect free; it gives the exact promotion counts.
-        imported = import_session_into(&mut knowledge, s, opts, policy, watermark);
+        imported = import_session_into(&mut knowledge, s, policy);
     }
 
     // Fact lifecycle preview: run the pure in-memory passes (no archive writes),
     // then preview the capacity reclaim.
-    let lifecycle = if opts.run_lifecycle {
+    let lifecycle = {
         let cfg = crate::core::memory_lifecycle::LifecycleConfig::from_policy(policy);
         let decayed =
             crate::core::memory_lifecycle::apply_confidence_decay(&mut knowledge.facts, &cfg);
@@ -213,8 +156,6 @@ fn dry_run_report(
             capacity_archived,
             remaining_facts: knowledge.facts.len().saturating_sub(capacity_archived),
         }
-    } else {
-        LifecycleReport::default()
     };
 
     let history_compacted = reclaim_preview(
@@ -233,8 +174,6 @@ fn dry_run_report(
     KnowledgeConsolidationReport {
         session_id,
         session_items: imported.total(),
-        imported_decisions: imported.decisions,
-        imported_findings: imported.findings,
         facts: knowledge.facts.len(),
         active_facts,
         archived_facts,
@@ -249,12 +188,6 @@ fn dry_run_report(
         lifecycle,
         dry_run: true,
     }
-}
-
-fn has_new_session_items(session: &SessionState, watermark: Option<DateTime<Utc>>) -> bool {
-    let is_new = |ts: DateTime<Utc>| watermark.is_none_or(|w| ts > w);
-    session.findings.iter().any(|f| is_new(f.timestamp))
-        || session.decisions.iter().any(|d| is_new(d.timestamp))
 }
 
 /// Lossless history capacity reclaim. Returns the number of insights archived.

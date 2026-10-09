@@ -81,13 +81,6 @@ fn store_path() -> Option<PathBuf> {
         .map(|dir| dir.join(FILE_NAME))
 }
 
-fn now_secs() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
 /// Forwardable variables present in the current process environment.
 #[must_use]
 pub fn collect_from_process() -> BTreeMap<String, String> {
@@ -131,7 +124,8 @@ pub fn capture() {
     {
         return;
     }
-    let payload = serde_json::json!({ "vars": vars, "captured_at": now_secs() });
+    let payload =
+        serde_json::json!({ "vars": vars, "captured_at": crate::core::clock::now_unix() });
     let Ok(json) = serde_json::to_string_pretty(&payload) else {
         return;
     };
@@ -160,7 +154,7 @@ pub fn load() -> BTreeMap<String, String> {
         }
         return probed;
     };
-    if now_secs().saturating_sub(captured_at) > TTL_SECS {
+    if crate::core::clock::now_unix().saturating_sub(captured_at) > TTL_SECS {
         return BTreeMap::new();
     }
     // Defense-in-depth: never forward a credential-shaped var, even from a
@@ -251,7 +245,8 @@ fn parse_ps_environ(output: &str) -> BTreeMap<String, String> {
 }
 
 fn persist_probed_vars(path: &Path, vars: &BTreeMap<String, String>) {
-    let payload = serde_json::json!({ "vars": vars, "captured_at": now_secs() });
+    let payload =
+        serde_json::json!({ "vars": vars, "captured_at": crate::core::clock::now_unix() });
     if let Ok(json) = serde_json::to_string_pretty(&payload) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
@@ -310,7 +305,7 @@ mod tests {
         let path = store_path().unwrap();
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
 
-        let stale = now_secs().saturating_sub(TTL_SECS + 60);
+        let stale = crate::core::clock::now_unix().saturating_sub(TTL_SECS + 60);
         let payload =
             serde_json::json!({ "vars": { "CODEX_THREAD_ID": "old" }, "captured_at": stale });
         std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
@@ -397,7 +392,7 @@ mod tests {
         // A capture file holding a real secret.
         let payload = serde_json::json!({
             "vars": { "CODEX_THREAD_ID": "t", "OPENCODE_SERVER_PASSWORD": "p4ssw0rd" },
-            "captured_at": now_secs()
+            "captured_at": crate::core::clock::now_unix()
         });
         std::fs::write(&path, serde_json::to_string_pretty(&payload).unwrap()).unwrap();
 

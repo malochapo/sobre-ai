@@ -13,9 +13,6 @@ use std::path::PathBuf;
 use super::knowledge::{KnowledgeFact, sort_fact_for_output};
 use super::memory_archive::{ArchiveConfig, MemoryStore};
 
-const DEFAULT_MAX_FACTS: usize = 1000;
-const LOW_CONFIDENCE_THRESHOLD: f32 = 0.3;
-const STALE_DAYS: i64 = 30;
 /// Default proactive headroom on a capacity reclaim: settle a full store at 75%
 /// so it keeps real working room instead of churning at its cap.
 pub const DEFAULT_RECLAIM_HEADROOM_PCT: f32 = 0.25;
@@ -43,8 +40,7 @@ pub struct LifecycleConfig {
     pub base_stability_days: f32,
     /// Archive facts untouched for this many days that were **never** retrieved —
     /// dead weight that costs injection tokens regardless of confidence.
-    /// `None` disables it (the `LifecycleConfig` default); the production policy
-    /// sets it. Reversible: pruned facts go to the archive.
+    /// `None` disables it. Reversible: pruned facts go to the archive.
     pub prune_unretrieved_after_days: Option<i64>,
     /// Proactive headroom on a capacity reclaim: when a store reaches its
     /// cap, drop down to `reclaim_target(max_facts, reclaim_headroom_pct)` so it
@@ -52,17 +48,11 @@ pub struct LifecycleConfig {
     pub reclaim_headroom_pct: f32,
 }
 
+/// The production policy's values (`MemoryPolicy::default()`), so tests run
+/// against the same numbers as the server.
 impl Default for LifecycleConfig {
     fn default() -> Self {
-        Self {
-            max_facts: DEFAULT_MAX_FACTS,
-            low_confidence_threshold: LOW_CONFIDENCE_THRESHOLD,
-            stale_days: STALE_DAYS,
-            consolidation_similarity: 0.85,
-            base_stability_days: DEFAULT_BASE_STABILITY_DAYS,
-            prune_unretrieved_after_days: None,
-            reclaim_headroom_pct: DEFAULT_RECLAIM_HEADROOM_PCT,
-        }
+        Self::from_policy(&crate::core::memory_policy::MemoryPolicy::default())
     }
 }
 

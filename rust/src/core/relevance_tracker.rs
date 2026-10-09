@@ -13,7 +13,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_BUDGET_TOKENS: usize = 2000;
 const DEFAULT_THRESHOLD: f64 = 0.6;
@@ -124,7 +123,7 @@ impl RelevanceTracker {
             source_tool,
             original_tokens,
             compressed_tokens,
-            now_secs(),
+            crate::core::clock::now_unix(),
         );
     }
 
@@ -185,7 +184,7 @@ impl RelevanceTracker {
             return Vec::new();
         }
 
-        let now = now_secs();
+        let now = crate::core::clock::now_unix();
         let mut scored: Vec<(usize, f64)> = self
             .entries
             .iter()
@@ -277,12 +276,6 @@ impl RelevanceTracker {
         self.seq_counter = 0;
         self.disabled_handles.clear();
     }
-}
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_secs())
 }
 
 /// Register a CCR artifact for later proactive expansion, with zero compressed

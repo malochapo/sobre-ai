@@ -13,11 +13,7 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
 
     match cfg.proxy.enabled {
         Some(true) => {
-            let reachable = {
-                use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-                let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-                TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout()).is_ok()
-            };
+            let reachable = crate::proxy_setup::is_proxy_reachable(port);
             // Autostart has no backend on Windows/other platforms, so a missing
             // autostart must never be a hard failure there.
             let supported = crate::proxy_autostart::is_supported();

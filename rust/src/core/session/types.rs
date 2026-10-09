@@ -17,17 +17,12 @@ pub struct SessionState {
     pub files_touched: Vec<FileTouched>,
     pub evidence: Vec<EvidenceRecord>,
     pub stats: SessionStats,
-    /// Watermark: timestamp of last auto-consolidation to prevent duplicate knowledge entries.
-    pub last_consolidate_ts: Option<DateTime<Utc>>,
     /// Extra project roots for multi-root workspaces: config `search_roots`,
     /// the host's workspace folders and MCP `roots/list`. Rebuilt every time
     /// the server starts and never persisted, so removing a path from the
     /// config takes it away from a resumed session too.
     #[serde(skip)]
     pub extra_roots: Vec<String>,
-    /// ACE delta playbook: incremental, stable-ID checkpoint entries —
-    /// appended to, never rewritten (anti context-collapse).
-    pub playbook: super::playbook::Playbook,
     /// In-memory timestamp of the last flush to disk. Backs the
     /// time-based save trigger so a slow trickle of changes (below the
     /// 5-change batch) still reaches disk.
@@ -90,8 +85,8 @@ pub struct EvidenceRecord {
     pub key: String,
     pub value: Option<String>,
     pub tool: Option<String>,
-    pub input_md5: Option<String>,
-    pub output_md5: Option<String>,
+    pub input_hash: Option<String>,
+    pub output_hash: Option<String>,
     pub agent_id: Option<String>,
     pub client_name: Option<String>,
     pub timestamp: DateTime<Utc>,

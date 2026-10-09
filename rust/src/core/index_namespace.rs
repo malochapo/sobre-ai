@@ -1,21 +1,14 @@
 use std::path::{Path, PathBuf};
 
-use md5::{Digest, Md5};
-
-pub(crate) fn vectors_dir(project_root: &Path) -> PathBuf {
-    let hash = namespace_hash(project_root);
-    if let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() {
-        return data_dir.join("vectors").join(hash);
-    }
-
-    PathBuf::from(".").join("vectors").join(hash)
+/// The project's index directory, or `None` when there is no data dir (then
+/// nothing is read or written).
+pub(crate) fn vectors_dir(project_root: &Path) -> Option<PathBuf> {
+    let data_dir = crate::core::data_dir::sobre_data_dir().ok()?;
+    Some(data_dir.join("vectors").join(namespace_hash(project_root)))
 }
 
 pub(crate) fn namespace_hash(project_root: &Path) -> String {
-    let seed = namespace_seed(project_root);
-    let mut hasher = Md5::new();
-    hasher.update(seed.as_bytes());
-    crate::core::hasher::hex_encode(&hasher.finalize())
+    crate::core::hasher::hash_str(&namespace_seed(project_root))
 }
 
 fn namespace_seed(project_root: &Path) -> String {

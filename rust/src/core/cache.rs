@@ -1,4 +1,3 @@
-use md5::{Digest, Md5};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
@@ -399,7 +398,7 @@ impl SessionCache {
         // later protect files that are habitually read together.
         self.co_access
             .record_access(crate::core::hebbian_cache::path_hash(&key));
-        let hash = compute_md5(content);
+        let hash = content_hash(content);
         let line_count = content.lines().count();
         let original_tokens = count_tokens(content);
         let stored_mtime = std::fs::metadata(path).and_then(|m| m.modified()).ok();
@@ -705,7 +704,7 @@ pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> boo
 const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Staleness with content verification: like [`is_cache_entry_stale`], but when
-/// the mtime claims "unchanged", additionally compares the md5 of the on-disk
+/// the mtime claims "unchanged", additionally compares the hash of the on-disk
 /// content against the cached hash.
 ///
 /// mtime alone cannot be trusted for *correctness*: same-second writes are
@@ -738,15 +737,13 @@ pub fn is_cache_entry_stale_verified(
     }
     match std::fs::read(path) {
         // Hash the same view of the bytes that `store()` hashed (lossy UTF-8).
-        Ok(bytes) => compute_md5(&String::from_utf8_lossy(&bytes)) != cached_hash,
+        Ok(bytes) => content_hash(&String::from_utf8_lossy(&bytes)) != cached_hash,
         Err(_) => true,
     }
 }
 
-fn compute_md5(content: &str) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(content.as_bytes());
-    crate::core::hasher::hex_encode(&hasher.finalize())
+fn content_hash(content: &str) -> String {
+    crate::core::hasher::hash_str(content)
 }
 
 #[cfg(test)]
@@ -871,11 +868,11 @@ mod tests {
     }
 
     #[test]
-    fn md5_is_deterministic() {
-        let h1 = compute_md5("test content");
-        let h2 = compute_md5("test content");
+    fn content_hash_is_deterministic() {
+        let h1 = content_hash("test content");
+        let h2 = content_hash("test content");
         assert_eq!(h1, h2);
-        assert_ne!(h1, compute_md5("different"));
+        assert_ne!(h1, content_hash("different"));
     }
 
     #[test]

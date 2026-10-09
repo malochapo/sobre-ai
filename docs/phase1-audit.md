@@ -53,7 +53,7 @@ The lots run in this order:
 | B | The MCP tools: bugs, incomplete features, drift; decisions 1–4 and 6 | done (#32, #33, #34, #35, #36, #37) |
 | C | The CLI and the proxy | done (#38, #39) |
 | R | Tool names `ctx_*` → `sobre_*` (decision 9) | done (#40) |
-| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #43, #44) |
+| D | Dead code, stale files, stale comments, duplicates; decision 7 | in progress (#41, #42, #43, #44, #PR_DE) |
 | F | Release: publish a `dense` binary (decision 8) | open |
 | E | Documentation and install path, written last so it describes the final behaviour | open |
 
@@ -699,7 +699,8 @@ written with; the lots after it use the new names.
 
 Fixed so far: #41 (dead code, write-only stores, decision 7), #42
 (constant settings, test-only code, dead modules), #43 (Cargo, stale files,
-contracts), #44 (comments).
+contracts), #44 (comments), #PR_DE (duplicates, hashing, the rest of the
+dead code).
 
 ### Code that compiles but never does anything
 
@@ -982,7 +983,7 @@ contracts), #44 (comments).
     comments; the managed ONNX Runtime now lives in
     `<data_dir>/onnxruntime/<version>/` instead of under `addons/bin/`.
 
-- [ ] **D19 Found while fixing D16: more dead code.**
+- [x] **D19 Found while fixing D16: more dead code.**
   - `consolidation_engine`: only `ConsolidateOptions::manual()` is ever
     built. `scheduled()`, `incremental_auto()`, `consolidate_latest`,
     `ConsolidationBudgets` and `ConsolidationOutcome` have no caller, so
@@ -993,7 +994,7 @@ contracts), #44 (comments).
 
 ### Duplicates
 
-- [ ] **D17 Hashing.**
+- [x] **D17 Hashing.**
   - Three project-key hashes: `project_hash::hash_project_root`,
     `index_namespace::namespace_hash` (MD5) and `git/shadow.rs:259` (FNV-1a).
   - MD5 in `cache.rs:746`, `embedding_index.rs:432`,
@@ -1002,7 +1003,12 @@ contracts), #44 (comments).
   - `edit_io.rs:31` has an `md5` field that holds a BLAKE3 hash.
   - Three hex encoders, and two SHA-256 file hashers plus
     `ort_provision::sha256_bytes`.
-- [ ] **D18 Other duplicates.**
+  - Done: BLAKE3 everywhere a hash is a key or a fingerprint, MD5 and its
+    dependency gone; `hash_project_root` used `DefaultHasher`, whose output
+    is not stable across Rust versions. One hex encoder, one SHA-256 module.
+    Found while fixing: the session-bundle import compared an MD5 of the
+    project identity with the BLAKE3 the export writes, so it never matched.
+- [x] **D18 Other duplicates.**
   - `compact_lines` is copied 10 times in `core/patterns/`.
   - `agents.rs` `mutate_persistent` duplicates
     `AgentRegistry::mutate_locked`.
@@ -1018,6 +1024,11 @@ contracts), #44 (comments).
   - Five private `now_unix` helpers.
   - The embeddings download builds its own HTTP agent.
   - Three different fallbacks when the data dir cannot be resolved.
+  - Done. The data-dir fallbacks wrote into `.` (the user's project) or
+    `.sobre`; without a data dir sobre now reads and writes nothing there.
+    `LifecycleConfig::default()` is the production policy, so tests run on
+    the server's numbers. The embeddings download no longer caps the whole
+    transfer at five minutes.
 
 ## Lot F — release
 

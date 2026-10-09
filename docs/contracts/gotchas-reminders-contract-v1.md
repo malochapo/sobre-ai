@@ -29,19 +29,6 @@ struct Gotcha {
 }
 ```
 
-## GotchaPolicy
-
-`GotchaPolicy` (`rust/src/core/memory_policy.rs`) is part of `MemoryPolicy`.
-There is no config-file section for it: callers use `MemoryPolicy::default()`,
-so the values are fixed:
-
-| Field | Value |
-|---|---|
-| `max_gotchas_per_project` | 100 |
-
-It is read by the doctor storage check. The store enforces its own constants
-in `rust/src/core/gotcha_tracker/model.rs`.
-
 ## Store limits and decay
 
 Fixed constants in `gotcha_tracker/model.rs` and `gotcha_tracker/mod.rs`:

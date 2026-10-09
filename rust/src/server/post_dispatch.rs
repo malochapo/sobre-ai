@@ -23,8 +23,8 @@ impl SobreServer {
         result_text: &str,
     ) {
         let input = helpers::canonical_args_string(args);
-        let input_md5 = helpers::hash_fast(&input);
-        let output_md5 = helpers::hash_fast(result_text);
+        let input_hash = helpers::hash_fast(&input);
+        let output_hash = helpers::hash_fast(result_text);
         let agent_id = self.agent_id.read().await.clone();
         let client_name = self.client_name.read().await.clone();
 
@@ -33,8 +33,8 @@ impl SobreServer {
             session.record_tool_receipt(
                 name,
                 action,
-                &input_md5,
-                &output_md5,
+                &input_hash,
+                &output_hash,
                 agent_id.as_deref(),
                 Some(&client_name),
             );

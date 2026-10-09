@@ -294,7 +294,7 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
             checks.push((
                 "gotchas".to_string(),
                 g.gotchas.len(),
-                policy.gotcha.max_gotchas_per_project,
+                crate::core::gotcha_tracker::MAX_GOTCHAS,
             ));
         }
 

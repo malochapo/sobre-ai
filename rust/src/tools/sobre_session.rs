@@ -154,12 +154,7 @@ bytes: {}\n",
             let current_root_hash = crate::core::project_hash::hash_project_root(&root);
             let current_identity_hash = crate::core::project_hash::project_identity(&root)
                 .as_deref()
-                .map(|s| {
-                    use md5::{Digest, Md5};
-                    let mut h = Md5::new();
-                    h.update(s.as_bytes());
-                    crate::core::hasher::hex_encode(&h.finalize())
-                });
+                .map(crate::core::hasher::hash_str);
 
             let mut warning: Option<String> = None;
             if let Some(ref exported) = bundle.project.project_root_hash

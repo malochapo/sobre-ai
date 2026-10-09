@@ -1,3 +1,5 @@
+use crate::core::patterns::compact_lines;
+
 pub fn compress(cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {
@@ -78,17 +80,5 @@ fn compress_describe(output: &str) -> String {
         "{}\n... ({} more lines)",
         lines[..20].join("\n"),
         lines.len() - 20
-    )
-}
-
-fn compact_lines(text: &str, max: usize) -> String {
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    if lines.len() <= max {
-        return lines.join("\n");
-    }
-    format!(
-        "{}\n... ({} more lines)",
-        lines[..max].join("\n"),
-        lines.len() - max
     )
 }

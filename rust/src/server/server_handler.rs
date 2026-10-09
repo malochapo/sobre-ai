@@ -100,6 +100,7 @@ impl ServerHandler for SobreServer {
 
         let agent_root = effective_root.clone().unwrap_or_default();
         let agent_id_handle = self.agent_id.clone();
+        let presence_id = self.presence_agent_id.read().await.clone();
         tokio::task::spawn_blocking(move || {
             // Avoid startup stampedes when multiple agent sessions initialize at once.
             // These are best-effort maintenance tasks; it's fine to skip if another
@@ -116,10 +117,17 @@ impl ServerHandler for SobreServer {
             }
             drop(maintenance);
 
+            // The process registered itself at startup; the session reuses that
+            // entry, pointed at the root it settled on, instead of adding a second.
             if !agent_root.is_empty() {
                 let id = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
-                    registry.cleanup_stale(24);
-                    registry.register("mcp", None, &agent_root)
+                    if let Some(id) = presence_id {
+                        registry.set_project_root(&id, &agent_root);
+                        id
+                    } else {
+                        registry.cleanup_stale(24);
+                        registry.register("mcp", Some("context-engine"), &agent_root)
+                    }
                 })
                 .map(|(_, id)| id)
                 .ok();

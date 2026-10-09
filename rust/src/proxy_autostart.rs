@@ -1,6 +1,4 @@
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -23,12 +21,6 @@ fn health_identifies_sobre_proxy(body: &str) -> bool {
         .ok()
         .and_then(|health| health.get("service")?.as_str().map(str::to_owned))
         .is_some_and(|service| service == "sobre-proxy")
-}
-
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-fn port_is_open(port: u16) -> bool {
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok()
 }
 
 /// The PID of the sobre proxy answering `/health` on `port`, or `None` when
@@ -74,7 +66,7 @@ pub(crate) fn stop_proxy_on_port(port: u16) -> Option<u32> {
 /// loop on `EADDRINUSE`.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 fn release_proxy_port(port: u16, quiet: bool) -> bool {
-    if !port_is_open(port) {
+    if !crate::proxy_setup::is_proxy_reachable(port) {
         return true;
     }
 
@@ -96,7 +88,7 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     let _ = crate::ipc::process::terminate_gracefully(pid);
     let graceful_deadline = Instant::now() + Duration::from_secs(2);
     while Instant::now() < graceful_deadline {
-        if !crate::ipc::process::is_alive(pid) && !port_is_open(port) {
+        if !crate::ipc::process::is_alive(pid) && !crate::proxy_setup::is_proxy_reachable(port) {
             if !quiet {
                 eprintln!(
                     "  Handed port {port} from standalone proxy PID {pid} to managed service."
@@ -112,7 +104,7 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     }
     let force_deadline = Instant::now() + Duration::from_secs(1);
     while Instant::now() < force_deadline {
-        if !port_is_open(port) {
+        if !crate::proxy_setup::is_proxy_reachable(port) {
             if !quiet {
                 eprintln!(
                     "  Handed port {port} from standalone proxy PID {pid} to managed service."
@@ -475,9 +467,10 @@ pub fn find_binary() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{health_identifies_sobre_proxy, proxy_pid_from_health};
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    use super::{port_is_open, release_proxy_port};
+    use super::release_proxy_port;
+    use super::{health_identifies_sobre_proxy, proxy_pid_from_health};
+    use crate::proxy_setup::is_proxy_reachable as port_is_open;
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     use std::io::{Read, Write};
     #[cfg(any(target_os = "macos", target_os = "linux"))]

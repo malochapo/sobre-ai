@@ -5,7 +5,6 @@ pub struct MemoryPolicy {
     pub knowledge: KnowledgePolicy,
     pub lifecycle: LifecyclePolicy,
     pub embeddings: EmbeddingsPolicy,
-    pub gotcha: GotchaPolicy,
     pub admission: AdmissionPolicy,
 }
 
@@ -81,19 +80,6 @@ pub struct EmbeddingsPolicy {
 impl Default for EmbeddingsPolicy {
     fn default() -> Self {
         Self { max_facts: 2000 }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct GotchaPolicy {
-    pub max_gotchas_per_project: usize,
-}
-
-impl Default for GotchaPolicy {
-    fn default() -> Self {
-        Self {
-            max_gotchas_per_project: 100,
-        }
     }
 }
 

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-pub(super) const MAX_GOTCHAS: usize = 100;
+pub(crate) const MAX_GOTCHAS: usize = 100;
 pub(super) const MAX_SESSION_LOGS: usize = 20;
 pub(super) const MAX_PENDING: usize = 10;
 pub(super) const PENDING_TIMEOUT_SECS: i64 = 900; // 15 minutes

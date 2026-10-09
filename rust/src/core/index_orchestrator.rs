@@ -829,10 +829,9 @@ fn disk_status_for_graph(project_root: &str) -> DiskStatus {
 
 fn disk_status_for_bm25(project_root: &str) -> DiskStatus {
     let root = Path::new(project_root);
-    let path = BM25Index::index_file_path(root);
-    if !path.exists() {
+    let Some(path) = BM25Index::index_file_path(root).filter(|p| p.exists()) else {
         return DiskStatus::default();
-    }
+    };
     let meta = std::fs::metadata(&path).ok();
     DiskStatus {
         exists: true,
@@ -876,7 +875,9 @@ fn format_time(t: SystemTime) -> String {
 
 pub fn disk_status_for_semantic(project_root: &str) -> DiskStatus {
     let root = Path::new(project_root);
-    let dir = crate::core::index_namespace::vectors_dir(root);
+    let Some(dir) = crate::core::index_namespace::vectors_dir(root) else {
+        return DiskStatus::default();
+    };
     let bin_path = dir.join("embeddings.bin");
     if !bin_path.exists() {
         return DiskStatus::default();

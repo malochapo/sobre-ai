@@ -255,16 +255,10 @@ fn shadow_git_dir(project: &Path) -> Result<PathBuf, String> {
         .join("git"))
 }
 
-/// Stable per-project directory name (FNV-1a over the canonical path).
+/// Stable per-project directory name (short BLAKE3 of the canonical path).
 fn project_hash(project: &Path) -> String {
     let canonical = std::fs::canonicalize(project).unwrap_or_else(|_| project.to_path_buf());
-    let bytes = canonical.to_string_lossy();
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in bytes.as_bytes() {
-        hash ^= u64::from(*b);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{hash:016x}")
+    crate::core::hasher::hash_short(&canonical.to_string_lossy())
 }
 
 fn write_excludes(git_dir: &Path) -> Result<PathBuf, String> {

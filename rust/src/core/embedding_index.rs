@@ -10,7 +10,6 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 
 use super::bm25_index::CodeChunk;
@@ -387,7 +386,7 @@ impl EmbeddingIndex {
     }
 
     pub fn save(&self, root: &Path) -> std::io::Result<()> {
-        let dir = index_dir(root);
+        let dir = index_dir(root).ok_or_else(|| std::io::Error::other("no data dir"))?;
         std::fs::create_dir_all(&dir)?;
         // Binary (postcard) — compact, fast, deterministic.
         let data = postcard::to_allocvec(self).map_err(std::io::Error::other)?;
@@ -396,7 +395,7 @@ impl EmbeddingIndex {
     }
 
     pub fn load(root: &Path) -> Option<Self> {
-        let bin_path = index_dir(root).join("embeddings.bin");
+        let bin_path = index_dir(root)?.join("embeddings.bin");
         let data = std::fs::read(&bin_path).ok()?;
         match postcard::from_bytes::<Self>(&data) {
             // Only accept an index whose on-disk schema matches the current one.
@@ -424,14 +423,12 @@ impl EmbeddingIndex {
     }
 }
 
-fn index_dir(root: &Path) -> PathBuf {
+fn index_dir(root: &Path) -> Option<PathBuf> {
     crate::core::index_namespace::vectors_dir(root)
 }
 
 fn hash_content(content: &str) -> String {
-    let mut hasher = Md5::new();
-    hasher.update(content.as_bytes());
-    crate::core::hasher::hex_encode(&hasher.finalize())
+    crate::core::hasher::hash_str(content)
 }
 
 fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
@@ -453,19 +450,16 @@ fn compute_file_hashes(chunks: &[CodeChunk]) -> HashMap<String, String> {
             ))
         });
 
-        let mut hasher = Md5::new();
+        let mut hasher = blake3::Hasher::new();
         hasher.update(file.as_bytes());
         for c in file_chunks {
-            hasher.update(c.start_line.to_le_bytes());
-            hasher.update(c.end_line.to_le_bytes());
+            hasher.update(&c.start_line.to_le_bytes());
+            hasher.update(&c.end_line.to_le_bytes());
             hasher.update(c.symbol_name.as_bytes());
-            hasher.update([kind_tag(&c.kind)]);
+            hasher.update(&[kind_tag(&c.kind)]);
             hasher.update(c.content.as_bytes());
         }
-        out.insert(
-            file.to_string(),
-            crate::core::hasher::hex_encode(&hasher.finalize()),
-        );
+        out.insert(file.to_string(), hasher.finalize().to_hex().to_string());
     }
     out
 }
