@@ -809,7 +809,7 @@ mod tests {
         assert_eq!(
             to_okf_bundle(&snap),
             to_okf_bundle(&snap),
-            "two exports of the same snapshot are byte-identical (#498)"
+            "two exports of the same snapshot are byte-identical"
         );
     }
 

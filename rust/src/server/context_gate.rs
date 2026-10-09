@@ -193,7 +193,7 @@ mod tests {
         let multi = pre_dispatch_read("multi-select-971.rs", "lines:620-622,1214-1218", None, None);
         assert!(
             multi.overridden_mode.is_none(),
-            "lines:A-B,C-D must not be overridden by bounce-prevention (#971)"
+            "lines:A-B,C-D must not be overridden by bounce-prevention"
         );
 
         // Control: the single-range form was already protected.

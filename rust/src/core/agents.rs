@@ -386,7 +386,7 @@ mod tests {
         assert!(ids.contains(&"live"), "live same-project agent must remain");
         assert!(
             !ids.contains(&"ghost"),
-            "dead-pid agent must be pruned from the active list (#419)"
+            "dead-pid agent must be pruned from the active list"
         );
     }
 

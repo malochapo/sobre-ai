@@ -552,7 +552,7 @@ mod tests {
         );
         assert!(
             !output.contains(", )"),
-            "must not emit a dangling ', )' (#509)"
+            "must not emit a dangling ', )'"
         );
     }
 

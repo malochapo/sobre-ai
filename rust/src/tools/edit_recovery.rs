@@ -338,7 +338,7 @@ mod tests {
             ));
         });
         let hint = rx.recv_timeout(Duration::from_secs(10)).expect(
-            "cross_file_hint hung on a FIFO — non-regular files must be skipped (#331 regression)",
+            "cross_file_hint hung on a FIFO — non-regular files must be skipped (regression)",
         );
         assert!(hint.contains("b.rs"), "got: {hint}");
         assert!(

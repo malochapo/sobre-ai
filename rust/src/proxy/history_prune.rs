@@ -605,7 +605,7 @@ mod tests {
         assert_eq!(
             stubs(12),
             0,
-            "cached prefix not rewritten after the jump (#448)"
+            "cached prefix not rewritten after the jump"
         );
         assert_eq!(stubs(20), 0, "still zero deep into the session");
 
@@ -616,7 +616,7 @@ mod tests {
         prune_history(&mut unguarded, boundary, &no_names());
         assert!(
             unguarded.iter().any(|m| m.to_string().contains("pruned")),
-            "guardless pruning rewrites cached content — the bug #448 fixes"
+            "guardless pruning rewrites cached content — the bug this prevents"
         );
     }
 }

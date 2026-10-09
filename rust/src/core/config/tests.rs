@@ -34,7 +34,7 @@ mod config_load_cache_tests {
 
         assert!(
             Config::load().search_roots == ["/srv"],
-            "Config::load() must honor a content change with unchanged mtime (#406)"
+            "Config::load() must honor a content change with unchanged mtime"
         );
     }
 }

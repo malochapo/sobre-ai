@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(
             replace_whole_word("context.Context", "context", "ctx"),
             "ctx.Context",
-            "only lowercase `context` should be replaced (#981)"
+            "only lowercase `context` should be replaced"
         );
     }
 
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(
             replace_whole_word("src/environment.rs changed", "environment", "env"),
             "src/environment.rs changed",
-            "words inside paths must be preserved (#973)"
+            "words inside paths must be preserved"
         );
     }
 
@@ -325,7 +325,7 @@ mod tests {
     fn general_dict_stays_empty() {
         assert!(
             GENERAL.is_empty(),
-            "GENERAL must stay empty: all 60 single-word rules save 0 tokens              under BPE and corrupt source/paths (#973, #980, #981)"
+            "GENERAL must stay empty: all 60 single-word rules save 0 tokens              under BPE and corrupt source/paths"
         );
     }
 

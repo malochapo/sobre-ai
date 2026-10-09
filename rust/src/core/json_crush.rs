@@ -400,7 +400,7 @@ mod tests {
     fn output_is_byte_stable_across_calls() {
         let v = homogeneous();
         let run = || crush_lossless(&v).unwrap().text;
-        assert_eq!(run(), run(), "crush output must be deterministic (#498)");
+        assert_eq!(run(), run(), "crush output must be deterministic");
     }
 
     #[test]

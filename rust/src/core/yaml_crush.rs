@@ -178,7 +178,7 @@ mod tests {
     fn output_is_byte_stable_across_calls() {
         let yaml = manifest_yaml();
         let run = || crush_text_if_beneficial(&yaml).unwrap();
-        assert_eq!(run(), run(), "crush output must be deterministic (#498)");
+        assert_eq!(run(), run(), "crush output must be deterministic");
     }
 
     #[test]

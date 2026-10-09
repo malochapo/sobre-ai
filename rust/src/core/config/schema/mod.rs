@@ -244,7 +244,7 @@ mod tests {
         for key in ["search_roots", "proxy"] {
             assert!(
                 accepted(&known, key),
-                "validation must recognise '{key}' (#456)"
+                "validation must recognise '{key}'"
             );
         }
     }

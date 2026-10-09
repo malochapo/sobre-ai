@@ -446,7 +446,7 @@ mod tests {
         assert_eq!(
             parsed["input"][1]["content"].as_str().unwrap(),
             prose,
-            "assistant turns must pass through verbatim (#710)"
+            "assistant turns must pass through verbatim"
         );
     }
 
@@ -470,7 +470,7 @@ mod tests {
         assert_eq!(
             compress_request_body(a, la).0,
             compress_request_body(b, lb).0,
-            "identical input must yield byte-identical output (#498)"
+            "identical input must yield byte-identical output"
         );
     }
 

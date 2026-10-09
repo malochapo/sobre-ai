@@ -328,7 +328,7 @@ mod tests {
     fn output_is_byte_stable_across_calls() {
         let csv = roster_csv();
         let run = || crush_text_if_beneficial(&csv, ',').unwrap();
-        assert_eq!(run(), run(), "crush output must be deterministic (#498)");
+        assert_eq!(run(), run(), "crush output must be deterministic");
     }
 
     #[test]

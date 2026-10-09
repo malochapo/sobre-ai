@@ -226,7 +226,7 @@ impl SobreServer {
                 tracing::error!(
                     tool = name,
                     timeout_secs = limit.as_secs(),
-                    "tool watchdog fired — handler cancelled to reclaim pool slot (#1018)"
+                    "tool watchdog fired — handler cancelled to reclaim pool slot"
                 );
                 Err(ErrorData::internal_error(
                     format!(

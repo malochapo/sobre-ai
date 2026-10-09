@@ -141,7 +141,7 @@ fn proxy_enable_respects_codex_auth_mode_554() {
         let cfg = std::fs::read_to_string(codex.join("config.toml")).unwrap();
         assert!(
             !cfg.contains("model_provider = \"sobre-chatgpt\""),
-            "a ChatGPT login must stay native — no model_provider pin (#597), got:\n{cfg}"
+            "a ChatGPT login must stay native — no model_provider pin, got:\n{cfg}"
         );
         assert!(
             !cfg.contains("chatgpt_base_url"),

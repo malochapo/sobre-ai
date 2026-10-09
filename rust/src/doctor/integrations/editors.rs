@@ -136,7 +136,7 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
     // Surface the Read-redirect posture so a Claude Code user understands why
     // native reads are not transparently compressed here. Purely informational.
     {
-        let detail = "native Read passes through Claude Code's read-before-write guard; re-reads dedup via PostToolUse, sobre_read + Grep/Glob still compress (#637)";
+        let detail = "native Read passes through Claude Code's read-before-write guard; re-reads dedup via PostToolUse, sobre_read + Grep/Glob still compress";
         checks.push(NamedCheck {
             name: "Read redirect".to_string(),
             ok: true,

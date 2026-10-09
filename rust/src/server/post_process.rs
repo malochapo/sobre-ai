@@ -121,7 +121,7 @@ mod tests {
         let out = compress_terse(content.to_string(), "sobre_read", None, &cfg, false);
         assert_eq!(
             out, content,
-            "sobre_read output must be byte-identical (#404)"
+            "sobre_read output must be byte-identical"
         );
     }
 

@@ -168,7 +168,7 @@ fn codex_env_writes_v1_suffixed_url() {
     );
     assert!(
         !cfg.contains("[env]") && !cfg.contains("OPENAI_BASE_URL"),
-        "must not write the dead [env] OPENAI_BASE_URL form (#554), got:\n{cfg}"
+        "must not write the dead [env] OPENAI_BASE_URL form, got:\n{cfg}"
     );
     assert!(
         !cfg.contains("chatgpt_base_url"),
@@ -216,7 +216,7 @@ fn codex_env_chatgpt_mode_optout_writes_nothing() {
     let cfg = std::fs::read_to_string(codex_dir.join("config.toml")).unwrap();
     assert!(
         !cfg.contains("model_provider"),
-        "ChatGPT mode must not pin a model_provider (#597), got:\n{cfg}"
+        "ChatGPT mode must not pin a model_provider, got:\n{cfg}"
     );
     assert!(
         !cfg.contains("chatgpt_base_url") && !cfg.contains("openai_base_url"),

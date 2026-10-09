@@ -39,7 +39,7 @@ fn run_dash_c(command: &str, home: &Path) -> Output {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "POSIX-bash cwd snapshot; cross-platform security covered by model_chosen_eval test (#1057)"
+    ignore = "POSIX-bash cwd snapshot; cross-platform security covered by model_chosen_eval test"
 )]
 fn claude_wrapper_runs_inner_command_and_preserves_cwd_snapshot() {
     let tmp = tempfile::tempdir().unwrap();
@@ -87,7 +87,7 @@ fn claude_wrapper_runs_inner_command_and_preserves_cwd_snapshot() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "POSIX-bash cwd snapshot; cross-platform security covered by model_chosen_eval test (#1057)"
+    ignore = "POSIX-bash cwd snapshot; cross-platform security covered by model_chosen_eval test"
 )]
 fn real_bashprovider_wrapper_with_source_prefix_runs() {
     // The exact production shape from Claude Code's `bashProvider.ts`:
@@ -134,7 +134,7 @@ fn real_bashprovider_wrapper_with_source_prefix_runs() {
 #[test]
 #[cfg_attr(
     windows,
-    ignore = "zsh sandbox uses POSIX features; cross-platform security covered by model_chosen_eval test (#1057)"
+    ignore = "zsh sandbox uses POSIX features; cross-platform security covered by model_chosen_eval test"
 )]
 fn zsh_sandbox_wrapper_runs_inner_command() {
     let tmp = tempfile::tempdir().unwrap();
