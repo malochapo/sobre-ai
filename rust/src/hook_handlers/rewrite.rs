@@ -7,8 +7,8 @@
 //! only rewrite when [`host_rules::same_treatment`] confirms no rule the host
 //! applies tells the original and the wrapped command apart. A command is only
 //! wrapped whole, and only when it is a single command sobre knows how to
-//! compress: no chains, pipes, redirections, substitutions or heredocs, and
-//! never a file read (`cat`/`head`/`tail`). The wrapped command's compressed
+//! compress: no chains, pipes, background jobs, redirections, substitutions
+//! or heredocs, and never a file read (`cat`/`head`/`tail`). The wrapped command's compressed
 //! output ends with a `[sobre: …]` line saying so.
 
 use std::path::{Path, PathBuf};
@@ -100,10 +100,7 @@ pub(super) fn candidate(cmd: &str, binary: &str) -> Option<String> {
     {
         return None;
     }
-    let compound = compound_lexer::split_compound(cmd)
-        .iter()
-        .any(|s| matches!(s, compound_lexer::Segment::Operator(_)));
-    if compound
+    if compound_lexer::has_control_operator(cmd)
         || crate::rewrite_registry::is_file_read_command(cmd)
         || !crate::rewrite_registry::is_rewritable_command(cmd)
     {
@@ -184,6 +181,7 @@ mod tests {
     fn anything_else_runs_as_written() {
         for cmd in [
             "git status && git log",
+            "git status & rm -rf target",
             "git log | head",
             "cargo build > out.txt",
             "git commit -m \"$(date)\"",
