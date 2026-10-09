@@ -51,7 +51,7 @@ pub(crate) fn handle_remember(
         r
     }) {
         Ok(pair) => pair,
-        Err(e) => return format!("Remembered [{cat}] {k}: {v}\n(save failed: {e})"),
+        Err(e) => return format!("ERROR: [{cat}] {k} was not saved: {e}"),
     };
 
     // The contradiction (if any) only exists on the normal stored path.

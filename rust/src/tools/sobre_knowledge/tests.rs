@@ -281,3 +281,29 @@ fn search_leaves_superseded_facts_out() {
         "a superseded fact came back: {out}"
     );
 }
+
+/// A fact that could not be written is reported as an error, never as
+/// remembered or removed.
+#[test]
+fn a_failed_save_is_an_error() {
+    let _dir = crate::core::data_dir::isolated_data_dir();
+    let blocker = tempfile::NamedTempFile::new().unwrap();
+    // A data dir that is a file: nothing can be written under it.
+    crate::test_env::set_var("SOBRE_DATA_DIR", blocker.path());
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
+
+    let out = handle_remember(
+        &root,
+        Some("deploy"),
+        Some("region"),
+        Some("eu-west-1"),
+        "s1",
+        None,
+    );
+    assert!(out.starts_with("ERROR"), "{out}");
+    assert!(!out.contains("Remembered"), "{out}");
+
+    let out = handle_remove(&root, Some("deploy"), Some("region"));
+    assert!(out.starts_with("ERROR"), "{out}");
+}

@@ -135,7 +135,11 @@ impl McpTool for SobreKnowledgeTool {
                     format!("Gotcha noted: {trigger} (evicted by higher-confidence entries)")
                 }
             };
-            let _ = store.save(&project_root);
+            if let Err(e) = store.save(&project_root) {
+                return Ok(text_output(format!(
+                    "ERROR: the gotcha was not saved: {e}"
+                )));
+            }
             return Ok(text_output(msg));
         }
 

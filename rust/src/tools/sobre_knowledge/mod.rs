@@ -93,7 +93,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
         }
     }) {
         Ok(pair) => pair,
-        Err(e) => return format!("Removed but save failed: {e}"),
+        Err(e) => return format!("ERROR: [{cat}] {k} was not removed: {e}"),
     };
 
     if !removed {
