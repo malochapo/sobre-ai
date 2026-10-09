@@ -3,20 +3,18 @@ targets = []
 all-features = true
 
 [advisories]
-# cargo-deny >= 0.19 removed `vulnerability` and `notice` config knobs:
-# all vulnerability/notice advisories now emit errors unless explicitly ignored.
-# `unmaintained`/`unsound` now control which dependencies can fail the check.
+# Every vulnerability advisory fails the check unless it is listed in `ignore`
+# (none is). Unmaintained-crate advisories fail only for direct dependencies.
 unmaintained = "workspace"
 yanked = "warn"
 unused-ignored-advisory = "warn"
 ignore = []
 
 [licenses]
-# The allow-list below is a deliberately curated, forward-looking policy. Some
-# entries (e.g. OpenSSL for `ring`, Unicode-DFS-2016) are kept so dependency
-# bumps don't trip the check; `allow` silences the pedantic "not encountered"
-# notice for those without weakening the policy itself.
-unused-allowed-license = "allow"
+# The licences of the dependency graph, every target and feature included. A
+# licence no dependency uses any more is reported, so the list stays the one
+# the graph needs.
+unused-allowed-license = "warn"
 allow = [
     "MIT",
     "Apache-2.0",
@@ -26,23 +24,15 @@ allow = [
     "0BSD",
     "ISC",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Zlib",
     "Unlicense",
     "MPL-2.0",
     "BSL-1.0",
     "CC0-1.0",
     "CDLA-Permissive-2.0",
-    "OpenSSL",
     "bzip2-1.0.6",
-    "WTFPL",
 ]
 confidence-threshold = 0.8
-
-[[licenses.clarify]]
-name = "ring"
-expression = "MIT AND ISC AND OpenSSL"
-license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
 
 [bans]
 multiple-versions = "warn"

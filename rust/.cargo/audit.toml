@@ -1,9 +1,0 @@
-# cargo-audit policy. Every entry is a deliberate, documented decision — not a
-# blanket suppression. (`cargo deny` needs none: its `unmaintained = "workspace"`
-# only checks direct dependencies.)
-[advisories]
-ignore = [
-    # paste 1.0.15 (RUSTSEC-2024-0436, "unmaintained"). Build-time proc-macro
-    # pulled in transitively by tikv-jemalloc-ctl; no runtime attack surface.
-    "RUSTSEC-2024-0436",
-]
