@@ -77,7 +77,7 @@ was added.
 |---|---|---|
 | G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
 | H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | done (#51, #56, #57, #58) |
-| J | Editing and shell tools | done (#59, #PRNUM) |
+| J | Editing and shell tools | done (#59, #60) |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
 | M | Code: dense-only code in the default build, leftovers, Windows lints | open |
@@ -602,13 +602,13 @@ documented:
   lines it shows.
 - [x] **J7 Non-ASCII commands get ids `sobre_expand` refuses.** The id slug
   keeps Unicode letters (`shell/redact.rs:25-35`); the resolver accepts
-  ASCII only (`proxy/ccr.rs:124-138`). (#PRNUM) Done: the slug is ASCII.
+  ASCII only (`proxy/ccr.rs:124-138`). (#60) Done: the slug is ASCII.
 - [x] **J8 `isError` in `sobre_shell`** (`server/call_tool.rs:359-379`).
   - Exit 1 with output is not an error; exit 1 without output is.
   - sobre's own failures (a missing `cwd`, an unknown background job) are
     not errors.
   - Decision 5.
-  - Done (#PRNUM): any non-zero exit sets `isError` and `exitCode`, and the
+  - Done (#60): any non-zero exit sets `isError` and `exitCode`, and the
     text, output included, is unchanged; sobre's own failures exit 1, so
     they are errors too. `sobre call` follows the same rule.
 - [x] **J9 Background job ids come from the command text**
@@ -617,7 +617,7 @@ documented:
     first run's output.
   - A foreground run of the same command deletes the background result.
   - Same class as B7. Fix: one id per launch.
-  - Done (#PRNUM): `shell_<pid>_<n>`, one per launch.
+  - Done (#60): `shell_<pid>_<n>`, one per launch.
 - [x] **J10 `sobre_checkpoint`** (`core/git/shadow.rs:136-172,264-279`).
   - `restore` runs `git checkout <ref> -- .` with no snapshot first: every
     change since the checkpoint, the user's included, is lost with no way
@@ -628,7 +628,7 @@ documented:
     worktree with HEAD; the schema says `HEAD~1..HEAD`.
   - Fix: snapshot before `restore`; say what was not restored; follow the
     schema.
-  - Done (#PRNUM): `restore` checkpoints the tree first and names that
+  - Done (#60): `restore` checkpoints the tree first and names that
     checkpoint as the undo; it lists the excludes and says files created
     since are left in place. `diff` runs from `from` (default: the last
     checkpoint) to `to` (default: the working tree), and the schema says
@@ -642,7 +642,7 @@ documented:
   - It clears `BASH_ENV` and `ENV`.
   - Fix: past the cap, keep draining and drop the excess, labelled; no
     timeout of its own (the host has one); keep the environment.
-  - Done (#PRNUM):
+  - Done (#60):
     - output past the cap is read and dropped, with "N more bytes of
       output not kept … the command ran to the end";
     - there is no timeout and no kill;
@@ -668,7 +668,7 @@ documented:
     inside single quotes gets expanded.
   - Fix: quote the binary in every hook and in the rewrite; parse quoted
     paths in `doctor`.
-  - Done (#PRNUM):
+  - Done (#60):
     - every hook command quotes a binary path that needs it: single
       quotes on Unix, double quotes on Windows;
     - the Cursor/Gemini rewrite does the same on Unix;
@@ -687,15 +687,15 @@ documented:
     symbol edits, dry runs) writes, then reports "⚠ syntax: this edit
     leaves a syntax error near line N". `validate_syntax` and the
     brace-balance count are gone.
-- [x] **J14 Smaller ones.** (#59, #PRNUM)
+- [x] **J14 Smaller ones.** (#59, #60)
   - `ops[]` batches are not atomic; the schema says "batch-atomic".
   - `timeout_ms` is described as the command's lifetime; it is enforced as
-    idle time. Done in #PRNUM: the schema and `shell_timeout_secs` say
+    idle time. Done in #60: the schema and `shell_timeout_secs` say
     "without new output", with the 1-hour ceiling.
   - `allow_lossy_utf8` rewrites the whole file with U+FFFD, unlabelled, and
     the diff hides it. The error that would need it does not mention it.
   - `agent_runtime_env::capture` never refreshes its timestamp, so the
-    2-hour expiry hits during a session. Done in #PRNUM: a capture a
+    2-hour expiry hits during a session. Done in #60: a capture a
     quarter of the TTL old is rewritten.
   - `sobre_refactor` checks for the language server before the action: an
     unknown action answers "pylsp not found".
@@ -714,7 +714,7 @@ documented:
     - an unknown `sobre_refactor` action is refused before any language
       server starts.
 
-- [x] **J15 Compressed `git log --stat` states wrong totals.** (#PRNUM) On this
+- [x] **J15 Compressed `git log --stat` states wrong totals.** (#60) On this
   repository's `git log -n 40 --stat`, the hook prints `[40 commits,
   +0/-119 total]`; the real totals are +19,855/−116,368.
   `compress_log_summary` (`core/patterns/git/log.rs:250-258,288-293`)
