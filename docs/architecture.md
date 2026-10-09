@@ -89,12 +89,16 @@ built when a tool first needs them.
 
 ### An MCP tool call
 
-1. `mcp_stdio.rs` reads a message. It accepts both JSON lines and
-   `Content-Length` framing.
+1. rmcp's stdio transport reads one JSON-RPC message per line, up to
+   32 MiB (`mcp_stdio.rs`). It skips a line that is not JSON and a
+   notification outside MCP, and answers JSON that is not JSON-RPC with an
+   `Invalid Request` error; none of them closes the session.
 2. `server/server_handler.rs` answers `initialize`. It records the client
    name and sets the project root: the host's workspace, else the git root
    around the working directory. It adds the configured `search_roots` as extra
    roots, skipping broad ones, and starts storage maintenance in the background.
+   Only the protocol revisions that open with `initialize` are served (up to
+   2025-11-25); a client opening without it is told the version is unsupported.
 3. `tools/list` returns the registry: 15 tools, descriptions condensed by
    `compression_level`, read-only and destructive hints added
    (`tool_defs/`). It never announces `listChanged`.

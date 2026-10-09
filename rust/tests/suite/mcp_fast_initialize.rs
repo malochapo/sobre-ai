@@ -12,9 +12,13 @@
 //!      such as a crash-backoff sleep or a network wait),
 //!   2. a tools/call fired IMMEDIATELY after the initialized notification —
 //!      the exact VS Code race pattern — succeeds on the first attempt.
+//!
+//! A third test pins the transport's tolerance: a line that is not a valid
+//! MCP message must not close the session, or the host respawns the server
+//! and the fresh process pays for its indexes again.
 
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -47,57 +51,70 @@ fn test_env() -> TestEnv {
     }
 }
 
-#[test]
-#[cfg_attr(
-    windows,
-    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
-)]
-fn initialize_answers_fast_and_first_call_succeeds() {
-    let bin = env!("CARGO_BIN_EXE_sobre");
-    let env = test_env();
+/// A `sobre mcp` child over piped stdio, with a thread forwarding each line
+/// it writes to stdout.
+struct Server {
+    child: Child,
+    stdin: ChildStdin,
+    lines: mpsc::Receiver<String>,
+    reader: std::thread::JoinHandle<()>,
+}
 
-    let spawn_at = Instant::now();
-    let mut child: Child = Command::new(bin)
-        .arg("mcp")
-        .current_dir(&env.project)
-        .env("HOME", &env.home)
-        .env("SOBRE_DATA_DIR", &env.data)
-        .env("CODEX_HOME", env.home.join(".codex"))
-        // Root detection must derive from the temp project's cwd. When the
-        // suite itself runs inside an IDE/agent session these carry the HOST
-        // workspace and would hijack the project root.
-        .env_remove("CLAUDE_PROJECT_DIR")
-        .env_remove("WORKSPACE_FOLDER_PATHS")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("mcp server spawn");
+impl Server {
+    fn spawn(env: &TestEnv) -> Self {
+        let mut child = Command::new(env!("CARGO_BIN_EXE_sobre"))
+            .arg("mcp")
+            .current_dir(&env.project)
+            .env("HOME", &env.home)
+            .env("SOBRE_DATA_DIR", &env.data)
+            .env("CODEX_HOME", env.home.join(".codex"))
+            // Root detection must derive from the temp project's cwd. When the
+            // suite itself runs inside an IDE/agent session these carry the HOST
+            // workspace and would hijack the project root.
+            .env_remove("CLAUDE_PROJECT_DIR")
+            .env_remove("WORKSPACE_FOLDER_PATHS")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("mcp server spawn");
 
-    let mut stdin = child.stdin.take().expect("child stdin");
-    let stdout = child.stdout.take().expect("child stdout");
-    let (tx, rx) = mpsc::channel::<String>();
-    let reader = std::thread::spawn(move || {
-        for line in BufReader::new(stdout).lines() {
-            match line {
-                Ok(l) => {
-                    if tx.send(l).is_err() {
-                        break;
+        let stdin = child.stdin.take().expect("child stdin");
+        let stdout = child.stdout.take().expect("child stdout");
+        let (tx, lines) = mpsc::channel::<String>();
+        let reader = std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                match line {
+                    Ok(l) => {
+                        if tx.send(l).is_err() {
+                            break;
+                        }
                     }
+                    Err(_) => break,
                 }
-                Err(_) => break,
             }
+        });
+        Self {
+            child,
+            stdin,
+            lines,
+            reader,
         }
-    });
+    }
 
-    let recv_response = |id: u64, deadline: Duration| -> serde_json::Value {
+    fn send(&mut self, line: &str) {
+        writeln!(self.stdin, "{line}").expect("write to the server");
+    }
+
+    fn recv_response(&self, id: u64, deadline: Duration) -> serde_json::Value {
         let needle = format!("\"id\":{id}");
         let until = Instant::now() + deadline;
         loop {
             let remaining = until
                 .checked_duration_since(Instant::now())
                 .unwrap_or_else(|| panic!("timeout waiting for JSON-RPC response id={id}"));
-            let line = rx
+            let line = self
+                .lines
                 .recv_timeout(remaining)
                 .unwrap_or_else(|e| panic!("no response id={id} within deadline: {e}"));
             if line.contains(&needle) {
@@ -105,18 +122,41 @@ fn initialize_answers_fast_and_first_call_succeeds() {
                     .unwrap_or_else(|e| panic!("invalid JSON-RPC line: {e}\n{line}"));
             }
         }
-    };
+    }
 
-    let init = serde_json::json!({
-        "jsonrpc": "2.0", "id": 1, "method": "initialize",
-        "params": {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": { "name": "vscode", "version": "1.109.0" }
-        }
-    });
-    writeln!(stdin, "{init}").expect("write initialize");
-    let init_res = recv_response(1, INITIALIZE_DEADLINE);
+    /// Sends `initialize` (id 1) and returns its response.
+    fn initialize(&mut self, deadline: Duration) -> serde_json::Value {
+        let init = serde_json::json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": { "name": "vscode", "version": "1.109.0" }
+            }
+        });
+        self.send(&init.to_string());
+        self.recv_response(1, deadline)
+    }
+
+    /// Closes stdin (EOF → clean server shutdown) and waits for the process.
+    fn finish(mut self) {
+        drop(self.stdin);
+        let _ = self.child.wait();
+        let _ = self.reader.join();
+    }
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
+)]
+fn initialize_answers_fast_and_first_call_succeeds() {
+    let env = test_env();
+
+    let spawn_at = Instant::now();
+    let mut server = Server::spawn(&env);
+    let init_res = server.initialize(INITIALIZE_DEADLINE);
     let elapsed = spawn_at.elapsed();
     assert!(
         init_res["result"]["serverInfo"]["name"].is_string(),
@@ -130,12 +170,9 @@ fn initialize_answers_fast_and_first_call_succeeds() {
 
     // The VS Code race pattern: initialized notification and the first tool
     // call back-to-back, no grace period. It must succeed first try.
-    writeln!(
-        stdin,
-        "{}",
-        serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" })
-    )
-    .expect("write initialized");
+    server.send(
+        &serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }).to_string(),
+    );
     let call = serde_json::json!({
         "jsonrpc": "2.0", "id": 2, "method": "tools/call",
         "params": {
@@ -143,8 +180,8 @@ fn initialize_answers_fast_and_first_call_succeeds() {
             "arguments": { "path": env.project.join("hello.txt").to_string_lossy() }
         }
     });
-    writeln!(stdin, "{call}").expect("write tools/call");
-    let call_res = recv_response(2, Duration::from_secs(30));
+    server.send(&call.to_string());
+    let call_res = server.recv_response(2, Duration::from_secs(30));
     assert!(
         call_res["error"].is_null(),
         "first tools/call immediately after initialized must succeed; got: {call_res}"
@@ -157,7 +194,39 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         "sobre_read must deliver the file on the first post-initialize call; got: {call_res}"
     );
 
-    drop(stdin); // EOF → clean server shutdown
-    let _ = child.wait();
-    let _ = reader.join();
+    server.finish();
+}
+
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
+)]
+fn lines_that_are_not_mcp_messages_leave_the_session_open() {
+    let env = test_env();
+    let mut server = Server::spawn(&env);
+    server.initialize(INITIALIZE_DEADLINE);
+    server.send(
+        &serde_json::json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }).to_string(),
+    );
+
+    // Not JSON; a notification outside MCP; JSON that is not JSON-RPC.
+    server.send("{ this is : not json }");
+    server.send(r#"{"jsonrpc":"2.0","method":"$/cancelRequest","params":{"id":7}}"#);
+    server.send(r#"{"foo":"bar"}"#);
+
+    server.send(
+        &serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }).to_string(),
+    );
+    let res = server.recv_response(2, Duration::from_secs(30));
+    let tools = res["result"]["tools"]
+        .as_array()
+        .unwrap_or_else(|| panic!("tools/list must still answer; got: {res}"));
+    assert_eq!(
+        tools.len(),
+        sobre::server::registry::build_registry().tool_defs().len(),
+        "tools/list must return the whole registry"
+    );
+
+    server.finish();
 }

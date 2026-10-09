@@ -33,6 +33,5 @@ Third-party contributions:
 - Almario Miano: various improvements
 --------------------------------------------------------------------------------
 
-This product vendors third-party code under permissive licences, including
-rmcp and rmcp-macros (Apache-2.0) under rust/crates/vendor/. The dependency
-licence policy is enforced by rust/deny.toml.
+This product depends on third-party crates under permissive licences. The
+dependency licence policy is enforced by rust/deny.toml.

@@ -17,8 +17,9 @@ use futures::FutureExt;
 use rmcp::ErrorData;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, Implementation, InitializeRequestParams,
-    InitializeResult, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
+    InitializeRequestParams, InitializeResult, ListToolsResult, PaginatedRequestParams,
+    ProtocolVersion, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::{RequestContext, RoleServer};
 
