@@ -39,7 +39,6 @@ const BINARY_EXTENSIONS: &[&str] = &[
     "ico",
     "tiff",
     "tif",
-    "svg",
     "psd",
     "raw",
     "cr2",
@@ -79,7 +78,6 @@ const BINARY_EXTENSIONS: &[&str] = &[
     "egg",
     "beam",
     "wasm",
-    "wast",
     // ML models
     "model",
     "onnx",
@@ -90,7 +88,6 @@ const BINARY_EXTENSIONS: &[&str] = &[
     "ggml",
     "tflite",
     "pb",
-    "h5",
     "keras",
     // Serialized
     "pkl",
@@ -242,6 +239,9 @@ mod tests {
         assert!(!has_binary_extension("config.toml"));
         assert!(!has_binary_extension("README.md"));
         assert!(!has_binary_extension("script.py"));
+        // XML and WebAssembly text formats.
+        assert!(!has_binary_extension("icon.svg"));
+        assert!(!has_binary_extension("module.wast"));
     }
 
     #[test]

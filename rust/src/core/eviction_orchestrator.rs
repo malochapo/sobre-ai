@@ -94,21 +94,19 @@ impl EvictionOrchestrator {
             return;
         }
 
-        let current_tokens = self.try_read_cache_tokens();
         let bm25_bytes = super::bm25_cache::memory_usage(&self.bm25_cache);
-
-        let effective_tokens = if bm25_bytes > 0 {
-            current_tokens + bm25_bytes / 4
-        } else {
-            current_tokens
-        };
-
-        let action = {
-            let mut ctrl = self
-                .controller
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            ctrl.evaluate(effective_tokens)
+        // A busy cache lock says nothing about the cache's size: the
+        // controller then has no verdict and the RSS floor below decides.
+        let cache_tokens = self.try_read_cache_tokens();
+        let action = match cache_tokens {
+            Some(current_tokens) => {
+                let mut ctrl = self
+                    .controller
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                ctrl.evaluate(current_tokens + bm25_bytes / 4)
+            }
+            None => HomeostasisAction::None,
         };
 
         // The homeostasis controller reasons over *cache-token*
@@ -125,7 +123,7 @@ impl EvictionOrchestrator {
         }
 
         tracing::info!(
-            "[eviction] pressure={level:?} tokens={current_tokens}/{} bm25={:.1}MB action={action:?}",
+            "[eviction] pressure={level:?} tokens={cache_tokens:?}/{} bm25={:.1}MB action={action:?}",
             self.token_budget,
             bm25_bytes as f64 / 1_048_576.0,
         );
@@ -149,7 +147,7 @@ impl EvictionOrchestrator {
                 trimmed > 0
             }
 
-            HomeostasisAction::EvictProbationary { .. } => {
+            HomeostasisAction::EvictProbationary => {
                 let evicted = self.try_write_cache(|cache| {
                     let n = cache.evict_probationary();
                     cache.trim_shared_blocks();
@@ -165,10 +163,9 @@ impl EvictionOrchestrator {
                 }
                 let content_freed = super::content_cache::memory_usage_bytes();
                 super::content_cache::clear();
-                // The ANN/HNSW graph, resident trigram indices and the
-                // materialized graph indexes were invisible to eviction — on
-                // embedding-heavy sessions they dominated RSS while the
-                // guardian could only trim the (small) session cache.
+                // The ANN/HNSW graph and the resident trigram indices
+                // dominate RSS in embedding-heavy sessions, far beyond the
+                // session cache.
                 #[cfg(feature = "dense")]
                 let ann_freed = {
                     let bytes = super::ann_cache::memory_usage_bytes();
@@ -217,13 +214,13 @@ impl EvictionOrchestrator {
         }
     }
 
-    /// Try to read current token count without blocking.
-    /// Falls back to budget (assumes full) if the lock is contended.
-    fn try_read_cache_tokens(&self) -> usize {
-        match self.cache.try_read() {
-            Ok(guard) => guard.total_cached_tokens(),
-            Err(_) => self.token_budget,
-        }
+    /// The cache's token count, read without blocking; `None` while the lock
+    /// is held.
+    fn try_read_cache_tokens(&self) -> Option<usize> {
+        self.cache
+            .try_read()
+            .ok()
+            .map(|guard| guard.total_cached_tokens())
     }
 
     /// Try to write to the cache. Returns default value if lock is contended.
@@ -253,7 +250,7 @@ fn floor_action_for_rss(
     let rank = |a: &HomeostasisAction| match a {
         HomeostasisAction::None => 0u8,
         HomeostasisAction::TrimOutputs => 1,
-        HomeostasisAction::EvictProbationary { .. } => 2,
+        HomeostasisAction::EvictProbationary => 2,
         HomeostasisAction::UnloadIndices => 3,
         HomeostasisAction::EvictProtected { .. } => 4,
         HomeostasisAction::EmergencyDrop => 5,
@@ -317,6 +314,27 @@ mod tests {
         drop(second);
         assert_eq!(registry.live_targets().len(), 1);
         assert_eq!(registry.targets.len(), 1);
+    }
+
+    /// A busy cache lock says nothing about how full the cache is: soft RSS
+    /// pressure must not turn it into an emergency drop of every index.
+    #[test]
+    fn contended_cache_lock_does_not_escalate() {
+        #[cfg(feature = "dense")]
+        let _ann_lock = crate::core::ann_cache::test_lock();
+        let orch = make_orchestrator();
+        *orch.bm25_cache.lock().unwrap() = Some(crate::core::bm25_cache::Bm25CacheEntry {
+            root: std::path::PathBuf::new(),
+            index: Arc::new(crate::core::bm25_index::BM25Index::new()),
+            loaded_at: std::time::Instant::now(),
+            fingerprint: crate::core::bm25_cache::IndexFingerprint::default(),
+        });
+        let _busy = orch.cache.try_write().unwrap();
+        orch.on_pressure(memory_guard::PressureLevel::Soft);
+        assert!(
+            orch.bm25_cache.lock().unwrap().is_some(),
+            "soft pressure on a busy cache must not unload the BM25 index"
+        );
     }
 
     #[test]
@@ -422,10 +440,7 @@ mod tests {
             token_budget: 100_000,
         };
 
-        let result = orch.execute_action(
-            &HomeostasisAction::EvictProbationary { target_tokens: 0 },
-            0,
-        );
+        let result = orch.execute_action(&HomeostasisAction::EvictProbationary, 0);
         assert!(result);
         let c = cache.blocking_read();
         assert!(c.get("/once.rs").is_none());

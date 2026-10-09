@@ -25,9 +25,8 @@ fn normalize_key(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-/// Built-in token budget for the in-memory read cache.
-/// 2M covers ~100 typical source files, reducing premature eviction
-/// before re-reads occur. RAM-pressure eviction via EvictionOrchestrator
+/// Built-in token budget for the in-memory read cache: several hundred
+/// typical source files. RAM-pressure eviction via EvictionOrchestrator
 /// provides an independent safety net regardless of this budget.
 /// Shared with `eviction_orchestrator` so both eviction rails read one budget.
 pub(crate) const CACHE_MAX_TOKENS: usize = 2_000_000;
@@ -36,7 +35,7 @@ pub(crate) const CACHE_MAX_TOKENS: usize = 2_000_000;
 ///
 /// `read_count` and `last_access` use interior mutability (atomics) so cache
 /// hits can be recorded under a shared (read) lock — parallel reads of distinct
-/// files no longer serialize on a global write lock.
+/// files do not serialize on a global write lock.
 #[derive(Debug)]
 pub struct CacheEntry {
     compressed_content: Vec<u8>,
@@ -675,8 +674,10 @@ pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> boo
     }
 }
 
-/// Files larger than this are not content-hashed for stub verification; the
-/// mtime check alone decides. Keeps the stub fast-path O(small-file-read).
+/// Files larger than this are not content-hashed for stub verification and
+/// always read as stale. A read is capped well below it
+/// ([`crate::core::limits::max_read_bytes`]), so only a file that grew past it
+/// since it was cached gets here.
 const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Staleness with content verification: like [`is_cache_entry_stale`], but when
@@ -690,9 +691,8 @@ const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 /// can have. The extra disk read costs microseconds for typical source files;
 /// the stub's token savings are unaffected.
 ///
-/// Note: entries whose stored content differs from disk by design (e.g. secret
-/// redaction) hash differently and therefore never serve stubs — conservative
-/// and correct.
+/// The cache stores the file as read (redaction applies to output only), so
+/// an unchanged file hashes the same.
 pub fn is_cache_entry_stale_verified(
     path: &str,
     cached_mtime: Option<SystemTime>,
@@ -709,7 +709,8 @@ pub fn is_cache_entry_stale_verified(
         return true;
     };
     if meta.len() > VERIFY_HASH_CAP_BYTES {
-        return false;
+        // Too large to hash: the content cannot be vouched for.
+        return true;
     }
     match std::fs::read(path) {
         // Hash the same view of the bytes that `store()` hashed: lossy UTF-8,
@@ -802,7 +803,7 @@ mod tests {
         cache.store("/a.rs", "a");
         cache.store("/b.rs", "b");
         // Shared (no RwLock): proves SessionCache is Sync and hit recording is
-        // lock-free and atomic — the whole point of the read-mostly refactor.
+        // lock-free and atomic.
         let cache = Arc::new(cache);
         let threads = 8;
         let iters = 1_000;
@@ -843,7 +844,7 @@ mod tests {
         let bonus = cache.hebbian_eviction_bonus();
         assert!(
             !bonus.is_empty(),
-            "co-accessed reads must yield a Hebbian eviction bonus (#3 wired)"
+            "co-accessed reads must yield a Hebbian eviction bonus"
         );
     }
 
@@ -918,7 +919,7 @@ mod tests {
         assert!(is_cache_entry_stale(&p, entry.stored_mtime));
     }
 
-    // P0-7: a *backward* mtime (git checkout, touch -t) is a change.
+    // A *backward* mtime (git checkout, touch -t) is a change.
     #[test]
     fn stale_detection_flags_backward_mtime() {
         let dir = tempfile::tempdir().unwrap();
@@ -944,7 +945,7 @@ mod tests {
         );
     }
 
-    // P0-7: identical mtime with different content (same-second write,
+    // Identical mtime with different content (same-second write,
     // restored timestamps) is caught by the content-hash verification.
     #[test]
     fn verified_staleness_catches_same_mtime_content_change() {
@@ -978,6 +979,31 @@ mod tests {
             is_cache_entry_stale_verified(&p, mtime, &hash),
             "hash verification must catch the change"
         );
+    }
+
+    /// A file too large to hash is never vouched for by its mtime alone.
+    #[test]
+    fn verified_staleness_flags_file_too_large_to_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grown.txt");
+        let p = path.to_string_lossy().to_string();
+
+        std::fs::write(&path, "one").unwrap();
+        let original_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let mut cache = SessionCache::new();
+        cache.store(&p, "one");
+        let (mtime, hash) = {
+            let e = cache.get(&p).unwrap();
+            (e.stored_mtime, e.hash.clone())
+        };
+
+        let big = vec![b'x'; usize::try_from(VERIFY_HASH_CAP_BYTES).unwrap() + 1];
+        std::fs::write(&path, big).unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.set_modified(original_mtime).unwrap();
+        drop(f);
+
+        assert!(is_cache_entry_stale_verified(&p, mtime, &hash));
     }
 
     #[test]

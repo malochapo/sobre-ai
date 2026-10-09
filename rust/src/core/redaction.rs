@@ -1,3 +1,10 @@
+//! Secret masking for what sobre shows: `[REDACTED:<label>]` in place of
+//! key/value secrets, known token shapes and private keys.
+//!
+//! What it cannot see it does not mask: a quoted value shorter than 32
+//! characters after a secret-looking key, a secret under an unrelated key
+//! name, or a line window that starts inside a private key's body.
+
 macro_rules! static_regex {
     ($pattern:expr_2021) => {{
         static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -7,12 +14,6 @@ macro_rules! static_regex {
     }};
 }
 
-/// Unquoted identifier or property-access chains (`SvelteKit`,
-/// `inputEnv.POCKETBASE_SUPERUSER_PASSWORD`, `serverEnv.getStripeSecretKey`,
-/// `confirmRequiredEndpointKeySchema`) are code REFERENCES to a secret, never
-/// the literal value — the value lives in a gitignored `.env`. Digits make a
-/// token secret-shaped (base64/hex), so any digit keeps the redaction
-/// (conservative: `password=hunter2` stays covered).
 /// Detect pure numeric values — integers, floats, scientific notation.
 /// These are never secrets even when the key contains `token` or `key`.
 fn looks_like_number(v: &str) -> bool {
@@ -66,6 +67,12 @@ fn is_env_reference(v: &str) -> bool {
     false
 }
 
+/// Unquoted identifier or property-access chains (`SvelteKit`,
+/// `inputEnv.POCKETBASE_SUPERUSER_PASSWORD`, `serverEnv.getStripeSecretKey`,
+/// `confirmRequiredEndpointKeySchema`) are code REFERENCES to a secret, never
+/// the literal value — the value lives in a gitignored `.env`. Digits make a
+/// token secret-shaped (base64/hex), so any digit keeps the redaction
+/// (conservative: `password=hunter2` stays covered).
 fn is_identifier_reference(value: &str) -> bool {
     let v = value.trim();
     if v.is_empty() || v.starts_with('"') || v.starts_with('\'') || v.starts_with('`') {
@@ -190,8 +197,9 @@ fn is_comparison_operator_residue(value: &str) -> bool {
     matches!(v, "=" | "==" | "!=" | "<=" | ">=" | "===" | "!==")
 }
 
-/// The single source of truth for secret patterns. `shell::redact` delegates
-/// here so the two layers can never drift apart again.
+/// The key/value and token rules [`redact_text`] applies, in order. Token
+/// shapes recognised by their prefix alone are shared with
+/// [`crate::core::secret_detection`] (`TOKEN_SHAPES`).
 ///
 /// Word boundaries: the key/value alternations start with
 /// `(?:^|[^a-z0-9])` (consumed into the kept prefix — the regex crate has no
@@ -220,17 +228,10 @@ fn redaction_rules() -> Vec<Rule> {
             guard_value: true,
         },
         // Whole token is the secret — no prefix group, so the entire match is
-        // replaced. (Previously group 1 captured the key itself and leaked it.)
+        // replaced.
         Rule {
             label: "AWS key",
             re: static_regex!(r"AKIA[0-9A-Z]{12,}"),
-            guard_value: false,
-        },
-        Rule {
-            label: "Private key block",
-            re: static_regex!(
-                r"(?s)(-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----).+?-----END\s+(?:RSA\s+)?PRIVATE\s+KEY-----"
-            ),
             guard_value: false,
         },
         Rule {
@@ -251,8 +252,15 @@ fn redaction_rules() -> Vec<Rule> {
     ]
 }
 
+/// Masks every secret this module recognises: private keys first, then the
+/// key/value and token rules.
 pub fn redact_text(input: &str) -> String {
-    let mut out = input.to_string();
+    let mut out = mask_private_keys(input, "[REDACTED:Private key block]");
+    for &(_, label, regex_fn) in crate::core::secret_detection::TOKEN_SHAPES {
+        out = regex_fn()
+            .replace_all(&out, format!("[REDACTED:{label}]").as_str())
+            .to_string();
+    }
     for rule in redaction_rules() {
         out = rule
             .re
@@ -276,11 +284,87 @@ pub fn redact_text(input: &str) -> String {
     out
 }
 
+/// Replaces the body of every private key with `label`, keeping its BEGIN
+/// line: through its END line, or, for a block cut off before its END line
+/// (a line window of a key file), through the key-material lines that follow.
+fn mask_private_keys(input: &str, label: &str) -> String {
+    let begin = crate::core::secret_detection::private_key_re();
+    let end = static_regex!(r"-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----");
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(b) = begin.find(rest) {
+        out.push_str(&rest[..b.end()]);
+        let after = &rest[b.end()..];
+        let body_len = end
+            .find(after)
+            .map_or_else(|| key_material_len(after), |e| e.end());
+        if body_len > 0 {
+            out.push_str(label);
+        }
+        rest = &after[body_len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Byte length of the key material that follows a BEGIN marker with no END
+/// line: base64 lines, PEM headers and blank lines, each possibly behind a
+/// `lines:` (`  12| `) or `anchored` (`12:ab3f|`) prefix, through the last
+/// base64 line. 0 when the marker does not end its line or no base64 line
+/// follows, so a marker quoted in source code masks nothing.
+fn key_material_len(after: &str) -> usize {
+    let Some(first_newline) = after.find('\n') else {
+        return 0;
+    };
+    if !after[..first_newline].trim().is_empty() {
+        return 0;
+    }
+    let mut consumed = 0;
+    let mut line_start = first_newline + 1;
+    while line_start < after.len() {
+        let line_end = after[line_start..]
+            .find('\n')
+            .map_or(after.len(), |i| line_start + i);
+        let line = after[line_start..line_end].trim_end_matches('\r');
+        let body = strip_line_prefix(line).trim();
+        if body.len() >= 16
+            && body
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'+' | b'/' | b'='))
+        {
+            consumed = line_start + line.len();
+        } else if !(body.is_empty()
+            || body.starts_with("Proc-Type:")
+            || body.starts_with("DEK-Info:"))
+        {
+            break;
+        }
+        line_start = line_end + 1;
+    }
+    consumed
+}
+
+/// `line` without a leading `  12| ` or `12:ab3f|` read prefix.
+fn strip_line_prefix(line: &str) -> &str {
+    let trimmed = line.trim_start();
+    let digits = trimmed.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 {
+        return line;
+    }
+    let mut rest = &trimmed[digits..];
+    if let Some(hash) = rest.strip_prefix(':') {
+        let hex = hash.bytes().take_while(u8::is_ascii_hexdigit).count();
+        rest = &hash[hex..];
+    }
+    match rest.strip_prefix('|') {
+        Some(body) => body.strip_prefix(' ').unwrap_or(body),
+        None => line,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // --- exclude_patterns compilation cache ---
 
     #[test]
     fn redacts_bearer_token() {
@@ -298,6 +382,41 @@ mod tests {
         assert!(!out.contains("\nabc\n"));
     }
 
+    /// Every PEM private-key type loses its body, and so does a block cut off
+    /// before its END line (a line window of a key file).
+    #[test]
+    fn redacts_every_private_key_type_and_truncated_blocks() {
+        for kind in ["OPENSSH ", "EC ", "DSA ", "ENCRYPTED ", "RSA ", ""] {
+            let s = format!(
+                "-----BEGIN {kind}PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END {kind}PRIVATE KEY-----"
+            );
+            let out = redact_text(&s);
+            assert!(!out.contains("b3BlbnNzaC1rZXktdjEAAAAA"), "{kind}: {out}");
+            assert!(
+                out.contains("[REDACTED:Private key block]"),
+                "{kind}: {out}"
+            );
+        }
+        let window = "key file:\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\nQUFBQUFBQUFBQUFB";
+        let out = redact_text(window);
+        assert!(!out.contains("b3BlbnNzaC1rZXktdjEAAAAA"), "{out}");
+        assert!(!out.contains("QUFBQUFBQUFBQUFB"), "{out}");
+        assert!(out.starts_with("key file:\n"), "{out}");
+    }
+
+    /// A token recognised by its prefix is masked whatever key it sits under,
+    /// quoted or not.
+    #[test]
+    fn redacts_known_token_shapes_in_code() {
+        let js =
+            r#"const client = new Anthropic({ apiKey: "sk-ant-api03-abcdefghij1234567890ABCD" });"#;
+        let out = redact_text(js);
+        assert!(!out.contains("abcdefghij1234567890"), "{out}");
+        assert!(out.contains("[REDACTED:Anthropic key]"), "{out}");
+        let slack = "post(url, 'xoxb-1234567890-abcdefghij')";
+        assert!(redact_text(slack).contains("[REDACTED:Slack token]"));
+    }
+
     #[test]
     fn redacts_api_key_param_value() {
         let out = redact_text("password=hunter2-super-secret-value");
@@ -309,7 +428,7 @@ mod tests {
     }
 
     /// TypeScript type annotations and language literals must NOT be
-    /// redacted — over-eager masking corrupted source files read via sobre_read.
+    /// redacted: masking them would corrupt source files read via sobre_read.
     #[test]
     fn keeps_non_secret_literals() {
         for s in [
@@ -342,8 +461,7 @@ mod tests {
         }
     }
 
-    /// Whole-token secrets must be removed, not annotated in place — previously
-    /// the closure kept group 1 (the key itself) and only appended `[REDACTED]`.
+    /// Whole-token secrets are removed, not annotated in place.
     #[test]
     fn fully_redacts_aws_key() {
         let out = redact_text("AKIAIOSFODNN7EXAMPLE");
@@ -357,7 +475,7 @@ mod tests {
     #[test]
     fn fully_redacts_generic_long_secret() {
         // `credential=` is not covered by the API-key-param rule, so this
-        // exercises the generic fallback (the previously leaky path).
+        // exercises the generic fallback.
         let secret = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"; // 32 chars
         let out = redact_text(&format!("credential={secret}"));
         assert!(!out.contains(secret), "long secret leaked: {out}");
@@ -376,7 +494,7 @@ mod tests {
 
     // ── benign identifier references, prose and placeholders ──
 
-    /// Repro 1: prose that mentions a keyword must not have the following
+    /// prose that mentions a keyword must not have the following
     /// word redacted — "token: SvelteKit's…" is documentation, not a secret.
     #[test]
     fn keeps_prose_identifier_after_keyword() {
@@ -384,7 +502,7 @@ mod tests {
         assert_eq!(redact_text(s), s, "prose must survive verbatim");
     }
 
-    /// Repro 2: camelCase subwords must not trigger the keyword alternation,
+    /// camelCase subwords must not trigger the keyword alternation,
     /// and identifier/property-access RHS values are references, not secrets.
     #[test]
     fn keeps_identifier_and_property_references() {
@@ -397,7 +515,7 @@ mod tests {
         }
     }
 
-    /// Repro 3: a 32+ char identifier (Zod schema name) is a reference —
+    /// a 32+ char identifier (Zod schema name) is a reference —
     /// "Generic long secret" needs the same value guard as the API-key rule.
     #[test]
     fn keeps_long_schema_identifier() {
@@ -405,7 +523,7 @@ mod tests {
         assert_eq!(redact_text(s), s, "schema identifier must not be redacted");
     }
 
-    /// Repro 4: obvious placeholder values (.env.example) are documentation.
+    /// obvious placeholder values (.env.example) are documentation.
     #[test]
     fn keeps_placeholder_values() {
         for s in [
@@ -507,7 +625,7 @@ mod tests {
         }
     }
 
-    /// Real secrets must STILL be redacted (regression guard).
+    /// Real secrets are still redacted.
     #[test]
     fn still_redacts_real_secrets() {
         for input in [

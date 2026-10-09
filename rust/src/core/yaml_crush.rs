@@ -6,16 +6,16 @@
 //! the *format* (indentation, `- ` bullets, `key:` punctuation, line breaks) and,
 //! inside `list`/`items` arrays, the same keys + values repeated on every entry.
 //! This module factors both out by mapping YAML onto the JSON value model and
-//! reusing the single source of truth for structural crushing:
+//! reusing the structural crusher:
 //!
 //! - **Parse** the document with [`yaml_serde`] into a [`serde_json::Value`] (YAML
 //!   1.2 is a JSON superset, so maps → objects, sequences → arrays, scalars →
-//!   numbers/bools/strings/null; a non-string map key or a custom tag simply
-//!   fails the parse and the caller keeps its own path).
+//!   numbers/bools/strings/null; a non-string map key, a custom tag or a
+//!   `.inf`/`.nan` float, which JSON cannot hold, leaves the document alone).
 //! - **Compact**: serializing that value as JSON already drops all YAML formatting
 //!   — the conversion alone is a large, lossless-at-the-data-level win.
 //! - **Factor** redundant arrays-of-objects through [`crate::core::json_crush`]
-//!   (lossless `_defaults` hoisting; opt-in lossy high-entropy column dropping).
+//!   (`_defaults` hoisting).
 //!
 //! The compact form is wrapped in a single-key `MARKER` envelope so it is
 //! self-identifying (re-entry safe) and exactly reversible to the parsed value via
@@ -24,12 +24,12 @@
 //! yields byte-identical output. The crusher never inflates: callers gate
 //! on the `beneficial` reduction threshold and a no-op input returns [`None`].
 //!
-//! Exact original *bytes* (comments, key order, formatting) are recovered
-//! out-of-band by a `full`/`raw` re-read on the read path.
+//! Exact original *bytes* (comments, formatting) are recovered by a
+//! `full`/`raw` re-read on the read path.
 
 use serde_json::{Map, Value};
 
-use crate::core::json_crush::{self, CrushOpts, CrushResult};
+use crate::core::json_crush;
 
 /// Marks a crushed-YAML document. The value is the (json-crushed) payload, so the
 /// envelope is `{"_lc_yaml_crush": <doc>}`. Vanishingly unlikely as a real
@@ -53,14 +53,13 @@ fn beneficial(compact: &str, raw: &str) -> bool {
 /// clears the `beneficial` reduction gate. `None` for non-YAML, scalar-rooted,
 /// or low-redundancy input — the caller keeps its own path.
 pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
-    let res = crush(text, 1.0)?;
-    (res.lossless && beneficial(&res.text, text)).then_some(res.text)
+    let crushed = crush(text)?;
+    beneficial(&crushed, text).then_some(crushed)
 }
 
-/// Core crush. `drop_entropy < 1.0` enables lossy column dropping inside arrays.
-/// Returns `None` unless the input parses as a structured (map/sequence) YAML
-/// document that is not already our own crushed envelope.
-fn crush(text: &str, drop_entropy: f64) -> Option<CrushResult> {
+/// Core crush. Returns `None` unless the input parses as a structured
+/// (map/sequence) YAML document that is not already our own crushed envelope.
+fn crush(text: &str) -> Option<String> {
     let value: Value = yaml_serde::from_str(text).ok()?;
 
     // Only structured roots are worth reshaping; gating on map/array also stops
@@ -73,34 +72,44 @@ fn crush(text: &str, drop_entropy: f64) -> Option<CrushResult> {
     if matches!(&value, Value::Object(map) if map.contains_key(MARKER)) {
         return None;
     }
+    if has_non_finite_float(text) {
+        return None;
+    }
 
     // Structural factoring is delegated to the json_crush core; when it finds
     // nothing to factor the YAML→JSON conversion is still the win, so fall back to
     // the parsed value unchanged.
-    let (inner, lossless) = if drop_entropy < 1.0 {
-        match json_crush::crush_lossy(&value, &CrushOpts::lossy(drop_entropy)) {
-            Some(res) => (serde_json::from_str(&res.text).ok()?, res.lossless),
-            None => (value, true),
-        }
-    } else {
-        match json_crush::crush_lossless(&value) {
-            Some(res) => (serde_json::from_str(&res.text).ok()?, true),
-            None => (value, true),
-        }
+    let inner = match json_crush::crush_lossless(&value) {
+        Some(crushed) => serde_json::from_str(&crushed).ok()?,
+        None => value,
     };
 
     let mut env = Map::new();
     env.insert(MARKER.to_string(), inner);
-    let text_out = serde_json::to_string(&Value::Object(env)).ok()?;
-    Some(CrushResult {
-        text: text_out,
-        lossless,
-    })
+    serde_json::to_string(&Value::Object(env)).ok()
 }
 
-/// Rebuild the parsed-document [`Value`] from a crushed envelope. Exact for
-/// lossless forms; for lossy forms the `_dropped` columns are simply absent
-/// (recover them via CCR). `None` if `text` is not a YAML-crush envelope.
+/// Whether the document holds an `.inf` or `.nan` float. JSON has no such
+/// number: the conversion would turn it into `null`.
+fn has_non_finite_float(text: &str) -> bool {
+    fn walk(v: &yaml_serde::Value) -> bool {
+        match v {
+            yaml_serde::Value::Number(n) => !n.is_finite(),
+            yaml_serde::Value::Sequence(items) => items.iter().any(walk),
+            yaml_serde::Value::Mapping(map) => map.iter().any(|(k, v)| walk(k) || walk(v)),
+            yaml_serde::Value::Tagged(tagged) => walk(&tagged.value),
+            _ => false,
+        }
+    }
+    let lower = text.to_ascii_lowercase();
+    if !lower.contains(".inf") && !lower.contains(".nan") {
+        return false;
+    }
+    yaml_serde::from_str::<yaml_serde::Value>(text).map_or(true, |v| walk(&v))
+}
+
+/// Rebuild the parsed-document [`Value`] from a crushed envelope. `None` if
+/// `text` is not a YAML-crush envelope.
 #[cfg(test)]
 pub fn reconstruct(text: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(text).ok()?;
@@ -172,6 +181,18 @@ mod tests {
             yaml.push_str(&format!("  setting_{i}: value_{i}\n"));
         }
         assert!(crush_text_if_beneficial(&yaml).is_none());
+    }
+
+    /// `.inf` has no JSON form: the document is left alone rather than shown
+    /// with `null` in its place. A string holding ".inf" is no such float.
+    #[test]
+    fn non_finite_floats_are_left_alone() {
+        let mut yaml = manifest_yaml();
+        yaml.push_str("limit: .inf\n");
+        assert!(crush_text_if_beneficial(&yaml).is_none());
+        let mut yaml = manifest_yaml();
+        yaml.push_str("host: example.info\n");
+        assert!(crush_text_if_beneficial(&yaml).is_some());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-//! Classification + redaction helpers for the sensitivity model.
+//! Content classification for the sensitivity model.
 //!
 //! Only high-precision signals raise a level, to avoid false positives:
 //! - detected secrets → `Secret`

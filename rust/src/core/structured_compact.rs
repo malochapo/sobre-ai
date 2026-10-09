@@ -1,15 +1,14 @@
 //! Lossless compaction of structured data (JSON / JSON Lines).
 //!
 //! Pretty-printed JSON is whitespace-heavy: indentation, spaces after `:` and
-//! `,`, and newlines can be 20-50% of the bytes. Code read modes (`map`,
-//! `signatures`) don't apply to data files, so JSON historically fell through to
-//! the line-based `aggressive` path and saved ~0% (measured).
+//! `,`, and newlines can be 20-50% of the bytes, and the line-based
+//! `aggressive` pass saves almost nothing on it.
 //!
 //! This module strips only *insignificant* whitespace — the bytes that sit
 //! **outside** string literals. It is genuinely lossless:
-//!   * key order is preserved (we operate on the original text, not a parsed
-//!     `serde_json::Value`, which would re-sort keys);
-//!   * number formatting is preserved (e.g. `1.0`, `1e3`, trailing zeros);
+//!   * key order is preserved;
+//!   * number formatting is preserved (e.g. `1.0`, `1e3`, trailing zeros),
+//!     which re-serializing a parsed `serde_json::Value` would not do;
 //!   * string contents (including any whitespace inside them) are untouched.
 //!
 //! We validate that the input parses as JSON before touching it, so malformed
@@ -141,7 +140,7 @@ mod tests {
 
     #[test]
     fn preserves_key_order() {
-        // serde_json's default Map sorts keys; our text-based strip must NOT.
+        // The strip works on the text: keys keep their order.
         let pretty = "{\n  \"zebra\": 1,\n  \"alpha\": 2,\n  \"mike\": 3\n}";
         let out = compact_json(pretty).expect("should compact");
         assert_eq!(out, r#"{"zebra":1,"alpha":2,"mike":3}"#);

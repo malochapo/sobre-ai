@@ -43,13 +43,20 @@ pub struct BounceTracker {
     persist: bool,
 }
 
+/// A lossy view of the whole file: the reads a later `full` read can show
+/// were not enough. A line window, an anchored or raw read, a diff and a
+/// failed read are not.
 fn is_compressed_mode(mode: &str) -> bool {
-    !matches!(mode, "full" | "diff")
+    use crate::tools::sobre_read::ReadMode;
+    mode.parse::<ReadMode>()
+        .is_ok_and(|m| m.is_lossy_summary() || matches!(m, ReadMode::Density(_)))
 }
 
+/// `.ext`, lowercased; empty for a file name without an extension.
 fn extension_of(path: &str) -> String {
-    path.rsplit('.')
-        .next()
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
         .map(|e| format!(".{}", e.to_ascii_lowercase()))
         .unwrap_or_default()
 }
@@ -227,6 +234,52 @@ mod tests {
         bt.record_read("src/main.rs", "full", 500, 500);
         assert_eq!(bt.total_bounces(), 1);
         assert_eq!(bt.total_wasted_tokens, 50);
+    }
+
+    /// A line window, an anchored read or a failed read before a `full` read is
+    /// the agent's own choice, not a compressed view that lost something.
+    #[test]
+    fn windows_and_whole_views_are_not_bounces() {
+        let mut bt = BounceTracker::new();
+        for (i, first) in ["lines:1-40", "anchored", "anchored:5-9", "error", "raw"]
+            .into_iter()
+            .enumerate()
+        {
+            let path = format!("src/f{i}.rs");
+            bt.seq_counter = (i as u64) * 10 + 1;
+            bt.record_read(&path, first, 40, 500);
+            bt.seq_counter += 1;
+            bt.record_read(&path, "full", 500, 500);
+        }
+        assert_eq!(bt.total_bounces(), 0);
+        for (i, first) in [
+            "map",
+            "signatures",
+            "aggressive",
+            "entropy",
+            "task",
+            "density:0.40",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let path = format!("src/g{i}.rs");
+            bt.seq_counter = 100 + (i as u64) * 10;
+            bt.record_read(&path, first, 40, 500);
+            bt.seq_counter += 1;
+            bt.record_read(&path, "full", 500, 500);
+        }
+        assert_eq!(bt.total_bounces(), 6);
+    }
+
+    /// Files without an extension are not grouped by a fragment of their
+    /// directory name.
+    #[test]
+    fn extension_of_reads_only_the_file_name() {
+        assert_eq!(extension_of("src/main.rs"), ".rs");
+        assert_eq!(extension_of("/home/a.b/Makefile"), "");
+        assert_eq!(extension_of("Makefile"), "");
+        assert_eq!(extension_of("x/Y.YML"), ".yml");
     }
 
     #[test]

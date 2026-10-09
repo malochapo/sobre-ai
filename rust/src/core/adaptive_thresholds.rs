@@ -1,8 +1,12 @@
-use std::collections::HashMap;
+//! Thresholds for `entropy` mode: a hand-set table per file extension,
+//! nudged by how well the content gzips.
+
 use std::path::Path;
 
 use super::entropy::kolmogorov_proxy;
 
+/// Lines whose BPE entropy is below `bpe_entropy` may be dropped; paragraphs
+/// whose bigram Jaccard similarity reaches `jaccard` count as duplicates.
 #[derive(Debug, Clone)]
 pub struct CompressionThresholds {
     pub bpe_entropy: f64,
@@ -231,25 +235,16 @@ static LANGUAGE_THRESHOLDS: &[(&str, CompressionThresholds)] = &[
     ),
 ];
 
-fn language_map() -> HashMap<&'static str, &'static CompressionThresholds> {
-    LANGUAGE_THRESHOLDS
-        .iter()
-        .map(|(ext, t)| (*ext, t))
-        .collect()
-}
-
-pub fn thresholds_for_path(path: &str) -> CompressionThresholds {
+/// The thresholds for the file's extension, or the defaults.
+fn thresholds_for_path(path: &str) -> CompressionThresholds {
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-
-    let map = language_map();
-    if let Some(t) = map.get(ext) {
-        return (*t).clone();
-    }
-
-    CompressionThresholds::default()
+    LANGUAGE_THRESHOLDS
+        .iter()
+        .find(|(e, _)| *e == ext)
+        .map_or_else(CompressionThresholds::default, |(_, t)| t.clone())
 }
 
 /// Per-language thresholds, adjusted for how compressible this content is.
