@@ -9,30 +9,8 @@ use crate::core::pricing::{ModelPricing, ModelQuote};
 use crate::core::theme;
 use crate::core::usage::{self, Period, Summary};
 
-/// The flags `gain` reads; anything else is a usage error.
-const GAIN_FLAGS: [&str; 7] = [
-    "--reset",
-    "--period",
-    "--limit",
-    "--model",
-    "--json",
-    "--by-tool",
-    "--daily",
-];
-
 pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
-    let mut args = rest.iter();
-    while let Some(arg) = args.next() {
-        let name = arg.split('=').next().unwrap_or(arg);
-        if !GAIN_FLAGS.contains(&name) {
-            eprintln!("Unknown option '{arg}'. Use: {}", GAIN_FLAGS.join(", "));
-            std::process::exit(2);
-        }
-        // `--period 7d`: the value is the next argument.
-        if matches!(name, "--period" | "--limit" | "--model") && !arg.contains('=') {
-            args.next();
-        }
-    }
+    crate::cli::spec::check_or_exit("gain", rest);
     if rest.iter().any(|a| a == "--reset") {
         if usage::reset() {
             println!("Usage ledger cleared.");

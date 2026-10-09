@@ -29,7 +29,8 @@ What it does defend against:
   owner-only permissions and deleted after 24 hours. `sobre_read` with
   `raw=true` returns a file's bytes unmasked, on request.
 - **Other local users.** The proxy listens on `127.0.0.1` only and refuses
-  requests that carry neither a provider API key nor its own token. On Unix,
+  requests that carry neither a provider API key nor its own token
+  (`sobre proxy token` prints it; `SOBRE_PROXY_TOKEN` replaces it). On Unix,
   `sobre`'s directories are readable by you alone.
 
 What it does **not** defend against: a malicious repository whose *contents*

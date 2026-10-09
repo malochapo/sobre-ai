@@ -268,6 +268,7 @@ pub(crate) fn run_call(args: &[String]) -> Result<Called, CallError> {
 /// Thin CLI wrapper: the tool's text on stdout, exit 1 when the server would
 /// mark it `isError`; a usage error on stderr, exit 2.
 pub(crate) fn cmd_call(args: &[String]) {
+    crate::cli::spec::check_or_exit("call", args);
     match run_call(args) {
         Ok(called) => {
             println!("{}", called.text);

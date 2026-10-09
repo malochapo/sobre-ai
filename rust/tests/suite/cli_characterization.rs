@@ -173,7 +173,7 @@ fn config_rejects_removed_subcommands() {
         let out = run(&["config", sub]);
         assert_eq!(exit_code(&out), 2, "config {sub}");
         assert!(
-            stderr(&out).contains("Usage"),
+            stderr(&out).contains("usage:"),
             "config {sub}: {}",
             stderr(&out)
         );

@@ -24,8 +24,7 @@ pub fn handle(
     opts: SessionToolOptions<'_>,
 ) -> String {
     match action {
-        // "show" is the natural synonym agents reach for first.
-        "status" | "show" => session.format_compact(),
+        "status" => session.format_compact(),
 
         "load" => {
             // Without an id: this project's latest saved session, never the

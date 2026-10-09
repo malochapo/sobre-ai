@@ -71,13 +71,18 @@ impl ServerHandler for SobreServer {
                 session.project_root = None;
             }
             // Search roots are the extra roots of a multi-root
-            // workspace, except a broad root ("/", $HOME).
+            // workspace, except a broad root ("/", $HOME). `~` and `$HOME`
+            // expand as in a workspace search.
             let cfg_extra: Vec<String> = crate::core::config::Config::load()
                 .search_roots
-                .into_iter()
-                .filter(|p| {
-                    !crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(p.trim()))
+                .iter()
+                .map(|p| {
+                    crate::core::pathutil::canonicalize_or_self(
+                        &crate::core::pathutil::expand_user_path(p.trim()),
+                    )
                 })
+                .filter(|p| p.is_dir() && !crate::core::pathutil::is_broad_or_unsafe_root(p))
+                .map(|p| p.to_string_lossy().into_owned())
                 .collect();
             if !cfg_extra.is_empty() {
                 let existing: std::collections::HashSet<_> =

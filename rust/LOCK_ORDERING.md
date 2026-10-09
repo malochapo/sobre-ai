@@ -64,6 +64,7 @@ Fields of `SobreServer` in `tools/server.rs`:
 | `client_name` | `Arc<RwLock<String>>` | Connected client name |
 | `refetch_signals` | `Arc<RwLock<RefetchSignals>>` | Re-reads, re-runs and expansions that tell compression it went too far |
 | `peer` | `Arc<RwLock<Option<Peer<RoleServer>>>>` | MCP client peer handle |
+| `roots_gate` | `Arc<tokio::sync::Mutex<()>>` | Serializes the first-call project-root resolution (MCP `roots/list`, then the cwd) so concurrent first calls resolve it once; taken before `peer` and `session`, released once the root is set, never held across a tool call |
 | `bm25_cache` | `Arc<std::sync::Mutex<Option<Bm25CacheEntry>>>` | Session BM25 index cache (`core/bm25_cache.rs`, `SharedBm25Cache`); a **`std::sync::Mutex`**, not tokio — never held across `.await` |
 
 Apart from `bm25_cache`, these are **`tokio::sync::RwLock`** and are scoped to a single

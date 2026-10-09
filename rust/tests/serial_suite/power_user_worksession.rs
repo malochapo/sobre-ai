@@ -509,7 +509,7 @@ async fn phase7_session_finding_and_decision() {
             "sobre_session",
             Some(json!({
                 "action": "finding",
-                "content": "Config struct lacks validation for port range",
+                "value": "Config struct lacks validation for port range",
             })),
         )
         .await
@@ -521,7 +521,7 @@ async fn phase7_session_finding_and_decision() {
             "sobre_session",
             Some(json!({
                 "action": "decision",
-                "content": "Use builder pattern for Config validation",
+                "value": "Use builder pattern for Config validation",
             })),
         )
         .await

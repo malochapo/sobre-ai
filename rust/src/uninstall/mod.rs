@@ -14,38 +14,6 @@ pub(super) fn shorten(path: &Path, home: &Path) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Help
-// ---------------------------------------------------------------------------
-
-pub fn print_help() {
-    println!(
-        "\
-sobre uninstall — remove sobre from this machine
-
-USAGE:
-    sobre uninstall [OPTIONS]
-
-OPTIONS:
-    --keep-config    Keep config.toml, for a later reinstall
-    --keep-binary    Leave the sobre binary in place
-    -h, --help       Show this help and exit (does NOT uninstall)
-
-WHAT IT REMOVES:
-    • The proxy: its autostart unit, its process, and the proxy URLs it put
-      in agent configs
-    • sobre's MCP entry, hooks, skill and plugin from every agent. A file
-      that held nothing else is deleted; your other settings stay as written
-    • All sobre data: config, usage history, sessions, knowledge, indexes,
-      logs and downloaded models
-    • The sobre binary your agents run (one installed with cargo is left to
-      `cargo uninstall`)
-
-    Agents that are running keep their sobre server until they restart.
-    Every change is listed as it is made."
-    );
-}
-
-// ---------------------------------------------------------------------------
 // Main entry
 // ---------------------------------------------------------------------------
 

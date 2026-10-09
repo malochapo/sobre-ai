@@ -21,23 +21,26 @@ impl McpTool for SobreSessionTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "sobre_session",
-            "Session memory. save at session end, load at start, status = snapshot;\n\
-             task|finding|decision record progress (value=text).\n\
-             export returns the session as a redacted JSON bundle (write=true or path= also \
-             saves it); import path= loads one.\n\
-             ANTIPATTERN: permanent project knowledge → sobre_knowledge.",
+            "This session's task, findings and decisions; status shows them, save/load keep \
+             them across processes. export returns a redacted JSON bundle (write=true or path= \
+             also saves it); import path= loads one. Lasting facts: sobre_knowledge.",
             json!({
                 "type": "object",
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "status|load|save|task|finding|decision|list|export|import|… (invalid action lists all)"
+                        "enum": [
+                            "status", "task", "finding", "decision", "save", "load", "list",
+                            "reset", "cleanup", "resume", "snapshot", "restore", "diff",
+                            "export", "import", "output_stats"
+                        ],
+                        "description": "task|finding|decision record value. reset=save, start anew. cleanup=drop sessions >7 days. snapshot/restore=compaction snapshot. diff value='id_a id_b [json]'"
                     },
                     "value": { "type": "string" },
-                    "session_id": { "type": "string", "description": "Omit for latest" },
+                    "session_id": { "type": "string", "description": "load, restore: omit for this project's latest" },
                     "path": { "type": "string", "description": "export: file to write; import: bundle to read" },
                     "format": { "type": "string", "description": "export: json|summary" },
-                    "write": { "type": "boolean", "description": "export: also save the bundle (default location under the data directory)" }
+                    "write": { "type": "boolean", "description": "export: also save it in the data directory" }
                 },
                 "required": ["action"]
             }),

@@ -8,50 +8,36 @@
 /// turning it on is a real decision. Everything else takes a safe default and
 /// is changed afterwards through `sobre config`.
 pub fn cmd_init(args: &[String]) {
-    if args.iter().any(|a| a == "--help" || a == "-h") {
-        print_init_help();
-        return;
-    }
-
     // An unknown flag must never fall through to a run that rewrites agent
-    // configs.
-    const KNOWN: &[&str] = &["--agent", "--check", "--dry-run", "--repair", "--json"];
-    if let Some(unknown) = args
-        .iter()
-        .find(|a| a.starts_with('-') && !KNOWN.contains(&a.as_str()))
-    {
-        crate::errln!("init: unknown flag '{unknown}'\n");
-        print_init_help();
-        std::process::exit(2);
-    }
+    // configs; `--agent` without its value neither.
+    crate::cli::spec::check_or_exit("init", args);
 
-    // `init <agent>…` and `init --agent <agent>`: a bare `--agent` or any
-    // other positional (a typo) is an error, since falling through would
-    // connect every agent.
-    if args
-        .iter()
-        .enumerate()
-        .any(|(i, a)| a == "--agent" && args.get(i + 1).is_none_or(|v| v.starts_with('-')))
-    {
-        crate::errln!("init: --agent needs an agent name\n");
-        print_init_help();
-        std::process::exit(2);
-    }
+    // `init <agent>…`, `init --agent <agent>` and `init --agent=<agent>`:
+    // anything else (a typo) is an error, since falling through would connect
+    // every agent.
     let mut named: Vec<&'static str> = Vec::new();
-    for arg in args.iter().filter(|a| !a.starts_with('-')) {
+    let positionals = args
+        .iter()
+        .filter(|a| !a.starts_with('-'))
+        .map(String::as_str)
+        .chain(args.iter().filter_map(|a| a.strip_prefix("--agent=")));
+    for arg in positionals {
         match crate::setup::agent_key(arg) {
             Some(key) if !named.contains(&key) => named.push(key),
             Some(_) => {}
             None => {
-                crate::errln!("init: unknown agent '{arg}'\n");
-                print_init_help();
+                crate::errln!("init: unknown agent '{arg}'");
+                crate::errln!(
+                    "usage: {}",
+                    crate::cli::spec::usage(crate::cli::spec::command("init"))
+                );
                 std::process::exit(2);
             }
         }
     }
 
     let json = args.iter().any(|a| a == "--json");
-    let check = args.iter().any(|a| a == "--check" || a == "--dry-run");
+    let check = args.iter().any(|a| a == "--check");
     let repair = args.iter().any(|a| a == "--repair");
     let _quiet = json.then(crate::core::runtime_flags::scoped_quiet);
 
@@ -174,31 +160,4 @@ fn ask_about_embeddings() {
             crate::outln!("  Skipped. Download later with `sobre embeddings provision`.");
         }
     }
-}
-
-fn print_init_help() {
-    crate::outln!(
-        "Usage: sobre init [<agent>...] [options]
-
-  sobre init                 Connect every installed agent: its MCP entry,
-                             hooks and skill. Asks once about the proxy and,
-                             in a build with embeddings, about downloading
-                             the model. Never edits your shell rc files.
-  sobre init <agent>...      Only the named agents, installed or not, with
-                             no question: claude, codex, copilot, cursor,
-                             gemini, opencode, vscode, windsurf, zed
-
-Options:
-  --check, --dry-run         List the files init would create or change,
-                             and write nothing
-  --repair                   Ask no question (for scripts and CI)
-  --json                     Machine-readable report; asks no question
-  --agent <name>             Same as naming the agent, repeatable
-
-init exits non-zero when an agent could not be connected.
-
-Edits keep your comments and key order; a file sobre edits for the first
-time is copied to <file>.sobre.bak (an empty one for a file sobre creates).
-Undo it all: sobre uninstall"
-    );
 }
