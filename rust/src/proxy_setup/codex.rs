@@ -3,26 +3,40 @@
 use std::path::Path;
 
 use super::util::is_proxy_reachable;
+use super::wiring;
 
-pub(crate) fn uninstall_codex_env(home: &Path, quiet: bool) {
+/// The wiring slot of Codex's top-level `openai_base_url`.
+const SLOT: &str = "codex";
+
+fn codex_config_path(home: &Path) -> std::path::PathBuf {
     let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
-    let config_path = crate::core::home::resolve_codex_config_path()
-        .unwrap_or_else(|| codex_dir.join("config.toml"));
+    crate::core::home::resolve_codex_config_path().unwrap_or_else(|| codex_dir.join("config.toml"))
+}
+
+/// Whether Codex's `openai_base_url` is the one sobre wrote.
+pub(crate) fn codex_points_at_proxy(home: &Path) -> bool {
+    std::fs::read_to_string(codex_config_path(home))
+        .is_ok_and(|content| codex_config_has_local_proxy_entry(&content))
+}
+
+/// Takes Codex off the proxy when sobre put it there. Returns whether it
+/// changed anything.
+pub(crate) fn uninstall_codex_env(home: &Path, quiet: bool) -> bool {
+    let config_path = codex_config_path(home);
     let existing = match std::fs::read_to_string(&config_path) {
         Ok(s) if !s.trim().is_empty() => s,
-        _ => return,
+        _ => return false,
     };
-
-    let has_local = codex_config_has_local_proxy_entry(&existing);
-    if !has_local {
-        return;
+    if !codex_config_has_local_proxy_entry(&existing) {
+        return false;
     }
-
     let cleaned = strip_codex_proxy_entries(&existing);
     let _ = crate::config_io::write_atomic(&config_path, &cleaned);
+    wiring::forget(SLOT);
     if !quiet {
         println!("  ✓ Removed Codex proxy URL(s) from Codex CLI config");
     }
+    true
 }
 /// (Re)apply ONLY the Codex CLI proxy env from the current config.
 pub(crate) fn install_codex_env(home: &Path, port: u16, quiet: bool) {
@@ -103,6 +117,12 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
     // The first edit of a file the user had keeps a `.sobre.bak` of it, like
     // every other agent file sobre edits.
     let _ = crate::config_io::write_atomic_with_backup(config_path, &updated);
+    match entries.first() {
+        Some((_, url)) if updated.contains(url.as_str()) => wiring::record(SLOT, url, None),
+        _ => {
+            wiring::forget(SLOT);
+        }
+    }
     if !quiet {
         match mode {
             CodexProxyMode::ApiKey => {
@@ -116,19 +136,18 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
 }
 
 /// Point Codex's built-in OpenAI provider at `value` via the documented top-level
-/// `openai_base_url` key, replacing a stale local value with the canonical
-/// one. A custom *remote* `openai_base_url` the user configured is preserved and
-/// never overwritten in API-key mode. Keys are emitted as top-level keys
-/// (before the first `[table]`) so Codex actually reads them.
+/// `openai_base_url` key, replacing the value sobre wrote earlier. An
+/// `openai_base_url` the user configured — remote or local — is preserved
+/// and never overwritten. Keys are emitted as top-level keys (before the
+/// first `[table]`) so Codex actually reads them.
 pub(crate) fn render_codex_config(existing: &str, entries: &[(&str, String)]) -> String {
     let cleaned = strip_codex_proxy_entries(existing);
 
     let mut prefix = String::new();
     for (key, value) in entries {
-        let has_remote_key = has_top_level_codex_config_key(&cleaned, key, |t| {
-            !(t.contains("127.0.0.1") || t.contains("localhost"))
-        });
-        if !has_remote_key {
+        // `strip_codex_proxy_entries` left only the user's own value.
+        let users_own = has_top_level_codex_config_key(&cleaned, key, |_| true);
+        if !users_own {
             prefix.push_str(&format!("{key} = \"{value}\"\n"));
         }
     }
@@ -204,9 +223,20 @@ pub(crate) fn should_strip_codex_proxy_entry(t: &str, current_table: Option<&str
     }
 }
 
+/// Whether `t` assigns one of `keys` the URL sobre wrote for Codex.
 pub(crate) fn is_local_codex_base_url_entry(t: &str, keys: &[&str]) -> bool {
     toml_assignment_key(t).is_some_and(|key| keys.contains(&key))
-        && (t.contains("127.0.0.1") || t.contains("localhost"))
+        && toml_string_value(t).is_some_and(|url| wiring::is_ours(SLOT, url))
+}
+
+/// The string a `key = "value"` line assigns.
+fn toml_string_value(t: &str) -> Option<&str> {
+    let value = t.split_once('=')?.1.trim();
+    let value = value.split(" #").next().unwrap_or(value).trim();
+    value
+        .strip_prefix('"')
+        .and_then(|v| v.strip_suffix('"'))
+        .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
 }
 
 pub(crate) fn toml_assignment_key(t: &str) -> Option<&str> {

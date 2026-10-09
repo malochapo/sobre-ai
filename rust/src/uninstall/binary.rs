@@ -11,19 +11,7 @@ use super::shorten;
 /// that started them and end when those agents restart; hooks and CLI
 /// commands are short-lived.
 pub(super) fn stop_proxy() {
-    crate::proxy_autostart::stop();
-    let mut ports = vec![crate::proxy_setup::default_port()];
-    // A proxy started with `proxy start --port N` answers on N.
-    if let Some(port) = crate::proxy_setup::last_started_port()
-        && !ports.contains(&port)
-    {
-        ports.push(port);
-    }
-    for port in ports {
-        if let Some(pid) = crate::proxy_autostart::stop_proxy_on_port(port) {
-            println!("  ✓ Proxy stopped (PID {pid}, port {port})");
-        }
-    }
+    crate::proxy_autostart::stop_everywhere(false);
 }
 
 /// How a candidate binary path should be handled.

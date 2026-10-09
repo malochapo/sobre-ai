@@ -2,10 +2,6 @@
 
 pub(crate) const DEFAULT_PROXY_PORT: u16 = 4444;
 
-pub fn is_local_sobre_url(url: &str) -> bool {
-    url.starts_with("http://127.0.0.1:") || url.starts_with("http://localhost:")
-}
-
 /// Where the port of the last proxy started from the CLI is kept, so
 /// `proxy status`, `stop`, `restart` and `uninstall` find a proxy started on
 /// another port.

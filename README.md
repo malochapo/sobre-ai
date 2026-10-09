@@ -291,7 +291,7 @@ prices saved tokens at a model's input rate and says it is an estimate.
 ```bash
 sobre proxy enable      # start it at login and point the agents at it
 sobre proxy status      # running? which port, which upstreams
-sobre proxy disable     # stop it and point the agents back
+sobre proxy disable     # stop it and put the agents back
 ```
 
 `sobre proxy enable` starts a local proxy on `127.0.0.1` and points the agents
@@ -305,9 +305,12 @@ goes upstream as the agent sent it.
 
 It starts at login through a LaunchAgent on macOS
 (`~/Library/LaunchAgents/com.sobre.proxy.plist`) and a systemd user service on
-Linux (`~/.config/systemd/user/sobre-proxy.service`). Windows has no login
-service: `sobre proxy start --detach` starts it, and so does the MCP server when
-the proxy is enabled and nothing answers on its port.
+Linux (`~/.config/systemd/user/sobre-proxy.service`). If the service cannot
+start the proxy (no user session, for instance), `proxy enable` fails and
+changes nothing. Windows has no login service: start the proxy by hand with
+`sobre proxy start --detach`, then run `sobre proxy enable`, which refuses to
+wire the agents while nothing answers on the port. Once it is enabled, the MCP
+server also starts it when nothing answers.
 
 The port is `proxy.port`. Unset, it is 4444 on Windows and for system users, and
 4444 + (uid − 1000) mod 1000 for other Unix users, so two people on one machine
@@ -326,11 +329,19 @@ sobre config set proxy.upstreams.anthropic http://127.0.0.1:11434 --yes
 ```
 
 If Claude Code already points at an endpoint of your own (`ANTHROPIC_BASE_URL`
-in its `settings.json`), `proxy enable` leaves it alone and says so.
-`proxy enable --force` puts the proxy in front of it instead: it saves that
-endpoint as `proxy.upstreams.anthropic` (unless you set one), prints where, and
-`proxy disable` or `uninstall` puts it back. `sobre proxy cleanup` removes proxy
-addresses left in agent configurations while the proxy is off.
+in its `settings.json`, remote or local, such as LiteLLM or Ollama), `proxy
+enable` leaves it alone and says so. `proxy enable --force` puts the proxy in
+front of it instead: it saves that endpoint as `proxy.upstreams.anthropic`
+(unless you set one), prints where, and `proxy disable` or `uninstall` puts it
+back. A Codex `openai_base_url` or an OpenCode `baseURL` of your own is never
+replaced.
+
+`sobre` keeps what it wrote into each agent's configuration, and what it
+replaced, in `proxy_wiring.json` in its state directory; `proxy disable`,
+`proxy cleanup`, `doctor --fix` and `uninstall` undo exactly that and nothing
+else. `proxy disable` also stops the proxy, wherever it was started from.
+`sobre proxy cleanup` removes the proxy addresses left in agent configurations
+while the proxy is off.
 
 ## Where data lives
 
@@ -340,7 +351,7 @@ The same layout on every platform, under your home directory:
 |---|---|---|
 | `~/.config/sobre` | `config.toml` | `SOBRE_CONFIG_DIR`, `XDG_CONFIG_HOME` |
 | `~/.local/share/sobre` | the usage ledger, sessions, memory, search and graph indexes, checkpoints, the proxy token, the managed ONNX Runtime | `SOBRE_DATA_DIR`, `XDG_DATA_HOME` |
-| `~/.local/state/sobre` | logs, the debug log, and the full outputs behind compressed ones, kept 24 hours | `SOBRE_STATE_DIR`, `XDG_STATE_HOME` |
+| `~/.local/state/sobre` | logs, the debug log, the full outputs behind compressed ones (kept 24 hours), the hooks' shared state (`hooks/`) and the proxy wiring record (`proxy_wiring.json`) | `SOBRE_STATE_DIR`, `XDG_STATE_HOME` |
 | `~/.cache/sobre` | embedding models | `SOBRE_CACHE_DIR`, `XDG_CACHE_HOME` |
 
 `SOBRE_*_DIR` names the directory itself; `XDG_*_HOME` names its parent. With

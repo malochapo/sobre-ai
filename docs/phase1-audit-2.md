@@ -76,7 +76,7 @@ was added.
 | Lot | Scope | Status |
 |---|---|---|
 | G | Regressions and half-done phase-1 fixes | done (#51, #52, #53, #54, #55) |
-| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51) |
+| H | The user's machine: `init`, `uninstall`, `config`, proxy wiring | in progress (#51, #PRNUM) |
 | J | Editing and shell tools | open |
 | K | Reading and search tools | open |
 | L | Graph, session, knowledge, review, `gain` | open |
@@ -345,7 +345,7 @@ documented:
   - Done for `uninstall` (the other commands follow decision 8): any
     argument but `--keep-config`, `--keep-binary` and `--help` exits 2
     and removes nothing. `--dry-run` is gone (decision 13).
-- [ ] **H2 Any localhost URL is taken for sobre's proxy.**
+- [x] **H2 Any localhost URL is taken for sobre's proxy.** (#PRNUM)
   - `is_local_sobre_url` (`proxy_setup/util.rs:5`,
     `proxy_setup/codex.rs:207-210`) matches every `localhost`/`127.0.0.1`
     URL.
@@ -361,8 +361,16 @@ documented:
     do the same, even when the proxy was never enabled.
   - Fix: match the exact proxy URL on sobre's port, and only a value sobre
     wrote.
-- [ ] **H3 `proxy disable` and `uninstall` invent Claude's base URL
-  instead of restoring it** (`proxy_setup/claude.rs:65-110,152-160`,
+  - Done, with H3. `proxy_setup/wiring.rs` keeps, in
+    `<state dir>/proxy_wiring.json`, the URL sobre wrote into each slot
+    (Claude Code's `ANTHROPIC_BASE_URL`, Codex's `openai_base_url`, each
+    OpenCode provider's `baseURL`) and the value it replaced. A URL is
+    sobre's only when it is the recorded one or, with no record, the
+    proxy's address on its port. `init`, `enable` without `--force`,
+    `cleanup`, `doctor --fix`, the subscription guard and `uninstall` leave
+    any other value, local or not.
+- [x] **H3 `proxy disable` and `uninstall` invent Claude's base URL
+  instead of restoring it** (#PRNUM) (`proxy_setup/claude.rs:65-110,152-160`,
   `proxy_setup/mod.rs:67,109`).
   - Reproduced with the README's own Ollama example: after `config set
     proxy.upstreams.anthropic http://127.0.0.1:11434`, `disable` and
@@ -376,10 +384,16 @@ documented:
     `disable` then writes `ANTHROPIC_BASE_URL=""`.
   - Fix: record what sobre wrote and what it displaced, and undo exactly
     that.
-- [ ] **H4 The proxy on Windows.**
+  - Done (see H2): undoing puts back the value `--force` replaced, or
+    removes the key; the configured upstream is never written into
+    Claude's settings.
+- [x] **H4 The proxy on Windows.** (#PRNUM)
   - There is no autostart on Windows. `proxy enable` skips the agent wiring
     because the proxy is not running, and still reports success.
   - Decision 10.
+  - Done. Where there is no autostart, `proxy enable` refuses while
+    nothing answers on the port, says to start the proxy by hand first,
+    and changes nothing; `init`'s question does the same.
 - [ ] **H5 `claude mcp add-json` never succeeds.** sobre pipes the JSON on
   stdin; the CLI's usage is `claude mcp add-json [options] <name> <json>`,
   and it fails with "missing required argument 'json'"
@@ -415,10 +429,12 @@ documented:
 - [ ] **H7 `init --check --json` looks like a real run.** Its JSON says
   "connected" and "created", with no dry-run field
   (`setup/mod.rs:200-226,255`).
-- [ ] **H8 The systemd unit pins no directories** (`proxy_autostart.rs:383-405`).
+- [x] **H8 The systemd unit pins no directories** (`proxy_autostart.rs:383-405`).
   The macOS plist pins `SOBRE_*_DIR` and `HOME`; the systemd unit sets only
   `RUST_LOG`. A proxy started by systemd can read another config and token
-  than the CLI that set it up. Likely; not run under systemd.
+  than the CLI that set it up. Likely; not run under systemd. (#PRNUM)
+  Done: the unit sets `HOME` and the four `SOBRE_*_DIR` this CLI resolves,
+  and quotes the binary in `ExecStart` (a path with a space broke it).
 - [ ] **H9 Zed on macOS.** sobre writes
   `~/Library/Application Support/Zed/settings.json`; Zed reads
   `~/.config/zed/settings.json` on macOS, which is what `doctor` checks
@@ -488,8 +504,8 @@ documented:
     says "All 4 checks passed" and exits 0, while `doctor` shows the
     failure and exits 1. `config init` refuses to overwrite it and exits 0.
   - `--fix` counts 4 checks, `doctor` 15: a C6 leftover.
-- [ ] **H15 `proxy enable` and `disable` leave state behind and report
-  what did not happen.**
+- [x] **H15 `proxy enable` and `disable` leave state behind and report
+  what did not happen.** (#PRNUM)
   - Without a systemd user bus, `proxy enable` prints "managed service did
     not acquire port 4444" (the cause is "Failed to connect to bus") and
     exits 1, yet leaves `proxy.enabled = true`, the unit file and its
@@ -501,6 +517,11 @@ documented:
     MCP server answering `/health`, and prints "Original endpoint
     restored" when nothing was.
   - `uninstall` leaves an empty `~/.config/systemd/user`.
+  - Done. `proxy enable` and `init` record `proxy.enabled = true` only once
+    the proxy runs; a unit that could not start is removed with its wants
+    link and the directories it leaves empty, and the error says what
+    systemd answered. `proxy disable` also stops a proxy started by hand
+    or by an MCP server, and says whether any agent was taken off it.
 
 ## Lot J — editing and shell tools
 
