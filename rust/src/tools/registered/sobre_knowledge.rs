@@ -26,7 +26,7 @@ impl McpTool for SobreKnowledgeTool {
              the old); recall query= finds them (bare: the recent ones); search query= also \
              searches saved sessions; remove deletes one; status lists categories. consolidate \
              imports this session's findings and decisions. gotcha trigger= resolution= records \
-             a pitfall, recalled for matching tasks.",
+             a pitfall, which sobre_compose shows for a matching task.",
             json!({
                 "type": "object",
                 "properties": {
@@ -34,7 +34,7 @@ impl McpTool for SobreKnowledgeTool {
                         "type": "string",
                         "enum": ["remember", "recall", "search", "status", "remove", "consolidate", "gotcha"]
                     },
-                    "category": { "type": "string", "description": "Groups facts (remember: default general)" },
+                    "category": { "type": "string", "description": "Groups facts (remember: default general; gotcha: default convention)" },
                     "key": { "type": "string" },
                     "value": { "type": "string" },
                     "confidence": { "type": "number", "description": "remember: 0.0-1.0 (default 0.8)" },
