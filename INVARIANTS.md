@@ -102,8 +102,8 @@ someone has to run.
 
 This invariant is what buys us the right to delete code without asking whether
 it might be monetisable later, or whether some organisation might want it. It is
-load-bearing, and it is the sharpest tool we have against re-growing into what
-we forked away from.
+load-bearing, and it is the sharpest tool we have against growing into a
+hosted, multi-user product.
 
 ## 5. The agent host is in control
 
@@ -114,11 +114,11 @@ nor bypassed by `sobre`.**
 Agent hosts — Claude Code, Copilot, Cursor, Codex, Gemini CLI — ship their own
 control: permission rules, approval prompts, auto modes, classifiers. They are
 better placed to decide than a context tool sitting beside them, and a second
-gate can only disagree with the first. The tool `sobre` forks from shipped such a
-gate: a curated allow list of shell commands, a path jail, refusals of
-secret-looking files, a throttle on repeated calls, and approval settings written
-into the host's configuration. Each one either duplicated the host's decision or
-overrode it. `sobre` keeps none of them.
+gate can only disagree with the first. Such a gate takes many forms: a curated
+allow list of shell commands, a path jail, refusals of secret-looking files, a
+throttle on repeated calls, approval settings written into the host's
+configuration. Each one either duplicates the host's decision or overrides it.
+`sobre` has none of them.
 
 What follows from this:
 
@@ -182,7 +182,7 @@ exist so that shipping often and shipping safely are not in tension.
   exceptions for "trivial" fixes; trivial fixes are how regressions ship.
 - Branch protection on `main` and `develop`: no direct pushes, review required.
 - **Two maintainers with equal rights, from day one.** A project whose bus
-  factor is 1 has already reproduced the problem it was forking away from.
+  factor is 1 stops the day its one maintainer does.
 - No marketing material or private notes in the repository, and no generated
   artefacts except the reference pages in `docs/reference/generated/`, which
   CI regenerates and compares with the code. The repo contains source, tests,
