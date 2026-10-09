@@ -33,7 +33,7 @@ pub struct EmbeddingEntry {
     pub symbol_name: String,
     pub start_line: usize,
     pub end_line: usize,
-    /// int8-quantized embedding (turbovec-derived) — 4× smaller on disk.
+    /// int8-quantized embedding — 4× smaller on disk.
     pub quant: QuantizedVector,
     pub content_hash: String,
 }

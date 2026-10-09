@@ -1,7 +1,8 @@
-//! Automatic model download from HuggingFace Hub.
+//! Model download from HuggingFace Hub.
 //!
 //! Downloads the selected ONNX embedding model, its `tokenizer.json` and its
-//! sentence-transformers metadata on explicit request. Files are cached
+//! sentence-transformers metadata on explicit request only
+//! (`sobre embeddings provision`, or `init`'s question). Files are cached
 //! per-model under the models directory and only downloaded once.
 //!
 //! Supply-chain integrity: after the first successful download a
