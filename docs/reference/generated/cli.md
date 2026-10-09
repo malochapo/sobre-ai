@@ -2,9 +2,9 @@
 
 <!-- GENERATED FILE — do not edit by hand. Run: `cargo run --example gen_docs --features dev-tools` -->
 
-Source of truth: `rust/src/cli/spec.rs`. The same table checks every command's flags (an unknown flag, a missing value or an unexpected argument exits 2 before anything runs) and prints `sobre help all` and `sobre <command> --help`.
+Source of truth: `rust/src/cli/args.rs`, the clap declarations of every command. They parse the command line (an unknown flag, a missing value or an unexpected argument exits 2 before anything runs) and print `sobre <command> --help`; `sobre help all` and this page are rendered from them.
 
-Global: `sobre --version` (`-V`) prints the version; `--help` (`-h`) after any command prints its entry.
+Global: `sobre --version` (`-V`) prints the version; `--help` (`-h`) after any command but `-c` and `raw`, which take the rest of the line, prints its help.
 
 ## `sobre mcp`
 
@@ -21,8 +21,12 @@ Agents start this themselves. Bare `sobre` does the same when stdin is not a ter
 Run a shell command with compressed, labelled output.
 
 ```text
-sobre -c <command>
+sobre -c <command>...
 ```
+
+| Argument | Meaning |
+|---|---|
+| `<command>...` | The command: one quoted argument, or several joined with spaces |
 
 What the Cursor and Gemini hooks run. The output says, on stderr, what was compressed; `sobre_expand` brings back the original. Exits with the command's own exit code.
 
@@ -31,8 +35,14 @@ What the Cursor and Gemini hooks run. The output says, on stderr, what was compr
 Run a shell command with its exact output, uncompressed.
 
 ```text
-sobre raw <command>
+sobre raw <command>...
 ```
+
+| Argument | Meaning |
+|---|---|
+| `<command>...` | The command: one quoted argument, or several joined with spaces |
+
+Exits with the command's own exit code.
 
 ## `sobre call`
 
@@ -42,8 +52,9 @@ Call one MCP tool from the shell.
 sobre call <tool> [--project-root <path>] [--json <json>] [--json-file <path>]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
+| `<tool>` | The tool's name: sobre_read, sobre_search, ... |
 | `--project-root <path>` | The project the tool works in (default: the git root around the current directory) |
 | `--json <json>` | The tool's arguments, as a JSON object |
 | `--json-file <path>` | Read the arguments from this file |
@@ -58,8 +69,9 @@ Connect agents to sobre: MCP entry, hooks, skill.
 sobre init [<agent>...] [--check] [--repair] [--json] [--agent <agent>]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
+| `[<agent>...]` | The agents to connect |
 | `--check` | List the files init would create or change, and write nothing |
 | `--repair` | Ask no question (for scripts and CI) |
 | `--json` | Machine-readable report; asks no question |
@@ -75,7 +87,7 @@ Check the install: binary, config, agents, hooks, proxy, data.
 sobre doctor [--fix] [--json]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--fix` | Repair what can be repaired, and say what was done |
 | `--json` | Machine-readable output |
@@ -90,7 +102,7 @@ Check each agent's integration.
 sobre doctor integrations [--fix] [--json]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--fix` | Repair the integrations first |
 | `--json` | Machine-readable output |
@@ -103,7 +115,7 @@ The fixed context cost sobre adds to every request.
 sobre doctor overhead [--json] [--gate]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--json` | Machine-readable output |
 | `--gate` | Exit 1 when the cost is over the 8,000-token budget |
@@ -116,7 +128,7 @@ Low-signal or duplicate lines in the context sobre injects.
 sobre doctor lint-context [--json]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--json` | Machine-readable output |
 
@@ -128,13 +140,13 @@ Tokens saved, their value, real cost with the proxy, and overhead.
 sobre gain [--by-tool] [--daily] [--json] [--period <all|today|Nd>] [--limit <n>] [--model <model>] [--reset]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--by-tool` | Savings per tool or command |
 | `--daily` | Saved tokens and real cost per day |
 | `--json` | Machine-readable output |
-| `--period <all|today|Nd>` | The period to cover (default all) |
-| `--limit <n>` | Rows shown by --by-tool |
+| `--period <all\|today\|Nd>` | The period to cover (default: all) |
+| `--limit <n>` | Rows shown by --by-tool (default: 10) |
 | `--model <model>` | Price saved tokens at this model's rate |
 | `--reset` | Clear the usage ledger |
 
@@ -148,7 +160,7 @@ Build the project's indexes.
 sobre index build [--force] [--root <path>]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--force` | Drop the indexes first and rebuild from scratch |
 | `--root <path>` | The project (default: the git root around the current directory) |
@@ -163,7 +175,7 @@ What is built, and how large.
 sobre index status [--json] [--root <path>]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--json` | Machine-readable output |
 | `--root <path>` | The project (default: the git root around the current directory) |
@@ -192,8 +204,10 @@ Change one key.
 sobre config set <key> <value> [--yes]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
+| `<key>` | A key `sobre config` lists |
+| `<value>` | Its new value |
 | `-y, --yes` | Skip the confirmation a change that widens what sobre does asks for |
 
 Booleans take true/false (also yes/no, on/off, 1/0); a list takes comma-separated values. The value is checked before the file is written; the file keeps its comments. `default`, an empty value or the key's default value removes the key, so its default applies. Exits 2 on an unknown key or a value sobre would not use.
@@ -216,6 +230,14 @@ sobre config init
 
 Keeps an existing file as config.toml.sobre.bak.
 
+## `sobre embeddings`
+
+The local ONNX runtime and embedding model (same as embeddings status).
+
+```text
+sobre embeddings
+```
+
 ## `sobre embeddings status`
 
 The local ONNX runtime and embedding model (builds with local embeddings).
@@ -232,7 +254,7 @@ Download the ONNX runtime and the model.
 sobre embeddings provision [--force]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--force` | Download again even when present |
 
@@ -244,7 +266,7 @@ Run the API proxy (in the foreground unless --detach).
 sobre proxy start [--port <n>] [--detach]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `-p, --port <n>` | The port to listen on (default proxy.port) |
 | `-d, --detach` | Run in the background |
@@ -257,7 +279,7 @@ Unload the autostart unit and stop the proxy.
 sobre proxy stop [--port <n>]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `-p, --port <n>` | The proxy's port (default: the port it was last started on, else proxy.port) |
 
@@ -269,7 +291,7 @@ Restart the proxy so it re-reads config.toml.
 sobre proxy restart [--port <n>]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `-p, --port <n>` | The proxy's port (default: the port it was last started on, else proxy.port) |
 
@@ -281,7 +303,7 @@ The proxy's config, process and live upstreams.
 sobre proxy status [--port <n>]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `-p, --port <n>` | The proxy's port (default: the port it was last started on, else proxy.port) |
 
@@ -293,7 +315,7 @@ Turn the proxy on.
 sobre proxy enable [--force]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--force` | Also rewire agents that point to another endpoint |
 
@@ -323,7 +345,7 @@ Print the proxy's bearer token.
 sobre proxy token [--quiet]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `-q, --quiet` | Print the token alone |
 
@@ -335,6 +357,10 @@ Internal: run by the hooks init installs.
 sobre hook <compress|cursor|gemini|read-dedup|observe>
 ```
 
+| Argument | Meaning |
+|---|---|
+| `<compress\|cursor\|gemini\|read-dedup\|observe>` | The hook that fired |
+
 ## `sobre uninstall`
 
 Remove sobre from this machine.
@@ -343,7 +369,7 @@ Remove sobre from this machine.
 sobre uninstall [--keep-config] [--keep-binary]
 ```
 
-| Flag | Meaning |
+| Argument | Meaning |
 |---|---|
 | `--keep-config` | Keep config.toml, for a later reinstall |
 | `--keep-binary` | Leave the sobre binary in place |
@@ -352,11 +378,15 @@ Removes the proxy (autostart unit, process, the URLs it put in agent configs); s
 
 ## `sobre help`
 
-The common commands; `help all` prints this reference.
+The common commands; `help all` prints the full reference.
 
 ```text
 sobre help [all]
 ```
+
+| Argument | Meaning |
+|---|---|
+| `[all]` | Print every command, flag and exit code instead |
 
 ## Exit codes
 

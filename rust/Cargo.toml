@@ -233,6 +233,19 @@ which = "8.0"
 # Process RSS and system RAM for the memory guard, on Linux, macOS and Windows.
 sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 yaml_serde = "0.10.4"
+# The command line (cli/args.rs). `suggestions` adds "did you mean" for a
+# mistyped command or flag, through strsim, already a dependency (about 8 KB
+# in the release binary). Left out: `color` (sobre's own help is plain text),
+# `wrap_help` (the help text is wrapped in the source) and `unicode` (every
+# name and value name is ASCII).
+clap = { version = "4.6.7", default-features = false, features = [
+  "std",
+  "derive",
+  "help",
+  "usage",
+  "error-context",
+  "suggestions",
+] }
 
 [lints.rust]
 unreachable_pub = "warn"

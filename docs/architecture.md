@@ -397,7 +397,7 @@ files are parsed through their script blocks. The post-edit syntax check covers
 |---|---|---|
 | [mcp-tools.md](reference/generated/mcp-tools.md) | every tool, action and parameter | `tools/registered/` |
 | [config-keys.md](reference/generated/config-keys.md) | every config key | `core/config/schema/` |
-| [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/spec.rs` |
+| [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/args.rs` |
 | [env-vars.md](reference/generated/env-vars.md) | every environment variable | `core/env_vars.rs` |
 | [contracts/](contracts/) | on-disk formats and policies: usage ledger, graph, knowledge, gotchas | the contract files |
 | [LOCK_ORDERING.md](../rust/LOCK_ORDERING.md) | every lock and its order | checked by a test |
@@ -411,7 +411,7 @@ files are parsed through their script blocks. The post-edit syntax check covers
 - The four reference pages are generated:
   `cargo run --example gen_docs --features dev-tools` rewrites them, and CI
   fails when they drift.
-  - A new command or flag goes into `cli/spec.rs`; a test fails when a handler reads a flag the table lacks.
+  - A new command or flag is declared with clap in `cli/args.rs`; its handler takes the parsed struct, so it reads no flag that is not declared.
   - A new variable goes into `core/env_vars.rs`; a test fails when the code reads one it does not list.
   - A tool argument goes into its schema; a test fails when a handler reads one the schema does not declare.
 - The fixed per-turn cost of the tool schemas and instructions is pinned by a

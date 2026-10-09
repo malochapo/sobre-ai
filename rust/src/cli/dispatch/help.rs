@@ -33,7 +33,7 @@ pub(super) fn capability_banner() -> String {
     )
 }
 
-/// Concise, tiered help shown by default for `sobre help` and `--help`.
+/// Concise, tiered help shown by `sobre help`, `sobre --help` and `sobre -h`.
 /// The exhaustive reference lives behind `sobre help all`.
 pub(super) fn print_help_concise() {
     print!("{}", concise_help_text());
@@ -73,8 +73,9 @@ pub(super) fn print_help() {
     print!("{}", full_help_text());
 }
 
-/// `sobre help all`: the command reference from [`crate::cli::spec`], then
-/// what the shell commands compress.
+/// `sobre help all`: the command reference rendered from the clap
+/// declarations ([`crate::cli::reference`]), then what the shell commands
+/// compress.
 pub(super) fn full_help_text() -> String {
     format!(
         "sobre {version} — local context tools for coding agents
@@ -95,6 +96,6 @@ TROUBLESHOOTING:
 ",
         version = env!("CARGO_PKG_VERSION"),
         banner = capability_banner(),
-        reference = crate::cli::spec::reference_text(),
+        reference = crate::cli::reference::reference_text(),
     )
 }

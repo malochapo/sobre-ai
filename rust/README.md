@@ -49,7 +49,8 @@ under `tests/` pin a good deal of behaviour and `--lib` never runs them.
 src/
 ├─ main.rs              entry point
 ├─ lib.rs               crate root; re-exports drive what dead_code can see
-├─ cli/                 subcommands, dispatch, help; spec.rs is the command table
+├─ cli/                 subcommands, dispatch, help; args.rs declares the command
+│                       line (clap)
 ├─ server/              MCP server: registry, dispatch, path resolution, roots,
 │                       output post-processing, background shell jobs
 ├─ tools/               the 15 MCP tools (registered/ holds their schemas)

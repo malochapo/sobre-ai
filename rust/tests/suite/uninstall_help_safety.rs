@@ -69,7 +69,7 @@ fn assert_is_help_not_uninstall(out: &Output, flag: &str, marker: &std::path::Pa
         out.status
     );
     assert!(
-        stdout.contains("usage: sobre uninstall") && stdout.contains("--keep-config"),
+        stdout.contains("Usage: sobre uninstall") && stdout.contains("--keep-config"),
         "`uninstall {flag}` must print usage; stdout was:\n{stdout}"
     );
     for needle in REMOVAL_MARKERS {

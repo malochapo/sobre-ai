@@ -1,3 +1,4 @@
+pub(crate) mod args;
 mod call_cmd;
 mod common;
 mod config_cmd;
@@ -6,8 +7,8 @@ pub(crate) mod embeddings_cmd;
 mod index_cmd;
 mod init_cmd;
 pub(crate) mod prompt;
-pub(crate) mod spec;
+pub(crate) mod reference;
 pub(crate) use call_cmd::cmd_call;
-pub use config_cmd::*;
+pub(crate) use config_cmd::cmd_config;
 pub(crate) use index_cmd::cmd_index;
-pub use init_cmd::cmd_init;
+pub(crate) use init_cmd::cmd_init;

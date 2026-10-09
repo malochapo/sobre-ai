@@ -88,7 +88,7 @@ fn removed_commands_are_unknown() {
         let out = run(&[cmd, "x"]);
         assert_eq!(exit_code(&out), 2, "{cmd} must be unknown");
         assert!(
-            stderr(&out).contains("unknown command"),
+            stderr(&out).contains(&format!("unrecognized subcommand '{cmd}'")),
             "{cmd}: {}",
             stderr(&out)
         );
@@ -101,9 +101,64 @@ fn unknown_command_exits_nonzero() {
     assert_ne!(exit_code(&out), 0, "unknown command should fail");
     let err = stderr(&out);
     assert!(
-        err.contains("unknown command") || err.contains("this-command-does-not-exist"),
+        err.contains("this-command-does-not-exist"),
         "stderr should mention the unknown command; got: {err}"
     );
+}
+
+/// A mistyped command or flag is named, with the one meant.
+#[test]
+fn a_typo_suggests_the_command() {
+    let out = run(&["doctr"]);
+    assert_eq!(exit_code(&out), 2);
+    assert!(stderr(&out).contains("'doctor'"), "{}", stderr(&out));
+}
+
+/// An unknown flag is a usage error: exit 2, and the command does not run.
+#[test]
+fn an_unknown_flag_exits_2_and_runs_nothing() {
+    for args in [
+        &["gain", "--bogus"][..],
+        &["gain", "--reset", "--bogus"],
+        &["doctor", "--bogus"],
+        &["config", "set", "proxy.port", "9000", "--bogus"],
+        &["proxy", "disable", "--bogus"],
+        &["init", "--bogus"],
+    ] {
+        let out = run(args);
+        assert_eq!(exit_code(&out), 2, "{args:?}: {}", stderr(&out));
+        assert!(stdout(&out).is_empty(), "{args:?} ran: {}", stdout(&out));
+        assert!(
+            stderr(&out).contains("--bogus"),
+            "{args:?}: {}",
+            stderr(&out)
+        );
+    }
+}
+
+/// `--help` after a command prints its help and runs nothing.
+#[test]
+fn command_help_prints_usage_and_details() {
+    let out = run(&["gain", "--help"]);
+    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
+    let s = stdout(&out);
+    assert!(s.contains("Usage: sobre gain"), "{s}");
+    assert!(s.contains("--period <all|today|Nd>"), "{s}");
+    assert!(s.contains("usage ledger (usage.jsonl)"), "{s}");
+}
+
+#[test]
+fn help_all_prints_the_full_reference() {
+    let out = run(&["help", "all"]);
+    assert_eq!(exit_code(&out), 0, "stderr: {}", stderr(&out));
+    let s = stdout(&out);
+    for line in [
+        "sobre proxy start",
+        "sobre config set <key> <value>",
+        "EXIT CODES:",
+    ] {
+        assert!(s.contains(line), "{line}: {s}");
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -173,7 +228,7 @@ fn config_rejects_removed_subcommands() {
         let out = run(&["config", sub]);
         assert_eq!(exit_code(&out), 2, "config {sub}");
         assert!(
-            stderr(&out).contains("usage:"),
+            stderr(&out).contains("Usage: sobre config"),
             "config {sub}: {}",
             stderr(&out)
         );
@@ -183,9 +238,10 @@ fn config_rejects_removed_subcommands() {
 #[test]
 fn index_without_subcommand_prints_usage() {
     let out = run(&["index"]);
+    assert_eq!(exit_code(&out), 2);
     let err = stderr(&out);
     assert!(
-        err.contains("index <build|status>"),
+        err.contains("Usage: sobre index") && err.contains("build") && err.contains("status"),
         "index usage must name build and status: {err}"
     );
 }
@@ -308,7 +364,7 @@ fn dash_c_is_not_an_unknown_command() {
     let out = run(&["-c", "echo hello"]);
     let err = stderr(&out);
     assert!(
-        !err.contains("unknown command"),
+        !err.contains("error:"),
         "`-c` must dispatch (the hook rewriter emits it), got stderr: {err}"
     );
 }

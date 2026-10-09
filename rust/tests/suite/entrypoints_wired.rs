@@ -81,8 +81,8 @@ fn sobre() -> Command {
 }
 
 /// Run the sandboxed binary; return trimmed stdout, trimmed stderr and the exit
-/// code. Stderr matters because the unknown-command handler reports on stderr
-/// (premium UX), so the wiring detector keys off it.
+/// code. Stderr matters because an unknown command is reported there, so the
+/// wiring detector keys off it.
 fn run(args: &[&str]) -> (String, String, i32) {
     let out = sobre()
         .args(args)
@@ -95,33 +95,35 @@ fn run(args: &[&str]) -> (String, String, i32) {
 
 #[test]
 fn cli_subcommands_are_wired() {
-    // The dispatch fallthrough for an unknown command (premium UX) reports on
-    // stderr — `sobre: unknown command '<cmd>'` plus a "did you mean?" hint —
-    // with empty stdout and exit 2. That stderr marker is the *signature* of "not
-    // wired" — the exact v3.4.7 `pack`/`index` regression. Derive it from a token
-    // that can never be a real command, so the detector validates itself.
+    // An unknown command is reported on stderr — clap's `unrecognized
+    // subcommand '<cmd>'` — with empty stdout and exit 2. That stderr marker is
+    // the *signature* of "not wired" — the exact v3.4.7 `pack`/`index`
+    // regression. Derive it from a token that can never be a real command, so
+    // the detector validates itself.
     let (stdout, stderr, code) = run(&["__sobre_not_a_command__"]);
     assert!(
-        stdout.is_empty() && stderr.contains("unknown command") && code == 2,
-        "unknown-command fallthrough changed (stdout={stdout:?}, stderr={stderr:?}, \
+        stdout.is_empty()
+            && stderr.contains("unrecognized subcommand '__sobre_not_a_command__'")
+            && code == 2,
+        "unknown-command report changed (stdout={stdout:?}, stderr={stderr:?}, \
          exit={code}); the wiring detector below keys off the stderr marker"
     );
 
-    // Probe each command with a *garbage subcommand* — never `--help`, since e.g.
-    // `pack --help` skips dashed args and runs the default PR packer (a side effect).
-    // A wired command routes to its own handler and never emits the top-level
-    // `unknown command '<cmd>'` marker; an un-wired one hits the fallthrough and
-    // does. Set = every command with subcommands, each side-effect-free on an
-    // unknown subcommand. That every command name dispatches at all is pinned by
-    // `known_commands_match_dispatch_arms`; the *full* tool surface is guarded
-    // MCP-side by `mcp_entrypoint_tools_are_advertised`.
+    // Probe each command with a *garbage subcommand* — never `--help`. A
+    // declared command parses its own arguments and never emits the top-level
+    // `unrecognized subcommand '<cmd>'` marker; an undeclared one does. Set =
+    // every command with subcommands, each side-effect-free on an unknown
+    // subcommand. That every declared command dispatches is checked by the
+    // compiler (the dispatch `match` on the clap enum is exhaustive); the
+    // *full* tool surface is guarded MCP-side by
+    // `mcp_entrypoint_tools_are_advertised`.
     let probe = "__sobre_wiring_probe__";
     for cmd in ["index", "config", "embeddings", "proxy", "hook"] {
         let (_stdout, stderr, _code) = run(&[cmd, probe]);
         assert!(
-            !stderr.contains(&format!("unknown command '{cmd}'")),
-            "`sobre {cmd}` falls through to the unknown-command handler — it is not \
-             wired in cli/dispatch (the v3.4.7 entrypoint regression)."
+            !stderr.contains(&format!("unrecognized subcommand '{cmd}'")),
+            "`sobre {cmd}` is not a declared command — it is not wired in \
+             cli/args.rs (the v3.4.7 entrypoint regression)."
         );
     }
 }

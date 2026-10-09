@@ -6,7 +6,8 @@
 //!
 //! - `mcp-tools.md`   — every registered MCP tool, from `manifest_value()`.
 //! - `config-keys.md` — every recognized `config.toml` key, from `ConfigSchema`.
-//! - `cli.md`         — every command and flag, from `cli::spec`.
+//! - `cli.md`         — every command and flag, from the clap declarations
+//!   in `cli::args`.
 //! - `env-vars.md`    — every environment variable, from `core::env_vars`.
 //!
 //! Used by the `gen_docs` example (writes the files) and by drift tests /
@@ -33,7 +34,7 @@ pub fn generated_docs() -> Vec<(&'static str, String)> {
     vec![
         ("mcp-tools.md", mcp_tools_markdown()),
         ("config-keys.md", config_keys_markdown()),
-        ("cli.md", crate::cli::spec::markdown()),
+        ("cli.md", crate::cli::reference::markdown()),
         ("env-vars.md", crate::core::env_vars::markdown()),
     ]
 }

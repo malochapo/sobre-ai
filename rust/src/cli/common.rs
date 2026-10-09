@@ -13,21 +13,11 @@ pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     }
 }
 
-pub(crate) fn detect_project_root(args: &[String]) -> String {
-    let mut it = args.iter().peekable();
-    while let Some(a) = it.next() {
-        if let Some(v) = a.strip_prefix("--root=")
-            && !v.trim().is_empty()
-        {
-            return normalize_explicit_root(v);
-        }
-        if a == "--root"
-            && let Some(v) = it.peek()
-            && !v.starts_with("--")
-            && !v.trim().is_empty()
-        {
-            return normalize_explicit_root(v);
-        }
+/// The project a command works in: `explicit` (`--root`, `--project-root`)
+/// when given, else the git root around the current directory.
+pub(crate) fn project_root(explicit: Option<&str>) -> String {
+    if let Some(root) = explicit.filter(|r| !r.trim().is_empty()) {
+        return normalize_explicit_root(root);
     }
     let cwd = std::env::current_dir()
         .ok()
@@ -71,7 +61,7 @@ fn promote_to_git_root(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{detect_project_root, format_tokens_cli, normalize_explicit_root};
+    use super::{format_tokens_cli, normalize_explicit_root, project_root};
 
     #[test]
     fn format_tokens_cli_scales_through_billions() {
@@ -85,13 +75,10 @@ mod tests {
 
     #[test]
     fn explicit_root_is_not_promoted_to_parent_git_root() {
-        let args = vec![
-            "build".to_string(),
-            "--root".to_string(),
-            "/home/example/travail".to_string(),
-        ];
-
-        assert_eq!(detect_project_root(&args), "/home/example/travail");
+        assert_eq!(
+            project_root(Some("/home/example/travail")),
+            "/home/example/travail"
+        );
     }
 
     #[test]
