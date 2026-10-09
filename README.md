@@ -21,11 +21,51 @@ Then restart your agent.
 
 ## Install
 
-### A release binary
+On Linux and macOS:
 
-Each [release](https://github.com/malochapo/sobre-ai/releases) has two builds
-per platform. `sobre-dense-…` adds local embeddings (search by meaning); the
-other one does everything else.
+```bash
+curl -fsSL https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.ps1 | iex
+```
+
+The script picks the build for your platform from the latest
+[release](https://github.com/malochapo/sobre-ai/releases) (the newest
+pre-release while there is no release yet), checks it against the release's
+`SHA256SUMS`, and puts the binary in `~/.local/bin`, or on Windows in
+`%LOCALAPPDATA%\Programs\sobre`, which it adds to your user `PATH`. It
+downloads from GitHub only, and runs nothing but `sobre --version`: run
+`sobre init` next.
+
+| `install.sh` | `install.ps1` | |
+|---|---|---|
+| `--version v0.1.0-rc.1` | `-Version v0.1.0-rc.1` | install that release |
+| `--dense` | `-Dense` | the build with local embeddings (search by meaning) |
+| `--dir <path>` | `-Dir <path>` | install the binary there |
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.sh | sh -s -- --dense
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.ps1))) -Dense
+```
+
+To upgrade, run the same command again (see [Upgrade](#upgrade)). To remove
+sobre, run `sobre uninstall`: it removes what `init` wrote and sobre's data, then
+the binary itself (see [Uninstall](#uninstall)). On Windows it cannot delete
+the `sobre.exe` it runs from: afterwards, delete
+`%LOCALAPPDATA%\Programs\sobre` and remove it from your user `PATH`.
+
+### By hand
+
+Each release has two builds per platform; `sobre-dense-…` adds local
+embeddings. `SHA256SUMS` lists every file's checksum:
+`sha256sum --check --ignore-missing SHA256SUMS`.
 
 | Platform | Without embeddings | With embeddings |
 |---|---|---|
@@ -35,47 +75,38 @@ other one does everything else.
 | macOS Intel | `sobre-x86_64-apple-darwin.tar.gz` | none (see [Platform notes](#platform-notes)) |
 | Windows x64 | `sobre-x86_64-pc-windows-msvc.zip` | `sobre-dense-x86_64-pc-windows-msvc.zip` |
 
-`SHA256SUMS` lists every file's checksum:
-`sha256sum --check --ignore-missing SHA256SUMS`.
-
-Each archive holds the one binary. Put it in a directory on your `PATH` that it
-will stay in:
-
 ```bash
 mkdir -p ~/.local/bin
-tar xzf sobre-aarch64-apple-darwin.tar.gz -C ~/.local/bin
+tar xzf sobre-aarch64-apple-darwin.tar.gz -C ~/.local/bin sobre
 ```
 
 On Windows, unzip `sobre.exe` into a folder on your `PATH`.
 
+`init` writes the binary's absolute path into every agent's configuration, so
+put the binary where it will stay first. If you move it, run
+`sobre doctor --fix` from the new location.
+
 ### From source
 
-You need [rustup](https://rustup.rs) — a distribution's own `cargo` ignores the
-toolchain pinned in `rust/rust-toolchain.toml` — and a C compiler: the Xcode
+You need [rustup](https://rustup.rs) (a distribution's own `cargo` ignores the
+toolchain pinned in `rust/rust-toolchain.toml`) and a C compiler: the Xcode
 Command Line Tools on macOS, `build-essential` on Debian and Ubuntu, the Visual
 Studio Build Tools on Windows. A release build takes several minutes.
 
 ```bash
 git clone https://github.com/malochapo/sobre-ai
 cd sobre-ai
-make install        # installs ~/.local/bin/sobre
+make install        # installs ~/.local/bin/sobre, without embeddings
 ```
 
-Add `~/.local/bin` to your `PATH` if it is not there. `make install` builds
-without embeddings; with them, or on Windows where there is no `make`, run cargo
-from `rust/` so rustup picks up the pinned toolchain:
+Add `~/.local/bin` to your `PATH` if it is not there. With embeddings, or on
+Windows where there is no `make`, run cargo from `rust/` so rustup picks up the
+pinned toolchain:
 
 ```bash
 cd rust
 cargo install --path . --locked --root ~/.local --features dense
 ```
-
-### Install before you connect
-
-`init` writes the binary's absolute path into every agent's configuration. Put
-the binary where it will stay first: a binary run from `rust/target/release`
-breaks every agent at the next `cargo clean`. If you move it, run
-`sobre doctor --fix` from the new location.
 
 ## What it is not
 

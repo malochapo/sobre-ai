@@ -24,7 +24,7 @@ A single binary that runs on your machine, as your user:
 - an opt-in local proxy between your agent and its model provider.
 
 There is no `sobre` service, no account and no cloud component. A report
-about any of the four parts above is in scope.
+about any of the four parts above, or about the install scripts, is in scope.
 
 ## Threat model
 
@@ -65,6 +65,10 @@ each started by you:
   they say so. The builds without embeddings download neither. The `minilm`
   and `nomic` aliases are pinned to a HuggingFace commit; a model named as
   `org/repo` without `@revision` follows that repo's `main` branch.
+
+The install scripts (`install.sh`, `install.ps1`) ask the GitHub API which
+release is the latest, unless given one, then download that release's archive
+and `SHA256SUMS`, and nothing else.
 
 There is no telemetry, no update check and no usage reporting. If you find code
 that contradicts this, it is a bug: report it.
