@@ -31,7 +31,8 @@ pub fn parse_task_hints(task_description: &str) -> (Vec<String>, Vec<String>) {
     (files, keywords)
 }
 
-const STOP_WORDS: &[&str] = &[
+/// Words too common in a task description to say what it is about.
+pub(crate) const STOP_WORDS: &[&str] = &[
     "the", "and", "for", "that", "this", "with", "from", "have", "has", "was", "are", "been",
     "not", "but", "all", "can", "had", "her", "one", "our", "out", "you", "its", "will", "each",
     "make", "like", "fix", "add", "use", "get", "set", "run", "new", "old", "should", "would",
