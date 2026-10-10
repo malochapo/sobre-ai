@@ -559,19 +559,11 @@ pub fn purge_index(project_root: &str) {
 const SCAN_LOCK_WAIT: Duration = Duration::from_mins(2);
 
 pub fn scan(project_root: &str) -> ProjectIndex {
-    scan_inner(project_root).0
-}
-
-pub fn scan_with_content_cache(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
-    scan_inner(project_root)
-}
-
-fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
     let project_root = normalize_project_root(project_root);
 
     if !is_safe_scan_root(&project_root) {
         tracing::warn!("[graph_index: scan aborted for unsafe root {project_root}]");
-        return (ProjectIndex::new(&project_root), HashMap::new());
+        return ProjectIndex::new(&project_root);
     }
 
     let lock_name = format!(
@@ -593,16 +585,14 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         tracing::info!(
             "[graph_index: another scan of {project_root} still runs — returning the last index]"
         );
-        return (
-            ProjectIndex::load(&project_root).unwrap_or_else(|| ProjectIndex::new(&project_root)),
-            HashMap::new(),
-        );
+        return ProjectIndex::load(&project_root)
+            .unwrap_or_else(|| ProjectIndex::new(&project_root));
     }
     if waited
         && let Some(done) = ProjectIndex::load(&project_root)
         && !index_looks_stale(&done, &project_root)
     {
-        return (done, HashMap::new());
+        return done;
     }
 
     let existing = ProjectIndex::load(&project_root);
@@ -813,7 +803,7 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         index.edge_count()
     );
 
-    (index, content_cache)
+    index
 }
 
 /// Borrowed previous-scan symbols grouped by file. This index stores only
@@ -833,7 +823,7 @@ fn previous_symbols_by_file(index: &ProjectIndex) -> PreviousSymbols<'_> {
 }
 
 /// One file's contribution to the scan, produced off-thread by
-/// [`process_scan_file`] and merged sequentially by [`scan_inner`].
+/// [`process_scan_file`] and merged sequentially by [`scan`].
 #[derive(Debug, PartialEq)]
 struct ScanFileResult {
     rel: String,
@@ -938,7 +928,7 @@ fn process_scan_file(
 }
 
 /// Run [`process_scan_file`] over every target. `par_iter().collect()` preserves
-/// input order, so the [`scan_inner`] merge is order-stable whether or not the
+/// input order, so the [`scan`] merge is order-stable whether or not the
 /// pool is used; the sequential branch is the memory-pressure fallback and an
 /// equivalence anchor for the determinism tests.
 fn process_scan_targets(

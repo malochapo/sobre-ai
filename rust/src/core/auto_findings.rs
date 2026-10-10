@@ -1,54 +1,4 @@
-//! Path and content heuristics shared by `sobre_read` summaries and the code
-//! health scan.
-
-/// Returns true for paths that are noise rather than signal:
-/// VCS/dependency/build dirs, virtualenvs, caches, the user's home dotfiles
-/// (e.g. `~/.ssh/config`), and binary/log files.
-pub(crate) fn is_noise_path(path: &str) -> bool {
-    let p = path.replace('\\', "/");
-    const NOISE_SEGMENTS: &[&str] = &[
-        ".git",
-        "node_modules",
-        ".ssh",
-        ".gnupg",
-        ".aws",
-        ".cargo",
-        ".rustup",
-        "target",
-        ".venv",
-        "venv",
-        "__pycache__",
-        "site-packages",
-        "dist-packages",
-        ".next",
-        ".cache",
-        "dist",
-        "build",
-        "vendor",
-        ".terraform",
-    ];
-    // Match a noise directory anywhere in the path (leading, middle, or with a
-    // leading slash). Splitting on components handles relative paths too.
-    if p.split('/').any(|c| NOISE_SEGMENTS.contains(&c)) {
-        return true;
-    }
-    // Home dotfiles outside any workspace (e.g. ~/.ssh/config, ~/.zshrc).
-    if let Some(home) = dirs::home_dir() {
-        let home_s = home.to_string_lossy().replace('\\', "/");
-        if let Some(rest) = p.strip_prefix(&home_s) {
-            let rest = rest.trim_start_matches('/');
-            if rest.starts_with('.') {
-                return true;
-            }
-        }
-    }
-    const NOISE_EXTS: &[&str] = &[
-        ".lock", ".log", ".min.js", ".map", ".png", ".jpg", ".jpeg", ".gif", ".pdf", ".zip",
-        ".tar", ".gz", ".bin", ".so", ".dylib", ".dll", ".o", ".a", ".class", ".wasm",
-    ];
-    let lower = p.to_ascii_lowercase();
-    NOISE_EXTS.iter().any(|ext| lower.ends_with(ext))
-}
+//! The one-line summary `sobre_read` keeps for a file it delivered.
 
 /// Extracts a one-line structural hint from file/tool output.
 pub fn extract_content_hint(output: &str) -> String {
@@ -98,17 +48,6 @@ pub fn extract_content_hint(output: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn noise_path_detects_home_dotfiles() {
-        if let Some(home) = dirs::home_dir() {
-            let ssh = format!("{}/.ssh/config", home.display());
-            assert!(is_noise_path(&ssh));
-        }
-        assert!(is_noise_path("a/node_modules/b.js"));
-        assert!(is_noise_path("pkg/foo.min.js"));
-        assert!(!is_noise_path("src/server/mod.rs"));
-    }
 
     #[test]
     fn extract_content_hint_survives_multibyte_byte_budget() {

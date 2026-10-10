@@ -40,7 +40,6 @@ pub mod property_graph;
 // ---------------------------------------------------------------------------
 pub mod context_lint;
 pub mod context_overhead;
-pub mod cross_source_hints;
 
 // ---------------------------------------------------------------------------
 // Domain: Knowledge
@@ -59,7 +58,6 @@ pub mod knowledge_embedding;
 pub mod bm25_cache;
 pub mod bm25_index;
 pub mod content_cache;
-pub mod content_chunk;
 pub mod context_packing;
 pub mod cooccurrence;
 #[cfg(feature = "dense")]
@@ -141,7 +139,6 @@ pub mod budgets;
 pub mod cache;
 pub mod cloud_files;
 pub mod config;
-pub mod consolidation;
 pub mod consolidation_engine;
 pub mod conversation;
 pub mod crash_log;

@@ -295,8 +295,7 @@ fn run_build_worker(root: &str) {
         guard.report(0, 0);
         let graph_result = std::panic::catch_unwind(|| {
             // The scan writes the graph itself.
-            let (idx, _cache) = graph_index::scan_with_content_cache(&graph_root);
-            crate::core::code_health::persist::refresh_if_stale(&graph_root, &idx);
+            graph_index::scan(&graph_root);
         });
         drop(guard);
         {

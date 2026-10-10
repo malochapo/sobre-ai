@@ -80,14 +80,6 @@ pub enum ChunkKind {
     Class,
     Method,
     Other,
-    // Chunks ingested from outside the source tree (`ingest_content_chunks`).
-    Issue,
-    PullRequest,
-    WikiPage,
-    DbSchema,
-    ApiEndpoint,
-    Ticket,
-    ExternalOther,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -662,65 +654,6 @@ impl BM25Index {
 
     pub fn index_file_path(root: &Path) -> Option<PathBuf> {
         Some(index_dir(root)?.join("bm25_index.bin.zst"))
-    }
-
-    /// Ingest external `ContentChunk`s into the BM25 index, each converted to
-    /// a `CodeChunk`. Returns the number of chunks ingested.
-    pub fn ingest_content_chunks(
-        &mut self,
-        chunks: impl IntoIterator<Item = super::content_chunk::ContentChunk>,
-    ) -> usize {
-        let mut count = 0usize;
-        for cc in chunks {
-            self.add_chunk(cc.into());
-            count += 1;
-        }
-        if count > 0 {
-            self.finalize();
-        }
-        count
-    }
-
-    /// Remove every chunk whose `file_path` starts with `prefix` (e.g.
-    /// `health://`), with its postings; the remaining postings are renumbered
-    /// to the chunks' new positions. Lets a recomputed source
-    /// (like the code-health fabric) evict its prior pass so stale entries never
-    /// linger in search. Returns the number of chunks removed.
-    pub fn remove_chunks_with_prefix(&mut self, prefix: &str) -> usize {
-        // Old chunk index → new one, `None` for a removed chunk.
-        let mut next = 0usize;
-        let new_index: Vec<Option<usize>> = self
-            .chunks
-            .iter()
-            .map(|c| {
-                (!c.file_path.starts_with(prefix)).then(|| {
-                    next += 1;
-                    next - 1
-                })
-            })
-            .collect();
-        let removed = self.chunks.len() - next;
-        if removed == 0 {
-            return 0;
-        }
-        self.chunks.retain(|c| !c.file_path.starts_with(prefix));
-        for postings in self.inverted.values_mut() {
-            postings.retain_mut(|(idx, _)| match new_index.get(*idx).copied().flatten() {
-                Some(new) => {
-                    *idx = new;
-                    true
-                }
-                None => false,
-            });
-        }
-        self.inverted.retain(|_, postings| !postings.is_empty());
-        self.doc_freqs = self
-            .inverted
-            .iter()
-            .map(|(term, postings)| (term.clone(), postings.len()))
-            .collect();
-        self.finalize();
-        removed
     }
 }
 

@@ -404,31 +404,6 @@ impl SobreReadTool {
             });
         }
 
-        // Cross-source hints: the property graph's cross-source edges for this
-        // file (the code-health hotspots) are appended as compact hints. Only
-        // touch the DB when it already exists — never create graph.db on a read.
-        let hints_suffix = {
-            let graph_db = crate::core::property_graph::graph_dir(&ctx.project_root)
-                .map(|d| d.join("graph.db"));
-            let edges = if graph_db.is_some_and(|db| db.exists()) {
-                crate::core::property_graph::CodeGraph::open(&ctx.project_root)
-                    .map(|g| g.all_cross_source_edges())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            if edges.is_empty() {
-                String::new()
-            } else {
-                let hints = crate::core::cross_source_hints::hints_for_file(
-                    path,
-                    &edges,
-                    &ctx.project_root,
-                );
-                crate::core::cross_source_hints::format_hints(&hints)
-            }
-        };
-
         let mut warnings = Vec::new();
         if let Some(ref w) = delta_explicit_note {
             warnings.push(w.as_str());
@@ -438,12 +413,10 @@ impl SobreReadTool {
         }
         // Notices (mode override, delta) go BEFORE the payload so client-side
         // truncation of large outputs cannot hide them.
-        let final_output = if !warnings.is_empty() {
-            format!("{}\n\n{output}{hints_suffix}", warnings.join("\n"))
-        } else if hints_suffix.is_empty() {
+        let final_output = if warnings.is_empty() {
             output
         } else {
-            format!("{output}{hints_suffix}")
+            format!("{}\n\n{output}", warnings.join("\n"))
         };
 
         Ok(ToolOutput {
