@@ -152,8 +152,6 @@ pub mod error;
 pub mod eviction_orchestrator;
 pub mod extractors;
 pub mod git;
-pub mod git_cache;
-pub mod git_signals;
 pub mod git_util;
 pub mod godot;
 pub mod gotcha_tracker;
@@ -209,7 +207,6 @@ pub mod sensitivity;
 pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
-pub mod task_briefing;
 /// macOS Seatbelt self-sandbox: wraps the launchd-owned proxy in a
 /// `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/`~/Downloads`,
 /// so the TCC privacy prompt can never appear.
