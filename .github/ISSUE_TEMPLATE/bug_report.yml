@@ -1,0 +1,82 @@
+name: Bug report
+description: Something sobre does wrong
+title: "bug: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A security problem? Do not open an issue: report it privately (see SECURITY.md).
+        Remove anything private (paths, tokens, file contents) from what you paste.
+  - type: input
+    id: version
+    attributes:
+      label: sobre version
+      description: The output of `sobre --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How sobre was installed
+      options:
+        - install.sh
+        - install.sh --dense
+        - install.ps1
+        - install.ps1 -Dense
+        - A release archive, by hand
+        - make install, or a source build (say which features below)
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Agent
+      options:
+        - Claude Code
+        - Codex
+        - Copilot CLI
+        - Cursor
+        - Gemini CLI
+        - OpenCode
+        - VS Code
+        - Windsurf
+        - Zed
+        - None (the sobre CLI alone)
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: textarea
+    id: doctor
+    attributes:
+      label: sobre doctor output
+      description: The output of `sobre doctor`
+      render: text
+  - type: textarea
+    id: output
+    attributes:
+      label: Other relevant output
+      render: text
