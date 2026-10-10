@@ -1,10 +1,7 @@
-//! Tee logging for shell output.
-//!
-//! Secret masking is delegated to [`crate::core::redaction`] — the single
-//! source of truth shared with `sobre_read` redaction — so the regex set can
-//! never drift between the two layers again (it used to be a hand-copied
-//! duplicate). `save_tee` then runs the config-driven secret scanner on top
-//! for defense in depth.
+//! Tee logs: the full output of a command whose output was compressed, kept
+//! 24 h so whatever compression cut stays readable. Secrets are masked before
+//! the file is written, with the same rules as `sobre_read`
+//! ([`crate::core::redaction`] and [`crate::core::secret_detection`]).
 
 pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let tee_dir = crate::core::paths::state_dir().ok()?.join("tee");

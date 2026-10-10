@@ -1,7 +1,4 @@
-//! Token counting utilities for terse compression.
-//!
-//! Wraps the existing `core::tokens` module to provide compression-specific
-//! counting with before/after tracking.
+//! Token counts for terse compression, from `core::tokens`.
 
 use crate::core::tokens::{self};
 

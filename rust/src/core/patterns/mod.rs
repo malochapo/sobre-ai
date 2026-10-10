@@ -185,12 +185,8 @@ fn shorter_only(compressed: String, original: &str) -> Option<String> {
 type PatternMatcher = fn(&str) -> bool;
 type PatternHandler = fn(&str, &str) -> Option<String>;
 
-/// Ordered prefix → compressor dispatch table (CC reduction): first
-/// matching entry wins, mirroring the previous `if c.starts_with(..) { return
-/// ...; }` cascade exactly — including that a matched entry's `None` is
-/// final, never falls through to a later entry. Registering a new CLI tool
-/// is now a one-line addition here instead of a new branch in
-/// `try_specific_pattern`.
+/// Ordered command → compressor dispatch table. The first matching entry
+/// wins, and its `None` is final: a later entry is never tried.
 const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
     (
         |c| c.starts_with("git "),
@@ -302,10 +298,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| playwright::compress(c, output),
     ),
     (
-        |c| c.starts_with("vitest") || c.starts_with("npx vitest") || c.starts_with("pnpm vitest"),
-        |_c, output| test::compress(output),
-    ),
-    (
         |c| {
             c.starts_with("next ")
                 || c.starts_with("npx next")
@@ -317,7 +309,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| next_build::compress(c, output),
     ),
     (
-        |c| c.starts_with("tsc") || c.contains("typescript"),
+        |c| c == "tsc" || c.starts_with("tsc "),
         |_c, output| typescript::compress(output),
     ),
     (
@@ -425,7 +417,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |_c, output| artisan::compress("php artisan test", output),
     ),
     (
-        |c| c.starts_with("mix ") || c.starts_with("iex "),
+        |c| c.starts_with("mix "),
         |c, output| mix::compress(c, output),
     ),
     (
@@ -441,10 +433,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |_c, output| test::compress(output),
     ),
     (
-        |c| c.starts_with("mocha") || c.starts_with("npx mocha"),
-        |_c, output| test::compress(output),
-    ),
-    (
         |c| c.starts_with("tofu "),
         |c, output| terraform::compress(c, output),
     ),
@@ -453,44 +441,8 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |_c, output| sysinfo::compress_ps(output),
     ),
     (
-        |c| c.starts_with("df ") || c == "df",
-        |_c, output| sysinfo::compress_df(output),
-    ),
-    (
-        |c| c.starts_with("du ") || c == "du",
-        |_c, output| sysinfo::compress_du(output),
-    ),
-    (
-        |c| c.starts_with("ping "),
-        |_c, output| sysinfo::compress_ping(output),
-    ),
-    (
-        |c| c.starts_with("jq ") || c == "jq",
-        |_c, output| json_schema::compress(output),
-    ),
-    (
-        |c| c.starts_with("hadolint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("yamllint") || c.starts_with("npx yamllint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("markdownlint") || c.starts_with("npx markdownlint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("oxlint") || c.starts_with("npx oxlint"),
-        |c, output| eslint::compress(c, output),
-    ),
-    (
         |c| c.starts_with("pyright") || c.starts_with("basedpyright"),
         |c, output| mypy::compress(c, output),
-    ),
-    (
-        |c| c.starts_with("turbo ") || c.starts_with("npx turbo"),
-        |c, output| npm::compress(c, output),
     ),
     (
         |c| c.starts_with("nx ") || c.starts_with("npx nx"),
@@ -608,9 +560,9 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
 /// A grep-family search command, bare or with arguments.
 ///
 /// The bare form matters: `proxy::compress::infer_command` synthesises `grep`
-/// (no arguments) from tool names like `search_files`. The old `starts_with("grep ")`
-/// required a trailing space and never matched, so those results fell through to the
-/// terse pipeline which corrupted source identifiers.
+/// (no arguments) from tool names like `search_files`, and those results must
+/// reach the grep compressor, not the terse pipeline, which would rewrite
+/// source identifiers.
 fn is_grep_family(cmd: &str) -> bool {
     let first = cmd.split_whitespace().next().unwrap_or("");
     let base = first.rsplit('/').next().unwrap_or(first);
@@ -656,11 +608,9 @@ mod tests {
 
     #[test]
     fn vcs_path_never_inflates_tokens() {
-        // Regression for the `compress_output_never_inflates_tokens` property
-        // (Windows CI): the VCS branch returned the git compressor's reshaped
-        // output without the `shorter_only` guard the other paths use, so this
-        // tiny adversarial `git status` body grew 10 -> 11 tokens. The result
-        // must now never tokenize larger than its input (None == use original).
+        // The VCS branch keeps its compressor's result even when it is not
+        // shorter, but never one that tokenizes larger than its input: this
+        // tiny `git status` body would grow by a token (None = use original).
         let output = " Abu a\nAa aa_A00A\n\n-";
         if let Some(compressed) = compress_output("git status", output) {
             assert!(
@@ -822,13 +772,6 @@ mod tests {
     }
 
     #[test]
-    fn routes_mocha_commands() {
-        let output = "  3 passing (50ms)\n  1 failing\n\n  1) Array #indexOf():\n     Error: expected -1 to equal 0";
-        assert!(try_specific_pattern("mocha", output).is_some());
-        assert!(try_specific_pattern("npx mocha tests/", output).is_some());
-    }
-
-    #[test]
     fn routes_tofu_commands() {
         let output = "Initializing the backend...\nInitializing provider plugins...\nTerraform has been successfully initialized!";
         assert!(try_specific_pattern("tofu init", output).is_some());
@@ -845,24 +788,27 @@ mod tests {
     }
 
     #[test]
-    fn routes_ping_commands() {
-        let output = "PING google.com (1.2.3.4): 56 data bytes\n64 bytes from 1.2.3.4: icmp_seq=0 ttl=116 time=12ms\n3 packets transmitted, 3 packets received, 0.0% packet loss\nrtt min/avg/max/stddev = 11/12/13/1 ms";
-        assert!(try_specific_pattern("ping -c 3 google.com", output).is_some());
-    }
-
-    #[test]
-    fn routes_jq_to_json_schema() {
-        let output = "{\"name\": \"test\", \"version\": \"1.0\", \"items\": [{\"id\": 1}, {\"id\": 2}, {\"id\": 3}, {\"id\": 4}, {\"id\": 5}, {\"id\": 6}, {\"id\": 7}, {\"id\": 8}, {\"id\": 9}, {\"id\": 10}]}";
-        assert!(try_specific_pattern("jq '.items' data.json", output).is_some());
-    }
-
-    #[test]
     fn routes_linting_tools() {
         let lint_output = "src/main.py:10: error: Missing return\nsrc/main.py:20: error: Unused var\nFound 2 errors";
-        assert!(try_specific_pattern("hadolint Dockerfile", lint_output).is_some());
-        assert!(try_specific_pattern("oxlint src/", lint_output).is_some());
         assert!(try_specific_pattern("pyright src/", lint_output).is_some());
         assert!(try_specific_pattern("basedpyright src/", lint_output).is_some());
+    }
+
+    /// A search for the word `typescript` is a search, not a `tsc` run.
+    #[test]
+    fn a_search_mentioning_typescript_goes_to_the_grep_compressor() {
+        let output = (0..60)
+            .map(|i| format!("src/file{}.ts:{i}:import ts from \"typescript\";", i % 3))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(grep::compress(&output).is_some());
+        for cmd in ["rg -n typescript src/", "grep -rn typescript src/"] {
+            assert_eq!(
+                try_specific_pattern(cmd, &output),
+                grep::compress(&output),
+                "{cmd}"
+            );
+        }
     }
 
     #[test]
@@ -916,7 +862,6 @@ mod tests {
     #[test]
     fn routes_monorepo_tools() {
         let output = "npm warn deprecated inflight@1.0.6\nnpm warn deprecated rimraf@3.0.2\nadded 150 packages, and audited 151 packages in 5s\n\n25 packages are looking for funding\n  run `npm fund` for details\n\nfound 0 vulnerabilities";
-        assert!(try_specific_pattern("turbo install", output).is_some());
         assert!(try_specific_pattern("nx install", output).is_some());
     }
 

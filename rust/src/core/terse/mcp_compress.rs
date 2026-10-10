@@ -1,11 +1,9 @@
-//! Layer 4: MCP tool description compression.
-//!
-//! Compresses sobre's 56+ tool descriptions to reduce the token overhead
-//! of the initial `tools/list` response. Two modes:
-//! - Terse: Natural-language descriptions shortened via abbreviations
-//! - Lazy: Only tool name + 1-line summary, full description on-demand
+//! Tool description compression: shortens the descriptions `tools/list`
+//! returns as `compression_level` rises. Two modes:
+//! - Terse: the first three lines, without `Example`, `Note:` and `See also`
+//!   lines.
+//! - Lazy: the first line only, cut at 80 characters.
 
-use super::dictionaries::{self, DictLevel};
 use crate::core::config::CompressionLevel;
 
 /// Compression mode for tool descriptions.
@@ -36,9 +34,7 @@ pub fn compress_description(name: &str, description: &str, mode: DescriptionMode
 }
 
 fn terse_description(desc: &str) -> String {
-    let abbreviated = dictionaries::apply_dictionaries(desc, DictLevel::General);
-
-    let mut lines: Vec<&str> = abbreviated.lines().collect();
+    let mut lines: Vec<&str> = desc.lines().collect();
 
     lines.retain(|line| {
         let trimmed = line.trim();
@@ -81,13 +77,10 @@ mod tests {
     }
 
     #[test]
-    fn terse_mode_abbreviates() {
-        let desc = "Read a configuration file from the directory.";
+    fn terse_mode_keeps_three_lines_without_examples_or_notes() {
+        let desc = "Read a file.\nExample: sobre_read(path)\nSecond line.\nNote: cached.\nThird line.\nFourth line.";
         let result = compress_description("sobre_read", desc, DescriptionMode::Terse);
-        assert!(
-            result.contains("cfg") || result.contains("dir"),
-            "should abbreviate: {result}"
-        );
+        assert_eq!(result, "Read a file.\nSecond line.\nThird line.");
     }
 
     #[test]
@@ -101,7 +94,7 @@ mod tests {
     }
 
     #[test]
-    fn lazy_mode_single_line_omits_docs_suffix() {
+    fn lazy_mode_keeps_a_single_line() {
         // A description that already fits on one line is kept verbatim.
         let desc = "Directory tree (replaces ls/find). Compact maps.";
         let result = compress_description("sobre_tree", desc, DescriptionMode::Lazy);

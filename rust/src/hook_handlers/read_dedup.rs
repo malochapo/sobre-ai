@@ -26,6 +26,9 @@
 //!   first read.
 //! - No `session_id` → never stub (a cross-session record could otherwise
 //!   claim content this conversation has never seen).
+//! - A subagent (`agent_id`) shares its parent's `session_id` but not its
+//!   context, so its reads key apart from the main thread's and from other
+//!   subagents'.
 //! - Compaction wipes the session's records (see [`purge_session`], wired to the
 //!   PreCompact-aware observe handler) so post-compaction re-reads deliver full
 //!   content again, mirroring the MCP-side compaction sync.
@@ -65,8 +68,12 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     }
 
     let tool_input = payload::resolve_tool_args(&v);
-    let (_, path) = payload::resolve_path_field(tool_input.as_ref(), payload::READ_PATH_FIELDS)?;
+    let path = payload::resolve_read_path(tool_input.as_ref())?;
     let session_id = v.get("session_id").and_then(|s| s.as_str())?.to_string();
+    let agent_id = v
+        .get("agent_id")
+        .and_then(|s| s.as_str())
+        .unwrap_or_default();
     let tool_use_id = v
         .get("tool_use_id")
         .and_then(|s| s.as_str())
@@ -93,7 +100,7 @@ fn compute_read_dedup(input: &str) -> Option<String> {
         .unwrap_or(0);
 
     let disk_hash = hash_file(&path)?;
-    let store = record_path(&session_id, &path, offset, limit)?;
+    let store = record_path(&session_id, agent_id, &path, offset, limit)?;
 
     let Ok(prev) = std::fs::read_to_string(&store) else {
         // First read in this session: record it, keep the native result.
@@ -102,9 +109,8 @@ fn compute_read_dedup(input: &str) -> Option<String> {
     };
 
     let (prev_hash, prev_tool_use) = parse_record(&prev)?;
-    // Same tool_use_id = a duplicate fire of the SAME event (Cursor
-    // double-fires hooks). The first fire passed the content
-    // through, so its twin must too.
+    // Same tool_use_id = the hook fired twice for one tool call. The first
+    // fire passed the content through, so its twin must too.
     if prev_hash != disk_hash || (!tool_use_id.is_empty() && prev_tool_use == tool_use_id) {
         write_record(&store, &disk_hash, &tool_use_id);
         return None;
@@ -265,9 +271,12 @@ fn hash_file(path: &str) -> Option<String> {
 }
 
 /// `<state>/hooks/read/<session-hash>/<read-key>.rdx`, creating the session
-/// dir. Session-scoped so [`purge_session`] and the TTL sweep stay O(1) dirs.
+/// dir. Session-scoped so [`purge_session`] and the TTL sweep stay O(1) dirs;
+/// the read key covers the subagent (empty on the main thread), the path and
+/// the window.
 fn record_path(
     session_id: &str,
+    agent_id: &str,
     path: &str,
     offset: i64,
     limit: i64,
@@ -277,7 +286,8 @@ fn record_path(
     let sess = blake3::hash(session_id.as_bytes()).to_hex()[..16].to_string();
     let dir = root.join(sess);
     std::fs::create_dir_all(&dir).ok()?;
-    let key = blake3::hash(format!("{path}\u{0}{offset}\u{0}{limit}").as_bytes()).to_hex()[..16]
+    let key = blake3::hash(format!("{agent_id}\u{0}{path}\u{0}{offset}\u{0}{limit}").as_bytes())
+        .to_hex()[..16]
         .to_string();
     Some(dir.join(format!("{key}.rdx")))
 }
@@ -448,8 +458,8 @@ mod tests {
 
     #[test]
     fn duplicate_fire_of_same_tool_use_never_stubs() {
-        // Cursor double-fires hooks: the twin of a first read must not
-        // be mistaken for a re-read.
+        // A hook fired twice for one tool call: the twin of a first read must
+        // not be mistaken for a re-read.
         let _guard = guard_env();
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("lib.rs");
@@ -642,6 +652,51 @@ mod tests {
             "text block swapped in place"
         );
         assert_eq!(updated[0]["type"], "text", "block type mirrored");
+    }
+
+    /// A subagent shares the session id of the conversation that started it
+    /// but not its context: a file the main thread read is a first read for
+    /// the subagent, and the other way round.
+    #[test]
+    fn a_subagent_read_is_a_first_read() {
+        let _guard = guard_env();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("lib.rs");
+        std::fs::write(&file, big_body()).unwrap();
+        let session = unique_session("s11");
+        let in_agent = |agent: &str, tool_use: &str| {
+            let mut v: serde_json::Value = serde_json::from_str(&payload(
+                &session,
+                tool_use,
+                &file,
+                &serde_json::json!(big_body()),
+            ))
+            .unwrap();
+            v["agent_id"] = serde_json::json!(agent);
+            v.to_string()
+        };
+
+        assert!(
+            compute_read_dedup(&payload(
+                &session,
+                "t1",
+                &file,
+                &serde_json::json!(big_body())
+            ))
+            .is_none()
+        );
+        assert!(
+            compute_read_dedup(&in_agent("agent-a", "t2")).is_none(),
+            "the subagent never saw the main thread's read"
+        );
+        assert!(
+            compute_read_dedup(&in_agent("agent-a", "t3")).is_some(),
+            "the subagent's own re-read is a re-read"
+        );
+        assert!(
+            compute_read_dedup(&in_agent("agent-b", "t4")).is_none(),
+            "another subagent starts from nothing"
+        );
     }
 
     #[test]

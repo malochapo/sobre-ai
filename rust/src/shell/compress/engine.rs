@@ -1,9 +1,7 @@
 use crate::core::patterns;
 use crate::core::tokens::count_tokens;
 
-use super::classification::{
-    has_structural_output, is_search_output, is_verbatim_output, looks_like_toon,
-};
+use super::classification::{has_structural_output, is_search_output, looks_like_toon};
 
 pub(in crate::shell) fn compress_and_measure(
     command: &str,
@@ -140,10 +138,6 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     // agent relies on to validate a CLI output contract. This is output-shape
     // based, so any tool emitting the format is covered without listing commands.
     if looks_like_toon(output) {
-        return truncate_verbatim(output, original_tokens);
-    }
-
-    if is_verbatim_output(command) {
         return truncate_verbatim(output, original_tokens);
     }
 
@@ -308,8 +302,24 @@ fn is_diagnostic_line(line: &str) -> bool {
     false
 }
 
+/// Linters that exit 0 on warnings and print nothing but findings: any output
+/// they give is diagnostics, whatever words it uses (ESLint's stylish format
+/// has no `warning:`, stylelint and biome mark severity with symbols).
+const FINDINGS_ONLY_LINTERS: &[&str] = &[
+    "eslint",
+    "npx eslint",
+    "biome ",
+    "stylelint",
+    "yamllint",
+    "oxlint",
+];
+
 fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
     let cmd = command.trim().to_ascii_lowercase();
+
+    if FINDINGS_ONLY_LINTERS.iter().any(|l| cmd.starts_with(l)) {
+        return true;
+    }
 
     let is_build_tool = cmd.starts_with("cargo check")
         || cmd.starts_with("cargo build")
@@ -332,9 +342,6 @@ fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
         || cmd.starts_with("tsc\t")
         || cmd == "tsc"
         || cmd.starts_with("npx tsc")
-        || cmd.starts_with("eslint")
-        || cmd.starts_with("npx eslint")
-        || cmd.starts_with("biome ")
         || cmd.starts_with("prettier ")
         || cmd.starts_with("mypy ")
         || cmd.starts_with("pyright ")
@@ -471,7 +478,7 @@ const MAX_VERBATIM_TOKENS: usize = 8000;
 /// middle is preserved (test-result summaries, panics, failures, errors). This
 /// guarantees a large test run — even a fully passing one with dozens of
 /// per-suite `test result:` lines — never silently loses its outcome lines,
-/// regardless of OS or client (issue: compression must never swallow signal).
+/// regardless of OS or client.
 fn truncate_verbatim(output: &str, original_tokens: usize) -> String {
     if original_tokens <= MAX_VERBATIM_TOKENS {
         return output.to_string();

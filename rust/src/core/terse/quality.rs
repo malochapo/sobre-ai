@@ -1,9 +1,9 @@
 //! Quality gate for terse compression.
 //!
 //! Ensures compression does not destroy critical information:
-//! - File paths must be preserved
-//! - Code identifiers (>= 6 chars) must be preserved
-//! - Minimum savings threshold (default 10%) must be met
+//! - every file path is preserved;
+//! - at least 90% (80% at the max level) of the code identifiers of 6 or more
+//!   characters are preserved.
 
 use std::collections::HashSet;
 

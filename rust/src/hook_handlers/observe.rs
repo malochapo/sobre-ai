@@ -1,7 +1,6 @@
 //! Observe hook handler: reads every host hook event and keeps what sobre
 //! uses from it: the detected model, the active transcript and session id,
 //! and a marker when the host compacts the conversation.
-//! Split out of `hook_handlers/mod.rs`; `use super::*` re-imports parent items.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
