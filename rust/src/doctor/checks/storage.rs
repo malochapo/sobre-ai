@@ -179,10 +179,10 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     };
     Some(outcome)
 }
-/// Reports knowledge stores whose `project_root` was deleted (removed git
-/// worktrees, thrown-away projects). Such a store can never be written again, so
-/// its eviction cap can never self-heal — it is pure accumulated bloat. This is
-/// informational (never a hard failure); `sobre doctor --fix` reclaims it.
+/// Reports knowledge stores whose `project_root` is not on disk: a removed
+/// worktree or a thrown-away project, or a project that moved or sits on an
+/// unmounted drive. Informational (never a hard failure); nothing deletes
+/// them but the user.
 pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     let orphans = crate::core::knowledge::maintenance::find_orphaned_stores();
     if orphans.is_empty() {
@@ -195,7 +195,7 @@ pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
     Outcome {
         ok: true,
         line: format!(
-            "{BOLD}Knowledge stores{RST}  {YELLOW}{} orphaned ({} reclaimable){RST}  {DIM}(deleted projects — reclaim: sobre doctor --fix){RST}",
+            "{BOLD}Knowledge stores{RST}  {YELLOW}{} for projects not on disk ({}){RST}  {DIM}(moved, deleted or unmounted; delete a store by hand if its project is gone){RST}",
             orphans.len(),
             human_bytes(bytes)
         ),

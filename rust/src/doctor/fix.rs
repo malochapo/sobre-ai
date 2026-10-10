@@ -38,7 +38,6 @@ fn print_repairs(report: &crate::core::setup_report::SetupReport) {
             "graph_cache_prune" => Some("Code graphs"),
             "proxy_env" => Some("Proxy URLs"),
             "crash_loop_reset" => Some("MCP start history"),
-            "orphaned_knowledge" => Some("Knowledge"),
             _ => continue,
         };
         for item in &step.items {
@@ -77,8 +76,9 @@ fn build_and_persist_fix_report(
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
-    // The same agent connection `init` runs: MCP entry, hooks and skill for
-    // every installed agent.
+    // The connection `init` runs (MCP entry, hooks and skill), for the
+    // agents that already have sobre only: connecting another is `init`'s
+    // job.
     let mut agents_step = SetupStepReport {
         name: "agents".to_string(),
         ok: true,
@@ -86,7 +86,14 @@ fn build_and_persist_fix_report(
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    for outcome in crate::setup::connect_agents(&[], false) {
+    let connected = crate::setup::agents_with_sobre(&home);
+    let connected: Vec<&str> = connected.iter().map(String::as_str).collect();
+    let outcomes = if connected.is_empty() {
+        Vec::new()
+    } else {
+        crate::setup::connect_agents(&connected, false)
+    };
+    for outcome in outcomes {
         if !outcome.detected {
             continue;
         }
@@ -127,7 +134,7 @@ fn build_and_persist_fix_report(
     if agents_step.items.is_empty() {
         agents_step
             .warnings
-            .push("no supported AI tools detected; nothing to repair".to_string());
+            .push("no agent has sobre yet; connect one with `sobre init`".to_string());
     }
     steps.push(agents_step);
 
@@ -194,38 +201,7 @@ fn build_and_persist_fix_report(
     });
     steps.push(startup_step);
 
-    // Prune knowledge stores whose project_root was deleted (removed git
-    // worktrees, thrown-away projects). They can never be written again, so
-    // their per-store eviction cap can never self-heal — pure accumulated bloat.
-    // Only the explicit --fix path deletes; the background lifecycle
-    // never does, since a missing root can also be a temporarily-unmounted drive.
-    let mut orphan_step = SetupStepReport {
-        name: "orphaned_knowledge".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let prune = crate::core::knowledge::maintenance::prune_orphaned_stores();
-    orphan_step.items.push(SetupItem {
-        name: "prune".to_string(),
-        status: if prune.removed > 0 {
-            format!("removed {}", prune.removed)
-        } else {
-            "clean".to_string()
-        },
-        path: None,
-        note: Some(if prune.removed > 0 {
-            format!(
-                "pruned {} knowledge store(s) for deleted projects ({} reclaimed)",
-                prune.removed,
-                super::common::human_bytes(prune.reclaimed_bytes)
-            )
-        } else {
-            "no knowledge stores for deleted projects".to_string()
-        }),
-    });
-    steps.push(orphan_step);
+    steps.push(orphaned_knowledge_step());
 
     let mut verify_step = SetupStepReport {
         name: "verify".to_string(),
@@ -271,6 +247,29 @@ fn build_and_persist_fix_report(
     crate::config_io::write_atomic(&path, &json_text)?;
 
     Ok(report)
+}
+
+/// Knowledge stores whose project root is not on disk, listed and never
+/// deleted: the project may have moved, or sit on an unmounted drive.
+fn orphaned_knowledge_step() -> crate::core::setup_report::SetupStepReport {
+    let warnings = crate::core::knowledge::maintenance::find_orphaned_stores()
+        .into_iter()
+        .map(|orphan| {
+            format!(
+                "kept knowledge store {} ({}): its project is not on disk (moved, deleted, or \
+                 on an unmounted drive); delete it by hand if the project is gone",
+                display_user_path(&orphan.dir),
+                super::common::human_bytes(orphan.size_bytes)
+            )
+        })
+        .collect();
+    crate::core::setup_report::SetupStepReport {
+        name: "orphaned_knowledge".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings,
+        errors: Vec::new(),
+    }
 }
 
 pub(super) struct PruneResult {
@@ -388,7 +387,26 @@ fn dir_size(path: &std::path::Path) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{prune_bm25_caches, prune_graph_caches};
+    use super::{orphaned_knowledge_step, prune_bm25_caches, prune_graph_caches};
+
+    /// A knowledge store whose project is not on disk is reported and kept.
+    #[test]
+    fn knowledge_of_a_missing_project_is_kept() {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let store = data.path().join("knowledge/abc");
+        std::fs::create_dir_all(&store).unwrap();
+        let knowledge = crate::core::knowledge::ProjectKnowledge::new("/nonexistent/sobre-moved");
+        std::fs::write(
+            store.join("knowledge.json"),
+            serde_json::to_string(&knowledge).unwrap(),
+        )
+        .unwrap();
+
+        let step = orphaned_knowledge_step();
+        assert!(store.join("knowledge.json").exists());
+        assert_eq!(step.warnings.len(), 1, "{:?}", step.warnings);
+        assert!(step.warnings[0].starts_with("kept knowledge store"));
+    }
 
     #[test]
     fn prune_drops_indexes_of_deleted_projects_only() {
