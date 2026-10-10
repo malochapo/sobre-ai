@@ -77,7 +77,7 @@ fn push_record(rows: &mut Vec<Vec<String>>, record: Vec<String>) {
 /// Marks a crushed-table document. Vanishingly unlikely as a real top-level CSV
 /// shape (the input is delimited text, never a JSON object), so `reconstruct` (test-only)
 /// can identify our own output unambiguously.
-const MARKER: &str = "_lc_tbl";
+const MARKER: &str = "_sobre_tbl";
 /// Full header, in original column order — the source of truth for reconstructing
 /// each row's column sequence.
 const ORDER_KEY: &str = "_order";

@@ -41,7 +41,7 @@ pub(in crate::shell) fn compress_and_measure(
 /// reaches the model and the agent never has to re-run the command without
 /// sobre. This generalizes the build-tool-error guard inside
 /// [`compress_if_beneficial`] to ANY non-zero exit. Empty output and explicit
-/// `<lc_safe>` spans keep the normal pipeline (the latter so its markers are
+/// `<sobre_safe>` spans keep the normal pipeline (the latter so its markers are
 /// stripped correctly); a succeeding command still compresses as before.
 pub(crate) fn compress_for_outcome(command: &str, output: &str, exit_code: i32) -> String {
     if exit_code != 0 && !output.trim().is_empty() && !crate::core::protect::has_markers(output) {
@@ -66,7 +66,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         return String::new();
     }
 
-    // Honour explicit <lc_safe>…</lc_safe> spans. Secret redaction has
+    // Honour explicit <sobre_safe>…</sobre_safe> spans. Secret redaction has
     // already run upstream (sobre_shell::handle → redact_shell_output_secrets), so
     // the pipeline order is redact → protect → compress and a marker can never
     // smuggle a secret past redaction. Protected spans pass through verbatim;

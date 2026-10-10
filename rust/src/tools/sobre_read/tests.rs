@@ -550,7 +550,7 @@ fn aggressive_json_uses_lossless_crush_core() {
     );
 
     assert!(
-        out.contains("_lc_crush"),
+        out.contains("_sobre_crush"),
         "aggressive json must compact via the crush core: {out}"
     );
     assert!(

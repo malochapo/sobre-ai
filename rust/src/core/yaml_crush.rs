@@ -32,10 +32,10 @@ use serde_json::{Map, Value};
 use crate::core::json_crush;
 
 /// Marks a crushed-YAML document. The value is the (json-crushed) payload, so the
-/// envelope is `{"_lc_yaml_crush": <doc>}`. Vanishingly unlikely as a real
+/// envelope is `{"_sobre_yaml_crush": <doc>}`. Vanishingly unlikely as a real
 /// top-level YAML key, and checked on input so `reconstruct` (test-only) can identify our
 /// own output unambiguously and a second pass is a guaranteed no-op.
-const MARKER: &str = "_lc_yaml_crush";
+const MARKER: &str = "_sobre_yaml_crush";
 
 /// Converting verbose YAML to compact JSON plus the single-key envelope carries a
 /// small fixed overhead, so the win is gated on a 1/4 byte reduction (the same
@@ -143,7 +143,7 @@ mod tests {
     fn lossless_compacts_and_factors() {
         let yaml = manifest_yaml();
         let crushed = crush_text_if_beneficial(&yaml).expect("should crush");
-        assert!(crushed.starts_with("{\"_lc_yaml_crush\":"));
+        assert!(crushed.starts_with("{\"_sobre_yaml_crush\":"));
         // The repeated constants are hoisted, not repeated on every item.
         assert_eq!(crushed.matches("\"Pod\"").count(), 1);
         assert_eq!(crushed.matches("\"prod\"").count(), 1);
@@ -219,6 +219,6 @@ mod tests {
         // Flow-style YAML that is already compact JSON gains nothing.
         assert!(crush_text_if_beneficial("{\"a\":1,\"b\":2}").is_none());
         // A document already carrying our marker is left alone (re-entry guard).
-        assert!(crush_text_if_beneficial("_lc_yaml_crush:\n  a: 1\n").is_none());
+        assert!(crush_text_if_beneficial("_sobre_yaml_crush:\n  a: 1\n").is_none());
     }
 }

@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Marks an object that encodes a crushed array. Chosen to be vanishingly
 /// unlikely in real data; if the input already contains this key anywhere, the
 /// crusher bails (returns `None`) so reconstruction can never be ambiguous.
-const MARKER: &str = "_lc_crush";
+const MARKER: &str = "_sobre_crush";
 const MARKER_ARRAY: &str = "arr";
 const DEFAULTS_KEY: &str = "_defaults";
 const ITEMS_KEY: &str = "_items";
@@ -401,9 +401,9 @@ mod tests {
     #[test]
     fn input_with_marker_key_is_left_alone() {
         let v = json!([
-            {"_lc_crush": "x", "id": 1},
-            {"_lc_crush": "y", "id": 2},
-            {"_lc_crush": "z", "id": 3}
+            {"_sobre_crush": "x", "id": 1},
+            {"_sobre_crush": "y", "id": 2},
+            {"_sobre_crush": "z", "id": 3}
         ]);
         assert!(crush_lossless(&v).is_none());
     }
