@@ -302,9 +302,10 @@ fn is_diagnostic_line(line: &str) -> bool {
     false
 }
 
-/// Linters that exit 0 on warnings and print nothing but findings: any output
-/// they give is diagnostics, whatever words it uses (ESLint's stylish format
-/// has no `warning:`, stylelint and biome mark severity with symbols).
+/// Linters that print nothing but findings and can exit 0 with some: any
+/// output they give is diagnostics, whatever words it uses (ESLint's stylish
+/// format has no `warning:`, stylelint and biome mark severity with symbols,
+/// a ruff finding is a rule code such as `F401`, under `--exit-zero`).
 const FINDINGS_ONLY_LINTERS: &[&str] = &[
     "eslint",
     "npx eslint",
@@ -312,6 +313,7 @@ const FINDINGS_ONLY_LINTERS: &[&str] = &[
     "stylelint",
     "yamllint",
     "oxlint",
+    "ruff check",
 ];
 
 fn is_findings_only_linter(command: &str) -> bool {
@@ -350,7 +352,6 @@ fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
         || cmd.starts_with("mypy ")
         || cmd.starts_with("pyright ")
         || cmd.starts_with("pylint ")
-        || cmd.starts_with("ruff check")
         || cmd.starts_with("flake8")
         || cmd.starts_with("black --check")
         || cmd.starts_with("swift build")

@@ -372,8 +372,7 @@ fn ruff_preserves_file_line_col() {
     let output = "src/api.py:42:10: E501 Line too long (120 > 79)\n\
                   src/api.py:88:1: F401 'os' imported but unused\n\
                   Found 2 errors.";
-    let compressed = compress_output("ruff check", output);
-    let text = compressed.unwrap_or_else(|| output.to_string());
+    let text = shell_shows("ruff check --exit-zero", output, 0);
     assert!(
         text.contains("src/api.py:42:10"),
         "ruff must preserve file:line:col references: {text}"

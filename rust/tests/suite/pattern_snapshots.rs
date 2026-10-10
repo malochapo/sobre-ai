@@ -244,7 +244,7 @@ fn pattern_pnpm_install() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// pip / poetry / mypy / ruff
+// pip / poetry / mypy
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -308,28 +308,6 @@ fn pattern_mypy() {
          src/utils.py:5: error: Missing type parameters for generic type \"Dict\"  [type-arg]\n\
          src/utils.py:12: error: Need type annotation for \"cache\" (hint: \"cache: Dict[str, Any] = ...\")  [var-annotated]\n\
          Found 10 errors in 4 files (checked 12 source files)\n",
-    );
-}
-
-#[test]
-fn pattern_ruff() {
-    assert_pattern(
-        "ruff_check",
-        "ruff check src/",
-        "src/auth.py:3:1: F401 [*] `os` imported but unused\n\
-         src/auth.py:15:5: E712 Comparison to `True` should be `if cond:` or `if cond is True:`\n\
-         src/auth.py:22:1: F841 Local variable `result` is assigned to but never used\n\
-         src/db.py:8:1: E501 Line too long (120 > 88)\n\
-         src/db.py:22:5: W291 Trailing whitespace\n\
-         src/db.py:35:1: E302 Expected 2 blank lines after class or function definition, found 1\n\
-         src/api.py:1:1: I001 [*] Import block is un-sorted or un-formatted\n\
-         src/api.py:15:5: B006 Do not use mutable data structures for argument defaults\n\
-         src/api.py:28:1: E303 Too many blank lines (3)\n\
-         src/utils.py:10:5: B006 Do not use mutable data structures for argument defaults\n\
-         src/utils.py:18:9: SIM108 [*] Use ternary operator\n\
-         src/config.py:5:1: F811 Redefinition of unused `load` from line 3\n\
-         Found 12 errors.\n\
-         [*] 3 fixable with the `--fix` option.\n",
     );
 }
 

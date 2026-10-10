@@ -217,7 +217,7 @@ fn reaches_pattern_table_follows_the_gates() {
         "cargo build",
         "git status",
         "grep -rn TODO src/",
-        "ruff check .",
+        "ruff format .",
     ] {
         assert!(reaches_pattern_table(cmd), "{cmd}");
     }
@@ -225,6 +225,7 @@ fn reaches_pattern_table_follows_the_gates() {
         "cargo test",
         "pytest -q",
         "eslint src/",
+        "ruff check .",
         "curl https://api.example.com",
         "npx prisma migrate dev",
         "git commit -m x",
@@ -269,6 +270,48 @@ mod build_warning_tests {
             "npm warn config production Use `--omit=dev` instead.",
         ] {
             assert!(result.contains(line), "{line:?} lost:\n{result}");
+        }
+    }
+
+    /// `ruff check --exit-zero` keeps every finding, in the default format
+    /// (a code frame under each finding) and in the concise one (a line
+    /// each, none of which says "error" or "warning").
+    #[test]
+    fn ruff_check_keeps_every_finding() {
+        let finding = |i: usize| {
+            format!(
+                "src/mod{i}.py:{}:8: F401 [*] `os` imported but unused",
+                i + 1
+            )
+        };
+        for (count, frame) in [
+            (
+                25,
+                "\n  |\n1 | import os\n  |        ^^ F401\n  |\n  = help: Remove unused import: `os`\n",
+            ),
+            (
+                40,
+                "\n  |\n1 | import os\n  |        ^^ F401\n  |\n  = help: Remove unused import: `os`\n",
+            ),
+            (60, ""),
+        ] {
+            let mut out = String::new();
+            for i in 0..count {
+                out.push_str(&finding(i));
+                out.push_str(frame);
+                out.push('\n');
+            }
+            out.push_str(&format!(
+                "Found {count} errors.\n[*] {count} fixable with the `--fix` option.\n"
+            ));
+
+            let result = compress_for_outcome("ruff check --exit-zero .", &out, 0);
+            for i in 0..count {
+                assert!(
+                    result.contains(&finding(i)),
+                    "{count} findings: finding {i} lost:\n{result}"
+                );
+            }
         }
     }
 
