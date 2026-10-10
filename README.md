@@ -132,7 +132,7 @@ cargo install --path . --locked --root ~/.local --features dense
 Today: 15 tools, one fixed surface per build; one config file with 11 keys and
 no per-project files, profiles or behaviour-changing environment variables; no
 network request you did not ask for; and no gate, approval or hidden transform
-of sobre's own. [Issue #2](https://github.com/malochapo/sobre-ai/issues/2)
+of sobre's own. [Issue #69](https://github.com/malochapo/sobre-ai/issues/69)
 lists the code that does not yet meet the sixth rule.
 
 ## Connect agents
