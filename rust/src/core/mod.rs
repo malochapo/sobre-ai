@@ -155,7 +155,6 @@ pub mod godot;
 pub mod gotcha_tracker;
 pub mod handle;
 pub mod hasher;
-pub mod hebbian_cache;
 #[cfg(feature = "dense")]
 pub mod hnsw;
 pub mod home;
