@@ -58,12 +58,14 @@ terminal; in a terminal it prints a short quickstart instead.")]
         after_help = "\
 What the Cursor and Gemini hooks run. The output says, on stderr, what was
 compressed; `sobre_expand` brings back the original. Exits with the
-command's own exit code."
+command's own exit code, or 128 plus the signal number when a signal ended it."
     )]
     Exec(ShellCommand),
 
     /// Run a shell command with its exact output, uncompressed
-    #[command(after_help = "Exits with the command's own exit code.")]
+    #[command(
+        after_help = "Exits with the command's own exit code, or 128 plus the signal number when a signal ended it."
+    )]
     Raw(ShellCommand),
 
     /// Call one MCP tool from the shell

@@ -28,7 +28,7 @@ sobre -c <command>...
 |---|---|
 | `<command>...` | The command: one quoted argument, or several joined with spaces |
 
-What the Cursor and Gemini hooks run. The output says, on stderr, what was compressed; `sobre_expand` brings back the original. Exits with the command's own exit code.
+What the Cursor and Gemini hooks run. The output says, on stderr, what was compressed; `sobre_expand` brings back the original. Exits with the command's own exit code, or 128 plus the signal number when a signal ended it.
 
 ## `sobre raw`
 
@@ -42,7 +42,7 @@ sobre raw <command>...
 |---|---|
 | `<command>...` | The command: one quoted argument, or several joined with spaces |
 
-Exits with the command's own exit code.
+Exits with the command's own exit code, or 128 plus the signal number when a signal ended it.
 
 ## `sobre call`
 
