@@ -513,9 +513,13 @@ impl SessionCache {
         Some(result)
     }
 
-    /// Removes a file from the cache, forcing a fresh read on next access.
+    /// Removes a file from the cache, and its delivery record from the
+    /// persistent stub index, so the next read returns the content and never
+    /// an `[unchanged]` stub.
     pub fn invalidate(&mut self, path: &str) -> bool {
-        self.entries.remove(&normalize_key(path)).is_some()
+        let key = normalize_key(path);
+        crate::core::read_stub_index::forget(&key);
+        self.entries.remove(&key).is_some()
     }
 
     /// Returns a cached compressed output for a given file and mode key.
@@ -782,6 +786,31 @@ mod tests {
         cache.store("/test.rs", "test");
         assert!(cache.invalidate("/test.rs"));
         assert!(!cache.invalidate("/nonexistent.rs"));
+    }
+
+    #[test]
+    #[serial_test::serial(stub_index)]
+    fn invalidate_drops_the_persisted_delivery_record() {
+        crate::core::read_stub_index::clear_for_test();
+        let mut cache = SessionCache::new();
+        cache.store("/test/sent-then-dropped.rs", "fn a() {}");
+        let entry = cache.get("/test/sent-then-dropped.rs").unwrap();
+        crate::core::read_stub_index::record(crate::core::read_stub_index::StubRecord::new(
+            normalize_key("/test/sent-then-dropped.rs"),
+            entry.hash.clone(),
+            entry.stored_mtime,
+            entry.line_count,
+            "F1".to_string(),
+            Some("conv-a".to_string()),
+        ));
+        assert!(crate::core::read_stub_index::lookup("/test/sent-then-dropped.rs").is_some());
+
+        assert!(cache.invalidate("/test/sent-then-dropped.rs"));
+        assert!(
+            crate::core::read_stub_index::lookup("/test/sent-then-dropped.rs").is_none(),
+            "a cold read must not find a record for content that was dropped"
+        );
+        crate::core::read_stub_index::clear_for_test();
     }
 
     #[test]
