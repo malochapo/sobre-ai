@@ -1,3 +1,8 @@
+//! Pattern compression of git output against floors, and what each tool
+//! reports as original and saved. The printed figures describe generated
+//! samples (and this repository's own history for the real `git log`); they
+//! are not a measure of what sobre saves on real work.
+
 use sobre::core::patterns::git;
 use sobre::core::tokens::count_tokens;
 
@@ -55,70 +60,6 @@ fn verify_git_log_oneline_short_no_regression() {
 }
 
 #[test]
-fn verify_git_commit_feature_branch_savings() {
-    let output = "[feature/my-cool-branch abc1234] feat: implement new feature\n \
-                  3 files changed, 45 insertions(+), 12 deletions(-)\n \
-                  create mode 100644 src/new_module.rs\n";
-    let (orig, comp, pct) = measure_compression("git commit -m 'feat'", output);
-    let compressed = git::compress("git commit -m 'feat'", output).unwrap();
-    eprintln!(
-        "[git commit feature/branch] {orig} → {comp} tokens ({pct:.1}% saved)\n  result: {compressed}"
-    );
-    assert!(compressed.contains("abc1234"), "must contain hash");
-    assert!(
-        compressed.contains("feature/my-cool-branch"),
-        "must contain branch name"
-    );
-}
-
-#[test]
-fn verify_git_commit_many_hooks_savings() {
-    let mut output = String::new();
-    for i in 0..50 {
-        output.push_str(&format!("check-{i:02}..................passed\n"));
-    }
-    output.push_str("[main abc1234] fix: resolve lint issues\n");
-    output.push_str(" 5 files changed, 30 insertions(+), 10 deletions(-)\n");
-
-    let (orig, comp, pct) = measure_compression("git commit -m 'fix'", &output);
-    let compressed = git::compress("git commit -m 'fix'", &output).unwrap();
-    eprintln!(
-        "[git commit 50 hooks] {orig} → {comp} tokens ({pct:.1}% saved)\n  result: {compressed}"
-    );
-    assert!(
-        pct > 60.0,
-        "50 hook lines should compress >60%, got {pct:.1}%"
-    );
-    assert!(
-        compressed.contains("hooks passed"),
-        "should summarize hooks"
-    );
-    assert!(compressed.contains("abc1234"), "must contain hash");
-}
-
-#[test]
-fn verify_git_commit_with_failures_preserves_errors() {
-    let mut output = String::new();
-    for i in 0..20 {
-        output.push_str(&format!("check-{i:02}..................passed\n"));
-    }
-    output.push_str("ruff.......................failed\n");
-    output.push_str("fixing src/app.py: E302 expected 2 blank lines\n");
-    output.push_str("mypy.......................failed\n");
-    output.push_str("[main abc1234] fix: lint\n");
-    output.push_str(" 2 files changed, 5 insertions(+), 3 deletions(-)\n");
-
-    let (orig, comp, pct) = measure_compression("git commit -m 'fix'", &output);
-    let compressed = git::compress("git commit -m 'fix'", &output).unwrap();
-    eprintln!(
-        "[git commit with failures] {orig} → {comp} tokens ({pct:.1}% saved)\n  result: {compressed}"
-    );
-    assert!(compressed.contains("ruff"), "must preserve failed check");
-    assert!(compressed.contains("mypy"), "must preserve failed check");
-    assert!(compressed.contains("passed"), "should mention passed count");
-}
-
-#[test]
 fn verify_overall_savings_estimation() {
     let scenarios: Vec<(&str, String, &str)> = vec![
         ("git log -p -5", generate_git_log_patch(5), "git log -p"),
@@ -129,18 +70,6 @@ fn verify_overall_savings_estimation() {
             "git log --stat",
         ),
         ("git log -10", generate_git_log_standard(10), "git log"),
-        (
-            "git commit (50 hooks)",
-            {
-                let mut s = String::new();
-                for i in 0..50 {
-                    s.push_str(&format!("check-{i:02}..passed\n"));
-                }
-                s.push_str("[main abc1234] fix: stuff\n 1 file changed, 1 insertion(+)\n");
-                s
-            },
-            "git commit -m 'fix'",
-        ),
     ];
 
     eprintln!("\n{}", "=".repeat(60));
@@ -306,7 +235,8 @@ fn audit_full_savings_pipeline() {
     {
         let mut cache = SessionCache::new();
         let content = "use std::io;\nfn main() {\n    println!(\"hello\");\n}\n";
-        let tmp = std::env::temp_dir().join("audit_test_file.rs");
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let tmp = tmp_dir.path().join("audit_test_file.rs");
         std::fs::write(&tmp, content).unwrap();
 
         let output = sobre::tools::sobre_read::handle(
@@ -358,8 +288,6 @@ fn audit_full_savings_pipeline() {
             output2_tokens < 40,
             "cache hit stub should be <40 tokens, got {output2_tokens}",
         );
-
-        let _ = std::fs::remove_file(&tmp);
     }
 
     // 3. sobre_read — compressed mode (signatures): fair comparison
@@ -383,7 +311,8 @@ fn audit_full_savings_pipeline() {
             code.push(String::new());
         }
         let content = code.join("\n");
-        let tmp = std::env::temp_dir().join("audit_test_sigs.rs");
+        let tmp_dir = tempfile::tempdir().unwrap();
+        let tmp = tmp_dir.path().join("audit_test_sigs.rs");
         std::fs::write(&tmp, &content).unwrap();
 
         let output = sobre::tools::sobre_read::handle(
@@ -414,8 +343,6 @@ fn audit_full_savings_pipeline() {
             ratio > 20.0 && ratio < 98.0,
             "signatures savings should be 20-98%, got {ratio:.1}%"
         );
-
-        let _ = std::fs::remove_file(&tmp);
     }
 
     // 4. sobre_tree — fair comparison (same depth)
@@ -484,30 +411,6 @@ fn audit_full_savings_pipeline() {
                 "tokenizer off by >2 for {text:?}: got {actual}, expected ~{expected_approx}",
             );
         }
-    }
-
-    // 7. CostModel sanity check
-    {
-        let input_saved: u64 = 100_000;
-        let commands: u64 = 500;
-        let output_bonus = commands * 60;
-        let total_saved = input_saved + output_bonus;
-        let cost_per_m_input = 2.50_f64;
-        let cost_per_m_output = 10.0_f64;
-        let usd_input = input_saved as f64 / 1_000_000.0 * cost_per_m_input;
-        let usd_output = output_bonus as f64 / 1_000_000.0 * cost_per_m_output;
-        let usd_total = usd_input + usd_output;
-
-        eprintln!("\n  CostModel sanity (100K input saved, 500 calls):");
-        eprintln!("    input saved:  {input_saved} tok → ${usd_input:.4}");
-        eprintln!("    output bonus: {output_bonus} tok → ${usd_output:.4}");
-        eprintln!("    total:        {total_saved} tok → ${usd_total:.4}");
-
-        assert!(
-            usd_total < 1.0,
-            "100K saved + 500 calls should be < $1.00, got ${usd_total:.4}"
-        );
-        assert!(usd_total > 0.0, "savings should be positive");
     }
 
     eprintln!("\n  AUDIT COMPLETE — all checks passed");

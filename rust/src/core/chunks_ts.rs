@@ -1,10 +1,8 @@
-//! Tree-sitter AST-aware code chunking for semantic search.
+//! Tree-sitter AST-aware code chunking for the BM25 (and semantic) index.
 //!
-//! Replaces heuristic line-prefix matching with proper AST parsing.
 //! Extracts function bodies, struct definitions, class declarations etc.
-//! as complete, self-contained chunks with accurate boundaries.
-//!
-//! Falls back to heuristic chunking for unsupported languages.
+//! as complete, self-contained chunks with accurate boundaries. Files in other
+//! languages go to the line-prefix chunker in `bm25_index::chunking`.
 
 #[cfg(feature = "tree-sitter")]
 use tree_sitter::{Language, Node, Parser, Query, QueryCursor, StreamingIterator};

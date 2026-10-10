@@ -7,7 +7,7 @@ labels: bug
 
 **sobre version:** (run `sobre --version`)
 
-**Build:** (`sobre-<target>` or `sobre-dense-<target>` release binary, `make install`, or a source build — with which `--features`?)
+**How installed:** (`install.sh` or `install.ps1`, with `--dense`/`-Dense` or not; a `sobre-<target>` or `sobre-dense-<target>` archive by hand; `make install`; or a source build — with which `--features`?)
 
 **OS:** (macOS / Linux / Windows)
 

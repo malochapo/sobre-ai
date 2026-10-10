@@ -1,11 +1,10 @@
-//! Regression: a read must return file content byte-for-byte for
-//! verbatim modes (`full`, `lines:`). The prose terse pipeline once ran on
-//! read output and mangled source (dictionary substitutions, line-drop dedup),
-//! breaking a `full` read's "complete content" contract.
+//! A read returns file content byte-for-byte in the verbatim modes (`full`,
+//! `lines:`): the prose pipeline (dictionary substitutions, line-drop dedup)
+//! never touches read output.
 //!
-//! We spawn the real binary with the densest `compression_level` (so terse
-//! *would* fire if it were allowed to) and call `sobre_read` through
-//! `sobre call`, so the assertion fails loudly on any regression.
+//! The real binary runs with the densest `compression_level`, so the prose
+//! pipeline would visibly mangle the sample if it ran, and `sobre_read` is
+//! called through `sobre call`.
 
 use std::path::Path;
 use std::process::{Command, Output};
@@ -26,15 +25,19 @@ fn sample_file(home: &Path) -> std::path::PathBuf {
 
 fn read_output(home: &Path, file: &Path, mode: &str) -> Output {
     let data = home.join("data");
+    let config = home.join("config");
     std::fs::create_dir_all(&data).unwrap();
-    // Force the densest compression so a missing guard would visibly mangle.
-    std::fs::write(data.join("config.toml"), "compression_level = 0.7\n").unwrap();
+    std::fs::create_dir_all(&config).unwrap();
+    // The densest compression, so the prose pipeline would visibly mangle
+    // the read if it ran on it.
+    std::fs::write(config.join("config.toml"), "compression_level = 0.7\n").unwrap();
     let json = serde_json::json!({ "path": file, "mode": mode, "fresh": true }).to_string();
     Command::new(env!("CARGO_BIN_EXE_sobre"))
         .args(["call", "sobre_read", "--project-root"])
         .arg(file.parent().unwrap())
         .args(["--json", &json])
         .env("SOBRE_DATA_DIR", &data)
+        .env("SOBRE_CONFIG_DIR", &config)
         .env("HOME", home)
         .output()
         .expect("spawn sobre call sobre_read")
@@ -60,11 +63,9 @@ fn lines_read_is_byte_exact() {
 
     let out = read_output(dir.path(), &file, "lines:1-3");
     let stdout = String::from_utf8_lossy(&out.stdout);
-    // The contract under test is fidelity: the SELECTED lines must survive
-    // verbatim with no terse substitutions, regardless of how the range is
-    // rendered. `lines:1-3` is windowed output, not a full-file dump, so the
-    // oracle is the selected slice — not the whole SAMPLE (fix made
-    // `lines:` actually honour the window instead of returning the full file).
+    // The selected lines survive verbatim, however the range is rendered.
+    // `lines:1-3` returns that window only, so the oracle is the selected
+    // slice, not the whole SAMPLE.
     let selected_lines = &SAMPLE.lines().collect::<Vec<_>>()[..3];
     for line in selected_lines {
         assert!(
@@ -72,6 +73,29 @@ fn lines_read_is_byte_exact() {
             "lines: read must not terse-mangle selected source; missing {line:?} in:\n{stdout}"
         );
     }
+}
+
+/// Markdown has its own lossy compaction in the compressed modes; a `full`
+/// read of it stays the bytes on disk, directive-like lines included.
+#[test]
+fn full_read_of_markdown_is_byte_exact() {
+    let dir = tempfile::tempdir().unwrap();
+    let proj = dir.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    let file = proj.join("notes.md");
+    let mut doc = String::from("# Notes\n\n@date\n\n## Details\n\n");
+    for i in 0..60 {
+        use std::fmt::Write as _;
+        let _ = writeln!(doc, "Repeated explanatory prose line {i} about the notes.");
+    }
+    std::fs::write(&file, &doc).unwrap();
+
+    let out = read_output(dir.path(), &file, "full");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains(&doc),
+        "full read must contain the markdown verbatim; got:\n{stdout}"
+    );
 }
 
 fn call_read(home: &Path, project: &Path, args: &serde_json::Value) -> Output {

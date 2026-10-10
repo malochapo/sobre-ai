@@ -62,12 +62,6 @@ impl McpTool for SobreSessionTool {
             sid.as_deref(),
         );
 
-        Ok(ToolOutput {
-            text: result,
-            original_tokens: 0,
-            saved_tokens: 0,
-            shell_outcome: None,
-            content_blocks: None,
-        })
+        Ok(ToolOutput::simple(result))
     }
 }

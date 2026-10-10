@@ -43,8 +43,10 @@ pub fn handle(
 }
 
 fn handle_status(project_root: &str) -> String {
-    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
-        return "No knowledge stored for this project yet. Use sobre_knowledge(action=\"remember\") to start.".to_string();
+    let knowledge = match ProjectKnowledge::try_load(project_root) {
+        Ok(Some(knowledge)) => knowledge,
+        Ok(None) => return "No knowledge stored for this project yet. Use sobre_knowledge(action=\"remember\") to start.".to_string(),
+        Err(e) => return format!("ERROR: {e}"),
     };
 
     let current_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
@@ -80,6 +82,12 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
     let Some(k) = key else {
         return "Error: key is required for remove".to_string();
     };
+    // A project with no knowledge has nothing to remove: write nothing.
+    match ProjectKnowledge::try_load(project_root) {
+        Ok(Some(_)) => {}
+        Ok(None) => return format!("No fact found: [{cat}] {k}"),
+        Err(e) => return format!("ERROR: {e}"),
+    }
     let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Read-modify-write under the cross-process lock. The embedding
     // index is a separate store, so it is synced afterwards from the committed
@@ -93,7 +101,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
         }
     }) {
         Ok(pair) => pair,
-        Err(e) => return format!("Removed but save failed: {e}"),
+        Err(e) => return format!("ERROR: [{cat}] {k} was not removed: {e}"),
     };
 
     if !removed {

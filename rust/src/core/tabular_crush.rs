@@ -3,29 +3,23 @@
 //!
 //! Real-world CSV/TSV dumps (DB exports, `psql -A -F,`, analytics extracts) are
 //! dominated by columns that repeat one value on every row (a `status`, `region`,
-//! `tenant` column) and by near-unique noise columns (UUIDs, timestamps). This
-//! module factors that out, mirroring [`crate::core::json_crush`] but for tables:
-//!
-//! - **Lossless**: every *constant* column (exactly one distinct value across all
-//!   data rows) is hoisted once into `_const`; the remaining columns are kept
-//!   positionally in `_rows`, so a value never repeats more than it must. The
-//!   transform is exactly reversible via `reconstruct` (test-only).
-//! - **Lossy**: additionally *drops* near-unique high-entropy columns (recorded
-//!   in `_dropped`); the exact original is recovered out-of-band via CCR, never
-//!   from the text.
+//! `tenant` column). This module factors that out, mirroring
+//! [`crate::core::json_crush`] but for tables: every *constant* column (exactly
+//! one distinct value across all data rows) is hoisted once into `_const`; the
+//! remaining columns are kept positionally in `_rows`, so a value never repeats
+//! more than it must. The transform is exactly reversible via `reconstruct`
+//! (test-only).
 //!
 //! The compact form is serialized with `serde_json` (robust quoting, escapes and
 //! Unicode — no hand-rolled format that could desync the reader), and the output
 //! is a pure function of the input (columns walked in header order, `_const`
 //! keyed deterministically), so identical input yields byte-identical output.
-//! The crusher never inflates: callers gate on the shared
-//! [`crate::core::json_crush::KEEP_DATA_DIVISOR`] threshold and a no-op input returns [`None`].
+//! The crusher never inflates: the result is kept only when it clears the
+//! `beneficial` gate, and a no-op input returns [`None`].
 
 use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
-
-use crate::core::json_crush::CrushResult;
 
 /// Parse delimited text into rows of fields (RFC-4180 quoting aware).
 #[must_use]
@@ -48,7 +42,8 @@ fn parse(input: &str, delimiter: char) -> Vec<Vec<String>> {
             } else {
                 field.push(ch);
             }
-        } else if ch == '"' {
+        } else if ch == '"' && field.is_empty() {
+            // Only a quote that opens a field quotes it; elsewhere it is text.
             in_quotes = true;
         } else if ch == delimiter {
             record.push(std::mem::take(&mut field));
@@ -71,9 +66,10 @@ fn parse(input: &str, delimiter: char) -> Vec<Vec<String>> {
     rows
 }
 
-/// Append a record unless it is entirely empty (skips blank lines).
+/// Append a record unless it is a blank line (one empty field). A record of
+/// several empty fields (`,,`) is data and is kept.
 fn push_record(rows: &mut Vec<Vec<String>>, record: Vec<String>) {
-    if record.iter().any(|f| !f.trim().is_empty()) {
+    if record.len() > 1 || record.first().is_some_and(|f| !f.trim().is_empty()) {
         rows.push(record);
     }
 }
@@ -81,15 +77,13 @@ fn push_record(rows: &mut Vec<Vec<String>>, record: Vec<String>) {
 /// Marks a crushed-table document. Vanishingly unlikely as a real top-level CSV
 /// shape (the input is delimited text, never a JSON object), so `reconstruct` (test-only)
 /// can identify our own output unambiguously.
-const MARKER: &str = "_lc_tbl";
+const MARKER: &str = "_sobre_tbl";
 /// Full header, in original column order — the source of truth for reconstructing
 /// each row's column sequence.
 const ORDER_KEY: &str = "_order";
-/// Columns hoisted to their single repeated value (lossless).
+/// Columns hoisted to their single repeated value.
 const CONST_KEY: &str = "_const";
-/// Columns dropped as high-entropy noise (lossy; recover via CCR).
-const DROPPED_KEY: &str = "_dropped";
-/// Per-row values for the *varying, kept* columns, positional in header order.
+/// Per-row values for the *varying* columns, positional in header order.
 const ROWS_KEY: &str = "_rows";
 
 /// Below this data-row count, columnar factoring rarely beats its own overhead.
@@ -99,15 +93,15 @@ const MIN_ROWS: usize = 3;
 /// only when it clears the `beneficial` reduction gate. `None` for non-tabular,
 /// ragged, or low-redundancy input — the caller keeps its own path.
 pub fn crush_text_if_beneficial(text: &str, delimiter: char) -> Option<String> {
-    let res = crush(text, delimiter, 1.0)?;
-    (res.lossless && beneficial(&res.text, text)).then_some(res.text)
+    let crushed = crush(text, delimiter)?;
+    beneficial(&crushed, text).then_some(crushed)
 }
 
 /// Tabular reshaping into the columnar JSON form carries per-cell quoting
 /// overhead the JSON crusher's array-of-objects form does not, so the columnar
-/// win (eliminating constant columns + dropping noise) is gated on a 1/4 byte
-/// reduction rather than the JSON crusher's stricter halving — still a clear,
-/// never-inflating win whose exact data stays reconstructible via `reconstruct` (test-only).
+/// win (eliminating constant columns) is gated on a 1/4 byte reduction rather
+/// than the JSON crusher's stricter halving — still a clear, never-inflating win
+/// whose exact data stays reconstructible via `reconstruct` (test-only).
 const MIN_SAVE_RATIO_NUM: usize = 3;
 const MIN_SAVE_RATIO_DEN: usize = 4;
 
@@ -115,9 +109,9 @@ fn beneficial(compact: &str, raw: &str) -> bool {
     compact.len().saturating_mul(MIN_SAVE_RATIO_DEN) <= raw.len().saturating_mul(MIN_SAVE_RATIO_NUM)
 }
 
-/// Core crush. `drop_entropy < 1.0` enables lossy column dropping. Returns `None`
-/// unless the input is a well-formed table with at least one factorable column.
-fn crush(text: &str, delimiter: char, drop_entropy: f64) -> Option<CrushResult> {
+/// Core crush. Returns `None` unless the input is a well-formed table with at
+/// least one constant column.
+fn crush(text: &str, delimiter: char) -> Option<String> {
     // JSON is the JSON crusher's job; never treat it as a degenerate one-column
     // table (and our own output starts with `{`, so this is also re-entry-safe).
     let head = text.trim_start();
@@ -147,30 +141,17 @@ fn crush(text: &str, delimiter: char, drop_entropy: f64) -> Option<CrushResult> 
         return None;
     }
 
-    let n = data.len();
     let mut const_map = Map::new();
-    let mut dropped: Vec<String> = Vec::new();
     let mut kept: Vec<usize> = Vec::new();
-
     for (c, name) in header.iter().enumerate() {
-        let distinct = data
-            .iter()
-            .map(|row| row[c].as_str())
-            .collect::<BTreeSet<_>>()
-            .len();
-        if drop_entropy < 1.0 && (distinct as f64 / n as f64) >= drop_entropy {
-            dropped.push(name.clone());
-            continue;
-        }
-        if distinct == 1 {
+        let constant = data.iter().all(|row| row[c] == data[0][c]);
+        if constant {
             const_map.insert(name.clone(), Value::String(data[0][c].clone()));
-            continue;
+        } else {
+            kept.push(c);
         }
-        kept.push(c);
     }
-
-    let had_drops = !dropped.is_empty();
-    if const_map.is_empty() && !had_drops {
+    if const_map.is_empty() {
         return None; // nothing factored — leave the table to the generic path
     }
 
@@ -191,28 +172,13 @@ fn crush(text: &str, delimiter: char, drop_entropy: f64) -> Option<CrushResult> 
         ORDER_KEY.to_string(),
         Value::Array(header.iter().cloned().map(Value::String).collect()),
     );
-    if !const_map.is_empty() {
-        out.insert(CONST_KEY.to_string(), Value::Object(const_map));
-    }
-    if had_drops {
-        out.insert(
-            DROPPED_KEY.to_string(),
-            Value::Array(dropped.into_iter().map(Value::String).collect()),
-        );
-    }
+    out.insert(CONST_KEY.to_string(), Value::Object(const_map));
     out.insert(ROWS_KEY.to_string(), Value::Array(rows_json));
-
-    let text_out = serde_json::to_string(&Value::Object(out)).ok()?;
-    Some(CrushResult {
-        text: text_out,
-        lossless: !had_drops,
-    })
+    serde_json::to_string(&Value::Object(out)).ok()
 }
 
-/// Rebuild the parsed rows (`[header, ..data]`) from crushed `text`. Exact for
-/// lossless forms; for lossy forms the `_dropped` columns are simply absent from
-/// the header and every row (recover them via CCR). `None` if `text` is not a
-/// tabular-crush document or is internally inconsistent.
+/// Rebuild the parsed rows (`[header, ..data]`) from crushed `text`. `None` if
+/// `text` is not a tabular-crush document or is internally inconsistent.
 #[cfg(test)]
 pub fn reconstruct(text: &str) -> Option<Vec<Vec<String>>> {
     let v: Value = serde_json::from_str(text).ok()?;
@@ -230,21 +196,11 @@ pub fn reconstruct(text: &str) -> Option<Vec<Vec<String>>> {
         .get(CONST_KEY)
         .and_then(Value::as_object)
         .unwrap_or(&empty);
-    let dropped: BTreeSet<&str> = obj
-        .get(DROPPED_KEY)
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(Value::as_str).collect())
-        .unwrap_or_default();
     let rows = obj.get(ROWS_KEY)?.as_array()?;
 
-    // Output columns keep original order minus dropped; the positional `_rows`
-    // columns are output columns minus the hoisted constants — exactly the
-    // `kept` order the crush emitted.
-    let out_cols: Vec<&str> = order
-        .iter()
-        .map(String::as_str)
-        .filter(|c| !dropped.contains(c))
-        .collect();
+    // The positional `_rows` columns are the header minus the hoisted
+    // constants — exactly the `kept` order the crush emitted.
+    let out_cols: Vec<&str> = order.iter().map(String::as_str).collect();
     let varying: Vec<&str> = out_cols
         .iter()
         .copied()
@@ -293,6 +249,24 @@ mod tests {
     #[test]
     fn parse_skips_blank_lines() {
         assert_eq!(parse("a\n\n\nb", ',').len(), 2);
+    }
+
+    /// A record of empty fields is data, not a blank line.
+    #[test]
+    fn parse_keeps_records_of_empty_fields() {
+        let rows = parse("a,b\n1,2\n,\n3,4\n", ',');
+        assert_eq!(rows.len(), 4, "{rows:?}");
+        assert_eq!(rows[2], vec![String::new(), String::new()]);
+    }
+
+    /// A quote inside an unquoted field is a literal character (RFC 4180
+    /// quotes a whole field or nothing), so it never swallows the next row.
+    #[test]
+    fn parse_keeps_mid_field_quotes_literal() {
+        let rows = parse("name,height\nbob,5'10\"\nal,6'1\"\n", ',');
+        assert_eq!(rows.len(), 3, "{rows:?}");
+        assert_eq!(rows[1], vec!["bob".to_string(), "5'10\"".to_string()]);
+        assert_eq!(rows[2], vec!["al".to_string(), "6'1\"".to_string()]);
     }
 
     /// A redundant roster: two constant columns (`status`, `region`) and two

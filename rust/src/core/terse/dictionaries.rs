@@ -1,20 +1,15 @@
 //! Domain-specific abbreviation dictionaries for terse compression.
 //!
-//! Each dictionary provides whole-word-matching abbreviations for a specific
-//! domain (git, cargo, npm, general), with word-boundary-aware matching.
+//! Each dictionary provides whole-word abbreviations of multi-word or long
+//! phrases for one domain (git, cargo, npm). Single English words are not
+//! abbreviated: under BPE they cost one token either way, and replacing them
+//! corrupts source code, paths and search results.
 
 /// A single abbreviation rule: replaces `long` with `short` at word boundaries.
 pub struct Abbreviation {
     pub long: &'static str,
     pub short: &'static str,
 }
-
-/// Empty — all 60 single-English-word rules tokenize identically to their
-/// abbreviations under BPE (1 tok -> 1 tok), so they saved zero tokens while
-/// corrupting source code, file paths, and search results.
-/// Phrase-level rules (multi-word) are the ones that yield real savings and
-/// live in the domain dictionaries (GIT, CARGO, NPM).
-pub const GENERAL: &[Abbreviation] = &[];
 
 pub const GIT: &[Abbreviation] = &[
     Abbreviation {
@@ -149,26 +144,28 @@ pub const NPM: &[Abbreviation] = &[
     },
 ];
 
-/// Applies whole-word abbreviations from the given dictionaries to the text.
-/// Uses a single scan: first checks which patterns exist, then applies only matches.
+/// Applies the whole-word abbreviations `level` selects to the text.
 pub fn apply_dictionaries(text: &str, level: DictLevel) -> String {
-    let dicts: Vec<&[Abbreviation]> = match level {
-        DictLevel::General => vec![GENERAL],
-        DictLevel::Full => vec![GENERAL, GIT, CARGO, NPM],
+    let dicts: &[&[Abbreviation]] = match level {
+        DictLevel::Off => &[],
+        DictLevel::Full => &[GIT, CARGO, NPM],
     };
 
     let mut result = text.to_string();
     for dict in dicts {
-        for abbr in dict {
+        for abbr in *dict {
             result = replace_whole_word(&result, abbr.long, abbr.short);
         }
     }
     result
 }
 
+/// Which abbreviations [`apply_dictionaries`] uses.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DictLevel {
-    General,
+    /// None: the text is returned unchanged.
+    Off,
+    /// The git, cargo and npm dictionaries.
     Full,
 }
 
@@ -318,14 +315,6 @@ mod tests {
             ),
             "the env in src/environment.rs",
             "standalone word replaced, path-embedded word preserved"
-        );
-    }
-
-    #[test]
-    fn general_dict_stays_empty() {
-        assert!(
-            GENERAL.is_empty(),
-            "GENERAL must stay empty: all 60 single-word rules save 0 tokens              under BPE and corrupt source/paths"
         );
     }
 

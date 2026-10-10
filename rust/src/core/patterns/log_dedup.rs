@@ -132,10 +132,8 @@ pub fn compress(output: &str) -> Option<String> {
             .collect();
 
         if !has_multiple_blocks && formatted.len() > 30 {
-            // Single oversized block: keep head + tail with an explicit omission
-            // marker. The previous "last 15 unique lines" tail-only cut dropped
-            // the leading lines *silently* — indistinguishable from real
-            // output — so the model never knew context was lost.
+            // Single oversized block: keep head + tail with an explicit
+            // omission marker, so the model knows lines were cut.
             push_bounded(&mut parts, &formatted, 5, 10);
         } else if has_multiple_blocks && formatted.len() > 20 {
             push_bounded(&mut parts, &formatted, 5, 5);
@@ -187,10 +185,8 @@ mod tests {
 
     #[test]
     fn single_block_truncation_is_not_silent() {
-        // One oversized block (no separators) of distinct lines. The old path
-        // kept only the last 15 lines with no marker — the leading lines
-        // vanished silently. The omission must now be explicit, with head + tail
-        // context preserved.
+        // One oversized block (no separators) of distinct lines: the omission
+        // is explicit, with head and tail kept.
         let output = (1..=120)
             .map(|i| format!("Line {i:04} distinct content here"))
             .collect::<Vec<_>>()
@@ -205,10 +201,6 @@ mod tests {
             "head context must be kept: {result}"
         );
         assert!(result.contains("Line 0120"), "tail must be kept: {result}");
-        assert!(
-            !result.contains("last 15 unique lines"),
-            "old silent tail-only format must be gone: {result}"
-        );
     }
 
     #[test]

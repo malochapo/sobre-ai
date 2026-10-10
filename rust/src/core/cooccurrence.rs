@@ -10,9 +10,9 @@
 //! associations fade. Over time the graph learns the project's real working
 //! paths — which the static import/AST graph cannot capture.
 //!
-//! The learned association is an additive retrieval signal: `sobre_compose` and
-//! the graph context [`load`] it to rank the files history says tend to be
-//! touched alongside the ones in focus.
+//! The learned association is an additive retrieval signal: `sobre_read`
+//! records it, and `sobre_compose` [`load`]s it to rank the files history says
+//! tend to be touched alongside the ones in focus.
 //!
 //! The store is a small per-project JSON file; reads/writes are whole-file and
 //! cheap because the graph is pruned aggressively (decay + min-weight + caps).
@@ -114,7 +114,7 @@ impl CoAccessGraph {
             return Vec::new();
         };
         let mut v: Vec<(String, f64)> = neighbours.iter().map(|(k, &w)| (k.clone(), w)).collect();
-        v.sort_by(|a, b| b.1.total_cmp(&a.1));
+        sort_strongest_first(&mut v);
         v.truncate(top_k);
         v
     }
@@ -138,7 +138,7 @@ impl CoAccessGraph {
             if neighbours.len() > MAX_NEIGHBORS {
                 let mut kept: Vec<(String, f64)> =
                     neighbours.iter().map(|(k, &w)| (k.clone(), w)).collect();
-                kept.sort_by(|a, b| b.1.total_cmp(&a.1));
+                sort_strongest_first(&mut kept);
                 kept.truncate(MAX_NEIGHBORS);
                 *neighbours = kept.into_iter().collect();
             }
@@ -152,13 +152,19 @@ impl CoAccessGraph {
                 .iter()
                 .map(|(k, n)| (k.clone(), n.len()))
                 .collect();
-            by_degree.sort_by_key(|(_, d)| *d);
+            by_degree.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
             let evict = self.edges.len() - MAX_FILES;
             for (file, _) in by_degree.into_iter().take(evict) {
                 self.edges.remove(&file);
             }
         }
     }
+}
+
+/// Strongest first; equal weights by name, so ties (common: every pair of
+/// one record gets the same bump) cut the same way on every run.
+fn sort_strongest_first(v: &mut [(String, f64)]) {
+    v.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 }
 
 // ── Persistence (one small JSON file per project) ──────────────────────────
@@ -182,15 +188,25 @@ pub fn load(project_root: &str) -> CoAccessGraph {
         .unwrap_or_default()
 }
 
-fn save(project_root: &str, graph: &CoAccessGraph) {
+/// Load, change and save the graph for `project_root`. Updates in this
+/// process are serialized (reads run on background threads, several at a
+/// time), and the file is replaced atomically, so a reader never sees it
+/// half-written: either would lose the learned edges.
+fn update(project_root: &str, change: impl FnOnce(&mut CoAccessGraph)) {
     let Some(path) = store_path(project_root) else {
         return;
     };
+    let lock = crate::core::path_locks::per_file_lock(&path.to_string_lossy());
+    let _guard = lock
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut graph = load(project_root);
+    change(&mut graph);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    if let Ok(json) = serde_json::to_string(graph) {
-        let _ = std::fs::write(&path, json);
+    if let Ok(json) = serde_json::to_string(&graph) {
+        let _ = crate::core::atomic_fs::try_atomic_write(&path, json.as_bytes(), None);
     }
 }
 
@@ -200,9 +216,7 @@ pub fn record_access(project_root: &str, files: &[String]) {
     if files.len() < 2 {
         return;
     }
-    let mut graph = load(project_root);
-    graph.record(files);
-    save(project_root, &graph);
+    update(project_root, |graph| graph.record(files));
 }
 
 // ── Traversal-edge surface (repo-relative) ─────────────────────────────────
@@ -239,14 +253,38 @@ pub fn record_focus_access(project_root: &str, focus: &str, others: &[String]) {
     if others_rel.is_empty() {
         return;
     }
-    let mut graph = load(project_root);
-    graph.record_focus(&focus_rel, &others_rel);
-    save(project_root, &graph);
+    update(project_root, |graph| {
+        graph.record_focus(&focus_rel, &others_rel);
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Updates from concurrent threads (one per read) all land: none is lost
+    /// to a concurrent load-and-save or a half-written file.
+    #[test]
+    fn concurrent_updates_are_not_lost() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = "/tmp/sobre-cooccurrence-project";
+        let threads: Vec<_> = (0..8)
+            .map(|t| {
+                std::thread::spawn(move || {
+                    for i in 0..10 {
+                        record_access(root, &[format!("t{t}.rs"), format!("f{t}_{i}.rs")]);
+                    }
+                })
+            })
+            .collect();
+        for t in threads {
+            t.join().unwrap();
+        }
+        let graph = load(root);
+        for t in 0..8 {
+            assert_eq!(graph.related(&format!("t{t}.rs"), 32).len(), 10, "t{t}.rs");
+        }
+    }
 
     #[test]
     fn co_access_strengthens_association() {

@@ -11,8 +11,8 @@ const SLOT: &str = "claude";
 /// Returns true when an Anthropic **API key** is available for the proxy to forward
 /// upstream.
 ///
-/// The proxy never injects credentials (see `proxy/forward/headers.rs` — only
-/// `ALLOWED_REQUEST_HEADERS` are forwarded), so it can only help Claude Code when the
+/// The proxy never injects credentials (it forwards the client's own), so it
+/// can only help Claude Code when the
 /// user runs in API-key (pay-as-you-go) mode. A Claude **Pro/Max subscription**
 /// authenticates via OAuth directly against `api.anthropic.com`; that token is rejected
 /// by any custom `ANTHROPIC_BASE_URL`, so redirecting subscription traffic through the
@@ -138,7 +138,15 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
 
     let settings_dir = crate::core::editor_registry::claude_state_dir(home);
     let settings_path = settings_dir.join("settings.json");
-    let existing = std::fs::read_to_string(&settings_path).unwrap_or_default();
+    let existing = match crate::config_io::read_for_edit(&settings_path) {
+        Ok(text) => text,
+        Err(e) => {
+            if !quiet {
+                println!("  Claude Code proxy env: {e}");
+            }
+            return;
+        }
+    };
     let mut doc: serde_json::Value = if existing.trim().is_empty() {
         serde_json::json!({})
     } else {

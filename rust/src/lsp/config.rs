@@ -35,6 +35,36 @@ pub const KNOWN_SERVERS: &[LspServerInfo] = &[
         binary: "gopls",
         install_hint: "go install golang.org/x/tools/gopls@latest",
     },
+    LspServerInfo {
+        language: "java",
+        binary: "jdtls",
+        install_hint: "install Eclipse JDT Language Server (`jdtls`), e.g. brew install jdtls",
+    },
+    LspServerInfo {
+        language: "kotlin",
+        binary: "kotlin-language-server",
+        install_hint: "brew install kotlin-language-server, or a release of fwcd/kotlin-language-server",
+    },
+    LspServerInfo {
+        language: "ruby",
+        binary: "ruby-lsp",
+        install_hint: "gem install ruby-lsp",
+    },
+    LspServerInfo {
+        language: "c",
+        binary: "clangd",
+        install_hint: "install clangd (LLVM), e.g. apt install clangd or brew install llvm",
+    },
+    LspServerInfo {
+        language: "cpp",
+        binary: "clangd",
+        install_hint: "install clangd (LLVM), e.g. apt install clangd or brew install llvm",
+    },
+    LspServerInfo {
+        language: "csharp",
+        binary: "csharp-ls",
+        install_hint: "dotnet tool install --global csharp-ls",
+    },
 ];
 
 pub fn default_servers() -> HashMap<&'static str, LspServerConfig> {
@@ -74,6 +104,22 @@ pub fn default_servers() -> HashMap<&'static str, LspServerConfig> {
             args: vec!["serve".into()],
         },
     );
+    for (language, command) in [
+        ("java", "jdtls"),
+        ("kotlin", "kotlin-language-server"),
+        ("ruby", "ruby-lsp"),
+        ("c", "clangd"),
+        ("cpp", "clangd"),
+        ("csharp", "csharp-ls"),
+    ] {
+        m.insert(
+            language,
+            LspServerConfig {
+                command: command.into(),
+                args: vec![],
+            },
+        );
+    }
     m
 }
 
@@ -101,6 +147,12 @@ pub fn language_for_extension(ext: &str) -> Option<&'static str> {
 }
 
 pub fn install_hint_for_language(language: &str) -> &'static str {
+    // JavaScript is served by the TypeScript server.
+    let language = if language == "javascript" {
+        "typescript"
+    } else {
+        language
+    };
     for info in KNOWN_SERVERS {
         if info.language == language {
             return info.install_hint;
@@ -129,4 +181,28 @@ pub fn check_server_available(language: &str) -> Result<PathBuf, String> {
             config.command, language, hint
         )
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn javascript_gets_the_typescript_install_hint() {
+        assert!(install_hint_for_language("javascript").contains("typescript-language-server"));
+    }
+
+    #[test]
+    fn every_supported_extension_has_a_server_and_an_install_hint() {
+        let servers = default_servers();
+        for ext in SUPPORTED_EXTENSIONS {
+            let language = language_for_extension(ext).expect("supported extension maps");
+            assert!(servers.contains_key(language), "no server for {language}");
+            assert_ne!(
+                install_hint_for_language(language),
+                "No install instructions available for this language server.",
+                "no install hint for {language}"
+            );
+        }
+    }
 }

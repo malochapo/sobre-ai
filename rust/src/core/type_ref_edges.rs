@@ -5,15 +5,8 @@
 //! dependencies. This module derives consumer -> definer *file* edges from
 //! `deep_queries` type-usage and extension-method analysis.
 //!
-//! It is the single source of truth for that resolution, shared by:
-//! - the durable `graph_index` -> `PropertyGraph` mirror (`graph_index::edges`),
-//!   so a background reindex reproduces the edges instead of dropping them
-//!   (the regression: the mirror clears the graph and previously had no
-//!   type-usage edges, silently wiping the impact blast radius), and
-//! - the impact graph builder, which additionally emits the symbol-level
-//!   edges `dead_code` relies on.
-//!
-//! Both callers therefore agree on the file-level blast radius.
+//! The `graph_index` scan (`graph_index::edges`) emits these as `type_ref`
+//! edges, which the property graph stores and `impact` follows.
 //!
 //! Per-language resolution scope ([`resolve_scope`]):
 //! - **C# / Kotlin** carry an explicit namespace/package in the AST → resolve
@@ -58,8 +51,7 @@ pub struct ResolveScope {
     pub allow_global_fallback: bool,
 }
 
-/// The resolution scope for a file, by language. Centralizes what was
-/// previously duplicated across the mirror and both impact index paths.
+/// The resolution scope for a file, by language.
 pub fn resolve_scope(rel_path: &str, ext: &str, analysis: &DeepAnalysis) -> ResolveScope {
     match ext {
         "cs" | "kt" | "kts" => ResolveScope {
@@ -443,7 +435,7 @@ mod tests {
         );
     }
 
-    /// Go (bug class): an unqualified type name declared in many
+    /// Go: an unqualified type name declared in many
     /// packages must resolve **only** to the same-directory definer — even when
     /// the global definer count is far past the fallback cap — and must never
     /// link across directories. This is the case a namespace-free fallback gets

@@ -8,8 +8,8 @@
 
 use serde_json::{Map, Value};
 
-/// A single anchored edit. `new_text=""` deletes (readseek convention); a
-/// multi-line `new_text` expands one anchor into several lines.
+/// A single anchored edit. `new_text=""` deletes; a multi-line `new_text`
+/// expands one anchor into several lines.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AnchorOp {
     /// Replace (or delete, if `new_text==""`) a single line.

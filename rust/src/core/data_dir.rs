@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-/// Resolve the sobre data directory.
+/// Resolve the sobre data directory, creating it owner-only when missing.
 ///
 /// `SOBRE_DATA_DIR` when set, else `$XDG_DATA_HOME/sobre` (default
 /// `~/.local/share/sobre`), so the config dir holds only config and stays
@@ -62,12 +62,23 @@ fn resolve_home_data_dir() -> Result<PathBuf, String> {
     Ok(data_dir)
 }
 
+/// Makes `path` a directory only its owner can enter: created with mode 0700
+/// when missing (its parents with the default mode), set to 0700 when it
+/// exists. Best-effort: a location sobre cannot write is left as it is.
 #[cfg(unix)]
 pub(crate) fn ensure_dir_permissions(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
     if path.is_dir() {
         let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700));
+        return;
     }
+    if path.exists() {
+        return;
+    }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::DirBuilder::new().mode(0o700).create(path);
 }
 
 #[cfg(not(unix))]
@@ -89,7 +100,7 @@ pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
 /// the override into others. Use this instead of hand-rolled
 /// `set_var`/`remove_var` pairs whenever a test needs an empty, private
 /// data dir (the shared per-process sandbox is NOT empty: parallel tests
-/// write stores like feedback, bandit and sessions into it).
+/// write the usage ledger, sessions and knowledge into it).
 #[cfg(test)]
 pub struct IsolatedDataDir {
     tmp: tempfile::TempDir,
@@ -155,6 +166,27 @@ mod tests {
         crate::test_env::remove_var("XDG_DATA_HOME");
 
         assert_eq!(result, xdg_data.path().join("sobre"));
+    }
+
+    /// A data directory sobre creates is owner-only from the start, not only
+    /// once a later call finds it.
+    #[cfg(unix)]
+    #[test]
+    fn a_new_data_dir_is_created_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let _lock = test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("share").join("sobre");
+        crate::test_env::set_var("SOBRE_DATA_DIR", &dir);
+        let result = sobre_data_dir().unwrap();
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
+
+        assert_eq!(result, dir);
+        let mode = std::fs::metadata(&dir)
+            .expect("created")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o700);
     }
 
     #[test]

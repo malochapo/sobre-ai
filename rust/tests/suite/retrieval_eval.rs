@@ -17,7 +17,7 @@
 //!      recall/MRR while keeping precision high (it does not flood the result
 //!      with structurally-unrelated files).
 //!
-//! Run `cargo test --test retrieval_eval -- --nocapture` to see the report.
+//! Run `cargo test --test main retrieval_eval -- --nocapture` to see the report.
 
 use std::collections::{HashMap, HashSet};
 

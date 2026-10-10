@@ -12,8 +12,9 @@ const EXIT_CODES: &[(i32, &str)] = &[
     (
         1,
         "The command ran and failed: a tool error (`call`), a failed check \
-         (`doctor`, `doctor overhead --gate`), an agent not connected \
-         (`init`), a proxy that would not start",
+         (`doctor`, `doctor integrations`, an error from `doctor lint-context`, \
+         `doctor overhead --gate`), an agent not connected (`init`), a proxy \
+         that would not start, a `config set` not confirmed",
     ),
     (
         2,
@@ -21,6 +22,9 @@ const EXIT_CODES: &[(i32, &str)] = &[
          its value. Nothing ran.",
     ),
 ];
+
+/// The exception to [`EXIT_CODES`].
+const EXIT_CODE_EXCEPTION: &str = "`-c` and `raw` exit with the command's own exit code.";
 
 /// One command the reference lists: the words after `sobre`, and its
 /// declaration.
@@ -183,6 +187,7 @@ pub(crate) fn reference_text() -> String {
     for (code, meaning) in EXIT_CODES {
         out.push_str(&format!("  {code}  {meaning}\n"));
     }
+    out.push_str(&format!("  {EXIT_CODE_EXCEPTION}\n"));
     out
 }
 
@@ -235,6 +240,7 @@ pub(crate) fn markdown() -> String {
     for (code, meaning) in EXIT_CODES {
         out.push_str(&format!("| {code} | {meaning} |\n"));
     }
+    out.push_str(&format!("\n{EXIT_CODE_EXCEPTION}\n"));
     out
 }
 

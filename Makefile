@@ -12,14 +12,18 @@ install: ## Build release + install to ~/.local/bin
 	cd rust && cargo install --path . --force --locked --root "$$HOME/.local"
 	@echo "Installed: $$("$$HOME/.local/bin/sobre" --version)"
 
+# The new binary is copied beside the old one, then renamed over it: an agent
+# may be running the old one, which cannot be overwritten in place.
 dev: ## Quick debug build + copy to ~/.local/bin
 	cd rust && cargo build
 	@mkdir -p "$$HOME/.local/bin"
-	cp rust/target/debug/sobre "$$HOME/.local/bin/sobre"
+	cd rust && cp "$${CARGO_TARGET_DIR:-target}/debug/sobre" "$$HOME/.local/bin/.sobre.new"
+	mv -f "$$HOME/.local/bin/.sobre.new" "$$HOME/.local/bin/sobre"
 	@echo "Dev installed: $$("$$HOME/.local/bin/sobre" --version)"
 
 # ── CI gates ─────────────────────────────────────────────
-# CI runs scripts/preflight.sh too, so green here means green there.
+# CI runs scripts/preflight.sh too; it also checks dependency licences and
+# advisories with cargo-deny (rust/deny.toml), which these targets do not.
 
 preflight: ## The CI gates: lint + the whole test suite
 	scripts/preflight.sh full

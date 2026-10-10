@@ -1,20 +1,12 @@
-//! Token-set similarity — one implementation, one place.
-//!
-//! sobre found this algorithm written twice: `memory_consolidation::token_jaccard`
-//! (f64) and `memory_lifecycle::word_similarity` (f32). Same lowercase +
-//! whitespace-split + Jaccard, differing only in float width and in what they
-//! returned for two empty strings. Two similarity functions over the same
-//! knowledge facts is exactly how two memory subsystems drift apart, so there is
-//! now one.
+//! Token-set similarity, the one measure every knowledge-fact comparison
+//! uses, so two subsystems never judge the same facts differently.
 
 use std::collections::HashSet;
 
 /// Jaccard similarity over whitespace-split, case-folded tokens.
 ///
 /// Returns `1.0` when both sides are empty (they are trivially identical) and
-/// `0.0` when exactly one is. That empty-pair convention comes from the
-/// `memory_lifecycle` version; the `memory_consolidation` version returned
-/// `0.0` for two empty strings, which reported identical inputs as unrelated.
+/// `0.0` when exactly one is.
 #[must_use]
 pub fn token_jaccard(a: &str, b: &str) -> f64 {
     let a_lower = a.to_lowercase();

@@ -144,6 +144,25 @@ fn test_index_looks_stale_when_any_file_missing() {
     assert!(index_looks_stale(&idx, &root_s));
 }
 
+/// A removed file makes the index stale wherever it sorts among many.
+#[test]
+fn removed_file_is_stale_past_the_first_paths() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    let mut paths: Vec<String> = (0..25).map(|i| format!("f{i:02}.rs")).collect();
+    for p in &paths {
+        std::fs::write(root.join(p), "pub fn f() {}\n").expect("write");
+    }
+    paths.push("z_removed.rs".to_string());
+    let refs: Vec<&String> = paths.iter().collect();
+    let root_s = normalize_project_root(&root.to_string_lossy());
+    let last_scan = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    assert!(is_stale(&root_s, &last_scan, &refs, |_| Some(
+        "h".to_string()
+    )));
+}
+
 #[test]
 fn test_index_looks_fresh_when_all_files_exist() {
     let td = tempdir().expect("tempdir");
@@ -426,9 +445,8 @@ fn safe_scan_root_accepts_multi_repo_parent() {
 #[test]
 fn csharp_graph_edges_end_to_end() {
     // Full edge pipeline for a small C# project: `using` resolution (import
-    // edges) + same-namespace type usage (type_ref edges). Regression
-    // for the empty C# Call Graph / sparse graph report (NINA) and the false
-    // "leaf node" blast radius that the old alphabetical namespace chain caused.
+    // edges) + same-namespace type usage (type_ref edges), so a C# file is
+    // not a false "leaf node" in the blast radius.
     const USER_SERVICE: &str = "namespace App.Services;\n\
 using App.Data;\n\
 \n\
@@ -702,7 +720,7 @@ func _ready():\n\tvar level = load(\"res://scenes/Main.tscn\")\n";
 
 #[test]
 fn lua_require_edges_end_to_end() {
-    // A Lua project is no longer an empty graph — `require("a.b")` produces
+    // A Lua project has a graph: `require("a.b")` produces
     // an import edge to `a/b.lua`, `require("pkg")` resolves to `pkg/init.lua`,
     // and `graph related` surfaces the importer.
     const MAIN: &str = "local util = require(\"lib.util\")\n\
@@ -813,10 +831,9 @@ fn tscn_scene_indexed_with_script_edges() {
 
 #[test]
 fn scan_skips_node_modules_without_git_dir() {
-    // A monorepo without a top-level `.git` used to index node_modules
-    // wholesale, because the ignore crate only applies `.gitignore` files
-    // inside git repositories. The vendor-dir walk filter must skip them
-    // regardless of git state.
+    // In a monorepo without a top-level `.git`, the ignore crate applies no
+    // `.gitignore`, so nothing else keeps node_modules out: the vendor-dir
+    // walk filter must skip them regardless of git state.
     let _env = crate::core::data_dir::test_env_lock();
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -991,4 +1008,44 @@ fn build_edges_cached_is_deterministic_across_runs() {
     };
 
     assert_eq!(build(), build(), "edge build must be deterministic");
+}
+
+/// Each isolated file gets the same sibling on every scan: the first other
+/// file of its directory and extension, by path.
+#[test]
+fn sibling_edges_are_deterministic() {
+    for _ in 0..20 {
+        let mut index = ProjectIndex::new("/proj");
+        for p in ["d/c.rs", "d/a.rs", "d/b.rs", "d/x.py"] {
+            index.files.insert(p.to_string(), fe(p, "", "rs"));
+        }
+        build_sibling_edges(&mut index);
+        let edges: Vec<(&str, &str)> = index
+            .edges
+            .iter()
+            .map(|e| (e.from.as_str(), e.to.as_str()))
+            .collect();
+        assert_eq!(
+            edges,
+            [
+                ("d/a.rs", "d/b.rs"),
+                ("d/b.rs", "d/a.rs"),
+                ("d/c.rs", "d/a.rs")
+            ]
+        );
+    }
+}
+
+/// Every commit counts, the last one too, and git's `/` paths match the
+/// index keys on every platform.
+#[test]
+fn cochange_pairs_count_every_commit() {
+    let sep = std::path::MAIN_SEPARATOR_STR;
+    let a = format!("src{sep}a.rs");
+    let b = format!("src{sep}b.rs");
+    let files: std::collections::HashSet<&str> = [a.as_str(), b.as_str()].into();
+    // Five commits; the last is not followed by a `---` line.
+    let log = "---\nsrc/a.rs\nsrc/b.rs\n\n".repeat(5);
+    let pairs = cochange_pairs(&log, &files, &std::collections::HashSet::new());
+    assert_eq!(pairs, [(a, b)]);
 }

@@ -64,9 +64,8 @@ impl Default for ToolRegistry {
     }
 }
 
-/// Number of registered MCP tools — the single source of truth for the
-/// "N MCP tools" count shown in `--help`, the README, and the feature catalog.
-/// Deriving it here means the count can never drift from the actual registry.
+/// Number of registered MCP tools, as `--help` and the generated reference
+/// show it: derived from the registry, so the count cannot drift from it.
 pub fn tool_count() -> usize {
     build_registry().len()
 }
@@ -96,12 +95,9 @@ pub fn build_registry() -> ToolRegistry {
     registry
 }
 
+/// Whether a tool name is registered, resolved against a set built once
+/// ([`build_registry`] allocates every tool on each call).
 #[cfg(test)]
-/// Whether a tool name is registered, resolved against a set built once.
-///
-/// [`build_registry`] allocates every tool on each call, so callers that only
-/// need to know whether a name exists — the injected rules ask a dozen times
-/// per render — must not go through it.
 pub fn is_registered(name: &str) -> bool {
     static NAMES: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
         std::sync::OnceLock::new();
@@ -112,7 +108,7 @@ pub fn is_registered(name: &str) -> bool {
 
 /// Every `sobre_*` token in `text` that does not name a registered tool.
 ///
-/// Text sent to the agent — tool descriptions, injected rules, prompt bodies,
+/// Text sent to the agent — tool descriptions, the server instructions,
 /// recovery footers, host hook blocks — names tools by string, and nothing
 /// links a string to the registry. A tool leaves `build_registry()` and the
 /// sentences recommending it stay, telling the agent to call something that

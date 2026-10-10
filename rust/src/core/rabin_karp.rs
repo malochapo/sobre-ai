@@ -1,3 +1,12 @@
+//! Content-defined chunking: cuts text where a rolling hash over a 48-byte
+//! window has its low 9 bits zero (about every 512 bytes), with chunks of 64
+//! to 2048 bytes, so a local edit moves few boundaries. The BM25 index uses it
+//! to split files with no symbols.
+//!
+//! Offsets are byte offsets and may fall inside a UTF-8 character. The
+//! rolling update removes the oldest byte with `BASE^(window-1)` after the
+//! shift, so the hash is not exactly a function of the last 48 bytes.
+
 const PRIME: u64 = 1_000_000_007;
 const BASE: u64 = 256;
 const MIN_CHUNK: usize = 64;

@@ -3,20 +3,20 @@
 //! (tests/serial.rs) that runs them one at a time; see that file for how the
 //! single thread is enforced.
 
-mod autonomy_tests;
+mod auto_dedup;
 mod claude_config_dir;
 mod codex_proxy;
-mod dual_process_rehydrate;
-mod index_scoping_scenarios;
+mod compression_level_config;
+mod crash_loop_guard;
+mod engine_tool_calls;
+mod index_status;
 mod intensive_benchmarks;
-mod memory_benchmark_suite;
+mod knowledge_archive_rehydrate;
+mod knowledge_concurrent_writes;
+mod knowledge_persistence;
+mod knowledge_recall;
 mod multi_read_cap_scenarios;
-mod output_contracts_knowledge;
-mod parallel_knowledge;
-mod power_user_worksession;
 mod proxy_stale_env_scenarios;
+mod read_cache_stub;
 mod savings_verification;
 mod sobre_compose_scenarios;
-mod subagent_cache_hit_scenarios;
-mod terse_agent_tests;
-mod ticket_fixes_scenarios;

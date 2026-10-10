@@ -3,6 +3,9 @@ rust/target/
 **/*.rs.bk
 *.pdb
 
+# Local cargo settings (linker, sccache path): machine-specific.
+rust/.cargo/config.toml
+
 # --- Maintainers' local notes ---
 # Notes kept beside the docs stay on the maintainer's machine; only the pages
 # below are part of the repository.
@@ -10,21 +13,14 @@ rust/target/
 !/docs/architecture.md
 !/docs/release-notes.md
 
-# --- Editor settings ---
+# --- Editor and OS files ---
 .vscode/
 .idea/
-
-# --- Local scratch ---
-check*.txt
-tools*.txt
-tests*.txt
-rename*.txt
-/t*.txt
-/w.txt
-*.local.toml
+*.swp
+*.swo
 .DS_Store
 
-# Throwaway build logs / scratch
+# --- Local scratch: build logs ---
 _scratch/
 *.buildlog.txt
 

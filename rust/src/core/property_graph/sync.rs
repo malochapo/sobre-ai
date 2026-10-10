@@ -1,11 +1,9 @@
 //! Mirror a `graph_index` [`ProjectIndex`] into the SQLite property graph.
 //!
-//! The "one extractor → one store" path: the mature graph_index
-//! extractor produces the [`ProjectIndex`] (files, symbols, edges); this mirrors
-//! it faithfully into the scalable SQLite store so the property graph carries
-//! identical data — including a populated `file_catalog`, which the provider
-//! facade's `pg_populated` gate requires. Feeding PG from the proven extractor
-//! guarantees PG ⊇ graph_index, so a later backend flip cannot lose data.
+//! One extractor, one store: the graph_index scan produces the
+//! [`ProjectIndex`] (files, symbols, edges) and this writes it into the
+//! SQLite store, including the `file_catalog` that
+//! [`crate::core::graph_provider::open_best_effort`] requires.
 //!
 //! This is a pure replace of the *code graph*: nodes, edges and the file
 //! catalog are cleared first, then rebuilt from the index, so re-running it is
@@ -91,11 +89,12 @@ pub(crate) fn populate_from_project_index(
     graph: &CodeGraph,
     index: &ProjectIndex,
 ) -> anyhow::Result<()> {
+    // Clear and refill in one transaction: a reader never sees the graph
+    // empty or half-written.
+    let tx = graph.connection().unchecked_transaction()?;
     graph.clear_code_graph()?;
 
-    let tx = graph.connection().unchecked_transaction()?;
-
-    // 1) Files → file nodes + file_catalog (the `pg_populated` gate needs the
+    // 1) Files → file nodes + file_catalog (`open_best_effort` needs the
     //    catalog; the nodes anchor edges and symbol containment).
     for (path, fe) in &index.files {
         graph.upsert_node(&Node::file(path))?;

@@ -1,14 +1,14 @@
-// ═══════════════════════════════════════════════════════════════════════
-// `sobre init` — the one installation command
-// ═══════════════════════════════════════════════════════════════════════
+//! `sobre init`: connect sobre to this machine's agents.
 
 use crate::cli::args::InitArgs;
 
-/// `sobre init` — connect sobre to this machine's agents.
+/// `sobre init`: connect sobre to this machine's agents.
 ///
-/// One question is asked, and only once: the proxy sees every request, so
-/// turning it on is a real decision. Everything else takes a safe default and
-/// is changed afterwards through `sobre config`.
+/// Without a named agent and in a terminal, it asks about the proxy (it sees
+/// every request, so turning it on is a real decision) until the answer is on
+/// record, and, in a build with embeddings, about downloading the model while
+/// it is missing. Everything else takes its default and is changed afterwards
+/// through `sobre config`.
 pub(crate) fn cmd_init(args: &InitArgs) {
     // An unknown agent (a typo) exits 2 when the line is parsed: running on
     // would connect every agent.
@@ -45,8 +45,8 @@ pub(crate) fn cmd_init(args: &InitArgs) {
     }
 }
 
-/// The one prompt. Skipped once the choice is on record, and skipped entirely
-/// under `--repair`/`--json` so scripted runs never block on stdin.
+/// The proxy question. Skipped once the choice is on record, and without a
+/// terminal, so scripted runs never block on stdin.
 fn ask_about_proxy() {
     use std::io::Write;
 
@@ -82,15 +82,22 @@ fn ask_about_proxy() {
     // Same path as `sobre proxy enable`: nothing is recorded unless the
     // proxy actually runs.
     let port = crate::proxy_setup::default_port();
-    let started = if crate::proxy_autostart::is_supported() {
+    let managed = crate::proxy_autostart::is_supported();
+    let started = if managed {
         crate::proxy_autostart::install(port, false)
     } else {
         crate::proxy_setup::is_proxy_reachable(port)
     };
     if !started {
-        crate::outln!(
-            "  The proxy could not be started, so it stays off. Start it by hand with\n  `sobre proxy start -d`, then run `sobre proxy enable`."
-        );
+        if managed {
+            crate::outln!(
+                "  The proxy could not be started, so it stays off.\n  `sobre proxy start --port {port}` shows why; `sobre proxy enable` turns it on later."
+            );
+        } else {
+            crate::outln!(
+                "  No service manager here to run the proxy, so it stays off. Start it by\n  hand with `sobre proxy start -d`, then run `sobre proxy enable`."
+            );
+        }
         return;
     }
     if let Err(e) = crate::core::config::Config::update_global(|c| c.proxy.enabled = Some(true)) {

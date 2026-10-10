@@ -8,8 +8,8 @@
 //!
 //! Two guards, real binary over real stdio JSON-RPC in an isolated HOME:
 //!   1. spawn → initialize-response stays under a conservative wall-clock
-//!      bound (catches a future re-introduction of synchronous pre-serve work
-//!      such as a crash-backoff sleep or a network wait),
+//!      bound (catches synchronous work in front of the handshake, such as a
+//!      crash-backoff sleep or a network wait),
 //!   2. a tools/call fired IMMEDIATELY after the initialized notification —
 //!      the exact VS Code race pattern — succeeds on the first attempt.
 //!
@@ -165,7 +165,7 @@ fn initialize_answers_fast_and_first_call_succeeds() {
     assert!(
         elapsed < INITIALIZE_DEADLINE,
         "spawn → initialize-response took {elapsed:?} (bound {INITIALIZE_DEADLINE:?}) — \
-         synchronous pre-serve work crept back in front of the handshake (#669)"
+         synchronous work runs in front of the handshake"
     );
 
     // The VS Code race pattern: initialized notification and the first tool

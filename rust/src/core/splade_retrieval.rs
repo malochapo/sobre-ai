@@ -1,21 +1,23 @@
-//! SPLADE-style sparse expansion layered on BM25 candidate retrieval.
+//! Query expansion over BM25 candidates, in the spirit of SPLADE's sparse
+//! expansion but with a fixed dictionary of programming-term associations
+//! (no learned model).
 //!
-//! Stage 1: BM25 top-100. Stage 2: programming-term synonym / association expansion.
-//! Stage 3: additive expansion BM25-like scoring combined with stage-1 scores.
+//! Stage 1: BM25 top-100. Stage 2: expand the query terms through the
+//! dictionary. Stage 3: score the expansion terms BM25-style and combine that
+//! with the stage-1 scores.
 
 use std::collections::{HashMap, HashSet};
 
 use crate::core::bm25_index::{BM25Index, tokenize_for_index};
 
 /// Result row after hybrid retrieval + re-ranking.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct SpladeResult {
     pub chunk_idx: usize,
     pub file_path: String,
     pub symbol_name: String,
     pub combined_score: f64,
     pub bm25_score: f64,
-    pub expansion_score: f64,
 }
 
 /// Static programming-term associations (token → related tokens with weights).
@@ -221,7 +223,6 @@ pub fn hybrid_retrieve(query: &str, bm25_index: &BM25Index, top_k: usize) -> Vec
                 symbol_name: chunk.symbol_name.clone(),
                 combined_score,
                 bm25_score,
-                expansion_score,
             }
         })
         .collect();
@@ -237,6 +238,7 @@ pub fn hybrid_retrieve(query: &str, bm25_index: &BM25Index, top_k: usize) -> Vec
             })
             .then_with(|| a.file_path.cmp(&b.file_path))
             .then_with(|| a.symbol_name.cmp(&b.symbol_name))
+            .then_with(|| a.chunk_idx.cmp(&b.chunk_idx))
     });
 
     results.truncate(top_k);
@@ -305,8 +307,10 @@ mod tests {
 
         assert!(!hybrid.is_empty());
         assert!(
-            hybrid[0].expansion_score >= 0.0,
-            "expansion_score should be non-negative"
+            hybrid
+                .windows(2)
+                .all(|w| w[0].combined_score >= w[1].combined_score),
+            "results come strongest first"
         );
     }
 
@@ -326,6 +330,5 @@ mod tests {
         assert!(!r.file_path.is_empty());
         assert!(r.combined_score.is_finite());
         assert!(r.bm25_score.is_finite());
-        assert!(r.expansion_score.is_finite());
     }
 }

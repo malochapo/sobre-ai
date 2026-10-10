@@ -1,3 +1,7 @@
+//! How much of a file's structure (functions and types, exports, imports) a
+//! compressed view still names. The density-mode quality gate
+//! ([`crate::core::quality`]) reads it.
+
 use crate::core::deps;
 use crate::core::signatures;
 
@@ -12,30 +16,6 @@ pub struct PreservationScore {
 }
 
 impl PreservationScore {
-    #[cfg(test)]
-    pub fn function_rate(&self) -> f64 {
-        if self.functions_total == 0 {
-            return 1.0;
-        }
-        self.functions_preserved as f64 / self.functions_total as f64
-    }
-
-    #[cfg(test)]
-    pub fn export_rate(&self) -> f64 {
-        if self.exports_total == 0 {
-            return 1.0;
-        }
-        self.exports_preserved as f64 / self.exports_total as f64
-    }
-
-    #[cfg(test)]
-    pub fn import_rate(&self) -> f64 {
-        if self.imports_total == 0 {
-            return 1.0;
-        }
-        self.imports_preserved as f64 / self.imports_total as f64
-    }
-
     pub fn overall(&self) -> f64 {
         let total = self.functions_total + self.exports_total + self.imports_total;
         if total == 0 {
@@ -147,9 +127,6 @@ pub struct GraphNode;
         assert_eq!(score.functions_total, 0);
         assert_eq!(score.exports_total, 0);
         assert_eq!(score.imports_total, 0);
-        assert!((score.function_rate() - 1.0).abs() < f64::EPSILON);
-        assert!((score.export_rate() - 1.0).abs() < f64::EPSILON);
-        assert!((score.import_rate() - 1.0).abs() < f64::EPSILON);
         assert!((score.overall() - 1.0).abs() < f64::EPSILON);
     }
 }

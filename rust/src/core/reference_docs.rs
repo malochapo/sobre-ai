@@ -290,7 +290,7 @@ pub fn config_keys_markdown() -> String {
          warning goes to stderr once. An unknown key is ignored; `sobre doctor` \
          names it.\n\
          - **`sobre config set <key> <value>`.** Booleans take `true`/`false` \
-         (also `yes`/`no`, `on`/`off`, `1`/`0`); a list takes comma-separated \
+         (also `yes`/`no`, `1`/`0`); a list takes comma-separated \
          values. The value is checked before the file is written, and the \
          file keeps its comments and key order. `default` or an empty value \
          removes the key, so its default applies.\n\
@@ -349,10 +349,7 @@ pub fn config_keys_markdown() -> String {
 fn render_section_keys(section: &crate::core::config::schema::SectionSchema) -> String {
     let mut out = String::new();
     for (key, ks) in &section.keys {
-        let mut ty = ks.ty.clone();
-        if let Some(values) = &ks.values {
-            ty = format!("{ty}: {}", values.join(" | "));
-        }
+        let ty = &ks.ty;
         let default = value_to_inline(&ks.default);
         let desc = ks.description.trim();
         out.push_str(&format!("- `{key}` ({ty}, default `{default}`) — {desc}\n"));

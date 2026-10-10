@@ -400,7 +400,6 @@ mod tests {
             end_line: 10,
             snippet: String::new(),
             rrf_score: score,
-            dense_score: None,
             bm25_rank: Some(1),
             dense_rank: None,
         }

@@ -1,10 +1,11 @@
-//! Tree-sitter deep queries for extracting imports, call sites, and type definitions.
+//! Tree-sitter deep queries for extracting imports, call sites, and type definitions:
+//! the extractor behind the code graph's edges and the call graph.
 //!
-//! Replaces regex-based extraction in `deps.rs` with precise AST parsing.
-//! Supported languages are gated by `get_language` (and kept in sync with
-//! `core::language_capabilities`): the TypeScript/JavaScript family, Python,
-//! Rust, Go, Java, C/C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala,
-//! Elixir, Zig, and GDScript.
+//! Supported languages are gated by `get_language`: the TypeScript/JavaScript
+//! family, Python, Rust, Go, Java, C/C++, Ruby, C#, Kotlin, Swift, PHP, Bash,
+//! Dart, Scala, Elixir, Zig, GDScript, Lua and Luau. Vue and Svelte files are
+//! analyzed through their `<script>` block, Godot scenes (`.tscn`) by
+//! `core::godot::scene`.
 
 mod calls;
 mod ext_methods;

@@ -1,5 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
-mix test: 4 tests, 0 failures

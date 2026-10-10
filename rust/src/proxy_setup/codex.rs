@@ -102,7 +102,15 @@ fn install_codex_env_at_path(config_path: &Path, port: u16, quiet: bool, mode: C
         return;
     }
 
-    let existing = std::fs::read_to_string(config_path).unwrap_or_default();
+    let existing = match crate::config_io::read_for_edit(config_path) {
+        Ok(text) => text,
+        Err(e) => {
+            if !quiet {
+                println!("  Codex CLI proxy env: {e}");
+            }
+            return;
+        }
+    };
     let updated = render_codex_config(&existing, &entries);
 
     if updated == existing {

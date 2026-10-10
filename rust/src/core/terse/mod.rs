@@ -1,22 +1,21 @@
-//! # Terse Compression Engine
+//! # Terse compression
 //!
-//! Unified, 4-layer token compression pipeline.
-//!
-//! ## Architecture
+//! The generic, `compression_level`-driven compression of text no
+//! command-specific pattern owns.
 //!
 //! ```text
-//! Tool Output → [Layer 1: Deterministic] → [Layer 2: Residual] → Compressed Output
-//! MCP Tools List → [Layer 4: Description Terse] → Compact Descriptions
+//! Tool output    → [engine] ──────────────→ compressed output
+//! Pattern output → [residual → engine] ───→ compressed output
+//! Tool descriptions → [mcp_compress] ─────→ shorter descriptions
 //! ```
 //!
-//! ## Layers
-//!
-//! - **Layer 1** (`engine.rs`): Deterministic output compression — surprisal scoring,
-//!   content/function word filtering, domain dictionaries, quality gate.
-//! - **Layer 2** (`residual.rs`): Pattern-aware post-terse — applies after pattern
-//!   compression, avoids double-compression, tracks attribution.
-//! - **Layer 4** (`mcp_compress.rs`): MCP description compression — shrinks tool
-//!   descriptions, lazy-load stubs, on-demand expansion.
+//! - `pipeline.rs`: the entry point; compacts pure JSON losslessly, keeps
+//!   fenced code byte-exact, and runs the engine on the rest.
+//! - `engine.rs`: line scoring (entropy, structural markers, repetition),
+//!   decoration and filler removal, domain dictionaries, and a quality gate
+//!   that keeps the original when paths or identifiers would be lost.
+//! - `residual.rs`: the engine run on a pattern compressor's output.
+//! - `mcp_compress.rs`: shorter tool descriptions at higher levels.
 
 pub mod auto_dict;
 pub mod counter;

@@ -1,19 +1,17 @@
 //! Injected-context linter — keeps sobre's OWN injected context
 //! (the MCP instructions + advertised tool descriptions) high-signal.
 //!
-//! The Nisi/WorkOS "Case" talk is the motivation: comprehensive prose and
-//! re-teaching what a competent model already knows *degrades* reasoning and
-//! burns a finite attention budget; only the non-obvious gotcha earns its
-//! tokens. This linter encodes that discipline so it can be enforced in CI and
-//! surfaced in `doctor`.
+//! Comprehensive prose and re-teaching what a competent model already knows
+//! burn a finite attention budget; only the non-obvious gotcha earns its
+//! tokens. This linter encodes that discipline: a unit test enforces it and
+//! `sobre doctor lint-context` reports it.
 //!
 //! Two severities:
-//! * [`Severity::Error`] — exact-duplicate rule lines and low-signal re-teaching
-//!   phrases in the MCP instructions. These ride *every* turn, are fully under our
-//!   control, and must fail the gate.
-//! * [`Severity::Warn`] — verbose or duplicated tool descriptions. Surfaced for
-//!   triage so the ~28-tool surface can be trimmed incrementally without
-//!   blocking unrelated work.
+//! * [`Severity::Error`] — exact-duplicate rule lines and low-signal
+//!   re-teaching phrases in the MCP instructions, and byte-identical tool
+//!   descriptions. The instructions ride *every* turn and must pass.
+//! * [`Severity::Warn`] — tool descriptions over the token budget, reported
+//!   for triage without failing.
 
 use crate::core::tokens::count_tokens;
 
@@ -206,7 +204,7 @@ mod tests {
     }
 
     /// The enforced gate: the live injected rules surface must carry zero Error
-    /// findings, proving the trim landed and guarding against future re-teaching
+    /// findings, guarding against re-teaching
     /// or duplication regressions.
     #[test]
     fn live_injected_context_has_no_error_findings() {

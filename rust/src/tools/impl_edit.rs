@@ -460,10 +460,8 @@ pub(crate) fn dry_run_text(path: &Path, old: &str, new: &str) -> String {
 #[cfg(test)]
 mod tests {
     /// The three-call sequence production runs inline (`run_io` ->
-    /// `record_outcome` -> `apply_cache_effect`). It used to be a shipped free
-    /// function whose only callers were the tests below, so it is test
-    /// scaffolding now rather than dead production code. It must stay in step
-    /// with `registered::sobre_patch::replace_text`, which runs the same three
+    /// `record_outcome` -> `apply_cache_effect`). It must stay in step with
+    /// `registered::sobre_patch::replace_text`, which runs the same three
     /// calls for real.
     fn handle(cache: &mut SessionCache, params: &EditParams) -> String {
         let last_mode = cache

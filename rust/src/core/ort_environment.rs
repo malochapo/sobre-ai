@@ -195,7 +195,7 @@ fn resolve_ort_dylib() -> anyhow::Result<PathBuf> {
         "libonnxruntime not found.\n\
          Managed:  sobre embeddings provision  (official CPU runtime, sha256-pinned)\n\
          Or set ORT_DYLIB_PATH=<path> to point to the shared library.\n\
-         Install:  pip install onnxruntime  (Python bundles the .so)\n\
+         Python:   pip install onnxruntime, then set ORT_DYLIB_PATH to the library it installs\n\
          NixOS:    nix-shell -p onnxruntime\n\
          Homebrew: brew install onnxruntime\n\
          Searched: ORT_DYLIB_PATH, managed runtime dir, Nix store, \
@@ -369,7 +369,7 @@ mod tests {
     fn homebrew_prefix_lib_is_searched() {
         // A dylib under $HOMEBREW_PREFIX/lib is discovered (covers Homebrew on
         // any platform / custom prefix, incl. Linuxbrew).
-        let tmp = std::env::temp_dir().join(format!("lc-ort-hb-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre-ort-hb-{}", std::process::id()));
         let libdir = tmp.join("lib");
         std::fs::create_dir_all(&libdir).unwrap();
         let name = "libonnxruntime-test-marker.dylib";
@@ -392,7 +392,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn nix_per_user_lib_discovers_file_under_base() {
-        let tmp = std::env::temp_dir().join(format!("lc-nix-pu-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre-nix-pu-{}", std::process::id()));
         let name = "libonnxruntime-test-marker.so";
         let user = "testuser";
         let libdir = tmp.join(user).join("lib");
@@ -410,7 +410,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn nix_per_user_lib_rejects_traversal_in_user() {
-        let tmp = std::env::temp_dir().join(format!("lc-nix-trv-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre-nix-trv-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
 
         // NUL bytes cannot be set via std::env::set_var (OS rejects them),

@@ -19,7 +19,7 @@ Edit outcomes are recorded by the two edit engines behind `sobre_patch`, keyed
 by the **mode of the last sobre read of that file** (session cache
 `last_mode`):
 
-- string replacement (`op=replace_unique`): `tools/impl_edit.rs`
+- string replacement (`op=replace_unique`, `op=replace_all`): `tools/impl_edit.rs`
   `record_outcome` → `core::edit_quality::record_edit_outcome`
 - anchored ops (`set_line`, `replace_lines`, `insert_after`, `delete`, …):
   `tools/sobre_patch/mod.rs` `record_outcome` →
@@ -30,7 +30,7 @@ Only these outcomes carry signal:
 | Outcome | Condition | Recorded as |
 |---|---|---|
 | Success | edit applied (`CacheEffect::Invalidate`) | success for `(ext, last_mode)` |
-| Compression-correlated failure | string replacement: `old_text` not found (auto-escalation `CacheEffect::StoreFull`, or plain miss after a `full` read as baseline) | failure for `(ext, last_mode)` |
+| Compression-correlated failure | string replacement: `old_text` (or `find`) not found (auto-escalation `CacheEffect::StoreFull`, or plain miss after a `full` read as baseline) | failure for `(ext, last_mode)` |
 | Stale-anchor failure | anchored op returns `CONFLICT:` (the anchors the model edited against had drifted) | failure for `(ext, last_mode)` |
 
 Explicitly **not** recorded (no compression signal): file creation
@@ -51,7 +51,7 @@ escalations (`core/edit_quality.rs`), checked first in
 | Failure | Arms (when last mode ≠ target) | Next `mode=auto` resolution | Resolver source |
 |---|---|---|---|
 | Stale `sobre_patch` anchor (`CONFLICT:`) | anchored escalation | `anchored` (fresh line anchors, so the agent retries by reference) | `anchored_edit_fail_escalation` |
-| `old_text` not found | full escalation | `full` | `edit_fail_escalation` |
+| `old_text` (or `find`) not found | full escalation | `full` | `edit_fail_escalation` |
 
 The anchored escalation is checked before the full one. Each escalation is
 consumed by the resolution that uses it, and pending escalations expire after

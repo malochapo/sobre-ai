@@ -206,3 +206,222 @@ fn small_output_stays_verbatim() {
         "output under 200 tokens must stay verbatim, got: {compressed}"
     );
 }
+
+/// The guard the pattern snapshot tests use follows the gates in front of
+/// the pattern table: test runners, findings-only linters, the output
+/// policy and chains never reach it.
+#[test]
+fn reaches_pattern_table_follows_the_gates() {
+    use super::engine::reaches_pattern_table;
+    for cmd in [
+        "cargo build",
+        "git status",
+        "grep -rn TODO src/",
+        "ruff format .",
+    ] {
+        assert!(reaches_pattern_table(cmd), "{cmd}");
+    }
+    for cmd in [
+        "cargo test",
+        "pytest -q",
+        "eslint src/",
+        "ruff check .",
+        "curl https://api.example.com",
+        "npx prisma migrate dev",
+        "git commit -m x",
+        "git status && git log",
+    ] {
+        assert!(!reaches_pattern_table(cmd), "{cmd}");
+    }
+}
+
+/// A successful build's warnings reach the agent: every distinct one, with
+/// its location.
+#[cfg(test)]
+mod build_warning_tests {
+    use super::super::engine::compress_for_outcome;
+
+    /// `npm run` keeps every warning and error line, not only its last
+    /// lines; npm's own `npm warn` lines included.
+    #[test]
+    fn npm_run_keeps_its_warnings() {
+        let mut out = String::from("\n> app@1.0.0 build\n> webpack --mode production\n\n");
+        for i in 0..40 {
+            out.push_str(&format!(
+                "asset chunk-{i}.js {}.{} KiB [emitted] [minimized] (name: chunk-{i})\n",
+                10 + i,
+                i % 10
+            ));
+        }
+        out.push_str("WARNING in ./src/legacy.js 12:4-20\n");
+        out.push_str("Module not found: Error: Can't resolve 'fs' in '/app/src'\n");
+        out.push_str("npm warn config production Use `--omit=dev` instead.\n");
+        for i in 0..40 {
+            out.push_str(&format!(
+                "orphan modules {i}.{i} KiB [orphan] {i} modules\n"
+            ));
+        }
+        out.push_str("webpack 5.89.0 compiled with 1 warning in 4321 ms\n");
+
+        let result = compress_for_outcome("npm run build", &out, 0);
+        for line in [
+            "WARNING in ./src/legacy.js 12:4-20",
+            "Module not found: Error: Can't resolve 'fs' in '/app/src'",
+            "npm warn config production Use `--omit=dev` instead.",
+        ] {
+            assert!(result.contains(line), "{line:?} lost:\n{result}");
+        }
+    }
+
+    /// `ruff check --exit-zero` keeps every finding, in the default format
+    /// (a code frame under each finding) and in the concise one (a line
+    /// each, none of which says "error" or "warning").
+    #[test]
+    fn ruff_check_keeps_every_finding() {
+        let finding = |i: usize| {
+            format!(
+                "src/mod{i}.py:{}:8: F401 [*] `os` imported but unused",
+                i + 1
+            )
+        };
+        for (count, frame) in [
+            (
+                25,
+                "\n  |\n1 | import os\n  |        ^^ F401\n  |\n  = help: Remove unused import: `os`\n",
+            ),
+            (
+                40,
+                "\n  |\n1 | import os\n  |        ^^ F401\n  |\n  = help: Remove unused import: `os`\n",
+            ),
+            (60, ""),
+        ] {
+            let mut out = String::new();
+            for i in 0..count {
+                out.push_str(&finding(i));
+                out.push_str(frame);
+                out.push('\n');
+            }
+            out.push_str(&format!(
+                "Found {count} errors.\n[*] {count} fixable with the `--fix` option.\n"
+            ));
+
+            let result = compress_for_outcome("ruff check --exit-zero .", &out, 0);
+            for i in 0..count {
+                assert!(
+                    result.contains(&finding(i)),
+                    "{count} findings: finding {i} lost:\n{result}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn dotnet_build_keeps_every_warning() {
+        let warning = |i: usize| {
+            format!(
+                "/home/u/app/Services/Service{i}.cs({i},7): warning CS0168: The variable 'unused{i}' is declared but never used [/home/u/app/app.csproj]"
+            )
+        };
+        let mut out = String::from(
+            "  Determining projects to restore...\n  All projects are up-to-date for restore.\n",
+        );
+        for i in 0..40 {
+            out.push_str(&warning(i));
+            out.push('\n');
+        }
+        out.push_str("  app -> /home/u/app/bin/Debug/net8.0/app.dll\n\nBuild succeeded.\n\n");
+        for i in 0..40 {
+            out.push_str(&warning(i));
+            out.push('\n');
+        }
+        out.push_str("    40 Warning(s)\n    0 Error(s)\n\nTime Elapsed 00:00:04.12\n");
+
+        let result = compress_for_outcome("dotnet build", &out, 0);
+        for i in 0..40 {
+            assert!(
+                result.contains(&format!("Service{i}.cs({i},7): warning CS0168")),
+                "warning {i} lost:\n{result}"
+            );
+        }
+    }
+
+    #[test]
+    fn cargo_doc_keeps_its_warnings() {
+        let mut out = String::new();
+        for i in 0..150 {
+            out.push_str(&format!(" Documenting dep{i} v0.1.{i}\n"));
+        }
+        for i in 0..30 {
+            out.push_str(&format!(
+                "warning: unresolved link to `Missing{i}`\n --> src/lib.rs:{i}:5\n  |\n{i} | /// See [`Missing{i}`].\n  |            ^^^^^^^^ no item named `Missing{i}` in scope\n\n"
+            ));
+        }
+        out.push_str("warning: `app` (lib doc) generated 30 warnings\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.87s\n   Generated /home/u/app/target/doc/app/index.html\n");
+
+        let result = compress_for_outcome("cargo doc --no-deps", &out, 0);
+        for i in 0..30 {
+            assert!(
+                result.contains(&format!("unresolved link to `Missing{i}`"))
+                    && result.contains(&format!("src/lib.rs:{i}:5")),
+                "warning {i} lost:\n{result}"
+            );
+        }
+    }
+
+    #[test]
+    fn eslint_warnings_keep_their_locations() {
+        let rules = ["no-unused-vars", "eqeqeq", "no-console", "prefer-const"];
+        let mut out = String::new();
+        for f in 0..6 {
+            out.push_str(&format!("\n/home/u/app/src/module{f}.js\n"));
+            for l in 0..5 {
+                let rule = rules[(f + l) % rules.len()];
+                out.push_str(&format!(
+                    "  {}:{}  warning  Problem number {l} in module {f}  {rule}\n",
+                    l * 10 + 1,
+                    l + 3
+                ));
+            }
+        }
+        out.push_str("\n✖ 30 problems (0 errors, 30 warnings)\n");
+
+        let result = compress_for_outcome("eslint src/", &out, 0);
+        for f in 0..6 {
+            for l in 0..5 {
+                assert!(
+                    result.contains(&format!("module{f}.js"))
+                        && result.contains(&format!("{}:{}", l * 10 + 1, l + 3))
+                        && result.contains(&format!("Problem number {l} in module {f}")),
+                    "warning {f}/{l} lost:\n{result}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn swiftlint_warnings_keep_their_locations() {
+        let mut out = String::from("Linting Swift files in current working directory\n");
+        for f in 0..60 {
+            out.push_str(&format!("Linting 'File{f}.swift' ({}/60)\n", f + 1));
+        }
+        for f in 0..12 {
+            out.push_str(&format!(
+                "/repo/Sources/File{f}.swift:{}:5: warning: Line Length Violation: Line should be 120 characters or less; currently it has {} characters (rule_{f})\n",
+                f + 10,
+                f + 121
+            ));
+        }
+        out.push_str("Done linting! Found 12 violations, 0 serious in 60 files.\n");
+
+        let result = compress_for_outcome("swiftlint", &out, 0);
+        for f in 0..12 {
+            assert!(
+                result.contains(&format!(
+                    "/repo/Sources/File{f}.swift:{}:5: warning",
+                    f + 10
+                )),
+                "violation {f} lost:\n{result}"
+            );
+        }
+    }
+}

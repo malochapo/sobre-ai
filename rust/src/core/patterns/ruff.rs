@@ -14,6 +14,10 @@ fn ruff_fixed_re() -> &'static regex::Regex {
     static_regex!(r"Found (\d+) errors?.*?(\d+) fixable")
 }
 
+/// Ruff's output, by subcommand. `ruff check` output never gets here: shell
+/// compression keeps a findings-only linter's output verbatim. Findings do
+/// reach `compress_check` from `ruff <path>`, the check command of ruff
+/// before 0.5.
 pub fn compress(command: &str, output: &str) -> Option<String> {
     if command.contains("format") || command.contains("fmt") {
         return Some(compress_format(output));
@@ -21,6 +25,8 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
     Some(compress_check(output))
 }
 
+/// Up to 30 findings, the output as it is; past that, every finding line
+/// (without the code frames under them) and the count per rule.
 fn compress_check(output: &str) -> String {
     let trimmed = output.trim();
     if trimmed.is_empty() || trimmed.contains("All checks passed") {
@@ -59,11 +65,8 @@ fn compress_check(output: &str) -> String {
 
     let mut parts = Vec::new();
     parts.push(format!("{total} issues in {} files", files.len()));
-    for line in issue_lines.iter().take(20) {
+    for line in &issue_lines {
         parts.push(format!("  {line}"));
-    }
-    if issue_lines.len() > 20 {
-        parts.push(format!("  ... +{} more issues", issue_lines.len() - 20));
     }
     parts.push(String::new());
     parts.push("by rule:".to_string());
@@ -101,4 +104,30 @@ fn compress_format(output: &str) -> String {
     }
 
     super::compact_lines(trimmed, 5)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compress;
+
+    /// Past 30 findings the summary still lists every one.
+    #[test]
+    fn every_finding_is_listed() {
+        let findings: Vec<String> = (0..45)
+            .map(|i| {
+                format!(
+                    "src/mod{i}.py:{}:8: F401 [*] `os` imported but unused",
+                    i + 1
+                )
+            })
+            .collect();
+        let output = format!("{}\nFound 45 errors.\n", findings.join("\n"));
+        let result = compress("ruff src/", &output).unwrap();
+        for finding in &findings {
+            assert!(
+                result.contains(finding.as_str()),
+                "{finding} lost:\n{result}"
+            );
+        }
+    }
 }

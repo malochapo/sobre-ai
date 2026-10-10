@@ -133,10 +133,7 @@ fn show() -> String {
 /// file yields defaults, and an unparseable one is surfaced as an error so the
 /// caller can refuse to clobber it.
 ///
-/// This is the regression guard: `config init` once wrote
-/// `Config::default()`, and `Config::save()` overwrites any key present in both
-/// the incoming document and the file (see `config_io::merge_table`), which
-/// silently reset customized values like `search_roots` or `compression_level`.
+/// Writing `Config::default()` instead would reset every customized value.
 fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
     match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
         Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),
@@ -147,17 +144,28 @@ fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String>
 /// Implements `config init`: (re)writes the global config as a fully
 /// annotated reference document, seeded with the user's existing values.
 ///
-/// Unlike `save()` (which keeps the file minimal), this emits every key with its
-/// documentation. The body is a verbatim serialization of the resolved config,
-/// so no customized value is ever lost; an unparseable existing file is refused
-/// upstream by [`config_for_init`] rather than clobbered.
+/// Unlike `Config::update_global` (which keeps the file minimal), this emits
+/// every key with its documentation. The body is a verbatim serialization of
+/// the resolved config, so no customized value is ever lost; an existing file
+/// that cannot be read or parsed is refused rather than clobbered.
 fn init_config() {
     let Some(path) = config::Config::path() else {
         crate::errln!("Error: cannot determine the config path");
-        return;
+        std::process::exit(1);
     };
 
-    let existing_raw = std::fs::read_to_string(&path).ok();
+    let existing_raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => Some(raw),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            crate::errln!(
+                "Error: refusing to overwrite {}: it cannot be read ({e}).\n  \
+                 Fix it by hand, then retry.",
+                path.display()
+            );
+            std::process::exit(1);
+        }
+    };
 
     let cfg = match config_for_init(existing_raw.as_deref()) {
         Ok(cfg) => cfg,
@@ -173,10 +181,33 @@ fn init_config() {
     let schema = config::schema::ConfigSchema::generate();
     let rendered = config::render_annotated_config(&cfg, &schema);
 
-    match crate::config_io::write_atomic_with_backup(&path, &rendered) {
-        Ok(()) => crate::outln!("Wrote annotated config at {}", path.display()),
-        Err(e) => crate::errln!("Error: {e}"),
+    match write_annotated(&path, existing_raw.as_deref(), &rendered) {
+        Ok(false) => crate::outln!("{} already holds the annotated config", path.display()),
+        Ok(true) => crate::outln!("Wrote annotated config at {}", path.display()),
+        Err(e) => {
+            crate::errln!("Error: {e}");
+            std::process::exit(1);
+        }
     }
+}
+
+/// Writes `rendered` at `path`, first copying the file it replaces, when
+/// there is one, to `config.toml.sobre.bak`. Returns false when the file
+/// already held `rendered`: nothing is written.
+fn write_annotated(
+    path: &std::path::Path,
+    existing: Option<&str>,
+    rendered: &str,
+) -> Result<bool, String> {
+    if existing == Some(rendered) {
+        return Ok(false);
+    }
+    if existing.is_some() {
+        let backup = crate::config_io::backup_path_for(path);
+        std::fs::copy(path, &backup).map_err(|e| format!("{}: {e}", backup.display()))?;
+    }
+    crate::config_io::write_atomic(path, rendered)?;
+    Ok(true)
 }
 
 /// Print the absolute path of the resolved global `config.toml` (one line,
@@ -199,9 +230,9 @@ fn cmd_config_path() {
 mod tests {
     use super::*;
 
-    // Reproduces `Config::save()`'s on-disk merge without touching the real
-    // config path: serialize `cfg`, then merge it onto `existing` exactly as
-    // save() does, and return the value that `shell_timeout_secs` ends up with.
+    // Reproduces the on-disk merge of `Config::update_global` without touching
+    // the real config path: serialize `cfg`, then merge it onto `existing` the
+    // same way, and return the value that `shell_timeout_secs` ends up with.
     fn merged_shell_timeout(cfg: &config::Config, existing: &str) -> Option<u64> {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
@@ -244,6 +275,35 @@ mod tests {
             cfg_empty.shell_timeout_secs,
             config::Config::default().shell_timeout_secs
         );
+    }
+
+    /// `config init` keeps the file it replaces as `config.toml.sobre.bak`,
+    /// each time, and leaves no backup when there was no file.
+    #[test]
+    fn init_keeps_the_file_it_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let backup = dir.path().join("config.toml.sobre.bak");
+
+        assert!(write_annotated(&path, None, "# v1\n").unwrap());
+        assert!(!backup.exists(), "nothing to keep: no backup");
+
+        std::fs::write(&path, "compression_level = 0.5\n").unwrap();
+        assert!(write_annotated(&path, Some("compression_level = 0.5\n"), "# v2\n").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            "compression_level = 0.5\n"
+        );
+
+        std::fs::write(&path, "debug_log = true\n").unwrap();
+        assert!(write_annotated(&path, Some("debug_log = true\n"), "# v3\n").unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&backup).unwrap(),
+            "debug_log = true\n"
+        );
+
+        assert!(!write_annotated(&path, Some("# v3\n"), "# v3\n").unwrap());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "# v3\n");
     }
 
     #[test]

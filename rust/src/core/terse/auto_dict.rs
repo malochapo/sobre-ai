@@ -1,7 +1,7 @@
 //! Auto-mined phrase dictionary: abbreviates long identifiers/phrases that
 //! repeat within a single compression call.
 //!
-//! Unlike the static `GENERAL`/`GIT`/`CARGO`/`NPM` dictionaries (known English
+//! Unlike the static `GIT`/`CARGO`/`NPM` dictionaries (known English
 //! abbreviations an LLM already understands without a lookup), a repeated
 //! project-specific identifier has no universally-known short form. So every
 //! substitution is accompanied by a self-describing legend line mapping

@@ -3,9 +3,12 @@
 //! IMPORTANT for readers skimming the repo: this file is the *fallback*, not the
 //! primary engine. The default build extracts signatures with **tree-sitter** via
 //! declarative per-language queries in [`crate::core::signatures_ts`] (real ASTs,
-//! real multi-line spans, ~27 languages). [`extract_signatures`] tries that path
+//! real multi-line spans, 27 languages). [`extract_signatures`] tries that path
 //! first and only drops to the line-oriented regex extractors here when the
 //! `tree-sitter` feature is off or a parse yields nothing usable for a file.
+//! The code graph records symbols only for the files it indexes
+//! ([`crate::core::language_capabilities::is_indexable_ext`]: 21 languages,
+//! plus Vue, Svelte and Godot scenes).
 //!
 //! The regex extractors are intentionally conservative: single-line declarations,
 //! declaration-line spans only (`end_line == start_line`). Use
@@ -73,8 +76,8 @@ impl Signature {
 
     /// Plain, self-describing notation: real keywords (`class`,
     /// `trait`, `pub`) instead of abbreviations, so a vanilla agent without
-    /// injected rules reads the output correctly. Keyword tokens cost the
-    /// same as (or less than) the old `cl`/`⊛` forms.
+    /// injected rules reads the output correctly. Keyword tokens cost no more
+    /// than symbolic abbreviations would.
     pub fn to_compact(&self) -> String {
         let export = if self.is_exported { "pub " } else { "" };
         let async_prefix = if self.is_async { "async " } else { "" };
@@ -813,8 +816,8 @@ mod tests {
     }
 
     // PowerShell in the generic regex fallback: `function Verb-Noun {` has no
-    // paren and a hyphenated name, which the old keyword+paren pattern missed
-    // entirely (limitation audit 2026-07-03). Covers non-tree-sitter builds.
+    // paren and a hyphenated name, which a keyword+paren pattern misses.
+    // Covers non-tree-sitter builds.
     #[test]
     fn regex_fallback_matches_powershell_functions() {
         let src = "function Get-CargoBinDir {\n}\nfunction Install($x) {\n}\n# function Commented-Out {\n";

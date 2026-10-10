@@ -1,9 +1,9 @@
-//! Efficiency benchmark harness.
+//! `sobre_search` latency on a synthetic corpus, through the directory walk
+//! and through the resident trigram index.
 //!
-//! Custom harness (no criterion, matching the other `harness = false` benches):
-//! prints a markdown latency + token report for `sobre_search` on a synthetic
-//! corpus, with and without the resident line-search index, so the
-//! walk-vs-index speedup is visible in a single run.
+//! A plain `main` rather than criterion: it prints one markdown table per path
+//! (p50/p95/p99 per query, and the size of the response in tokens) and checks
+//! that both paths return the same matches. It measures time, not savings.
 //!
 //! Run:    cargo bench --bench efficiency
 //! Tune:   `BENCH_FILES=5000` cargo bench --bench efficiency
@@ -66,21 +66,28 @@ fn measure<F: FnMut() -> String>(mut run: F) -> (f64, f64, f64, usize) {
     )
 }
 
-fn bench_walk(corpus: &str, pattern: &str) -> (f64, f64, f64, usize) {
-    measure(|| {
-        sobre_search::handle_filtered(
-            pattern,
-            corpus,
-            None,
-            20,
-            CrpMode::Off,
-            true,
-            false,
-            None,
-            None,
-        )
-        .text
-    })
+/// One search. `use_index` is the `respect_gitignore` flag: only a search
+/// that honours `.gitignore` consults the resident index (and, when there is
+/// none yet, starts building it in the background), so `false` always walks.
+/// The synthetic corpus has no ignore file and no vendor directory, so both
+/// settings search the same files.
+fn search(corpus: &str, pattern: &str, max_results: usize, use_index: bool) -> String {
+    sobre_search::handle_filtered(
+        pattern,
+        corpus,
+        None,
+        max_results,
+        CrpMode::Off,
+        use_index,
+        false,
+        None,
+        None,
+    )
+    .text
+}
+
+fn bench_search(corpus: &str, pattern: &str, use_index: bool) -> (f64, f64, f64, usize) {
+    measure(|| search(corpus, pattern, 20, use_index))
 }
 
 fn main() {
@@ -102,15 +109,14 @@ fn main() {
 
     println!("# sobre_search efficiency bench ({n_files} files, {ITERS} iters)\n");
 
-    // --- Walk path: measured before the resident index is warmed below ---
     println!("## Walk path\n");
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");
     let mut walk_out = Vec::new();
     for (label, pat) in queries {
-        let (p50, p95, p99, tok) = bench_walk(&corpus_str, pat);
+        let (p50, p95, p99, tok) = bench_search(&corpus_str, pat, false);
         println!("| {label} | {p50:.3} | {p95:.3} | {p99:.3} | {tok} |");
-        walk_out.push(match_lines(&corpus_str, pat));
+        walk_out.push(match_lines(&corpus_str, pat, false));
     }
 
     // --- Resident index path: warm synchronously, then measure ---
@@ -119,33 +125,23 @@ fn main() {
     println!("| query | p50 ms | p95 ms | p99 ms | resp tokens |");
     println!("|---|---|---|---|---|");
     for (idx, (label, pat)) in queries.iter().enumerate() {
-        // Recall-parity guard: index hits must equal walk hits (Jaccard 1.0).
-        let index_hits = match_lines(&corpus_str, pat);
+        // The index only narrows the candidate files: its matches must be
+        // exactly the walk's.
+        let index_hits = match_lines(&corpus_str, pat, true);
         assert_eq!(
             index_hits, walk_out[idx],
-            "recall parity broken for query {label:?}"
+            "the index and the walk disagree for query {label:?}"
         );
-        let (p50, p95, p99, tok) = bench_walk(&corpus_str, pat);
+        let (p50, p95, p99, tok) = bench_search(&corpus_str, pat, true);
         println!("| {label} | {p50:.3} | {p95:.3} | {p99:.3} | {tok} |");
     }
 }
 
-/// Extracts the set of `file:line` match lines from a search response so the
-/// walk path and index path can be compared for recall parity.
-fn match_lines(corpus: &str, pattern: &str) -> std::collections::BTreeSet<String> {
-    let out = sobre_search::handle_filtered(
-        pattern,
-        corpus,
-        None,
-        500,
-        CrpMode::Off,
-        true,
-        false,
-        None,
-        None,
-    )
-    .text;
-    out.lines()
+/// The set of `file:line` match lines of one search, so the walk path and the
+/// index path can be compared.
+fn match_lines(corpus: &str, pattern: &str, use_index: bool) -> std::collections::BTreeSet<String> {
+    search(corpus, pattern, 500, use_index)
+        .lines()
         .filter(|l| l.contains(".rs:") || l.contains(".txt:"))
         .map(str::to_string)
         .collect()

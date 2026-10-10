@@ -226,12 +226,29 @@ pub const AGENT_CONFIG_DIRS: &[&str] = &[
 
 /// Returns `true` if `dir` is — or lies inside — a known agent/IDE config dir
 /// ([`AGENT_CONFIG_DIRS`]). Separator-agnostic so Windows backslash paths
-/// (`C:\Users\me\.copilot`) match too (a Windows Copilot report).
+/// (`C:\Users\me\.copilot`) match too.
+///
+/// A project kept inside such a directory is not one: the git worktrees
+/// Claude Code makes under `<repo>/.claude/worktrees/` are projects. Walking
+/// up from `dir`, a project marker met before the agent directory makes it a
+/// project.
 pub fn is_agent_config_dir(dir: &Path) -> bool {
     let s = dir.to_string_lossy().replace('\\', "/");
-    AGENT_CONFIG_DIRS
-        .iter()
-        .any(|name| s.ends_with(&format!("/{name}")) || s.contains(&format!("/{name}/")))
+    let s = s.trim_end_matches('/');
+    if !s.split('/').any(|c| AGENT_CONFIG_DIRS.contains(&c)) {
+        return false;
+    }
+    let mut here = s;
+    loop {
+        let (parent, name) = here.rsplit_once('/').unwrap_or(("", here));
+        if AGENT_CONFIG_DIRS.contains(&name) {
+            return true;
+        }
+        if parent.is_empty() || has_project_marker(Path::new(here)) {
+            return false;
+        }
+        here = parent;
+    }
 }
 
 /// Returns `true` if the directory is too broad to be a valid project root.
@@ -845,8 +862,8 @@ mod tests {
 
     #[test]
     fn broad_root_rejects_copilot_and_friends() {
-        // The previously-missing agent/IDE dirs must now be rejected so
-        // they are never adopted as the project root (the Copilot CLI case).
+        // Agent and IDE config dirs are never adopted as the project root
+        // (the Copilot CLI case).
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.copilot")));
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.cursor")));
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.windsurf")));
@@ -875,6 +892,24 @@ mod tests {
     fn agent_config_dir_ignores_real_projects() {
         assert!(!is_agent_config_dir(Path::new("/home/user/code/sobre")));
         assert!(!is_agent_config_dir(Path::new(r"C:\src\app")));
+    }
+
+    /// A project kept inside an agent directory, such as the git worktree
+    /// Claude Code makes under `<repo>/.claude/worktrees/`, is a project.
+    #[test]
+    fn a_project_inside_an_agent_dir_is_a_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        let worktree = tmp.path().join("repo/.claude/worktrees/feature");
+        std::fs::create_dir_all(worktree.join("src")).unwrap();
+        std::fs::write(worktree.join(".git"), "gitdir: ../../../.git/worktrees/x").unwrap();
+        assert!(!is_agent_config_dir(&worktree));
+        assert!(!is_agent_config_dir(&worktree.join("src")));
+        assert!(!is_broad_or_unsafe_root(&worktree));
+
+        let agent_home = tmp.path().join(".claude/projects/x");
+        std::fs::create_dir_all(&agent_home).unwrap();
+        assert!(is_agent_config_dir(&agent_home));
+        assert!(is_agent_config_dir(&tmp.path().join("repo/.claude")));
     }
 
     #[test]

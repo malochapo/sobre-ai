@@ -9,7 +9,8 @@ use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-/// Lowercase hex SHA-256 of a byte buffer.
+/// Lowercase hex SHA-256 of a byte buffer: the downloaded ONNX Runtime archive.
+#[cfg(feature = "dense")]
 pub fn sha256_bytes(bytes: &[u8]) -> String {
     crate::core::hasher::hex_encode(&Sha256::digest(bytes))
 }

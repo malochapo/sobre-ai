@@ -73,8 +73,8 @@ fn is_embedding_bag_signature(input_names: &[String]) -> bool {
 }
 
 impl EmbeddingEngine {
-    /// Load embedding model and vocabulary from a directory.
-    /// Downloads model automatically from HuggingFace if not present.
+    /// Load the selected embedding model from a directory. Fails when it is
+    /// not installed: only `sobre embeddings provision` downloads it.
     #[cfg(feature = "dense")]
     pub fn load(model_dir: &Path) -> anyhow::Result<Self> {
         let selected = model_registry::resolve_model();
@@ -253,7 +253,7 @@ impl EmbeddingEngine {
 
         // Process in mini-batches to cap peak memory. Prefixing and tokenization
         // deliberately happen inside the loop: retaining those buffers for the
-        // entire corpus used to defeat the mini-batch cap under large indexes.
+        // entire corpus would defeat the mini-batch cap under large indexes.
         let configured_batch_size: usize = {
             #[cfg(feature = "dense")]
             if crate::core::ort_execution_providers::gpu_active() {
@@ -695,7 +695,7 @@ fn probe_output_shape(
 /// Both vectors must be pre-normalized for correct results.
 ///
 /// Uses the chunked, autovectorizable dot product from [`crate::core::embedding_quant`]
-/// (turbovec-derived) so every semantic-search hot path gets SIMD throughput.
+/// so every semantic-search hot path gets SIMD throughput.
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     debug_assert_eq!(a.len(), b.len(), "vectors must have equal dimensions");
     crate::core::embedding_quant::dot_f32(a, b)
@@ -857,7 +857,7 @@ mod tests {
         // Serialize env mutation (SOBRE_CACHE_DIR is process-global) so a
         // sibling env test can't clobber the dir between set_var and the checks.
         let _lock = crate::core::data_dir::test_env_lock();
-        let tmp = std::env::temp_dir().join(format!("lc-embed-545-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre-embed-{}", std::process::id()));
         crate::test_env::set_var("SOBRE_CACHE_DIR", tmp.to_str().unwrap());
 
         let selected = model_registry::resolve_model();
@@ -894,7 +894,7 @@ mod tests {
             "/Users/x/.local/bin/sobre"
         )));
         // A renamed shipped binary is still allowed (rename-independent signal).
-        assert!(!exe_path_is_test_artifact(Path::new("/opt/tools/ctx")));
+        assert!(!exe_path_is_test_artifact(Path::new("/opt/tools/sbr")));
         // The plain target dir build (e.g. `target/debug/sobre`) is not under
         // `deps/` — treated as a product binary, not a test artifact.
         assert!(!exe_path_is_test_artifact(Path::new(

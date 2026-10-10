@@ -253,7 +253,9 @@ fn to_json(s: &Summary, quote: &ModelQuote, period: &str) -> String {
             "estimated_price": quote.match_kind.is_estimated(),
         },
         "saved_usd": saved_usd,
-        "saved_usd_kind": if measured { "lower_bound" } else { "estimated" },
+        // Measured or not, the saving is priced against tokens that were
+        // never sent: only `real_cost_usd` is measured.
+        "saved_usd_kind": "estimated",
         "counterfactual_cost_usd": measured.then_some(s.real_cost_usd + saved_usd),
     }))
     .unwrap_or_default()
@@ -269,6 +271,19 @@ mod tests {
         let quote = ModelPricing::load().quote(None);
         let v: serde_json::Value = serde_json::from_str(&to_json(&s, &quote, "all")).unwrap();
         assert!(v["llm"]["real_cost_usd"].is_null());
+        assert_eq!(v["saved_usd_kind"], "estimated");
+    }
+
+    /// Calls measured through the proxy measure the cost, not the saving.
+    #[test]
+    fn json_calls_the_saving_an_estimate_with_measured_calls() {
+        let s = Summary {
+            llm_calls: 3,
+            ..Summary::default()
+        };
+        let quote = ModelPricing::load().quote(None);
+        let v: serde_json::Value = serde_json::from_str(&to_json(&s, &quote, "all")).unwrap();
+        assert!(v["llm"]["real_cost_usd"].is_number());
         assert_eq!(v["saved_usd_kind"], "estimated");
     }
 }

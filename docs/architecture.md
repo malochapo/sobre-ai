@@ -55,14 +55,15 @@ One crate, one binary. The modules group into five layers:
 
 ## 3. Processes and lifetimes
 
-`main.rs` installs a panic hook that writes the crash log, then hands
-`argv[1]` to `cli/dispatch/mod.rs`, which picks the mode. On macOS a process
-re-parented to launchd first re-executes itself under a seatbelt sandbox (see
+`main.rs` installs a panic hook that writes the crash log, then hands the
+command line to `cli/dispatch/mod.rs`, which parses it (clap, `cli/args.rs`)
+and picks the mode. On macOS a process re-parented to launchd first
+re-executes itself under a seatbelt sandbox (see
 [Security](#10-security-model)).
 
 | Process | Started by | Lives | Talks over |
 |---|---|---|---|
-| MCP server (`sobre`, `sobre mcp`) | the agent host | as long as the host keeps it; exits when its parent changes (checked every 5 s) | stdin/stdout, JSON-RPC |
+| MCP server (`sobre`, `sobre mcp`) | the agent host | as long as the host keeps it; on Unix, exits when its parent changes (checked every 5 s) | stdin/stdout, JSON-RPC |
 | Hook handler (`sobre hook <action>`) | the agent host, once per event | one event: 5 s watchdog, 15 s fail-open for the pre-run rewrites | JSON on stdin and stdout |
 | `sobre -c`, `sobre raw` | a Cursor or Gemini hook, or a person | one command; exits with its code | the terminal |
 | Proxy (`sobre proxy start`) | a LaunchAgent, a systemd user unit, `--detach`, or the MCP server | until stopped | HTTP on `127.0.0.1` |
@@ -72,10 +73,11 @@ re-parented to launchd first re-executes itself under a seatbelt sandbox (see
 
 **MCP server startup** (`cli/dispatch/server.rs`):
 - backs off when it has been restarted more than 8 times in 60 s;
-- holds the `mcp-startup` lock for up to 3 s;
-- sizes its thread pools down when other `sobre` processes run.
+- waits up to 3 s for the `mcp-startup` lock, then starts without it;
+- splits the index-build thread pool with the other `sobre` processes running.
 
-During the handshake it terminates orphaned `sobre` servers (parent PID 1). When
+During the handshake it terminates, on Unix, orphaned `sobre` servers (parent
+PID 1). When
 `proxy.enabled = true`, no login service runs and nothing answers on the port,
 it also starts the proxy detached. It builds no index at startup: indexes are
 built when a tool first needs them.
@@ -127,8 +129,9 @@ built when a tool first needs them.
 
 ### A hook, per host
 
-Hooks never approve, deny or block anything. Each host gets one of two
-strategies (`hooks/agents/`, `hook_handlers/`):
+Hooks never approve, deny or block anything. A host whose hooks allow it gets
+one of two strategies for shell output (`hooks/agents/`, `hook_handlers/`);
+Codex, Windsurf and Zed get neither:
 
 - **Post-tool compression** (`hook compress`). The command runs as the agent
   wrote it. Afterwards, the output the model sees is replaced by a compressed
@@ -137,9 +140,9 @@ strategies (`hooks/agents/`, `hook_handlers/`):
   - File reads (`cat`, `head`, `tail`) are left alone.
 - **Labelled pre-run rewrite** (`hook cursor`, `hook gemini`). A command is
   wrapped as `sobre -c '<command>'` only when all of these hold:
-  - it is a single command, with no chain, pipe, redirect or substitution;
+  - it is a single command, with no chain, pipe, redirect, substitution or background job (`&`);
   - it is not a file read;
-  - it is one of the 52 commands in `rewrite_registry.rs`;
+  - it is a command `rewrite_registry.rs` lists;
   - none of the host's own command rules tells the two forms apart (`hook_handlers/host_rules.rs`).
 
 Two more hooks help the read cache:
@@ -150,16 +153,22 @@ Two more hooks help the read cache:
 
 ### `sobre -c`
 
-`shell/exec.rs` checks these in order:
-- `SOBRE_WRAPPED` is set (a command `sobre` itself started): the command passes through.
-- A nested `sobre -c` is collapsed.
-- An interactive or long-running command (`shell/compress/passthrough.rs` plus
+`sobre -c` checks these in order (`cli/dispatch`, then `shell/exec.rs`):
+- A nested `sobre -c` is collapsed into one.
+- `SOBRE_WRAPPED` is set (a command `sobre` itself started) and nothing was
+  collapsed: the command runs uncompressed.
+- An interactive or long-running command (`shell/output_policy.rs`: the
+  built-in list in `shell/compress/passthrough.rs` plus
   `passthrough_commands`), or output redirected to a file, runs with its output
   untouched.
 
 Otherwise `shell/pipeline.rs` captures the output and compresses it with the
-first matching pattern (`core/patterns/`). It stores the full output and prints
-`[sobre: output compressed, A → B tokens; full output: <path>]` on stderr.
+first matching pattern (`core/patterns/`). When it shortened the output, it
+prints `[sobre: output compressed, A → B tokens; full output: <path>]` on
+stderr, with the path of the full output when it kept it. Linter output
+(ESLint, Biome, Stylelint, yamllint, oxlint, which exit 0 on warnings) is kept
+verbatim, only capped in size. A command a signal ended exits with 128 plus
+the signal number, as in a shell.
 
 ### The proxy
 
@@ -168,10 +177,12 @@ first matching pattern (`core/patterns/`). It stores the full output and prints
 
 **Guards:**
 - A Host guard accepts only loopback names.
-- Every route except `/health` needs the proxy's token or a provider key.
+- Every route except `/health` needs the proxy's token; the provider routes
+  also accept a provider key.
 
 **Forwarding** (`proxy/forward/`):
-- decompresses the body, compresses tool results, and forwards allow-listed headers to the upstream;
+- decompresses the body, compresses tool results, and passes every header through both ways except the hop-by-hop ones, `host`, `content-length` and the request's `accept-encoding`;
+- sends each request once: retries are the client's, and an unreachable upstream gets a 502 with a JSON error naming it;
 - never adds a credential;
 - records the provider's reported usage in the ledger.
 
@@ -180,8 +191,11 @@ first matching pattern (`core/patterns/`). It stores the full output and prints
 - Never: file reads, sobre's own tool results, results under 512 bytes, or tools whose name contains `serena`.
 - Each rewritten result ends with `[sobre: compressed by the proxy, …; full original at <path>, or sobre_expand(id=…)]`.
 
-It also prunes old history in strides of 16 messages, never before the last
-prompt-cache breakpoint. It re-reads `proxy.upstreams` every 5 s.
+It also prunes older history: tool results before a boundary that moves in
+strides of 16 messages, and never inside the prefix up to the last
+prompt-cache breakpoint, become a labelled head-and-tail summary, or for a
+file read a labelled stub; the original is kept as above. It re-reads
+`proxy.upstreams` every 5 s.
 
 ### `init` and `uninstall`
 
@@ -231,7 +245,7 @@ project hash: a short hash of the canonical project root
 | Path | Holds |
 |---|---|
 | `config.toml` | the configuration |
-| `config.toml.sobre.bak` | the file as it was before `config init` rewrote it |
+| `config.toml.sobre.bak` | the file as it was before `config init` first rewrote it (empty when `config init` created it) |
 
 **Data** (`~/.local/share/sobre`)
 
@@ -240,14 +254,13 @@ project hash: a short hash of the canonical project root
 | `usage.jsonl` | the usage ledger ([contract](contracts/usage-ledger-v1.md)) | until `gain --reset` |
 | `sessions/<id>.json` | saved sessions | 7 days: older ones are deleted when a server starts |
 | `knowledge/<h>/knowledge.json`, `gotchas.json`, `embeddings.json` | facts and consolidation history, pitfalls, fact embeddings | 200 facts, 100 history entries; unused facts archived after 90 days |
-| `memory/archive/…` | archived facts and history | the newest 16 per store; `recall` brings back archived facts it finds nothing else for |
-| `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst`, `health.json` | the code graph | rebuilt when stale; removed after 48 h unused, or by `doctor --fix` when the project is gone |
-| `vectors/<h>/bm25_index.bin.zst`, `embeddings.bin`, `project_root.txt` | BM25 and dense indexes | as above; BM25 is not saved above 512 MB |
+| `memory/archive/…` | archived facts and history | the newest 16 per store and project; `recall` brings back archived facts it finds nothing else for |
+| `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst`, `health.json` | the code graph | rebuilt when stale; removed when a server starts 48 hours after its last build, or by `doctor --fix` when the project is gone |
+| `vectors/<h>/bm25_index.bin.zst`, `embeddings.bin`, `project_root.txt` | BM25 and dense indexes | rebuilt when stale; removed by `doctor --fix` when the project is gone; BM25 is not saved above 512 MB |
 | `read_cache/stub_index.json` | which file versions a conversation has already received (no content) | 1024 entries |
 | `shadow/<h>/git/` | `sobre_checkpoint` snapshots, a git repository apart from yours | until uninstall |
 | `detected_model.json`, `active_transcript.json`, `last_compaction.json` | what `hook observe` recorded | overwritten |
 | `diagnostics.json` | recent compiler and linter errors | 15 minutes, 200 entries |
-| `doctor/latest.json` | the last `doctor --fix` report | overwritten |
 | `session_token` | the proxy token (0600) | until uninstall |
 | `logs/crash.log` | panics (0600) | rotated at 1 MB |
 | `onnxruntime/<version>/` | ONNX Runtime from `embeddings provision` | until uninstall |
@@ -289,7 +302,7 @@ pinned hashes (`model.lock.json`).
 the data and state directories:
 - **Locks.** A lock is an OS advisory lock (`flock`, `LockFileEx`) on a `.<name>.lock` file, taken with std's `File::try_lock` (`core/startup_guard.rs`). The OS releases it when its holder exits, crashed or not, so no lock outlives its process. `rust/LOCK_ORDERING.md` lists them.
   - Locks: server startup, startup maintenance, and each project's graph, BM25 and search builds.
-  - The process that loses a build race waits for the winner and reuses its index; a graph scan waits up to 2 minutes.
+  - The process that loses a build race reuses the winner's index (a graph scan waits up to 2 minutes for it, a BM25 build 800 ms) or, for the in-memory search index, builds it later.
 - **The usage ledger** is appended, and each project's knowledge rewritten, under an exclusive file lock of the same kind.
 - **Other writes** go to a temporary sibling, then a rename (`core/atomic_fs.rs`, `config_io.rs`, session and index writers). A reader sees the old file or the new one, never half of one.
 - **Per process:** the session, the read cache, the search index, background jobs and language servers. Every process starts an empty session; `sobre_session action=load` restores a saved one.
@@ -314,7 +327,7 @@ the data and state directories:
 
 **Other features:**
 - `tree-sitter` (default): 27 grammars.
-- `jemalloc` (default): the allocator.
+- `jemalloc` (default): the allocator, except on Windows.
 - `ort-cuda`, `ort-rocm`, `ort-webgpu`, `ort-directml`, `ort-coreml`: GPU builds of `dense`.
 - `dev-tools`: the reference generator.
 - `test-support`: helpers for the integration tests.
@@ -327,7 +340,7 @@ shell strategy. The hook events behind them:
 
 | Agent | Hook events |
 |---|---|
-| Claude Code | `PostToolUse` Bash → `hook compress`; `PostToolUse` Read → `hook read-dedup`; `hook observe` on PostToolUse, UserPromptSubmit, Stop, PreCompact, SessionStart, SessionEnd |
+| Claude Code | `PostToolUse` Bash (and PowerShell on Windows) → `hook compress`; `PostToolUse` Read → `hook read-dedup`; `hook observe` on PostToolUse, UserPromptSubmit, Stop, PreCompact, SessionStart, SessionEnd |
 | Codex | `hook observe` on PostToolUse, SessionStart, SessionEnd |
 | Copilot CLI, VS Code | `postToolUse` bash/powershell → `hook compress`; `hook observe` |
 | Cursor | `preToolUse` Shell → `hook cursor`; `hook observe` on sessionStart, preCompact |
@@ -353,7 +366,9 @@ points, and runs commands as written. The agent host decides what may run
   `sobre call --project-root` and graph scans (`core/pathutil.rs`).
 - **Masks secrets** in its own output: shell output, `sobre_read` (except
   `raw=true`), hook output and stored originals (`core/redaction.rs`,
-  `core/secret_detection.rs`).
+  `core/secret_detection.rs`, one shared table of token formats). It is
+  pattern matching: short values, secrets under unrelated key names and a read
+  window that starts inside a key's body are not caught.
 - **Keeps its files private.**
   - Directories that exist are set to 0700 when resolved.
   - The token, sessions, stored originals, the crash log and the captured variables are 0600.
@@ -364,7 +379,8 @@ points, and runs commands as written. The agent host decides what may run
 **Network.**
 - The proxy reaches only the upstreams you configure.
 - `embeddings provision` downloads ONNX Runtime from Microsoft's GitHub releases (SHA-256 pinned) and the model from HuggingFace (pinned revision, hashes recorded on first download).
-- The CLI talks to the local proxy only.
+- `init` downloads the same files only when you answer yes to its question.
+- Every other CLI command talks to the local proxy only.
 - There is no telemetry and no update check.
 
 ## 11. Language servers and parsers
@@ -377,19 +393,25 @@ points, and runs commands as written. The agent host decides what may run
 | Rust | `rust-analyzer` |
 | TypeScript, JavaScript | `typescript-language-server --stdio` |
 | Python | `pylsp` |
-| Go | `gopls` |
-| Java, Kotlin, Ruby, C, C++, C# | `<language>-language-server` when one is on `PATH` |
+| Go | `gopls serve` |
+| Java | `jdtls` |
+| Kotlin | `kotlin-language-server` |
+| Ruby | `ruby-lsp` |
+| C, C++ | `clangd` |
+| C# | `csharp-ls` |
 
 Requests time out after 30 s, initialisation after 60 s. Requests from the
 server are answered: an empty success for `workspace/configuration` and
 `client/registerCapability`, `MethodNotFound` for any other.
 
-`sobre_outline`, `sobre_read mode=signatures` and the graph parse 27 languages
-with tree-sitter: Rust, TypeScript (and TSX), JavaScript, Python, Go, Java, C,
-C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala, Elixir, Zig, GDScript,
-Lua, Luau, OCaml, Haskell, Julia, Solidity, Nix and PowerShell. Vue and Svelte
-files are parsed through their script blocks. The post-edit syntax check covers
-21 of them, Rust through Luau in that list.
+`sobre_outline` and `sobre_read mode=signatures` parse 27 languages with
+tree-sitter: Rust, TypeScript (and TSX), JavaScript, Python, Go,
+Java, C, C++, Ruby, C#, Kotlin, Swift, PHP, Bash, Dart, Scala, Elixir, Zig,
+GDScript, Lua, Luau, OCaml, Haskell, Julia, Solidity, Nix and PowerShell. Vue
+and Svelte files are parsed through their script blocks. The code graph
+(symbols, imports, calls and type uses) and the post-edit syntax check cover 21
+of them, Rust through Luau in that list, plus Vue and Svelte script blocks and
+Godot scenes in the graph.
 
 ## 12. Reference
 
@@ -399,7 +421,7 @@ files are parsed through their script blocks. The post-edit syntax check covers
 | [config-keys.md](reference/generated/config-keys.md) | every config key | `core/config/schema/` |
 | [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/args.rs` |
 | [env-vars.md](reference/generated/env-vars.md) | every environment variable | `core/env_vars.rs` |
-| [contracts/](contracts/) | on-disk formats and policies: usage ledger, graph, knowledge, gotchas | the contract files |
+| [contracts/](contracts/) | formats and guarantees: usage ledger, graph output, knowledge policy, memory boundary, gotchas, edit-quality loop | the contract files |
 | [LOCK_ORDERING.md](../rust/LOCK_ORDERING.md) | every lock and its order | checked by a test |
 
 ## 13. Changing it

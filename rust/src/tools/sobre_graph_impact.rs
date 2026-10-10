@@ -252,8 +252,8 @@ fn analyze_symbol(
 }
 
 /// Diagnostic for an `impact` target that matched neither a file node nor a
-/// symbol. Replaces the old silent "leaf node" answer — indistinguishable from
-/// a real leaf — with the indexed counts and a concrete next step.
+/// symbol: the indexed counts and a concrete next step, so it never reads as
+/// a real leaf.
 fn analyze_unresolved(
     graph: &CodeGraph,
     target: &str,

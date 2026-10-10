@@ -1,251 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use super::graph_provider::{EdgeInfo, GraphProvider};
 use super::neural::attention_learned::LearnedAttention;
-
-#[derive(Debug, Clone)]
-pub struct RelevanceScore {
-    pub path: String,
-    pub score: f64,
-    pub recommended_mode: &'static str,
-}
-
-pub fn compute_relevance(
-    gp: &GraphProvider,
-    task_files: &[String],
-    task_keywords: &[String],
-) -> Vec<RelevanceScore> {
-    let all_edges = gp.edges();
-    let file_set: HashSet<String> = gp.file_paths().into_iter().collect();
-    let adj = build_adjacency_resolved(&all_edges, &file_set);
-    let all_nodes: Vec<String> = file_set.into_iter().collect();
-    if all_nodes.is_empty() {
-        return Vec::new();
-    }
-
-    let node_idx: HashMap<&str, usize> = all_nodes
-        .iter()
-        .enumerate()
-        .map(|(i, n)| (n.as_str(), i))
-        .collect();
-    let n = all_nodes.len();
-
-    // Build degree-normalized adjacency for heat diffusion
-    let degrees: Vec<f64> = all_nodes
-        .iter()
-        .map(|node| {
-            adj.get(node)
-                .map_or(0.0, |neigh| neigh.len() as f64)
-                .max(1.0)
-        })
-        .collect();
-
-    // Seed vector: task files get 1.0
-    let mut heat: Vec<f64> = vec![0.0; n];
-    for f in task_files {
-        if let Some(&idx) = node_idx.get(f.as_str()) {
-            heat[idx] = 1.0;
-        }
-    }
-
-    // Heat diffusion: h(t+1) = (1-alpha)*h(t) + alpha * A_norm * h(t)
-    // Run for k iterations
-    let alpha = 0.5;
-    let iterations = 4;
-    for _ in 0..iterations {
-        let mut new_heat = vec![0.0; n];
-        for (i, node) in all_nodes.iter().enumerate() {
-            let self_term = (1.0 - alpha) * heat[i];
-            let mut neighbor_sum = 0.0;
-            if let Some(neighbors) = adj.get(node) {
-                for neighbor in neighbors {
-                    if let Some(&j) = node_idx.get(neighbor.as_str()) {
-                        neighbor_sum += heat[j] / degrees[j];
-                    }
-                }
-            }
-            new_heat[i] = self_term + alpha * neighbor_sum;
-        }
-        heat = new_heat;
-    }
-
-    // PageRank centrality for gateway detection
-    let mut pagerank = vec![1.0 / n as f64; n];
-    let damping = 0.85;
-    for _ in 0..8 {
-        let mut new_pr = vec![(1.0 - damping) / n as f64; n];
-        for (i, node) in all_nodes.iter().enumerate() {
-            if let Some(neighbors) = adj.get(node) {
-                let out_deg = neighbors.len().max(1) as f64;
-                for neighbor in neighbors {
-                    if let Some(&j) = node_idx.get(neighbor.as_str()) {
-                        new_pr[j] += damping * pagerank[i] / out_deg;
-                    }
-                }
-            }
-        }
-        pagerank = new_pr;
-    }
-
-    // Combine: heat (primary) + pagerank centrality (gateway bonus)
-    let mut scores: HashMap<String, f64> = HashMap::new();
-    let heat_max = heat.iter().copied().fold(0.0_f64, f64::max).max(1e-10);
-    let pr_max = pagerank.iter().copied().fold(0.0_f64, f64::max).max(1e-10);
-
-    for (i, node) in all_nodes.iter().enumerate() {
-        let h = heat[i] / heat_max;
-        let pr = pagerank[i] / pr_max;
-        let combined = h * 0.8 + pr * 0.2;
-        if combined > 0.01 {
-            scores.insert(node.clone(), combined);
-        }
-    }
-
-    if !task_keywords.is_empty() {
-        let kw_lower: Vec<String> = task_keywords.iter().map(|k| k.to_lowercase()).collect();
-        for file_path in &all_nodes {
-            let path_lower = file_path.to_lowercase();
-            let mut keyword_hits = 0;
-            for kw in &kw_lower {
-                if path_lower.contains(kw) {
-                    keyword_hits += 1;
-                }
-                if let Some(entry) = gp.get_file_entry(file_path) {
-                    for export in &entry.exports {
-                        if export.to_lowercase().contains(kw) {
-                            keyword_hits += 1;
-                        }
-                    }
-                }
-            }
-            if keyword_hits > 0 {
-                let boost = (keyword_hits as f64 * 0.15).min(0.6);
-                let entry = scores.entry(file_path.clone()).or_insert(0.0);
-                *entry = (*entry + boost).min(1.0);
-            }
-        }
-    }
-
-    let mut result: Vec<RelevanceScore> = scores
-        .into_iter()
-        .map(|(path, score)| {
-            let mode = recommend_mode(score);
-            RelevanceScore {
-                path,
-                score,
-                recommended_mode: mode,
-            }
-        })
-        .collect();
-
-    result.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    result
-}
-
-fn recommend_mode(score: f64) -> &'static str {
-    if score >= 0.8 {
-        "full"
-    } else if score >= 0.5 {
-        "signatures"
-    } else if score >= 0.2 {
-        "map"
-    } else {
-        "reference"
-    }
-}
-
-fn build_adjacency_resolved(
-    edges: &[EdgeInfo],
-    file_set: &HashSet<String>,
-) -> HashMap<String, Vec<String>> {
-    let file_paths_vec: Vec<&str> = file_set.iter().map(String::as_str).collect();
-    let module_to_file = build_module_map(edges, file_set, &file_paths_vec);
-    let mut adj: HashMap<String, Vec<String>> = HashMap::new();
-
-    for edge in edges {
-        let from = &edge.from;
-        let to_resolved = module_to_file
-            .get(&edge.to)
-            .cloned()
-            .unwrap_or_else(|| edge.to.clone());
-
-        if file_set.contains(from) && file_set.contains(&to_resolved) {
-            adj.entry(from.clone())
-                .or_default()
-                .push(to_resolved.clone());
-            adj.entry(to_resolved).or_default().push(from.clone());
-        }
-    }
-    adj
-}
-
-fn build_module_map(
-    edges: &[EdgeInfo],
-    file_set: &HashSet<String>,
-    file_paths: &[&str],
-) -> HashMap<String, String> {
-    let mut mapping: HashMap<String, String> = HashMap::new();
-
-    let edge_targets: HashSet<String> = edges.iter().map(|e| e.to.clone()).collect();
-
-    for target in &edge_targets {
-        if file_set.contains(target) {
-            mapping.insert(target.clone(), target.clone());
-            continue;
-        }
-
-        if let Some(resolved) = resolve_module_to_file(target, file_paths) {
-            mapping.insert(target.clone(), resolved);
-        }
-    }
-
-    mapping
-}
-
-fn resolve_module_to_file(module_path: &str, file_paths: &[&str]) -> Option<String> {
-    let cleaned = module_path
-        .trim_start_matches("crate::")
-        .trim_start_matches("super::");
-
-    // Strip trailing symbol (e.g. `core::tokens::count_tokens` → `core::tokens`)
-    let parts: Vec<&str> = cleaned.split("::").collect();
-
-    // Try progressively shorter prefixes to find a matching file
-    for end in (1..=parts.len()).rev() {
-        let candidate = parts[..end].join("/");
-
-        // Try as .rs file
-        for fp in file_paths {
-            let fp_normalized = fp
-                .trim_start_matches("rust/src/")
-                .trim_start_matches("src/");
-
-            if fp_normalized == format!("{candidate}.rs")
-                || fp_normalized == format!("{candidate}/mod.rs")
-                || fp.ends_with(&format!("/{candidate}.rs"))
-                || fp.ends_with(&format!("/{candidate}/mod.rs"))
-            {
-                return Some(fp.to_string());
-            }
-        }
-    }
-
-    // Fallback: match by last segment as filename stem
-    if let Some(last) = parts.last() {
-        let stem = format!("{last}.rs");
-        for fp in file_paths {
-            if fp.ends_with(&stem) {
-                return Some(fp.to_string());
-            }
-        }
-    }
-
-    None
-}
 
 /// Extract likely task-relevant file paths and keywords from a task description.
 pub fn parse_task_hints(task_description: &str) -> (Vec<String>, Vec<String>) {
@@ -276,7 +31,8 @@ pub fn parse_task_hints(task_description: &str) -> (Vec<String>, Vec<String>) {
     (files, keywords)
 }
 
-const STOP_WORDS: &[&str] = &[
+/// Words too common in a task description to say what it is about.
+pub(crate) const STOP_WORDS: &[&str] = &[
     "the", "and", "for", "that", "this", "with", "from", "have", "has", "was", "are", "been",
     "not", "but", "all", "can", "had", "her", "one", "our", "out", "you", "its", "will", "each",
     "make", "like", "fix", "add", "use", "get", "set", "run", "new", "old", "should", "would",
@@ -352,16 +108,13 @@ impl StructuralWeights {
     }
 }
 
-/// Information Bottleneck filter v3 — Mutual Information scoring, QUITO-X inspired.
+/// Keep the lines of `content` most relevant to `task_keywords`, about
+/// `budget_ratio` of them (an information-bottleneck filter, after QUITO-X).
 ///
-/// IB principle: maximize I(T;Y) (task relevance) while minimizing I(T;X) (input redundancy).
-/// v3: MI(line, task) approximated via token overlap + IDF weighting + structural importance.
-///
-/// Key changes from v2:
-///   - Mutual Information scoring: MI(line, task) = H(line) - H(line|task)
-///   - Adaptive budget allocation based on task type via TaskClassifier
-///   - Token-level IDF computed over full document for better term weighting
-///   - Maintains L-curve attention, MMR dedup, error-handling priority from v2
+/// A line's score approximates its mutual information with the task (token
+/// overlap weighted by the token's IDF over the document) plus structural
+/// importance (definitions, control flow, error handling) and a weight for its
+/// position in the file; near-duplicate lines are dropped by MMR.
 pub fn information_bottleneck_filter(
     content: &str,
     task_keywords: &[String],
@@ -431,7 +184,7 @@ fn inject_section_headers(original: &str, filtered: &str) -> String {
 
 /// Task-type-aware IB filter. Uses `TaskType` to adjust structural weights.
 /// `force_keep` lines (explicit `protect` tokens) are kept verbatim on top
-/// of the budget; `&[]` reproduces the pre-protect output byte-for-byte.
+/// of the budget.
 pub fn information_bottleneck_filter_typed(
     content: &str,
     task_keywords: &[String],
@@ -766,14 +519,6 @@ mod tests {
                 .iter()
                 .any(|k| k.to_lowercase().contains("authentication"))
         );
-    }
-
-    #[test]
-    fn recommend_mode_by_score() {
-        assert_eq!(recommend_mode(1.0), "full");
-        assert_eq!(recommend_mode(0.6), "signatures");
-        assert_eq!(recommend_mode(0.3), "map");
-        assert_eq!(recommend_mode(0.1), "reference");
     }
 
     #[test]

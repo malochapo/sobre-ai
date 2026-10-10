@@ -4,8 +4,8 @@
 //!   own `.git`.
 //!
 //! All git invocations go through [`run_git`], which never uses a shell, always
-//! disables interactive credential prompts (so a private/auth-required remote
-//! fails fast instead of hanging), and enforces a wall-clock timeout.
+//! disables interactive prompts (git never waits on a terminal), and enforces a
+//! wall-clock timeout.
 
 pub mod shadow;
 
@@ -52,10 +52,10 @@ pub fn git_available() -> bool {
 
 /// Run `git <args>` in `cwd` with extra env vars and a wall-clock `timeout`.
 ///
-/// No shell is involved (args are passed directly). Interactive credential
-/// prompts are disabled so an auth-required remote errors immediately rather
-/// than blocking. stdout/stderr are drained on dedicated threads to avoid
-/// pipe-buffer deadlock on chatty commands (e.g. `clone` progress).
+/// No shell is involved (args are passed directly). Interactive prompts are
+/// disabled so git errors instead of blocking. stdout/stderr are drained on
+/// dedicated threads to avoid pipe-buffer deadlock on large output (a big
+/// diff).
 pub fn run_git(
     args: &[&str],
     cwd: &Path,

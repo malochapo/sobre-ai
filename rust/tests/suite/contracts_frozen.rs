@@ -5,7 +5,7 @@
 //! 1. **Completeness** — every `docs/contracts/*.md` file is classified in
 //!    `core::contracts::contract_docs()` (frozen / stable / experimental) and
 //!    every classified entry actually exists on disk. No contract can stay
-//!    unclassified (pattern: `feature_keys_partition` in plans.rs).
+//!    unclassified.
 //! 2. **Immutability** — the content hash of every `frozen` contract doc
 //!    matches the committed snapshot `docs/contracts/frozen-hashes.json`. A
 //!    drifting hash means someone edited a frozen artifact: semantic changes

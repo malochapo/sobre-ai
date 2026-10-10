@@ -32,21 +32,15 @@ const DEFAULT_DENSE_WEIGHT: f64 = 1.0;
 
 /// Hybrid search weights and candidate counts (built-in, not configurable).
 #[cfg(any(test, feature = "dense"))]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone)]
 pub struct HybridConfig {
     pub bm25_weight: f64,
     pub dense_weight: f64,
     pub bm25_candidates: usize,
     pub dense_candidates: usize,
-    /// Weight for SPLADE expansion signal. 0.0 disables SPLADE.
-    #[serde(default = "default_splade_weight")]
+    /// Weight of the query-expansion signal (`splade_retrieval`). 0.0 turns
+    /// it off.
     pub splade_weight: f64,
-}
-
-#[cfg(any(test, feature = "dense"))]
-fn default_splade_weight() -> f64 {
-    0.5
 }
 
 #[cfg(any(test, feature = "dense"))]
@@ -84,7 +78,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         });
@@ -104,20 +97,23 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         });
         entry.rrf_score += rrf_score;
-        entry.dense_score = Some(result.similarity);
         entry.dense_rank = Some(rank + 1);
     }
 
+    // Equal scores are common (rank r in one list only, from either list), and
+    // the map has no order: break ties by location so the order, and the cut
+    // at `top_k`, are the same on every run.
     let mut results: Vec<HybridResult> = scores.into_values().collect();
     results.sort_by(|a, b| {
         b.rrf_score
             .partial_cmp(&a.rrf_score)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.file_path.cmp(&b.file_path))
+            .then_with(|| a.start_line.cmp(&b.start_line))
     });
     results.truncate(top_k);
     results
@@ -228,7 +224,6 @@ pub struct HybridResult {
     pub end_line: usize,
     pub snippet: String,
     pub rrf_score: f64,
-    pub dense_score: Option<f32>,
     pub bm25_rank: Option<usize>,
     pub dense_rank: Option<usize>,
 }
@@ -247,7 +242,6 @@ impl HybridResult {
             end_line: result.end_line,
             snippet: result.snippet,
             rrf_score: result.score,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         }
@@ -417,6 +411,25 @@ mod tests {
         assert_eq!(results.len(), 5);
     }
 
+    /// Results with equal fused scores come out in the same order, and the
+    /// same ones survive the cut, on every run.
+    #[test]
+    fn rrf_ties_are_ordered_by_location() {
+        let bm25 = vec![
+            make_bm25_result("b.rs", "b", 1, 5.0),
+            make_bm25_result("d.rs", "d", 1, 4.0),
+        ];
+        let dense = vec![
+            make_dense_result("a.rs", "a", 1, 0.9),
+            make_dense_result("c.rs", "c", 1, 0.8),
+        ];
+        for _ in 0..20 {
+            let results = reciprocal_rank_fusion(&bm25, &dense, &HybridConfig::default(), 3);
+            let order: Vec<&str> = results.iter().map(|r| r.file_path.as_str()).collect();
+            assert_eq!(order, ["a.rs", "b.rs", "c.rs"]);
+        }
+    }
+
     #[test]
     fn rrf_empty_inputs() {
         let results = reciprocal_rank_fusion(&[], &[], &HybridConfig::default(), 10);
@@ -449,7 +462,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
         }];
@@ -469,7 +481,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
         }];
@@ -489,7 +500,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.5898,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         }];
@@ -511,7 +521,6 @@ mod tests {
             end_line: 0,
             snippet: String::new(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         };

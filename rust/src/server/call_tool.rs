@@ -61,13 +61,25 @@ impl SobreServer {
         // Re-fetch feedback: re-reads, re-runs and `sobre_expand` mean the
         // compressed form lost something. The session degrade can only lower
         // compression below the configured level, and a change is announced.
+        // An `auto` read counts as the mode it was served in, so an auto read
+        // served as `map` and then read in full is a bounce.
+        let read_mode = if name == "sobre_read" {
+            let requested = helpers::get_str(args, "mode").unwrap_or_else(|| "auto".into());
+            if requested == "auto" {
+                let path = helpers::get_str(args, "path").unwrap_or_default();
+                self.served_read_mode(&path).await.unwrap_or(requested)
+            } else {
+                requested
+            }
+        } else {
+            String::new()
+        };
         let degrade_note = {
             let mut signals = self.refetch_signals.write().await;
             if name == "sobre_read" {
                 let path = helpers::get_str(args, "path").unwrap_or_default();
-                let mode = helpers::get_str(args, "mode").unwrap_or_else(|| "auto".into());
                 let fresh = helpers::get_bool(args, "fresh").unwrap_or(false);
-                signals.record_read(&path, &mode, fresh);
+                signals.record_read(&path, &read_mode, fresh);
             } else if name == "sobre_shell" {
                 let cmd = helpers::get_str(args, "command").unwrap_or_default();
                 signals.record_shell(&cmd);
@@ -124,9 +136,8 @@ impl SobreServer {
             let autonomy_clone = self.autonomy.clone();
             tokio::spawn(async move {
                 let result = std::panic::AssertUnwindSafe(async {
-                    // Bounded lock — the old unbounded `.write.await`
-                    // could queue behind a long computation and then hold the
-                    // lock during dedup, cascading the stall.
+                    // Bounded lock: an unbounded wait could queue behind a
+                    // long computation and then hold the lock during dedup.
                     let cache_timeout = tokio::time::timeout(
                         std::time::Duration::from_secs(5),
                         cache_clone.write(),
@@ -186,23 +197,9 @@ impl SobreServer {
 
         self.save_session_when_due().await;
 
-        let skip_checkpoint = matches!(name, "sobre_session" | "sobre_knowledge");
-
-        // The only place that advances `call_count`.
-        if !skip_checkpoint {
-            self.increment_call_count();
-        }
-
         // A machine-readable invocation (e.g. sobre_outline format=json) must
-        // return a byte-exact, parseable payload. The state-consuming briefings
-        // are already skipped above (so their once-per-session flags survive),
-        // but other steps still append recomputed prose (verify footer, throttle
-        // / budget warning) or compress the body — all of
-        // which break a JSON contract. This guard is the robust catch-all:
-        // restore the pure body captured *before* compression and decoration.
-        // Redaction + sensitivity were applied earlier so the security envelope
-        // is preserved. `sobre_outline` output is never teed, so
-        // `pre_compression` is the unmodified body here; no-op otherwise.
+        // return a byte-exact, parseable payload: the body captured before
+        // terse compression and the compression notice, as the tool returned it.
         if machine_readable {
             result_text = pre_compression;
         }
@@ -210,12 +207,23 @@ impl SobreServer {
         Ok(finalize_call_result(&result_text, shell_outcome))
     }
 
+    /// The mode `path`'s last read was served in, as the session cache
+    /// recorded it; `None` when the cache is busy or holds no such file.
+    async fn served_read_mode(&self, raw_path: &str) -> Option<String> {
+        let resolved = self.resolve_path(raw_path).await.ok()?;
+        let cache = self.cache.try_read().ok()?;
+        cache
+            .get(&resolved)
+            .map(|entry| entry.last_mode.clone())
+            .filter(|mode| !mode.is_empty())
+    }
+
     /// Resolve project root from MCP client roots (once per session).
     /// Called on the first tool call. If the client supports `roots/list`,
     /// we query it and pick the best root with project markers.
     ///
-    /// Roots is SEP-2577-deprecated in rmcp 2.0 but still fully functional; we
-    /// keep it for client-driven project-root auto-detection until MCP removes it.
+    /// rmcp marks roots deprecated (MCP SEP-2577); it still works and is how
+    /// a client tells sobre its project root.
     #[expect(deprecated)]
     async fn resolve_roots_once(&self) {
         use std::sync::atomic::Ordering;
@@ -426,6 +434,33 @@ mod shell_outcome_tests {
         let r = finalize_call_result("file contents", None);
         assert_ne!(r.is_error, Some(true));
         assert!(r.structured_content.is_none());
+    }
+}
+
+#[cfg(test)]
+mod read_mode_tests {
+    /// An `auto` read is recorded as the mode it was served in.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_auto_read_counts_as_its_served_mode() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(project.path().join(".git")).unwrap();
+        let file = project.path().join("lib.rs");
+        let body = (0..300)
+            .map(|i| format!("pub fn function_{i}(x: u64) -> u64 {{\n    x + {i}\n}}\n"))
+            .collect::<Vec<_>>()
+            .concat();
+        std::fs::write(&file, body).unwrap();
+        let root = project.path().to_string_lossy().to_string();
+        let server = crate::tools::SobreServer::new_with_project_root(Some(&root));
+
+        let args = serde_json::json!({ "path": "lib.rs" });
+        server
+            .dispatch_tool("sobre_read", args.as_object(), None)
+            .await
+            .unwrap();
+        let served = server.served_read_mode("lib.rs").await;
+        assert!(served.as_deref().is_some_and(|m| m != "auto"), "{served:?}");
     }
 }
 

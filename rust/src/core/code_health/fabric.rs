@@ -158,9 +158,9 @@ pub fn hotspot_cc(root: &str, symbol: &str) -> Option<u32> {
 /// from every store before writing the current one.
 fn prune_spec() -> PrunePrior {
     PrunePrior {
-        bm25_prefix: Some(URI_SCHEME.to_string()),
-        edge_kind: Some(EDGE_KIND.to_string()),
-        fact_category: Some(FACT_CATEGORY.to_string()),
+        bm25_prefix: URI_SCHEME.to_string(),
+        edge_kind: EDGE_KIND.to_string(),
+        fact_category: FACT_CATEGORY.to_string(),
     }
 }
 

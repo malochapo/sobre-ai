@@ -1,9 +1,7 @@
 //! Point installed agents at the proxy, each through its own configuration:
 //! Claude Code's `settings.json`, Codex's `config.toml` and OpenCode's
-//! `opencode.json`. Nothing is written into shell rc files.
-//!
-//! Submodules hold per-client setup. This facade keeps the public API stable
-//! as `crate::proxy_setup::*`.
+//! `opencode.json`. Nothing is written into shell rc files. One submodule per
+//! agent.
 
 mod claude;
 mod codex;
@@ -24,7 +22,7 @@ use opencode::{has_proxy_base_url, install_opencode_env, uninstall_opencode_env}
 pub use claude::anthropic_api_key_available;
 pub(crate) use claude::claude_points_at_proxy;
 pub(crate) use codex::install_codex_env;
-pub use util::{default_port, proxy_timeout};
+pub use util::default_port;
 pub(crate) use util::{is_proxy_reachable, last_started_port, remember_started_port};
 
 pub fn install_proxy_env(home: &Path, port: u16, quiet: bool) {

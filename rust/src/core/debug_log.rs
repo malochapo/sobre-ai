@@ -115,11 +115,10 @@ fn clamp(s: &str) -> String {
     if one_line.len() <= FIELD_CLAMP {
         return one_line;
     }
-    let mut end = FIELD_CLAMP;
-    while end > 0 && !one_line.is_char_boundary(end) {
-        end -= 1;
-    }
-    format!("{}…", &one_line[..end])
+    format!(
+        "{}…",
+        &one_line[..one_line.floor_char_boundary(FIELD_CLAMP)]
+    )
 }
 
 /// `key="val", key2=42` with string values redacted + clamped and keys sorted

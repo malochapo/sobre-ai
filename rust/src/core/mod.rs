@@ -31,7 +31,6 @@ pub mod prospective_memory;
 // Domain: Graph
 // ---------------------------------------------------------------------------
 pub mod call_graph;
-pub mod graph_context;
 pub mod graph_index;
 pub mod graph_provider;
 pub mod property_graph;
@@ -153,8 +152,6 @@ pub mod error;
 pub mod eviction_orchestrator;
 pub mod extractors;
 pub mod git;
-pub mod git_cache;
-pub mod git_signals;
 pub mod git_util;
 pub mod godot;
 pub mod gotcha_tracker;
@@ -181,7 +178,6 @@ pub mod index_progress;
 pub mod ingestion;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
-pub mod intent_router;
 pub mod io_health;
 pub mod jsonc;
 pub mod language_capabilities;
@@ -211,7 +207,6 @@ pub mod sensitivity;
 pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
-pub mod task_briefing;
 /// macOS Seatbelt self-sandbox: wraps the launchd-owned proxy in a
 /// `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/`~/Downloads`,
 /// so the TCC privacy prompt can never appear.

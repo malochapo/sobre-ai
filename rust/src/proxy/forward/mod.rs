@@ -19,24 +19,15 @@ mod transport;
 #[cfg(test)]
 mod tests;
 
-#[allow(unused_imports)] // re-exported for proxy::* and tests
-pub(super) use headers::{
-    ALLOWED_REQUEST_HEADERS, is_allowed_request_header, is_forwarded_response_header,
-};
-
 // Unit tests import these via `use super::*`.
 #[cfg(test)]
-#[allow(unused_imports)]
 use super::codec::{
-    RequestBodyEncoding, decode_gzip_bounded, encode_gzip, encode_zstd, is_retryable_status,
-    request_body_encoding,
+    RequestBodyEncoding, decode_gzip_bounded, encode_gzip, encode_zstd, request_body_encoding,
 };
 #[cfg(test)]
-#[allow(unused_imports)]
 use axum::http::request::Parts;
 #[cfg(test)]
-#[allow(unused_imports)]
-use headers::should_forward_request_header;
+use headers::{is_forwarded_response_header, should_forward_request_header};
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(super) use prepare::prepare_request_body;
@@ -66,7 +57,7 @@ pub(crate) async fn forward_request(
     let prepared = prepare::prepare_request_body(&parts, &body_bytes, compress_body)?;
     let upstream_url = super::codec::build_upstream_url(&parts, upstream_base, default_path);
 
-    let response = transport::send_upstream(
+    let response = match transport::send_upstream(
         &state,
         &parts,
         &upstream_url,
@@ -74,7 +65,11 @@ pub(crate) async fn forward_request(
         provider.label(),
         prepared.preserve_content_encoding,
     )
-    .await?;
+    .await
+    {
+        Ok(response) => response,
+        Err(e) => return Ok(transport::unreachable_response(&upstream_url, &e)),
+    };
 
     let wire = WireContext {
         provider,

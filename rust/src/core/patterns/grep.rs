@@ -6,6 +6,10 @@ fn normalize_shell_tokens(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// A search's matches grouped by file, the busiest first: at most 10 a file
+/// (5 past 200 matches in all), each file that has more saying how many are
+/// not shown. Whatever is cut stays readable: shell compression keeps the
+/// full output and its label says where.
 pub fn compress(output: &str) -> Option<String> {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() < 3 {
@@ -54,7 +58,7 @@ pub fn compress(output: &str) -> Option<String> {
         }
         if matches.len() > max_matches_per_file {
             result.push_str(&format!(
-                "\n  ... +{} more",
+                "\n  ... {} more matches not shown",
                 matches.len() - max_matches_per_file
             ));
         }
@@ -152,9 +156,33 @@ mod tests {
         let output = lines.join("\n");
         let result = compress(&output).unwrap();
         assert!(
-            result.contains("... +245 more"),
-            "should show +more for large output: {result}"
+            result.contains("... 245 more matches not shown"),
+            "past 200 matches a file shows 5: {result}"
         );
+    }
+
+    /// A file hit more often than the per-file cap says, in words, how many
+    /// of its matches are not shown; files under the cap show them all.
+    #[test]
+    fn a_capped_file_says_how_many_matches_are_not_shown() {
+        let mut lines = Vec::new();
+        for i in 0..40 {
+            lines.push(format!(
+                "src/server.rs:{}:    // TODO: handle case {i}",
+                i * 3 + 1
+            ));
+        }
+        for i in 0..5 {
+            lines.push(format!("src/client.rs:{}:    // TODO: retry {i}", i + 1));
+        }
+        let result = compress(&lines.join("\n")).unwrap();
+        assert!(
+            result.contains("30 more matches not shown"),
+            "the cut must be counted and named: {result}"
+        );
+        for i in 0..5 {
+            assert!(result.contains(&format!("TODO: retry {i}")), "{result}");
+        }
     }
 
     #[test]

@@ -1,13 +1,12 @@
 //! Content-addressed recovery (CCR) for the proxy's lossy rewrites.
 //!
-//! When the proxy prunes an old `tool_result` from conversation history, the
-//! lossy stub used to say *"re-read the file"* — which is stale-unsafe by
-//! construction: in an agent session files are edited or deleted between turns,
-//! so a re-read returns the *current* bytes (or fails), not the historical
-//! version the conversation actually showed. The model could then silently
-//! reason about the wrong content.
+//! When the proxy prunes an old `tool_result` from conversation history, a
+//! stub saying *"re-read the file"* would be stale-unsafe: in an agent
+//! session files are edited or deleted between turns, so a re-read returns
+//! the *current* bytes (or fails), not the version the conversation showed,
+//! and the model would reason about the wrong content.
 //!
-//! CCR fixes this by persisting the **verbatim original** to the shared,
+//! CCR instead persists the **verbatim original** to the shared,
 //! content-addressed tee store (`{state}/tee/`, reused from the shell path) and
 //! embedding a **retrieval handle** — the absolute path of that file — in the
 //! stub. Retrieval is MCP-independent: the agent reads the path with its native
@@ -93,8 +92,7 @@ pub(crate) fn persist(content: &str) -> Option<String> {
         }
         // Same redaction the shell tee applies, so a recovered original can never
         // re-introduce a secret the live turn would also have masked.
-        let masked = crate::core::redaction::redact_text(content);
-        let (redacted, _) = crate::core::secret_detection::scan_and_redact(&masked);
+        let (redacted, _) = crate::core::secret_detection::scan_and_redact(content);
         if std::fs::write(&path, redacted).is_ok() {
             #[cfg(unix)]
             {
@@ -198,6 +196,29 @@ mod tests {
         assert!(
             on_disk.contains("recoverable verbatim line"),
             "the verbatim original must be retrievable from the handle"
+        );
+    }
+
+    /// The kept original has its secrets masked: a private key's body and
+    /// an API key.
+    #[test]
+    fn persisted_original_masks_a_private_key_and_an_api_key() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let key_body = "MIIEowIBAAKCAQEAx7Rk2vQ9pZ3bN8sT1mL4wYcH6jF0uE5dG";
+        let api_key = format!("sk-ant-{}", "Qx7".repeat(12));
+        let content = format!(
+            "{}-----BEGIN {kind}PRIVATE KEY-----\n{key_body}\n-----END {kind}PRIVATE KEY-----\nANTHROPIC_API_KEY={api_key}\n",
+            big("tool output line"),
+            kind = "RSA "
+        );
+        let handle = persist(&content).expect("persisted");
+        let on_disk = std::fs::read_to_string(&handle).expect("tee file readable");
+        assert!(!on_disk.contains(key_body), "{on_disk}");
+        assert!(!on_disk.contains(&api_key), "{on_disk}");
+        assert!(
+            on_disk.contains("[REDACTED:Private key block]")
+                && on_disk.contains("[REDACTED:Anthropic key]"),
+            "{on_disk}"
         );
     }
 

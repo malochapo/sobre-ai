@@ -14,11 +14,6 @@ const MIN_SECTION_BODY_LINES: usize = 2;
 /// Documents with fewer content (non-blank) lines pass through untouched.
 const MIN_CONTENT_LINES: usize = 24;
 
-const STOP_WORDS: &[&str] = &[
-    "the", "and", "for", "with", "that", "this", "from", "into", "your", "you", "are", "can",
-    "will", "not", "all", "use", "using", "used", "lean", "ctx", "context", "agent", "agents",
-];
-
 /// One compaction unit: a heading line, a prose line, or an atomic fenced block.
 ///
 /// Fenced blocks are kept or dropped only as a whole, so the output never
@@ -329,8 +324,6 @@ fn score_line(
         || line.contains("SHOULD")
         || line.contains("BLOCKING")
         || line.contains("WARNING")
-        || line.contains("sobre_")
-        || line.contains("sobre")
     {
         score += 10.0;
     }
@@ -372,10 +365,10 @@ fn push_token(out: &mut Vec<String>, token: &str) {
     let t = token
         .trim_matches(|c: char| matches!(c, '.' | ',' | ':' | ';' | '(' | ')' | '[' | ']'))
         .to_ascii_lowercase();
-    if t.len() < 3 || STOP_WORDS.contains(&t.as_str()) {
-        return;
-    }
-    if t.len() >= 8 || t.chars().any(|c| matches!(c, '_' | '-' | '/' | '.' | ':')) {
+    // Only long words and compound names (paths, snake_case, flags) carry
+    // signal; short plain words, stop words included, never count.
+    if t.len() >= 8 || (t.len() >= 3 && t.chars().any(|c| matches!(c, '_' | '-' | '/' | '.' | ':')))
+    {
         out.push(t);
     }
 }

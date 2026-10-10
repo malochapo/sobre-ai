@@ -97,8 +97,8 @@ fn collect_required(node: &Value, out: &mut Vec<String>) {
 /// code, the schema IS the source of truth — and requiring a param the schema
 /// never declares is a self-contradiction a client hits before the handler runs.
 /// Assert, for every registered tool, that every `required` token is a declared
-/// property. A `then: {required:["new_body"]}` left after `new_body` was renamed
-/// to `new_text` fails here, for all tools, with no per-tool hardcoding.
+/// property. A `then: {required:[…]}` naming a parameter that is no longer
+/// declared fails here, for all tools, with no per-tool hardcoding.
 #[test]
 fn every_required_param_is_a_declared_property() {
     let registry = crate::server::registry::build_registry();

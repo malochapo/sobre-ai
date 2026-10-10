@@ -1,12 +1,13 @@
-//! Explicit, deterministic preservation of user-marked spans across every
-//! compressor (read, shell, proxy, prose).
+//! Explicit, deterministic preservation of marked spans and lines through
+//! lossy compression.
 //!
 //! Two complementary, fully deterministic mechanisms (pure functions of
 //! their inputs, no model, no clock, no global state):
 //!
-//! 1. **Universal markers** `<lc_safe>…</lc_safe>`: any compressor wraps its
-//!    work in [`compress_preserving`]; the content between the markers passes
-//!    through verbatim and the markers themselves are stripped from the output.
+//! 1. **Markers** `<sobre_safe>…</sobre_safe>`: the shell output and proxy
+//!    compressors wrap their work in [`compress_preserving`]; the content
+//!    between the markers passes through verbatim and the markers themselves
+//!    are stripped from the output.
 //! 2. **`protect` token list** (`sobre_read` convenience): [`line_is_protected`]
 //!    lets the line-based lossy filters (entropy / information-bottleneck)
 //!    force-keep every line that contains one of the given tokens.
@@ -16,9 +17,9 @@
 //! it only ever passes through bytes that already survived redaction.
 
 /// Opening marker for a verbatim-preserved span.
-pub const SAFE_OPEN: &str = "<lc_safe>";
+pub const SAFE_OPEN: &str = "<sobre_safe>";
 /// Closing marker for a verbatim-preserved span.
-pub const SAFE_CLOSE: &str = "</lc_safe>";
+pub const SAFE_CLOSE: &str = "</sobre_safe>";
 
 /// Cheap pre-check: does the input contain at least one protect marker? Lets
 /// hot paths skip the span-splitting machinery entirely when nothing is marked.
@@ -28,13 +29,13 @@ pub fn has_markers(s: &str) -> bool {
 }
 
 /// Compress only the *unprotected* regions of `input` with `f`; everything
-/// between `<lc_safe>` and `</lc_safe>` passes through byte-for-byte and the
+/// between `<sobre_safe>` and `</sobre_safe>` passes through byte-for-byte and the
 /// markers are stripped from the output.
 ///
 /// Deterministic: pure function of `(input, f)`. An unterminated open marker
 /// keeps the remainder of the input verbatim (fail-safe: never compress what the
 /// user tried to protect). When there are no markers the input is handed to `f`
-/// unchanged, so existing callers keep their exact byte output.
+/// unchanged.
 #[must_use]
 pub fn compress_preserving<F: Fn(&str) -> String>(input: &str, f: F) -> String {
     if !has_markers(input) {
@@ -58,7 +59,7 @@ pub fn compress_preserving<F: Fn(&str) -> String>(input: &str, f: F) -> String {
 
 /// True if `line` must survive a lossy line filter because it contains one of
 /// the explicit `protect` tokens. Empty tokens are ignored so an empty list (or
-/// a list of empty strings) reproduces today's behaviour exactly.
+/// a list of empty strings) protects nothing.
 #[must_use]
 pub fn line_is_protected(line: &str, needles: &[String]) -> bool {
     needles
@@ -112,7 +113,7 @@ mod tests {
     #[test]
     fn protect_spans_survive_compression() {
         let input =
-            "noise before\n<lc_safe>CRITICAL = 42\nkeep me literally</lc_safe>\nnoise after";
+            "noise before\n<sobre_safe>CRITICAL = 42\nkeep me literally</sobre_safe>\nnoise after";
         let out = compress_preserving(input, drop_all);
         // Protected content is byte-identical and the markers are gone.
         assert_eq!(out, "CRITICAL = 42\nkeep me literally");
@@ -123,27 +124,27 @@ mod tests {
     #[test]
     fn unprotected_regions_are_compressed_protected_are_not() {
         let f = |s: &str| s.to_uppercase();
-        let out = compress_preserving("a<lc_safe>b</lc_safe>c", f);
+        let out = compress_preserving("a<sobre_safe>b</sobre_safe>c", f);
         assert_eq!(out, "AbC");
     }
 
     #[test]
     fn multiple_spans_all_survive() {
-        let input = "x<lc_safe>one</lc_safe>y<lc_safe>two</lc_safe>z";
+        let input = "x<sobre_safe>one</sobre_safe>y<sobre_safe>two</sobre_safe>z";
         let out = compress_preserving(input, drop_all);
         assert_eq!(out, "onetwo");
     }
 
     #[test]
     fn unterminated_marker_keeps_remainder_verbatim() {
-        let input = "drop<lc_safe>tail without close\nstill kept";
+        let input = "drop<sobre_safe>tail without close\nstill kept";
         let out = compress_preserving(input, drop_all);
         assert_eq!(out, "tail without close\nstill kept");
     }
 
     #[test]
     fn compress_preserving_is_deterministic() {
-        let input = "a<lc_safe>SAFE</lc_safe>b<lc_safe>X</lc_safe>c";
+        let input = "a<sobre_safe>SAFE</sobre_safe>b<sobre_safe>X</sobre_safe>c";
         let a = compress_preserving(input, str::to_uppercase);
         let b = compress_preserving(input, str::to_uppercase);
         assert_eq!(a, b);

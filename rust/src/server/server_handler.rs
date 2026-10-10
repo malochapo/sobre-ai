@@ -38,9 +38,7 @@ impl ServerHandler for SobreServer {
         request: InitializeRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, ErrorData> {
-        let name = request.client_info.name.clone();
-        tracing::info!("MCP client connected: {:?}", name);
-        *self.client_name.write().await = name.clone();
+        tracing::info!("MCP client connected: {:?}", request.client_info.name);
         *self.peer.write().await = Some(context.peer.clone());
 
         let has_roots = request.capabilities.roots.is_some();
@@ -107,8 +105,8 @@ impl ServerHandler for SobreServer {
             }
         }
 
-        // Indices are warmed lazily on first use of a tool that needs them
-        //, not eagerly here — a session that only uses
+        // Indices are warmed lazily on first use of a tool that needs them,
+        // not eagerly here — a session that only uses
         // sobre_read/sobre_shell/sobre_tree must not pay a full graph + BM25 scan.
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
@@ -235,10 +233,7 @@ mod tests {
 
     /// The `list_tools` panic guard serves the registry, so an internal panic
     /// never leaves the agent tool-less — indistinguishable from "MCP totally
-    /// failed". Regression guard.
-    ///
-    /// It used to serve a hand-maintained static list, which is how the
-    /// advertised surface drifted from the registry in the first place.
+    /// failed".
     #[test]
     fn panic_fallback_serves_the_registry() {
         let _guard = crate::core::data_dir::isolated_data_dir();

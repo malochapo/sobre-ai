@@ -15,7 +15,7 @@ fn research_prose_cap() -> usize {
 ///
 /// 1. Results of sobre's own tools pass through: they were compressed at the
 ///    tool boundary.
-/// 2. `<lc_safe>` spans are kept verbatim.
+/// 2. `<sobre_safe>` spans are kept verbatim.
 /// 3. Prose results (doc reads, other MCP servers' text) are squeezed by the
 ///    prose-aware compressor instead of the log/code-tuned shell engine.
 /// 4. Everything else (shell/build/search output) flows through the unified
@@ -68,7 +68,7 @@ fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
     }
 
     // Sobre's own MCP tools already applied their compression policy at
-    // the tool boundary — honouring `raw=true`/`bypass`, `<lc_safe>` spans and
+    // the tool boundary — honouring `raw=true`/`bypass`, `<sobre_safe>` spans and
     // the configured aggressiveness. Their `raw` intent lives in the originating
     // `tool_use` input, which is invisible here, so re-compressing on the wire
     // would silently undo an explicit `raw=true` and double-compress everything
@@ -77,7 +77,7 @@ fn compress_inner(content: &str, tool_name: Option<&str>) -> String {
         return content.to_string();
     }
 
-    // Honour explicit <lc_safe>…</lc_safe> spans on the proxy path too.
+    // Honour explicit <sobre_safe>…</sobre_safe> spans on the proxy path too.
     // Protected spans pass through verbatim; each unprotected segment flows back
     // through the normal funnel (markers are stripped, so this never recurses).
     if crate::core::protect::has_markers(content) {

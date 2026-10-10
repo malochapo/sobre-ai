@@ -94,6 +94,9 @@ fn compress_install(output: &str) -> String {
     }
 }
 
+/// A script's output without npm's script banner (`> pkg@1.0.0 build`) and
+/// funding notes. Past 15 lines, the last 10 and every earlier line a
+/// warning or an error is on.
 fn compress_run(output: &str) -> String {
     let lines: Vec<&str> = output
         .lines()
@@ -101,7 +104,6 @@ fn compress_run(output: &str) -> String {
             let t = l.trim();
             !t.is_empty()
                 && !t.starts_with('>')
-                && !t.starts_with("npm warn")
                 && !t.contains("npm fund")
                 && !t.contains("looking for funding")
         })
@@ -111,8 +113,18 @@ fn compress_run(output: &str) -> String {
         return lines.join("\n");
     }
 
-    let last = lines.len().saturating_sub(10);
-    format!("...({} lines)\n{}", lines.len(), lines[last..].join("\n"))
+    let tail = lines.len() - 10;
+    let mut kept: Vec<&str> = lines[..tail]
+        .iter()
+        .copied()
+        .filter(|l| crate::core::safety_needles::is_safety_relevant(l))
+        .collect();
+    let omitted = tail - kept.len();
+    kept.extend_from_slice(&lines[tail..]);
+    if omitted == 0 {
+        return kept.join("\n");
+    }
+    format!("... ({omitted} lines omitted)\n{}", kept.join("\n"))
 }
 
 fn compress_test(output: &str) -> String {

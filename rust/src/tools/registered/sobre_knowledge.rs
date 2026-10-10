@@ -26,7 +26,7 @@ impl McpTool for SobreKnowledgeTool {
              the old); recall query= finds them (bare: the recent ones); search query= also \
              searches saved sessions; remove deletes one; status lists categories. consolidate \
              imports this session's findings and decisions. gotcha trigger= resolution= records \
-             a pitfall, recalled for matching tasks.",
+             a pitfall, which sobre_compose shows for a matching task.",
             json!({
                 "type": "object",
                 "properties": {
@@ -34,7 +34,7 @@ impl McpTool for SobreKnowledgeTool {
                         "type": "string",
                         "enum": ["remember", "recall", "search", "status", "remove", "consolidate", "gotcha"]
                     },
-                    "category": { "type": "string", "description": "Groups facts (remember: default general)" },
+                    "category": { "type": "string", "description": "Groups facts (remember: default general; gotcha: default convention)" },
                     "key": { "type": "string" },
                     "value": { "type": "string" },
                     "confidence": { "type": "number", "description": "remember: 0.0-1.0 (default 0.8)" },
@@ -123,19 +123,24 @@ impl McpTool for SobreKnowledgeTool {
                 ));
             }
 
-            let mut store = crate::core::gotcha_tracker::GotchaStore::load(&project_root);
-            let msg = match store.report_gotcha(&trigger, &resolution, cat, &severity, &session_id)
-            {
-                Some(gotcha) => {
-                    let conf = (gotcha.confidence * 100.0) as u32;
-                    let label = gotcha.category.short_label();
-                    format!("Gotcha recorded: [{label}] {trigger} (confidence: {conf}%)")
-                }
-                None => {
-                    format!("Gotcha noted: {trigger} (evicted by higher-confidence entries)")
-                }
-            };
-            let _ = store.save(&project_root);
+            let mut msg = String::new();
+            let saved = crate::core::gotcha_tracker::GotchaStore::update(&project_root, |store| {
+                msg = match store.report_gotcha(&trigger, &resolution, cat, &severity, &session_id)
+                {
+                    Some(gotcha) => {
+                        let conf = (gotcha.confidence * 100.0) as u32;
+                        let label = gotcha.category.short_label();
+                        format!("Gotcha recorded: [{label}] {trigger} (confidence: {conf}%)")
+                    }
+                    None => {
+                        format!("Gotcha noted: {trigger} (evicted by higher-confidence entries)")
+                    }
+                };
+                true
+            });
+            if let Err(e) = saved {
+                return Ok(text_output(format!("ERROR: the gotcha was not saved: {e}")));
+            }
             return Ok(text_output(msg));
         }
 
@@ -178,11 +183,5 @@ impl McpTool for SobreKnowledgeTool {
 /// A plain text `ToolOutput`. `sobre_knowledge` results are already
 /// compressed prose, so token accounting is left at zero.
 fn text_output(text: String) -> ToolOutput {
-    ToolOutput {
-        text,
-        original_tokens: 0,
-        saved_tokens: 0,
-        shell_outcome: None,
-        content_blocks: None,
-    }
+    ToolOutput::simple(text)
 }

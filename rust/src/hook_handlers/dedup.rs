@@ -6,13 +6,13 @@
 //! fire is its own process.
 //!
 //! This module coordinates the two processes through a shared, PID-independent
-//! claim/response pair keyed on the *semantic* call (event + tool + args), so the
-//! second fire replays the first's response instead of repeating the work.
+//! claim/response pair keyed on the call's payload, so the second fire replays
+//! the first's response instead of repeating the work.
 //!
-//! Correctness first: dedup must never break a redirect. Every failure path falls
-//! back to running the work, so the worst case degrades to today's duplicate
-//! behaviour rather than a dropped or corrupted response. The claim/resp files
-//! are pure side channels — the stdout body stays byte-identical.
+//! Correctness first: dedup must never break a reply. Every failure path falls
+//! back to running the work, so the worst case is the work done twice, never a
+//! dropped or corrupted response. The claim/resp files are pure side channels —
+//! the stdout body stays byte-identical.
 
 use std::fs::{self, OpenOptions};
 use std::path::Path;
@@ -23,9 +23,9 @@ use std::time::Duration;
 /// the same target start a new round.
 const DEDUP_WINDOW: Duration = Duration::from_secs(3);
 
-/// Upper bound the loser waits for the winner's response. Sized to the subprocess
-/// timeout so a slow winner is still awaited — both processes run in parallel, so
-/// waiting adds no latency over the winner doing the work alone.
+/// Upper bound the loser waits for the winner's response, inside the hook's
+/// own 15 s budget — both processes run in parallel, so waiting adds no
+/// latency over the winner doing the work alone.
 const RESP_WAIT: Duration = Duration::from_secs(11);
 
 /// Poll interval while the loser waits for the response file.
@@ -38,7 +38,8 @@ const CLEANUP_AGE: Duration = Duration::from_mins(1);
 /// Run `work` with PID-independent dedup. The first (winning) process runs `work`
 /// and caches its stdout; a concurrent second (losing) process replays the cached
 /// stdout without re-running `work`. `event` + `key_material` identify the call —
-/// they MUST be identical across the double-fire and MUST exclude the PID.
+/// they MUST be identical across the double-fire, MUST exclude the PID, and MUST
+/// cover everything the reply depends on.
 pub(super) fn deduped<F: FnOnce() -> String>(event: &str, key_material: &str, work: F) -> String {
     match hook_dir() {
         Some(dir) => deduped_in(&dir, event, key_material, work),
@@ -196,13 +197,13 @@ mod tests {
         let material = unique_material("read");
 
         let r1 = runs.clone();
-        let first = deduped_in(dir.path(), "redirect", &material, move || {
+        let first = deduped_in(dir.path(), "rewrite", &material, move || {
             r1.fetch_add(1, Ordering::SeqCst);
             "RESPONSE-A".to_string()
         });
 
         let r2 = runs.clone();
-        let second = deduped_in(dir.path(), "redirect", &material, move || {
+        let second = deduped_in(dir.path(), "rewrite", &material, move || {
             r2.fetch_add(1, Ordering::SeqCst);
             "SHOULD-NOT-RUN".to_string()
         });
@@ -227,7 +228,7 @@ mod tests {
         for tag in ["a", "b"] {
             let r = runs.clone();
             let material = unique_material(tag);
-            let out = deduped_in(dir.path(), "redirect", &material, move || {
+            let out = deduped_in(dir.path(), "rewrite", &material, move || {
                 r.fetch_add(1, Ordering::SeqCst);
                 format!("out-{tag}")
             });
@@ -245,11 +246,11 @@ mod tests {
     fn winner_persists_response_for_loser() {
         let dir = tempfile::tempdir().unwrap();
         let material = unique_material("resp");
-        let out = deduped_in(dir.path(), "redirect", &material, || "CACHED".to_string());
+        let out = deduped_in(dir.path(), "rewrite", &material, || "CACHED".to_string());
 
         let resp = dir
             .path()
-            .join(format!("{}.resp", key("redirect", &material)));
+            .join(format!("{}.resp", key("rewrite", &material)));
         assert_eq!(out, "CACHED");
         assert_eq!(
             fs::read_to_string(&resp).unwrap(),
@@ -262,7 +263,7 @@ mod tests {
     fn missing_dir_falls_back_to_work() {
         // A non-existent, non-creatable dir must never break the hook.
         let bogus = Path::new("/proc/nonexistent-sobre/does/not/exist");
-        let out = deduped_in(bogus, "redirect", "x", || "FALLBACK".to_string());
+        let out = deduped_in(bogus, "rewrite", "x", || "FALLBACK".to_string());
         assert_eq!(out, "FALLBACK");
     }
 

@@ -125,7 +125,6 @@ mod determinism_tests {
             end_line: 1,
             snippet: "a".to_string(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         };
@@ -137,7 +136,6 @@ mod determinism_tests {
             end_line: 1,
             snippet: "b".to_string(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         };
