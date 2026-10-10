@@ -21,12 +21,10 @@ accessor function.
 | L4 | `Config::CACHE` | `core/config/loader.rs` (fn-local in `Config::load_arc`) | `Mutex<Option<(Arc<Config>, Option<String>)>>` | Shared config plus the content hash of the file it was built from; rebuilt only when the hash changes |
 | L17 | `FILE_LOCKS` | `core/path_locks.rs` (fn-local in `per_file_lock`) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-file serialization of reads and edits for concurrent subagents |
 | L22 | `BACKENDS` | `lsp/router.rs` | `LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>>` | Language-server clients, one per language and project root; on a miss the client is started from the built-in server table while the lock is held, and each request runs under it. Independent leaf lock |
-| L27 | `CACHE` (git) | `core/git_cache.rs` | `LazyLock<Mutex<GitCache>>` | Cached git metadata (branch, status) |
 | L33 | `CACHE` (search) | `core/search_index.rs` | `OnceLock<Mutex<HashMap<String, CacheEntry>>>` | Search index query cache |
 | L38 | `GLOBAL_TRACKER` | `core/bounce_tracker.rs` | `OnceLock<Mutex<BounceTracker>>` | Tracks repeated tool-call bounces |
 | L41 | `KNOWLEDGE_LOCKS` | `core/knowledge/persist.rs` (fn-local) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-project knowledge.json read-modify-write serialization (same outer/inner pattern as L1/L2) |
 | L42 | `LAST_PARSE_ERROR` | `core/config/loader.rs` | `Mutex<Option<String>>` | Most recent global `config.toml` parse error (surfaced by doctor/diagnostics); never held together with L4 |
-| L48 | `NO_GIT_ROOTS` | `core/git_signals.rs` | `Mutex<Option<HashSet<String>>>` | Roots probed and found non-git — negative cache so each root is probed at most once per process |
 | L50 | `LINE_EMBED_CACHE` | `core/entropy.rs` (fn-local) | `Mutex<Option<HashMap<u64, Vec<f32>>>>` | Per-line embedding cache (line-hash → vector) for the semantic redundancy filter; capacity-bounded, never blocks on model loads |
 | L57 | `SEEN` | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Vec<(String, Instant)>>>` | Recent sightings of distinct conversation ids feeding the multi-conversation detector; capacity-pruned, independent leaf lock |
 | L58 | `STORE` (conversation) | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Option<Cached>>>` | Cached current conversation id with its refresh instant; independent leaf lock, never held together with L57 |

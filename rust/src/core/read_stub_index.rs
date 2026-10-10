@@ -161,10 +161,6 @@ fn global() -> &'static RwLock<ReadStubIndex> {
     G.get_or_init(|| RwLock::new(ReadStubIndex::default()))
 }
 
-fn enabled() -> bool {
-    true
-}
-
 fn index_path_in(data_dir: &Path) -> Option<PathBuf> {
     let dir = data_dir.join("read_cache");
     std::fs::create_dir_all(&dir).ok()?;
@@ -201,9 +197,6 @@ fn save_file(path: &Path, index: &ReadStubIndex) {
 
 /// Load the on-disk index into the process-global store (call once at startup).
 pub fn load() {
-    if !enabled() {
-        return;
-    }
     let Some(dir) = data_dir() else { return };
     load_from_dir(&dir);
 }
@@ -221,9 +214,6 @@ pub fn load_from_dir(data_dir: &Path) {
 
 /// Atomically persist the global index to the real data dir (call at save points).
 pub fn persist() {
-    if !enabled() {
-        return;
-    }
     let Some(dir) = data_dir() else { return };
     persist_to_dir(&dir);
 }
@@ -242,7 +232,7 @@ pub fn persist_to_dir(data_dir: &Path) {
 /// disk at the next save point). No-op for `None` conversations — they could
 /// never serve a cold stub anyway.
 pub fn record(rec: StubRecord) {
-    if !enabled() || rec.delivered_conversation.is_none() {
+    if rec.delivered_conversation.is_none() {
         return;
     }
     if let Ok(mut g) = global().write() {
@@ -262,9 +252,6 @@ pub fn forget(path: &str) {
 
 /// Look up a record for the cold stub fallback (returns a clone).
 pub fn lookup(path: &str) -> Option<StubRecord> {
-    if !enabled() {
-        return None;
-    }
     let key = crate::core::pathutil::normalize_tool_path(path);
     global().read().ok()?.records.get(&key).cloned()
 }
@@ -287,9 +274,7 @@ pub fn reset_in_dir(data_dir: &Path, compaction_ts: u64) {
         g.records.clear();
         g.compaction_ts = compaction_ts;
     }
-    if enabled() {
-        persist_to_dir(data_dir);
-    }
+    persist_to_dir(data_dir);
 }
 
 #[cfg(test)]
