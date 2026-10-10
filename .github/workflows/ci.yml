@@ -65,7 +65,7 @@ jobs:
           workspaces: rust -> target
       - name: cargo test
         working-directory: rust
-        run: cargo test --locked
+        run: cargo test --locked --no-fail-fast
       - name: cargo test, build with local embeddings
         if: runner.os == 'Linux'
         working-directory: rust
@@ -73,6 +73,6 @@ jobs:
       # Linux clippy, both builds, runs in Lint; Windows- and macOS-only code
       # is only seen here.
       - name: cargo clippy
-        if: runner.os != 'Linux'
+        if: runner.os != 'Linux' && !cancelled()
         working-directory: rust
         run: cargo clippy --all-targets --locked -- -D warnings
