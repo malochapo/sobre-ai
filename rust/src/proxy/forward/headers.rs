@@ -1,85 +1,60 @@
-//! Request/response header allowlists for the loopback proxy.
+//! Which headers the proxy passes on: all of them, both ways, but those that
+//! describe one connection rather than the message, and the few it must
+//! set itself.
 
-/// Request headers forwarded verbatim to the upstream provider. Anything not
-/// listed here is stripped before the request leaves the loopback proxy.
-///
-/// `openai-project` (and `openai-organization`) must be forwarded: OpenCode and
-/// the OpenAI SDK send the project scope via this header for project-scoped API
-/// keys when calling the Responses API (`/responses`). Dropping it makes OpenAI
-/// reject the request with `Missing scopes: api.responses.write`.
-pub(crate) const ALLOWED_REQUEST_HEADERS: &[&str] = &[
-    "authorization",
-    "x-api-key",
-    // Azure OpenAI credential header, for an `openai` upstream on Azure.
-    "api-key",
-    "content-type",
-    "accept",
-    "user-agent",
-    "originator",
-    "anthropic-version",
-    "anthropic-beta",
-    "anthropic-dangerous-direct-browser-access",
-    "openai-organization",
-    "openai-project",
-    "openai-beta",
-    "chatgpt-account-id",
-    "x-openai-fedramp",
-    "x-openai-internal-codex-residency",
-    "x-openai-internal-codex-responses-lite",
-    "x-openai-product-sku",
-    "oai-product-sku",
-    "x-oai-attestation",
-    "x-client-request-id",
-    "x-codex-beta-features",
-    "x-codex-installation-id",
-    "x-codex-parent-thread-id",
-    "x-openai-subagent",
-    "x-codex-turn-state",
-    "x-codex-turn-metadata",
-    "x-codex-window-id",
-    "x-openai-memgen-request",
-    "x-responsesapi-include-timing-metrics",
-    "cache-control",
-    "x-session-id",
+/// Hop-by-hop headers (RFC 9110 §7.6.1): they describe one connection, never
+/// the message, so no proxy forwards them. Any `proxy-*` header too.
+const HOP_BY_HOP: &[&str] = &[
+    "connection",
+    "keep-alive",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
 ];
 
-pub(crate) fn is_allowed_request_header(name: &str) -> bool {
-    ALLOWED_REQUEST_HEADERS.contains(&name)
+/// True for a hop-by-hop header, or one the message's `Connection` header
+/// names (`connection_names`, lower-case).
+fn is_hop_by_hop(name: &str, connection_names: &[String]) -> bool {
+    HOP_BY_HOP.contains(&name)
+        || name.starts_with("proxy-")
+        || connection_names.iter().any(|n| n == name)
 }
 
-pub(crate) fn should_forward_request_header(name: &str, preserve_content_encoding: bool) -> bool {
-    is_allowed_request_header(name)
-        || (preserve_content_encoding && name.eq_ignore_ascii_case("content-encoding"))
+/// The header names a `Connection` header lists, lower-case: they are
+/// hop-by-hop for that message.
+pub(crate) fn connection_names(headers: &axum::http::HeaderMap) -> Vec<String> {
+    headers
+        .get_all(axum::http::header::CONNECTION)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .flat_map(|v| v.split(','))
+        .map(|n| n.trim().to_ascii_lowercase())
+        .filter(|n| !n.is_empty())
+        .collect()
 }
 
-pub(crate) const FORWARDED_HEADERS: &[&str] = &[
-    "content-type",
-    "content-encoding",
-    "x-request-id",
-    "x-oai-request-id",
-    "cf-ray",
-    "x-openai-authorization-error",
-    "x-error-json",
-    "openai-organization",
-    "openai-model",
-    "openai-processing-ms",
-    "openai-version",
-    "x-models-etag",
-    "x-reasoning-included",
-    "anthropic-ratelimit-requests-limit",
-    "anthropic-ratelimit-requests-remaining",
-    "anthropic-ratelimit-tokens-limit",
-    "anthropic-ratelimit-tokens-remaining",
-    "retry-after",
-    "x-ratelimit-limit-requests",
-    "x-ratelimit-remaining-requests",
-    "x-ratelimit-limit-tokens",
-    "x-ratelimit-remaining-tokens",
-    "cache-control",
-];
+/// Whether a request header (lower-case `name`) goes upstream. Everything
+/// does but hop-by-hop headers; `host` and `content-length`, which the
+/// client sets for the upstream and the body it sends; `accept-encoding`, so
+/// the answer comes uncompressed and the proxy can read the usage it
+/// reports; and `content-encoding` unless the body goes as it came
+/// (`preserve_content_encoding`).
+pub(crate) fn should_forward_request_header(
+    name: &str,
+    preserve_content_encoding: bool,
+    connection_names: &[String],
+) -> bool {
+    match name {
+        "host" | "content-length" | "accept-encoding" => false,
+        "content-encoding" => preserve_content_encoding,
+        _ => !is_hop_by_hop(name, connection_names),
+    }
+}
 
-pub(crate) fn is_forwarded_response_header(name: &str) -> bool {
-    FORWARDED_HEADERS.contains(&name)
-        || name.starts_with("x-codex-")
-        || name.starts_with("x-ratelimit-")
+/// Whether a response header (lower-case `name`) goes back to the client:
+/// all but hop-by-hop headers and `content-length`, which the proxy sets for
+/// the body it sends.
+pub(crate) fn is_forwarded_response_header(name: &str, connection_names: &[String]) -> bool {
+    name != "content-length" && !is_hop_by_hop(name, connection_names)
 }

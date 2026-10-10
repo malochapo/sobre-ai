@@ -79,17 +79,6 @@ pub(super) fn request_body_encoding(parts: &axum::http::request::Parts) -> Reque
     }
 }
 
-pub(super) fn is_retryable_status(status: reqwest::StatusCode) -> bool {
-    matches!(status.as_u16(), 429 | 502 | 503)
-}
-
-pub(super) async fn retry_backoff() {
-    let mut buf = [0u8; 2];
-    let jitter_ms =
-        getrandom::fill(&mut buf).map_or(100, |()| u64::from(u16::from_le_bytes(buf)) % 200);
-    tokio::time::sleep(std::time::Duration::from_millis(150 + jitter_ms)).await;
-}
-
 /// True when the upstream base URL points at a loopback/local endpoint (a
 /// local model server): the ledger books the call as costing nothing.
 /// `0.0.0.0` counts too, the address a server listening on every interface

@@ -47,26 +47,6 @@ fn upstream_is_local_detects_loopback_hosts() {
     }
 }
 
-// --- enterprise#51: fail-open single retry ---
-
-#[test]
-fn retry_covers_exactly_not_processed_statuses() {
-    // Retryable: the upstream explicitly did not process the request.
-    for code in [429_u16, 502, 503] {
-        assert!(
-            is_retryable_status(reqwest::StatusCode::from_u16(code).unwrap()),
-            "{code} must be retryable"
-        );
-    }
-    // Not retryable: success, client errors, and "may have processed".
-    for code in [200_u16, 400, 401, 404, 500, 504] {
-        assert!(
-            !is_retryable_status(reqwest::StatusCode::from_u16(code).unwrap()),
-            "{code} must NOT be retryable"
-        );
-    }
-}
-
 #[test]
 fn zstd_request_bodies_are_rewritten_and_reencoded() {
     let body = serde_json::json!({"model": "gpt-5", "input": []});
@@ -84,8 +64,12 @@ fn zstd_request_bodies_are_rewritten_and_reencoded() {
     assert_eq!(request_body_encoding(&parts), RequestBodyEncoding::Zstd);
     assert_eq!(prepared.request_model.as_deref(), Some("gpt-5"));
     assert!(prepared.preserve_content_encoding);
-    assert!(should_forward_request_header("content-encoding", true));
-    assert!(!should_forward_request_header("content-encoding", false));
+    assert!(should_forward_request_header("content-encoding", true, &[]));
+    assert!(!should_forward_request_header(
+        "content-encoding",
+        false,
+        &[]
+    ));
 
     let decoded = zstd::decode_all(prepared.body.as_slice()).unwrap();
     let parsed: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
@@ -231,58 +215,54 @@ fn upstream_url_preserves_query_params() {
     );
 }
 
+/// Every header a client or provider sends passes, whatever its name: the
+/// proxy does not decide which ones a provider needs.
 #[test]
-fn forwards_openai_project_and_auth_headers() {
-    // Project-scoped OpenAI keys carry the scope via `OpenAI-Project`.
-    // It must be forwarded upstream, otherwise the Responses API rejects the
-    // call with `Missing scopes: api.responses.write`.
-    for required in ["authorization", "openai-project", "openai-organization"] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be forwarded upstream"
-        );
-    }
-}
-
-#[test]
-fn forwards_chatgpt_codex_oauth_headers() {
-    for required in [
+fn headers_pass_unless_they_describe_the_connection() {
+    for name in [
         "authorization",
+        "x-api-key",
+        "openai-project",
         "chatgpt-account-id",
-        "x-openai-fedramp",
-        "x-openai-internal-codex-residency",
-        "x-openai-product-sku",
-        "oai-product-sku",
-        "x-client-request-id",
-        "x-codex-installation-id",
-        "x-codex-turn-metadata",
-        "x-openai-subagent",
         "x-codex-turn-state",
-        "originator",
+        "x-stainless-retry-count",
+        "x-app",
+        "x-claude-code-session-id",
+        "anthropic-beta",
     ] {
-        assert!(
-            is_allowed_request_header(required),
-            "request header `{required}` must be forwarded upstream"
-        );
+        assert!(should_forward_request_header(name, false, &[]), "{name}");
+    }
+    for name in [
+        "request-id",
+        "x-should-retry",
+        "retry-after-ms",
+        "anthropic-ratelimit-unified-reset",
+        "x-codex-primary-used-percent",
+        "content-encoding",
+    ] {
+        assert!(is_forwarded_response_header(name, &[]), "{name}");
     }
 }
 
 #[test]
-fn forwards_codex_state_response_headers() {
-    for required in [
-        "x-codex-turn-state",
-        "x-codex-primary-used-percent",
-        "openai-model",
-        "x-models-etag",
-        "x-reasoning-included",
-        "x-oai-request-id",
-        "cf-ray",
-        "x-openai-authorization-error",
-        "x-error-json",
+fn hop_by_hop_and_proxy_set_headers_stay() {
+    let named = ["x-hop".to_string()];
+    for name in [
+        "connection",
+        "keep-alive",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+        "x-hop",
+        "host",
+        "content-length",
+        "accept-encoding",
     ] {
-        assert!(
-            is_forwarded_response_header(required),
-            "response header `{required}` must be forwarded downstream"
-        );
+        assert!(!should_forward_request_header(name, true, &named), "{name}");
+    }
+    for name in ["connection", "transfer-encoding", "content-length", "x-hop"] {
+        assert!(!is_forwarded_response_header(name, &named), "{name}");
     }
 }
