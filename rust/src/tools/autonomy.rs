@@ -26,7 +26,7 @@ impl AutonomyState {
 const DEDUP_THRESHOLD: usize = 8;
 
 /// Runs cache deduplication once, the first time the cache holds
-/// [`DEDUP_THRESHOLD`] entries.
+/// `DEDUP_THRESHOLD` entries.
 pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache) {
     if state
         .dedup_applied

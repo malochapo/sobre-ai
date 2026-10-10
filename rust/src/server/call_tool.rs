@@ -446,9 +446,10 @@ mod read_mode_tests {
         let project = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(project.path().join(".git")).unwrap();
         let file = project.path().join("lib.rs");
-        let body: String = (0..300)
+        let body = (0..300)
             .map(|i| format!("pub fn function_{i}(x: u64) -> u64 {{\n    x + {i}\n}}\n"))
-            .collect();
+            .collect::<Vec<_>>()
+            .concat();
         std::fs::write(&file, body).unwrap();
         let root = project.path().to_string_lossy().to_string();
         let server = crate::tools::SobreServer::new_with_project_root(Some(&root));
@@ -459,10 +460,7 @@ mod read_mode_tests {
             .await
             .unwrap();
         let served = server.served_read_mode("lib.rs").await;
-        assert!(
-            served.as_deref().is_some_and(|m| m != "auto"),
-            "{served:?}"
-        );
+        assert!(served.as_deref().is_some_and(|m| m != "auto"), "{served:?}");
     }
 }
 

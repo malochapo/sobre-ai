@@ -2,9 +2,7 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{
-    McpTool, ToolContext, ToolOutput, get_bool, get_str, get_usize,
-};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_str, get_usize};
 use crate::tool_defs::tool_def;
 
 pub struct SobreSearchTool;

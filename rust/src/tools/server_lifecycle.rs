@@ -109,9 +109,7 @@ impl SobreServer {
             // via the cold fallback. Flush it now for durability.
             crate::core::read_stub_index::persist();
             if count > 0 {
-                tracing::info!(
-                    "Cache auto-cleared after {ttl}s idle ({count} file(s))"
-                );
+                tracing::info!("Cache auto-cleared after {ttl}s idle ({count} file(s))");
             }
         }
         *self.last_call.write().await = Instant::now();

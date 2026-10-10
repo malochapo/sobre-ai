@@ -42,7 +42,10 @@ fn a_deleted_file_is_an_error_not_its_cached_body() {
         assert_eq!(out.resolved_mode, "error", "{mode}: {}", out.content);
         assert!(!out.content.contains("old_body"), "{mode}: {}", out.content);
     }
-    assert!(cache.get(&p).is_none(), "the cache still holds the deleted file");
+    assert!(
+        cache.get(&p).is_none(),
+        "the cache still holds the deleted file"
+    );
 }
 
 /// Regression: an `auto` re-read of an unchanged, already-fully-delivered file

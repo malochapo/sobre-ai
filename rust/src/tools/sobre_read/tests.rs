@@ -1278,18 +1278,23 @@ fn read_line_window_streams_only_the_requested_span() {
 fn a_density_read_rejected_by_the_gate_says_it_is_the_full_file() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("lib.rs");
-    let body: String = (0..40)
+    let body = (0..40)
         .map(|i| {
             format!("pub fn compute_value_{i}(input: u64) -> u64 {{\n    input * {i} + {i}\n}}\n")
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .concat();
     std::fs::write(&path, &body).unwrap();
     let p = path.to_string_lossy().to_string();
     let mut cache = SessionCache::new();
     let out = handle_with_task_resolved(&mut cache, &p, "density:0.10", CrpMode::Off, None);
     let header = out.content.lines().next().unwrap_or_default();
     let full = body.lines().all(|line| out.content.contains(line));
-    assert!(full, "the gate is expected to reject this one:\n{}", out.content);
+    assert!(
+        full,
+        "the gate is expected to reject this one:\n{}",
+        out.content
+    );
     assert!(header.contains("rejected"), "{header}");
     assert!(!header.contains("kept"), "{header}");
 }

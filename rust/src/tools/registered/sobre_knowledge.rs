@@ -136,9 +136,7 @@ impl McpTool for SobreKnowledgeTool {
                 }
             };
             if let Err(e) = store.save(&project_root) {
-                return Ok(text_output(format!(
-                    "ERROR: the gotcha was not saved: {e}"
-                )));
+                return Ok(text_output(format!("ERROR: the gotcha was not saved: {e}")));
             }
             return Ok(text_output(msg));
         }

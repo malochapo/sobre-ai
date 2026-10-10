@@ -2,6 +2,7 @@ pub mod autonomy;
 pub(crate) mod edit_io;
 pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
+pub(crate) mod impl_dedup;
 pub mod sobre_compose;
 pub mod sobre_expand;
 pub mod sobre_glob;
@@ -20,7 +21,6 @@ pub mod sobre_search;
 pub mod sobre_session;
 pub mod sobre_shell;
 pub mod sobre_tree;
-pub(crate) mod impl_dedup;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
 pub mod impl_edit;
 // Stays `pub`: driven from outside the crate by tests/serial_suite/multi_read_cap_scenarios.rs.
