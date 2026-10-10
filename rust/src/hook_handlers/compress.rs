@@ -306,6 +306,123 @@ mod tests {
         assert_eq!(compute_compress(&failed.to_string()), None);
     }
 
+    /// A Claude Code `PostToolUse` payload for a successful Bash call.
+    fn claude_payload(command: &str, stdout: &str) -> String {
+        json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": { "command": command },
+            "tool_response": { "stdout": stdout, "stderr": "", "interrupted": false, "isImage": false }
+        })
+        .to_string()
+    }
+
+    /// Python source long enough for every generic fallback to fire on it:
+    /// indented, with repeated lines, well over the 200-token floor.
+    fn python_source() -> String {
+        (0..80)
+            .map(|i| {
+                format!(
+                    "def handler_{i}(request, filters):\n    if not filters:\n        return None\n    result = apply(request, filters)\n    return result\n\n"
+                )
+            })
+            .collect()
+    }
+
+    /// The commands of the pilot whose output was source code, and others
+    /// that print a file: each is left exactly as the host returned it,
+    /// whatever segment of the line prints the file.
+    #[test]
+    fn source_printed_by_any_command_of_the_line_is_left_alone() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let source = python_source();
+        for cmd in [
+            "sed -n '100,160p' src/x.py",
+            "grep -n -A20 'def f' src/x.py",
+            "cat a.py | head -50",
+            "python -c \"print(open('x.py').read())\"",
+            "python3 -c 'import pathlib; print(pathlib.Path(\"x.py\").read_text())'",
+            "cd /repo && sed -n 625,705p tests/test_stats.py; grep -n 'snooze' src/x.py",
+            "cd src/dispatch; sed -n 195,250p filters.py",
+            "cd /repo; sed -n 68,130p views.py; sed -n 1,80p flows.py; cat redaction.py; grep -A8 'def redact' redaction.py",
+            "cd /repo && sed -n 775,870p service.py; git log --oneline -5",
+            "cd /repo && git log -3 && cat src/x.py",
+            "python3 - <<'EOF'\nimport re\nprint(open('t.py').read())\nEOF\nsed -n 830,870p tests/test_x.py",
+            "python3 scripts/show.py src/x.py",
+            "nl -ba src/x.py | sed -n 1,80p",
+            "awk 'NR>=10 && NR<=60' src/x.py",
+            "head -100 src/x.py && tail -20 src/y.py",
+            "rg -n -C3 'def handler' src",
+            "grep -rn 'def handler' src/",
+            "git show HEAD:src/x.py",
+            "git diff src/x.py",
+            "git blame src/x.py",
+        ] {
+            assert_eq!(
+                compute_compress(&claude_payload(cmd, &source)),
+                None,
+                "{cmd}"
+            );
+        }
+    }
+
+    /// Output no dedicated compressor owns stays as it is: the generic
+    /// fallbacks (line dedup, keep the first and last lines) never run here.
+    #[test]
+    fn output_without_a_dedicated_compressor_is_left_alone() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let log: String = (0..300)
+            .map(|i| format!("2026-01-01 10:00:{:02} INFO worker: processed batch {}\n", i % 60, i % 7))
+            .collect();
+        for cmd in ["./scripts/report.sh", "python manage.py migrate", "make-report"] {
+            assert_eq!(compute_compress(&claude_payload(cmd, &log)), None, "{cmd}");
+        }
+        // Two commands that both print: no single owner for the whole output.
+        assert_eq!(
+            compute_compress(&claude_payload("git status && git log", &long_output())),
+            None
+        );
+    }
+
+    /// What a dedicated compressor owns still compresses, labelled, also
+    /// behind a `cd` or with a `| tail` filter.
+    #[test]
+    fn git_log_and_pytest_output_still_compress() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let pytest: String = [
+            "============================= test session starts ==============================\n".to_string(),
+            "platform linux -- Python 3.12.3, pytest-8.3.2, pluggy-1.5.0\n".to_string(),
+            "rootdir: /repo\ncollected 150 items\n\n".to_string(),
+        ]
+        .into_iter()
+        .chain((0..150).map(|i| {
+            format!(
+                "tests/test_api.py::test_case_{i} PASSED{:>30}\n",
+                format!("[{:>3}%]", (i + 1) * 100 / 150)
+            )
+        }))
+        .chain(std::iter::once(
+            "\n============================= 150 passed in 2.31s ==============================\n"
+                .to_string(),
+        ))
+        .collect();
+        for (cmd, out) in [
+            ("git log", long_output()),
+            ("cd /repo && git log", long_output()),
+            ("pytest -v", pytest.clone()),
+            ("cd /repo && python -m pytest -v 2>&1 | tail -200", pytest),
+        ] {
+            let reply = compute_compress(&claude_payload(cmd, &out))
+                .unwrap_or_else(|| panic!("{cmd} should compress"));
+            let v: Value = serde_json::from_str(&reply).unwrap();
+            let stdout = v["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
+                .as_str()
+                .unwrap();
+            assert!(stdout.contains("[sobre: output compressed"), "{cmd}: {stdout}");
+            assert!(stdout.len() < out.len(), "{cmd}");
+        }
+    }
+
     #[test]
     fn interrupted_commands_are_left_alone() {
         let input = json!({
