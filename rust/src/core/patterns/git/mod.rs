@@ -144,9 +144,8 @@ mod tests {
     }
 
     // A chained `git add … && git commit …` routes the whole compound output
-    // through the add-compressor, which used to label OUTPUT LINE COUNT as a
-    // file count ("ok (+7 files)" for a 1-file commit). Numbers in summaries
-    // must come from the output, not be fabricated (limitations audit).
+    // through the add-compressor, which must not report the output's line
+    // count as a file count: numbers in summaries come from the output.
     #[test]
     fn git_add_does_not_label_line_count_as_files() {
         let output = "[main abc1234] fix: x\n 1 file changed, 1 insertion(+)\nhook line\nanother\nmore\nlines\nseven\n";

@@ -478,7 +478,7 @@ const MAX_VERBATIM_TOKENS: usize = 8000;
 /// middle is preserved (test-result summaries, panics, failures, errors). This
 /// guarantees a large test run — even a fully passing one with dozens of
 /// per-suite `test result:` lines — never silently loses its outcome lines,
-/// regardless of OS or client (issue: compression must never swallow signal).
+/// regardless of OS or client.
 fn truncate_verbatim(output: &str, original_tokens: usize) -> String {
     if original_tokens <= MAX_VERBATIM_TOKENS {
         return output.to_string();

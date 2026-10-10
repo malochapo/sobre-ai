@@ -185,12 +185,8 @@ fn shorter_only(compressed: String, original: &str) -> Option<String> {
 type PatternMatcher = fn(&str) -> bool;
 type PatternHandler = fn(&str, &str) -> Option<String>;
 
-/// Ordered prefix → compressor dispatch table (CC reduction): first
-/// matching entry wins, mirroring the previous `if c.starts_with(..) { return
-/// ...; }` cascade exactly — including that a matched entry's `None` is
-/// final, never falls through to a later entry. Registering a new CLI tool
-/// is now a one-line addition here instead of a new branch in
-/// `try_specific_pattern`.
+/// Ordered command → compressor dispatch table. The first matching entry
+/// wins, and its `None` is final: a later entry is never tried.
 const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
     (
         |c| c.starts_with("git "),
@@ -564,9 +560,9 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
 /// A grep-family search command, bare or with arguments.
 ///
 /// The bare form matters: `proxy::compress::infer_command` synthesises `grep`
-/// (no arguments) from tool names like `search_files`. The old `starts_with("grep ")`
-/// required a trailing space and never matched, so those results fell through to the
-/// terse pipeline which corrupted source identifiers.
+/// (no arguments) from tool names like `search_files`, and those results must
+/// reach the grep compressor, not the terse pipeline, which would rewrite
+/// source identifiers.
 fn is_grep_family(cmd: &str) -> bool {
     let first = cmd.split_whitespace().next().unwrap_or("");
     let base = first.rsplit('/').next().unwrap_or(first);
@@ -612,11 +608,9 @@ mod tests {
 
     #[test]
     fn vcs_path_never_inflates_tokens() {
-        // Regression for the `compress_output_never_inflates_tokens` property
-        // (Windows CI): the VCS branch returned the git compressor's reshaped
-        // output without the `shorter_only` guard the other paths use, so this
-        // tiny adversarial `git status` body grew 10 -> 11 tokens. The result
-        // must now never tokenize larger than its input (None == use original).
+        // The VCS branch keeps its compressor's result even when it is not
+        // shorter, but never one that tokenizes larger than its input: this
+        // tiny `git status` body would grow by a token (None = use original).
         let output = " Abu a\nAa aa_A00A\n\n-";
         if let Some(compressed) = compress_output("git status", output) {
             assert!(
