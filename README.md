@@ -189,7 +189,7 @@ commands:
 
 | Agent | Shell output compression |
 |---|---|
-| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy. The command itself is never changed. |
+| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy, only when a compressor made for that command owns it (git, test runners, builds, package managers, …). File content, diffs and search results stay whole, whichever command of the line printed them. The command itself is never changed. |
 | VS Code | The same, in Copilot (Agent Host) sessions, which run the Copilot CLI hooks. The Local agent runs them too but cannot replace a tool's output, so it gets none. |
 | Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `sobre -c`, only when none of the host's own command rules tells the two forms apart. |
 | Codex, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool. |
