@@ -50,12 +50,68 @@ pub(crate) fn compress_for_outcome(command: &str, output: &str, exit_code: i32) 
     compress_if_beneficial_with_exit(command, output, exit_code)
 }
 
-/// Distinct-value ratio at/above which the lossy stage drops an all-present
-/// column. Conservative: only near-unique noise (timestamps, UUIDs) is dropped,
-/// so genuinely varying-but-meaningful columns are kept.
 /// Minimum token savings to justify compression overhead (tee-log pointer
 /// + potential read-back round-trip). Below this floor, verbatim is cheaper.
 const MIN_USEFUL_SAVINGS: usize = 100;
+
+/// Below this many tokens a compressed output has lost too much to be useful.
+const MIN_OUTPUT_TOKENS: usize = 20;
+
+/// A successful command's output as a post-run hook may replace it: through
+/// the compressor dedicated to `command`, or not at all.
+///
+/// The dedicated compressors are the per-command patterns
+/// (`core::patterns`), a test runner's summary, and a build's progress
+/// folding and duplicate-diagnostic removal. The generic stages the shell
+/// path falls back to (terse, line dedup, head/tail truncation) never run
+/// here: they reshape output whose structure they do not know, source code
+/// included. Structural output (diffs, blame, search results) is source
+/// lines, and is never compressed here either. `None` when nothing owns the
+/// output, the user's `passthrough_commands` name it, or the saving is under
+/// [`MIN_USEFUL_SAVINGS`] tokens.
+pub(crate) fn compress_owned(command: &str, output: &str) -> Option<String> {
+    use crate::shell::output_policy::{OutputPolicy, classify};
+
+    if output.trim().is_empty() || crate::core::protect::has_markers(output) {
+        return None;
+    }
+    let cfg = crate::core::config::Config::load();
+    let policy = classify(command, &cfg.passthrough_commands);
+    if policy == OutputPolicy::Passthrough {
+        return None;
+    }
+    let original_tokens = count_tokens(output);
+    let compressed = if is_error_output_from_build_tool(command, output) {
+        let base =
+            maybe_fold_progress(output, original_tokens).unwrap_or_else(|| output.to_string());
+        dedup_build_diagnostics(&base)
+    } else if is_test_runner_command(command) {
+        let base =
+            maybe_fold_progress(output, original_tokens).unwrap_or_else(|| output.to_string());
+        patterns::test::compress(&base)
+            .filter(|summary| count_tokens(summary) < count_tokens(&base))
+            .unwrap_or(base)
+    } else {
+        if policy.is_protected()
+            || has_structural_output(command)
+            || looks_like_toon(output)
+            || crate::tools::sobre_shell::contains_auth_flow(output)
+        {
+            return None;
+        }
+        let clean = crate::core::compressor::strip_ansi(output);
+        let compressed = patterns::try_specific_pattern(command, &clean)?;
+        let compressed_tokens = count_tokens(&compressed);
+        // Under 5% of a mid-size output left: more was dropped than summarised.
+        let too_lossy = original_tokens < 2000 && compressed_tokens * 20 < original_tokens;
+        if compressed_tokens < MIN_OUTPUT_TOKENS || too_lossy {
+            return None;
+        }
+        compressed
+    };
+    let saving = original_tokens.saturating_sub(count_tokens(&compressed));
+    (saving >= MIN_USEFUL_SAVINGS).then_some(compressed)
+}
 
 pub(crate) fn compress_if_beneficial(command: &str, output: &str) -> String {
     compress_if_beneficial_with_exit(command, output, -1)
@@ -122,7 +178,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         return output.to_string();
     }
 
-    let min_output_tokens = 20;
+    let min_output_tokens = MIN_OUTPUT_TOKENS;
 
     let cfg = crate::core::config::Config::load();
     let policy = crate::shell::output_policy::classify(command, &cfg.passthrough_commands);

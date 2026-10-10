@@ -2,7 +2,11 @@
 //!
 //! The command itself is never touched: the host decided it may run and ran
 //! it, exactly as the agent wrote it. Only the copy of the output the model
-//! sees is replaced, and only when compression actually saves tokens. Every
+//! sees is replaced, and only when the compressor dedicated to the command
+//! (git, a test runner, a build, a package manager, …) saves tokens. Output
+//! nothing owns stays as it is: no generic fallback runs here. So does any
+//! line that prints file content in one of its commands (`sed -n`, `cat`,
+//! `grep -A`, …), since the agent may edit against what it reads. Every
 //! replaced output ends with a `[sobre: …]` line that says so and where the
 //! full output was kept.
 //!
@@ -119,14 +123,15 @@ fn copilot_reply(cmd: &str, result: &Value, type_key: &str, text_key: &str) -> O
     )
 }
 
-/// Compress one stream of a successful command. `None` when there is nothing
-/// to gain, or for file reads (`cat`/`head`/`tail`), whose content the agent
-/// may edit against and must see verbatim.
+/// Compress one stream of a successful command through the compressor that
+/// owns it ([`owned_command`]). `None` when nothing owns it or there is
+/// nothing to gain.
 fn compress_text(cmd: &str, text: &str) -> Option<(String, usize, usize)> {
-    if text.trim().is_empty() || crate::rewrite_registry::is_file_read_command(cmd) {
+    if text.trim().is_empty() {
         return None;
     }
-    let compressed = crate::shell::compress::engine::compress_for_outcome(cmd, text, 0);
+    let owned = owned_command(cmd)?;
+    let compressed = crate::shell::compress::engine::compress_owned(&owned, text)?;
     let before = count_tokens(text);
     let after = count_tokens(&compressed);
     if after >= before {
@@ -140,6 +145,43 @@ fn compress_text(cmd: &str, text: &str) -> Option<(String, usize, usize)> {
         after,
     );
     Some((compressed, before, after))
+}
+
+/// The part of `cmd` whose output one dedicated compressor may own: the line
+/// without its setup commands (`cd`, `export`, `set`, `source`, …), when
+/// what is left is one command, optionally piped through `head`, `tail` or
+/// `tee`. `None` when a command of the line prints a file
+/// ([`crate::rewrite_registry::is_file_read_command`]), for a heredoc script,
+/// and when more than one command prints: their output is no one tool's.
+fn owned_command(cmd: &str) -> Option<String> {
+    if cmd.contains("<<") || crate::rewrite_registry::is_file_read_command(cmd) {
+        return None;
+    }
+    let commands = crate::compound_lexer::commands(cmd);
+    let mut printing = commands.iter().filter(|c| c.piped || !is_setup(c.text));
+    let producer = printing.next().filter(|c| !c.piped)?;
+    let mut owned = producer.text.to_string();
+    for filter in printing {
+        if !filter.piped || !matches!(program(filter.text), "head" | "tail" | "tee") {
+            return None;
+        }
+        owned.push_str(" | ");
+        owned.push_str(filter.text);
+    }
+    Some(owned)
+}
+
+/// A command that prepares the shell and prints nothing.
+fn is_setup(command: &str) -> bool {
+    matches!(
+        program(command),
+        "cd" | "export" | "set" | "unset" | "source" | "." | "true" | ":" | "exit"
+    )
+}
+
+fn program(command: &str) -> &str {
+    let first = command.split_whitespace().next().unwrap_or("");
+    first.rsplit('/').next().unwrap_or(first)
 }
 
 fn with_label(out: &str, cmd: &str, original: &str, before: usize, after: usize) -> String {
@@ -420,6 +462,30 @@ mod tests {
                 .unwrap();
             assert!(stdout.contains("[sobre: output compressed"), "{cmd}: {stdout}");
             assert!(stdout.len() < out.len(), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn the_owned_command_is_the_one_printing_pipeline_without_setup() {
+        assert_eq!(owned_command("git log").as_deref(), Some("git log"));
+        assert_eq!(
+            owned_command("cd /repo && git log -5").as_deref(),
+            Some("git log -5")
+        );
+        assert_eq!(
+            owned_command("set -e; source .venv/bin/activate && pytest -q 2>&1 | tail -30")
+                .as_deref(),
+            Some("pytest -q 2>&1 | tail -30")
+        );
+        for cmd in [
+            "git status && git log",
+            "git log | sort",
+            "cd src",
+            "echo === && pytest",
+            "python3 - <<'EOF'\nprint(1)\nEOF",
+            "cd /repo && sed -n 1,5p x.py",
+        ] {
+            assert_eq!(owned_command(cmd), None, "{cmd}");
         }
     }
 

@@ -67,6 +67,17 @@ pub const REWRITE_COMMANDS: &[RewriteEntry] = &[
     re("cat", Category::FileRead),
     re("head", Category::FileRead),
     re("tail", Category::FileRead),
+    re("tac", Category::FileRead),
+    re("nl", Category::FileRead),
+    re("bat", Category::FileRead),
+    re("batcat", Category::FileRead),
+    re("less", Category::FileRead),
+    re("more", Category::FileRead),
+    re("sed", Category::FileRead),
+    re("awk", Category::FileRead),
+    re("gawk", Category::FileRead),
+    re("mawk", Category::FileRead),
+    re("nawk", Category::FileRead),
     // Directory listing
     re("ls", Category::DirList),
     re("find", Category::DirList),
@@ -95,16 +106,82 @@ const fn re(command: &'static str, category: Category) -> RewriteEntry {
     RewriteEntry { command, category }
 }
 
-/// Check if a command is a file read (cat/head/tail), whose output sobre never
-/// wraps or compresses.
+/// True when a command of the line prints file content, whose output sobre
+/// never wraps or compresses: a `FileRead` entry (`cat`, `head`, `sed`, …;
+/// `sed` and `awk` not when they edit in place), a grep-family search with
+/// context lines (`-A`, `-B`, `-C`), `git show <rev>:<path>`, `git blame`
+/// or `git cat-file`. Every command of a chain or pipeline counts, so
+/// `cd src && sed -n '1,80p' x.py` is a file read. A command reading the
+/// previous one's output (`git log | head`) is not: it prints that output.
 pub fn is_file_read_command(cmd: &str) -> bool {
-    REWRITE_COMMANDS
+    crate::compound_lexer::commands(cmd)
         .iter()
-        .filter(|e| e.category == Category::FileRead)
-        .any(|e| {
-            let prefix = format!("{} ", e.command);
-            cmd.starts_with(&prefix) || cmd == e.command
-        })
+        .any(|c| !c.piped && reads_file(c.text))
+}
+
+fn reads_file(command: &str) -> bool {
+    let words: Vec<&str> = strip_env_prefix(command).split_whitespace().collect();
+    let Some((first, args)) = words.split_first() else {
+        return false;
+    };
+    let program = first.rsplit('/').next().unwrap_or(first).to_ascii_lowercase();
+    match program.as_str() {
+        "sed" | "awk" | "gawk" | "mawk" | "nawk" => {
+            !crate::shell::compress::has_in_place_flag(command)
+        }
+        "grep" | "egrep" | "fgrep" | "rg" | "ag" | "ack" | "ugrep" => {
+            args.iter().any(|a| is_context_flag(a))
+        }
+        "git" => git_prints_file(args),
+        p => REWRITE_COMMANDS
+            .iter()
+            .any(|e| e.category == Category::FileRead && e.command == p),
+    }
+}
+
+/// A grep-family option that prints lines around each match: `-A 3`, `-B3`,
+/// `-nC2`, `-5`, `--context=3`, `--after-context`, `--before-context`. A
+/// short-flag cluster stops at `e`, `f` or `m`, whose value follows them.
+fn is_context_flag(word: &str) -> bool {
+    if let Some(long) = word.strip_prefix("--") {
+        return ["context", "after-context", "before-context"]
+            .iter()
+            .any(|f| long == *f || long.strip_prefix(f).is_some_and(|v| v.starts_with('=')));
+    }
+    let Some(short) = word.strip_prefix('-').filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    if short.bytes().all(|b| b.is_ascii_digit()) {
+        return true;
+    }
+    for b in short.bytes() {
+        match b {
+            b'A' | b'B' | b'C' => return true,
+            b'e' | b'f' | b'm' => return false,
+            b if b.is_ascii_alphabetic() => {}
+            _ => return false,
+        }
+    }
+    false
+}
+
+/// `git show <rev>:<path>`, `git blame`, `git annotate`, `git cat-file`, and
+/// `git grep` with context lines print a file's lines.
+fn git_prints_file(args: &[&str]) -> bool {
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match *arg {
+            "-C" | "-c" | "--git-dir" | "--work-tree" | "--namespace" => {
+                rest.next();
+            }
+            a if a.starts_with('-') => {}
+            "blame" | "annotate" | "cat-file" => return true,
+            "show" => return rest.any(|a| !a.starts_with('-') && a.contains(':')),
+            "grep" => return rest.any(|a| is_context_flag(a)),
+            _ => return false,
+        }
+    }
+    false
 }
 
 /// Check if a command string matches a rewritable prefix (for hook handlers).
@@ -267,6 +344,50 @@ mod tests {
         assert!(is_file_read_command("tail -n 10 file.rs"));
         assert!(!is_file_read_command("git status"));
         assert!(!is_file_read_command("echo hello"));
+    }
+
+    /// Any command of a chain or pipeline that prints a file makes the line
+    /// a file read; a command filtering the previous one's output does not.
+    #[test]
+    fn file_reads_are_found_in_every_command_of_a_line() {
+        for cmd in [
+            "sed -n '100,160p' src/x.py",
+            "grep -n -A20 'def f' src/x.py",
+            "cat a.py | head -50",
+            "cd /repo && sed -n 625,705p tests/t.py; grep -n snooze src/x.py",
+            "cd /repo; git log --oneline -5; sed -n 1,80p flows.py",
+            "cd /repo && git log -3 && cat src/x.py",
+            "nl -ba src/x.py | sed -n 1,80p",
+            "awk 'NR>=10 && NR<=60' src/x.py",
+            "FOO=1 /usr/bin/head -100 src/x.py",
+            "rg -n -C3 'def f' src",
+            "grep -rnA5 handler src",
+            "grep -5 handler src/x.py",
+            "grep --context=2 handler src/x.py",
+            "git show HEAD:src/x.py",
+            "git -C /repo show HEAD~2:src/x.py",
+            "git blame src/x.py",
+            "git cat-file -p HEAD:src/x.py",
+            "git grep -n -B2 handler",
+        ] {
+            assert!(is_file_read_command(cmd), "{cmd}");
+        }
+        for cmd in [
+            "git log | head -40",
+            "cargo test 2>&1 | tail -30",
+            "ps aux | awk '{print $2}'",
+            "git log --oneline | sed -n 1,5p",
+            "sed -i 's/a/b/' src/x.py",
+            "cd /repo && sed -i.bak 's/a/b/' x.py && git diff --stat",
+            "grep -rn handler src/",
+            "grep -c handler src/x.py",
+            "git show HEAD --stat",
+            "git -C /repo log -3",
+            "git status && git log",
+            "pytest -q",
+        ] {
+            assert!(!is_file_read_command(cmd), "{cmd}");
+        }
     }
 
     #[test]
