@@ -206,9 +206,11 @@ pub(crate) fn handle_find_related(
         return "ERR: empty index. Try action=reindex first.".to_string();
     }
 
-    // The index keys files by their path relative to the root; an absolute
-    // or `./`-prefixed path names the same file.
-    let key = crate::core::index_paths::graph_relative_key(file_path, &root.to_string_lossy());
+    // The index keys files by their path relative to the root, with the
+    // platform's separator; an absolute or `./`-prefixed path names the same
+    // file.
+    let key = crate::core::index_paths::graph_relative_key(file_path, &root.to_string_lossy())
+        .replace('/', std::path::MAIN_SEPARATOR_STR);
     let source_chunk = index
         .chunks
         .iter()

@@ -26,11 +26,6 @@ pub fn is_safe_scan_root_public(path: &str) -> bool {
     is_safe_scan_root(path)
 }
 
-fn is_filesystem_root(path: &str) -> bool {
-    let p = Path::new(path);
-    p.parent().is_none() || (cfg!(windows) && p.parent() == Some(Path::new("")))
-}
-
 /// Returns `true` if `dir` contains a known project marker.
 ///
 /// Delegates to the single TCC-guarded probe in `pathutil` so a
@@ -72,7 +67,7 @@ fn is_safe_scan_root(path: &str) -> bool {
         return false;
     }
 
-    if normalized == "/" || normalized == "\\" || is_filesystem_root(&normalized) {
+    if normalized == "/" || normalized == "\\" || crate::core::pathutil::is_filesystem_root(p) {
         tracing::warn!("[graph_index: refusing to scan filesystem root]");
         return false;
     }

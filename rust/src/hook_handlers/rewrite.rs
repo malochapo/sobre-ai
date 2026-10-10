@@ -157,13 +157,18 @@ mod tests {
 
     #[test]
     fn single_known_commands_are_wrapped_whole() {
+        // Windows hosts run it through cmd or PowerShell: plain double quotes.
+        let wrapped = |cmd: &str| {
+            if cfg!(windows) {
+                format!("sobre -c \"{cmd}\"")
+            } else {
+                format!("sobre -c '{cmd}'")
+            }
+        };
+        assert_eq!(candidate("git status", BIN), Some(wrapped("git status")));
         assert_eq!(
-            candidate("git status", BIN).as_deref(),
-            Some("sobre -c 'git status'")
-        );
-        assert_eq!(
-            candidate("cargo test --lib", BIN).as_deref(),
-            Some("sobre -c 'cargo test --lib'")
+            candidate("cargo test --lib", BIN),
+            Some(wrapped("cargo test --lib"))
         );
     }
 

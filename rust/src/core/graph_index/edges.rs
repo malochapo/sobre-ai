@@ -570,8 +570,8 @@ pub(super) fn cochange_pairs(
             count_commit(&current_commit);
             current_commit.clear();
         } else if !line.trim().is_empty() {
-            // git writes `/`; the index keys use the platform separator.
-            current_commit.push(line.trim().replace('/', std::path::MAIN_SEPARATOR_STR));
+            // git writes `/`, as the index keys do on every platform.
+            current_commit.push(line.trim().to_string());
         }
     }
     count_commit(&current_commit);

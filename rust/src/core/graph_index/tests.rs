@@ -1037,12 +1037,11 @@ fn sibling_edges_are_deterministic() {
 }
 
 /// Every commit counts, the last one too, and git's `/` paths match the
-/// index keys on every platform.
+/// index keys, which use `/` on every platform.
 #[test]
 fn cochange_pairs_count_every_commit() {
-    let sep = std::path::MAIN_SEPARATOR_STR;
-    let a = format!("src{sep}a.rs");
-    let b = format!("src{sep}b.rs");
+    let a = "src/a.rs".to_string();
+    let b = "src/b.rs".to_string();
     let files: std::collections::HashSet<&str> = [a.as_str(), b.as_str()].into();
     // Five commits; the last is not followed by a `---` line.
     let log = "---\nsrc/a.rs\nsrc/b.rs\n\n".repeat(5);

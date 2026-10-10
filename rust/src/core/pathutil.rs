@@ -263,10 +263,15 @@ pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
         return true;
     }
     let s = dir.to_string_lossy();
-    if s == "/" || s == "\\" || s == "." {
+    if s == "/" || s == "\\" || s == "." || is_filesystem_root(dir) {
         return true;
     }
     is_agent_config_dir(dir)
+}
+
+/// `/`, or a drive root such as `C:\` or `C:` on Windows.
+pub(crate) fn is_filesystem_root(dir: &Path) -> bool {
+    dir.parent().is_none() || (cfg!(windows) && dir.parent() == Some(Path::new("")))
 }
 
 /// Well-known project markers used to identify project roots.
