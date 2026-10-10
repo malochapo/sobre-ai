@@ -136,8 +136,9 @@ mod tests {
     #[test]
     fn git_add_does_not_label_line_count_as_files() {
         let output = (0..7)
-            .map(|i| format!("warning: in the working copy of 'src/f{i}.rs', LF will be replaced by CRLF the next time Git touches it\n"))
-            .collect::<String>();
+            .map(|i| format!("warning: in the working copy of 'src/f{i}.rs', LF will be replaced by CRLF the next time Git touches it"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let result = compress("git add .", &output).unwrap();
         assert!(
             !result.contains("files)"),
