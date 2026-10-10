@@ -34,10 +34,11 @@ is being replaced, the answer is no.
   If a value can come from two places, it comes from one place.
 - **No environment variables that change behaviour.** Variables may exist for
   paths and secrets — `SOBRE_CONFIG_DIR`, `SOBRE_DATA_DIR`,
-  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does. The one marker sobre
-  reads is not a setting either: `SOBRE_WRAPPED`, which sobre sets on the
-  commands it starts itself so that a nested `sobre -c` does not compress the
-  same output twice. Nothing tells the user to set it.
+  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does. The markers sobre sets
+  on the processes it starts itself are not settings either: `SOBRE_WRAPPED`,
+  so that a nested `sobre -c` does not compress the same output twice, and on
+  macOS `SOBRE_SEATBELT`, so that a process re-run under the sandbox profile
+  does not re-run itself again. Nothing tells the user to set them.
 - **No profiles**, no presets, no modes.
 - **No settings outside the file.** No per-project files, no settings kept in
   session state, nothing a previous run persisted that later acts as a value.
@@ -54,8 +55,8 @@ The file currently has 11 keys, leaving four slots: `search_roots`, `ignore`,
 `enabled`, `port` and `upstreams`. Every key has one value even when
 the file is silent: `compression_level` defaults to 0.3, never to "unset".
 One key holds an answer rather than a setting: `proxy.enabled` is unset until
-`init` asks whether to use the proxy, and unset means what `false` means: the
-proxy is off.
+`init` asks whether to use the proxy (or `proxy enable`, `proxy disable` or
+`config set` sets it), and unset means what `false` means: the proxy is off.
 `init` sets nothing of its own: besides which agents to connect, its flags
 only preview (`--check`), skip its questions (`--repair`) or report in JSON
 (`--json`). Its two questions write `proxy.enabled` and, in a build with
@@ -194,9 +195,8 @@ exist so that shipping often and shipping safely are not in tension.
   CI regenerates and compares with the code. The repo contains source, tests,
   docs and CI. Nothing else.
 - **Commit messages and comments describe what `sobre` does and why.** They do
-  not narrate what the upstream project got wrong. The fork is justified by
-  what it is. Technical observations about inherited code belong in the
-  maintainers' private notes, not in a permanent public record that sits
+  not narrate the code's history or what earlier authors got wrong: that
+  belongs outside the repository, not in a permanent public record that sits
   directly above the commits of the people it discusses.
 
 ---
