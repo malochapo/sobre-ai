@@ -199,71 +199,47 @@ mod tests {
     fn three_topic_facts() -> Vec<KnowledgeFact> {
         vec![
             fact(
-                "billing-stripe",
+                "payments",
                 "webhook",
-                "parses cancel_at from stripe payloads",
+                "parses cancel_at from provider payloads",
             ),
             fact(
-                "billing-stripe",
+                "payments",
                 "emails",
                 "welcome email sent on subscription start",
             ),
+            fact("payments", "purge", "account purge runs in one transaction"),
             fact(
-                "billing-stripe",
-                "purge",
-                "account purge runs in one transaction",
-            ),
-            fact(
-                "billing-stripe",
+                "payments",
                 "portal",
                 "cancellation reasons enabled in portal",
             ),
+            fact("payments", "entitlements", "internal key header required"),
             fact(
-                "billing-stripe",
-                "entitlements",
-                "internal key header required",
-            ),
-            fact(
-                "billing-stripe",
+                "payments",
                 "metadata",
                 "update format is metadata bracket key",
             ),
+            fact("web-ui", "heatmap", "renders bounce counters per file"),
+            fact("web-ui", "charts", "cumulative actions over 90 days"),
+            fact("web-ui", "auth", "token required in sessionStorage"),
+            fact("web-ui", "port", "dev server listens on 8080 with flag"),
+            fact("web-ui", "pressure", "context pressure table lists files"),
+            fact("web-ui", "roi", "savings ledger feeds roi panel"),
             fact(
-                "dashboard-ui",
-                "heatmap",
-                "renders bounce counters per file",
-            ),
-            fact("dashboard-ui", "charts", "cumulative actions over 90 days"),
-            fact("dashboard-ui", "auth", "token required in sessionStorage"),
-            fact("dashboard-ui", "port", "dashboard serves on 7421 with flag"),
-            fact(
-                "dashboard-ui",
-                "pressure",
-                "context pressure table lists files",
-            ),
-            fact("dashboard-ui", "roi", "savings ledger feeds roi panel"),
-            fact(
-                "infrastructure",
+                "operations",
                 "deploy",
-                "rsync to pounce-server then script",
+                "rsync to the build host then script",
             ),
             fact(
-                "infrastructure",
+                "operations",
                 "docker",
                 "billing uses separate database container",
             ),
-            fact(
-                "infrastructure",
-                "launchagent",
-                "keepalive respawns the proxy",
-            ),
-            fact("infrastructure", "postgres", "cloud user is sobre_cloud"),
-            fact(
-                "infrastructure",
-                "traefik",
-                "routes by host rule to services",
-            ),
-            fact("infrastructure", "smtp", "zeptomail sends lifecycle emails"),
+            fact("operations", "launchagent", "keepalive respawns the proxy"),
+            fact("operations", "postgres", "application user owns the schema"),
+            fact("operations", "traefik", "routes by host rule to services"),
+            fact("operations", "smtp", "a relay sends lifecycle emails"),
         ]
     }
 

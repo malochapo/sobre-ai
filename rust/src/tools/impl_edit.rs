@@ -631,7 +631,7 @@ mod tests {
         );
     }
 
-    /// Decision 2: no whitespace-insensitive match. The error shows the
+    /// No whitespace-insensitive match. The error shows the
     /// nearest line quoted, trailing spaces visible, and nothing is written.
     #[test]
     fn trailing_whitespace_is_not_ignored() {

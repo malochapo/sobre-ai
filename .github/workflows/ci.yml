@@ -1,10 +1,9 @@
 name: CI
 
-# Every pull request into develop or main must pass Lint and the Linux tests.
-# macOS and Windows (tests and clippy) run when a push to main calls this
-# workflow before a release (release.yml) and on demand (workflow_dispatch):
-# the repository is private, where their minutes bill at 10x and 2x. A merge
-# into develop does not re-run what its pull request ran.
+# Every pull request into develop or main must pass Lint and the tests on
+# Linux, macOS and Windows. The same jobs run when a push to main calls this
+# workflow before a release (release.yml), and on demand (workflow_dispatch).
+# A merge into develop does not re-run what its pull request ran.
 on:
   pull_request:
     branches: [develop, main]
@@ -52,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +69,7 @@ jobs:
       - name: cargo test, build with local embeddings
         if: runner.os == 'Linux'
         working-directory: rust
-        run: cargo test --locked --features dense --lib
+        run: cargo test --locked --features dense
       # Linux clippy, both builds, runs in Lint; Windows- and macOS-only code
       # is only seen here.
       - name: cargo clippy

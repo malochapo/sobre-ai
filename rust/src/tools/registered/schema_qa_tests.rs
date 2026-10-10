@@ -165,7 +165,7 @@ fn patch_schema_encodes_per_op_required_params() {
     })));
 }
 
-/// Decision 7: every argument a handler reads is in its tool's schema, so
+/// Every argument a handler reads is in its tool's schema, so
 /// what `tools/list` shows is everything the tool honours (invariant 3). The
 /// sources are each tool's handler and the modules it hands its arguments to.
 #[test]
