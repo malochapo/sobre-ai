@@ -34,7 +34,10 @@ is being replaced, the answer is no.
   If a value can come from two places, it comes from one place.
 - **No environment variables that change behaviour.** Variables may exist for
   paths and secrets — `SOBRE_CONFIG_DIR`, `SOBRE_DATA_DIR`,
-  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does.
+  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does. The one marker sobre
+  reads is not a setting either: `SOBRE_WRAPPED`, which sobre sets on the
+  commands it starts itself so that a nested `sobre -c` does not compress the
+  same output twice. Nothing tells the user to set it.
 - **No profiles**, no presets, no modes.
 - **No settings outside the file.** No per-project files, no settings kept in
   session state, nothing a previous run persisted that later acts as a value.
@@ -50,6 +53,9 @@ The file currently has 11 keys, leaving four slots: `search_roots`, `ignore`,
 `compression_level`, `debug_log`, `embedding_model`, and the `[proxy]` table's
 `enabled`, `port` and `upstreams`. Every key has one value even when
 the file is silent: `compression_level` defaults to 0.3, never to "unset".
+One key holds an answer rather than a setting: `proxy.enabled` is unset until
+`init` asks whether to use the proxy, and unset means what `false` means: the
+proxy is off.
 `init` sets nothing of its own: besides which agents to connect, its flags
 only preview (`--check`), skip its questions (`--repair`) or report in JSON
 (`--json`). Its two questions write `proxy.enabled` and, in a build with
