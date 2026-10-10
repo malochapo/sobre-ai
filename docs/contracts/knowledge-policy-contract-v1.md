@@ -87,16 +87,15 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
   which archives the evicted tail **before** removing it: when the archive
   cannot be written, nothing is removed.
 - **Lifecycle compaction** (`rust/src/core/memory_lifecycle.rs::run_lifecycle`)
-  removes facts of low confidence, stale facts, and facts never retrieved for
-  `prune_unretrieved_after_days`, then archives them; a failed archive write
-  is ignored.
+  archives facts of low confidence, stale facts, and facts never retrieved for
+  `prune_unretrieved_after_days`, and removes them only once the archive is
+  written: when it cannot be written, nothing is removed.
 - **Consolidation** merges near-duplicate current facts of one category
   (word similarity at least `similarity_threshold`): the lower-confidence one
   is dropped without an archive, its confirmations added to the one kept.
-- Facts are archived at `memory/archive/archive-*.json`, shared by every
-  project; history under
-  `memory/archive/<store>/<project-hash>/archive-*.json`
-  (`rust/src/core/memory_archive.rs`).
+- Each store is archived per project, at
+  `memory/archive/<store>/<project-hash>/archive-*.json`, where `<store>` is
+  `facts` or `history` (`rust/src/core/memory_archive.rs`).
 - **One formula plus hysteresis.** `reclaim_target(max, reclaim_headroom_pct)`
   (`max - ceil(max * pct)`, with `pct` clamped to `[0.0, 0.95]`) is the only
   target-size calculation. A reclaim triggers only when `len >= max` and then
@@ -105,8 +104,8 @@ by `base_stability_days`, `low_confidence_threshold`, `stale_days`,
   facts by `is_current` then output ranking, history newest first.
 - **Archive reachability.** `ArchiveConfig::default()` sets both `max_files`
   and `rehydrate_reach` to 16, so every retained facts archive is reachable:
-  a `recall` that matches no current fact brings up to 3 matching archived
-  facts back into the current project, whichever project archived them.
+  a `recall` that matches no current fact brings up to 3 matching facts back
+  from the project's own archives.
 
 ## Tool surface
 

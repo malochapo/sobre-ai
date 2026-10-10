@@ -250,7 +250,7 @@ project hash: a short hash of the canonical project root
 | `usage.jsonl` | the usage ledger ([contract](contracts/usage-ledger-v1.md)) | until `gain --reset` |
 | `sessions/<id>.json` | saved sessions | 7 days: older ones are deleted when a server starts |
 | `knowledge/<h>/knowledge.json`, `gotchas.json`, `embeddings.json` | facts and consolidation history, pitfalls, fact embeddings | 200 facts, 100 history entries; unused facts archived after 90 days |
-| `memory/archive/…` | archived facts and history | the newest 16 per store; `recall` brings back archived facts it finds nothing else for |
+| `memory/archive/…` | archived facts and history | the newest 16 per store and project; `recall` brings back archived facts it finds nothing else for |
 | `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst`, `health.json` | the code graph | rebuilt when stale; removed when a server starts 48 hours after its last build, or by `doctor --fix` when the project is gone |
 | `vectors/<h>/bm25_index.bin.zst`, `embeddings.bin`, `project_root.txt` | BM25 and dense indexes | rebuilt when stale; removed by `doctor --fix` when the project is gone; BM25 is not saved above 512 MB |
 | `read_cache/stub_index.json` | which file versions a conversation has already received (no content) | 1024 entries |
