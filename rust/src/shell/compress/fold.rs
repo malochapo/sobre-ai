@@ -43,9 +43,9 @@ pub(crate) fn fold(text: &str, level: CompressionLevel, reads_files: bool) -> Op
         return None;
     }
     let mut lines: Vec<String> = text.lines().map(str::to_string).collect();
-    lines = fold_log_runs(lines);
+    lines = fold_log_runs(&lines);
     if level >= CompressionLevel::Standard {
-        lines = search_headings(lines);
+        lines = search_headings(&lines);
     }
     if level >= CompressionLevel::Raw && !reads_files {
         lines = cut_long_output(lines);
@@ -86,7 +86,7 @@ fn log_template(line: &str) -> Option<String> {
     )
 }
 
-fn fold_log_runs(lines: Vec<String>) -> Vec<String> {
+fn fold_log_runs(lines: &[String]) -> Vec<String> {
     let templates: Vec<Option<String>> = lines.iter().map(|l| log_template(l)).collect();
     let mut out = Vec::with_capacity(lines.len());
     let mut i = 0;
@@ -130,7 +130,7 @@ fn split_search_line(line: &str) -> Option<(&str, &str)> {
     Some((path.as_str(), &line[path.end() + 1..]))
 }
 
-fn search_headings(lines: Vec<String>) -> Vec<String> {
+fn search_headings(lines: &[String]) -> Vec<String> {
     let mut out = Vec::with_capacity(lines.len());
     let mut i = 0;
     while i < lines.len() {
@@ -223,7 +223,8 @@ mod tests {
             .lines()
             .enumerate()
             .map(|(n, l)| format!("{}:{l}\n", n * 3 + 10))
-            .collect();
+            .collect::<Vec<_>>()
+            .concat();
         let text =
             format!("  19852 api.log\n  27621 scheduler.log\n{grepped}ERROR: something else\n");
         let folded = fold(&text, CompressionLevel::Lite, false).expect("folds");
@@ -241,7 +242,7 @@ mod tests {
             "2025-07-28T03:00:00.000Z scheduler-46x2cb2h2-dq7xn ERROR:Case close reminder failed"
                 .into(),
         );
-        assert_eq!(fold_log_runs(lines.clone()), lines);
+        assert_eq!(fold_log_runs(&lines), lines);
     }
 
     #[test]
@@ -274,7 +275,7 @@ mod tests {
         let mut path = String::new();
         let mut rebuilt = String::new();
         for line in folded.lines() {
-            if line.ends_with(".py") {
+            if line.starts_with("src/") {
                 path = line.to_string();
             } else if line == "--" {
                 rebuilt.push_str("--\n");
@@ -299,14 +300,15 @@ mod tests {
             "src/a.py:1:x = 1".to_string(),
             "src/b.py:2:y = 2".to_string(),
         ];
-        assert_eq!(search_headings(lines.clone()), lines);
+        assert_eq!(search_headings(&lines), lines);
     }
 
     #[test]
     fn long_output_is_cut_only_at_raw_and_never_for_file_content() {
         let listing: String = (0..400)
             .map(|i| format!("./src/dispatch/module_{i}/__init__.py\n"))
-            .collect();
+            .collect::<Vec<_>>()
+            .concat();
         assert_eq!(fold(&listing, CompressionLevel::Max, false), None);
         assert_eq!(fold(&listing, CompressionLevel::Raw, true), None);
         let cut = fold(&listing, CompressionLevel::Raw, false).expect("cuts");
