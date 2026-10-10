@@ -1,37 +1,10 @@
 //! Shared tool lifecycle — records the `sobre -c` shell wrapper's compressions
 //! in the usage ledger, as the MCP server records its own.
 
-use crate::core::session::SessionState;
 use crate::core::usage::{self, Surface};
 
-/// How many recently-touched files form the "working set" a new read is
-/// associated with for traversal (co-access) edges. Small, so the signal
-/// stays local to what the agent is actively juggling.
-const TRAVERSAL_WINDOW: usize = 6;
-
-/// Recent distinct file paths (excluding `current`), most-recent first, capped
-/// to the traversal window — the working set a new read co-occurs with.
-pub(crate) fn recent_working_set(session: &SessionState, current: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for f in session.files_touched.iter().rev() {
-        if f.path == current || out.contains(&f.path) {
-            continue;
-        }
-        out.push(f.path.clone());
-        if out.len() >= TRAVERSAL_WINDOW {
-            break;
-        }
-    }
-    out
-}
-
-/// Whether `root` is a usable project root for repo-relative normalization.
-pub(crate) fn usable_root(root: Option<&str>) -> Option<&str> {
-    root.filter(|r| !r.trim().is_empty() && *r != ".")
-}
-
-/// Record a shell command with full Context OS side effects. The usage ledger
-/// files the compression under the command's program name (`cargo`, `git`).
+/// Record a shell command's compression in the usage ledger, filed under the
+/// command's program name (`cargo`, `git`).
 pub fn record_shell_command(command: &str, original_tokens: usize, output_tokens: usize) {
     usage::record_compression(
         Surface::Shell,

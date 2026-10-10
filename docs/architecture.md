@@ -272,7 +272,6 @@ project hash: a short hash of the canonical project root
 |---|---|---|
 | `tee/` | full outputs behind compressed ones (0600) | 24 hours |
 | `hooks/dedup/`, `hooks/read/` | hook state shared between hook processes | 1 minute; 24 hours or the next compaction |
-| `cooccurrence/<h>.json` | files read together, for ranking | bounded, decaying |
 | `agent_runtime_env.json` | the agent's `CODEX_*`/`CLAUDE_*`/`OPENCODE_*`/`GEMINI_*` variables, never credentials (0600) | ignored after 2 hours |
 | `proxy.log`, `proxy.port` | a detached proxy's output and port | appended; overwritten |
 | `proxy_wiring.json` | what the proxy wiring wrote into agent configs, and what it replaced | until disabled |

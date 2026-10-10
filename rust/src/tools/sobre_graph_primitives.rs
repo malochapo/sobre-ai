@@ -486,8 +486,6 @@ fn edge_confidence(kind: &str, weight: f64) -> f64 {
         "module" => 0.6,
         // More co-changes ⇒ more confidence, with diminishing returns.
         "cochange" => (0.30 + weight.max(0.0).ln_1p() * 0.18).clamp(0.30, 0.85),
-        // Learned co-access (files opened together in real sessions).
-        "co_access" => (0.35 + weight.max(0.0).ln_1p() * 0.16).clamp(0.35, 0.80),
         "sibling" => 0.25,
         _ => 0.5,
     }

@@ -61,7 +61,6 @@ pub mod bm25_index;
 pub mod content_cache;
 pub mod content_chunk;
 pub mod context_packing;
-pub mod cooccurrence;
 #[cfg(feature = "dense")]
 pub mod dense_backend;
 #[cfg(feature = "dense")]
@@ -76,7 +75,6 @@ pub mod embeddings;
 pub mod hybrid_search;
 #[cfg(feature = "dense")]
 pub mod search_reranking;
-pub mod spreading_activation;
 
 // ---------------------------------------------------------------------------
 // Domain: Session & Handoff

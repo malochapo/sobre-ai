@@ -31,7 +31,7 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
 PRIMARY TOOL — call FIRST for understanding code (before editing/debugging/'how does X work').
 Omit task at session start: returns the project overview — structure, hotspots, last task, recent decisions, facts from previous sessions.
 With a task: returns ranked files with relevant symbol source inline grouped by file, and the recorded pitfalls it matches.
-Combines BM25 lexical+semantic+associative retrieval+submodular optimization.
+Combines BM25 lexical+semantic retrieval+submodular optimization.
 ANTIPATTERN: Do NOT chain search→read→symbol — one compose replaces the whole chain.
 ANTIPATTERN: Do NOT Read files whose source compose already returned — it IS the source.
 WORKFLOW: Fire parallel sobre_read or sobre_compose for different areas.
