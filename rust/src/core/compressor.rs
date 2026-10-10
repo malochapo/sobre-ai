@@ -17,7 +17,10 @@ pub fn strip_ansi(s: &str) -> String {
         .collect()
 }
 
-/// Strips comments, blank lines, and normalizes indentation for maximum token savings.
+/// The `aggressive` text pass. Markdown, JSON, CSV/TSV and YAML go to their
+/// own compactors when those pay; anything else loses its comments,
+/// attributes (`#[…]`), blank lines and half of its space indentation, and
+/// runs of closing brackets join onto one line.
 pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
     // Structured data (JSON/JSONL) carries no comments and barely compresses via
     // the line-based path below (~0% measured). Strip insignificant whitespace
@@ -91,7 +94,9 @@ pub fn aggressive_compress(content: &str, ext: Option<&str>) -> String {
         if trimmed.starts_with("//") && !trimmed.starts_with("///") {
             continue;
         }
-        if trimmed.starts_with('*') || trimmed.starts_with("*/") {
+        // A block comment's continuation line (` * text`, ` */`) whose opener
+        // was not at a line start. `*x += 1;`, `*args` and `**kwargs` are code.
+        if trimmed == "*" || trimmed.starts_with("* ") || trimmed.starts_with("*/") {
             continue;
         }
         if is_python && trimmed.starts_with('#') {
@@ -416,6 +421,23 @@ mod tests {
         assert!(!result.contains("start"));
         assert!(!result.contains("middle"));
         assert!(result.contains("fn main()"));
+    }
+
+    /// A line that starts with `*` is code, not a comment, unless it continues
+    /// a block comment: a deref assignment, `*args`, a glob import.
+    #[test]
+    fn test_aggressive_keeps_star_led_code() {
+        let rust = "fn bump(x: &mut i32) {\n    *x += 1;\n}";
+        assert!(aggressive_compress(rust, Some("rs")).contains("*x += 1;"));
+        let py = "def f(\n    a,\n    *args,\n    **kwargs,\n):\n    pass";
+        let out = aggressive_compress(py, Some("py"));
+        assert!(out.contains("*args,"), "{out}");
+        assert!(out.contains("**kwargs,"), "{out}");
+        // A block comment's continuation lines still go.
+        let doc = "/**\n * Adds one.\n */\nfn add() {}";
+        let out = aggressive_compress(doc, Some("rs"));
+        assert!(!out.contains("Adds one"), "{out}");
+        assert!(out.contains("fn add()"));
     }
 
     #[test]

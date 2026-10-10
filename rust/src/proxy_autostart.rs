@@ -25,7 +25,7 @@ fn health_identifies_sobre_proxy(body: &str) -> bool {
 
 /// The PID of the sobre proxy answering `/health` on `port`, or `None` when
 /// nothing answers there or the answer is not a sobre proxy's.
-fn proxy_pid_on_port(port: u16) -> Option<u32> {
+pub(crate) fn proxy_pid_on_port(port: u16) -> Option<u32> {
     let health_url = format!("http://127.0.0.1:{port}/health");
     let response = ureq::get(&health_url)
         .config()
@@ -121,14 +121,10 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
     false
 }
 
+/// Installs and starts the autostart unit running `sobre proxy start` on
+/// `port`. False when the service manager did not start it, or there is none.
 pub fn install(port: u16, quiet: bool) -> bool {
-    let binary = find_binary();
-    if binary.is_empty() {
-        if !quiet {
-            tracing::error!("Cannot find sobre binary for autostart");
-        }
-        return false;
-    }
+    let binary = crate::core::portable_binary::resolve_portable_binary();
 
     #[cfg(target_os = "macos")]
     {
@@ -234,11 +230,28 @@ pub fn uninstall(_quiet: bool) {
     uninstall_systemd(_quiet);
 }
 
-/// Whether this platform has a proxy-autostart backend (LaunchAgent on macOS,
-/// systemd user service on Linux). Windows and other targets have none, so a
-/// missing autostart there must not be treated as a failure by `doctor`.
+/// Whether this machine has a proxy-autostart backend: launchd on macOS, a
+/// systemd user session on Linux (a container or an SSH session often has
+/// none). Without one the proxy is started by hand, and `doctor` does not
+/// count a missing autostart as a failure.
 pub fn is_supported() -> bool {
-    cfg!(any(target_os = "macos", target_os = "linux"))
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("systemctl")
+            .args(["--user", "show-environment"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
 }
 
 /// Returns true if the proxy autostart is installed (plist/systemd service file exists).
@@ -542,10 +555,6 @@ fn uninstall_systemd(quiet: bool) {
     if !quiet {
         println!("  Removed systemd service: {SYSTEMD_SERVICE}");
     }
-}
-
-pub fn find_binary() -> String {
-    crate::core::portable_binary::resolve_portable_binary()
 }
 
 #[cfg(test)]

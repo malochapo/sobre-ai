@@ -76,8 +76,8 @@ fn message_has_cache_control(msg: &Value) -> bool {
 /// once a message has been pruned it looks the same on every later turn.
 ///
 /// `tool_names` maps the originating tool-call id → tool name so a pruned *file
-/// read* is replaced with an honest, actionable stub ("re-read the file") rather
-/// than a misleading first-3/last-2 excerpt of source code. Command/log output
+/// read* is replaced with a stub that points at the kept original rather than
+/// a misleading first-3/last-2 excerpt of source code. Command/log output
 /// keeps the head/tail summary, which stays readable for diagnostics.
 #[cfg(test)]
 pub(crate) fn prune_history(
@@ -91,8 +91,7 @@ pub(crate) fn prune_history(
 /// Like [`prune_history`] but only rewrites `messages[prune_start..prune_end]`.
 /// `prune_start` skips the client's provider-cached prefix (see
 /// [`cached_prefix_len`]) so cache-aware pruning never invalidates an
-/// already-cached prompt prefix on metered rails. With `prune_start = 0`
-/// this is identical to the historical `prune_history` behaviour.
+/// already-cached prompt prefix on metered rails.
 pub(crate) fn prune_history_range(
     messages: &mut [Value],
     prune_start: usize,

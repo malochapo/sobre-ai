@@ -103,12 +103,11 @@ impl SessionState {
     /// Loads every saved session that belongs to a project root.
     pub fn all_for_project_root(project_root: &str) -> Vec<Self> {
         // Broad roots ("/", HOME, agent sandboxes) never own a session. Bail out
-        // BEFORE scanning: the MCP server boots with cwd "/" and previously walked
-        // every stored session here, stat-ing each session's project_root /
-        // shell_cwd. For roots under ~/Documents that probe popped the macOS
-        // TCC prompt in sobre's name on every launchd (re)start —
-        // and `shell_cwd.starts_with("/")` could even leak an arbitrary
-        // project's session into the broad-root context.
+        // BEFORE scanning: the MCP server boots with cwd "/", and walking every
+        // stored session would stat each session's project_root / shell_cwd.
+        // For roots under ~/Documents that probe pops the macOS TCC prompt in
+        // sobre's name on every launchd (re)start, and a `/` root would match
+        // every project's session.
         if crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(project_root)) {
             return Vec::new();
         }

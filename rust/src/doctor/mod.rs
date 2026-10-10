@@ -34,11 +34,8 @@ pub(super) struct Outcome {
 
 /// Accumulates doctor checks so the rendered ✓/✗ list and the summary tally can
 /// never diverge: every scored check is counted exactly once via
-/// [`Scoreboard::check`]; only explicitly-optional advisories (LSP, "not
-/// configured" notes) use [`Scoreboard::info`], which renders without counting.
-/// The old hand-maintained `passed`/`effective_total` pair drifted whenever a
-/// check was added without bumping the total — routing every render through the
-/// board makes that class of bug structurally impossible.
+/// [`Scoreboard::check`]; only optional advisories (LSP servers, the
+/// crash-loop log) use [`Scoreboard::info`], which renders without counting.
 #[derive(Default)]
 struct Scoreboard {
     passed: u32,
@@ -78,11 +75,7 @@ impl Scoreboard {
     }
 
     /// An optional/advisory line: render it but never count it toward the score
-    /// (LSP servers, "no providers configured", MCP bridges).
-    ///
-    /// Deliberately a method (not a free function) so every rendered line flows
-    /// through the board and each call site has to choose `check` vs `info` — the
-    /// `&self` is unused by design, which is the whole point.
+    /// (LSP servers, the crash-loop log).
     fn info(&mut self, outcome: &Outcome) {
         self.render(outcome, false);
     }
@@ -129,8 +122,8 @@ pub fn run(json: bool) -> u32 {
     board.check(&ver);
 
     // Data directory (respects SOBRE_DATA_DIR)
-    let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
-    let dir_outcome = match &lean_dir {
+    let data_dir = crate::core::data_dir::sobre_data_dir().ok();
+    let dir_outcome = match &data_dir {
         Some(p) if p.is_dir() => Outcome {
             ok: true,
             line: format!(
@@ -154,7 +147,7 @@ pub fn run(json: bool) -> u32 {
 
     // Usage ledger + size (missing is OK: it appears with the first
     // compression)
-    let usage_path = lean_dir.as_ref().map(|d| d.join("usage.jsonl"));
+    let usage_path = data_dir.as_ref().map(|d| d.join("usage.jsonl"));
     let shown = usage_path
         .as_ref()
         .map(|p| p.display().to_string())
@@ -277,10 +270,9 @@ pub fn run(json: bool) -> u32 {
     let session_outcome = session_state_outcome();
     board.check(&session_outcome);
 
-    // Claude Code instruction truncation guard
-    let claude_truncation = claude_truncation_outcome();
-    if let Some(ref ct) = claude_truncation {
-        board.check(ct);
+    // Claude Code's sobre skill
+    if let Some(ref skill) = claude_skill_outcome() {
+        board.check(skill);
     }
 
     // BM25 cache health
@@ -308,9 +300,9 @@ pub fn run(json: bool) -> u32 {
     let proxy_health = proxy_health_outcome();
     board.check(&proxy_health);
 
-    // Proxy upstream drift: running proxy serves a different upstream
-    // than config.toml resolves to (env override masking config). Only surfaces
-    // when the proxy is up and actually drifting.
+    // Proxy upstream drift: the running proxy serves a different upstream
+    // than config.toml resolves to (it keeps its last valid value when an edit
+    // does not validate). Only surfaces when the proxy is up and drifting.
     let upstream_drift = proxy_upstream_drift_outcome();
     if let Some(ref check) = upstream_drift {
         board.check(check);
@@ -337,18 +329,15 @@ pub fn run(json: bool) -> u32 {
         board.info(lsp_check);
     }
 
-    // Tool-schema footprint (informational, not scored). There is one surface —
-    // the registry — so report its size rather than a tier name. This used to
-    // branch on a pinned tier and print it; that was already a bug once, where it
-    // claimed "power" right after the wizard chose lean.
+    // Tool-schema footprint (informational, not scored): one surface, the
+    // registry.
     let advertised = crate::server::registry::build_registry().tool_defs().len();
     board.note(&format!(
         "  {BOLD}Tools{RST}  {WHITE}{advertised} advertised{RST}  \
          {DIM}one surface, every client{RST}"
     ));
 
-    // The board counted exactly what it rendered — the displayed ✓/✗ list and
-    // this tally can no longer drift apart.
+    // The board counted exactly what it rendered.
     let passed = board.passed;
     let total = board.total;
     let needs_attention = total.saturating_sub(passed);
@@ -430,7 +419,9 @@ pub(crate) fn run_cli(args: &crate::cli::args::DoctorArgs) -> i32 {
         Some(DoctorCheck::Overhead { json, gate }) => return overhead::run_overhead(json, gate),
         Some(DoctorCheck::LintContext { json }) => return lint_context::run_lint_context(json),
         Some(DoctorCheck::Integrations { fix, json }) => {
-            if fix {
+            if fix && json {
+                fix::run_fix_silently();
+            } else if fix {
                 let _ = fix::run_fix(&fix::DoctorFixOptions { json: false });
             }
             return integrations::run_integrations(&integrations::IntegrationsOptions { json });
@@ -461,13 +452,13 @@ pub fn compact_score() -> (u32, u32) {
     if resolve_sobre_binary().is_some() {
         passed += 1;
     }
-    let lean_dir = crate::core::data_dir::sobre_data_dir().ok();
-    if lean_dir.as_ref().is_some_and(|p| p.is_dir()) {
+    let data_dir = crate::core::data_dir::sobre_data_dir().ok();
+    if data_dir.as_ref().is_some_and(|p| p.is_dir()) {
         passed += 1;
     }
     // Same rule as `sobre doctor`: a missing usage ledger is fine (it appears
     // with the first compression); only something that is not a file fails.
-    if lean_dir
+    if data_dir
         .as_ref()
         .map(|d| d.join("usage.jsonl"))
         .is_some_and(|p| std::fs::metadata(p).map_or(true, |m| m.is_file()))
@@ -543,8 +534,7 @@ mod tests {
 
     #[test]
     fn capacity_over_100_is_critical() {
-        // Genuinely over cap => eviction is not keeping up (regression guard for
-        // the 206/200 "CRIT" that fired before lifecycle eviction was fixed).
+        // Over cap: eviction is not keeping up.
         let result = super::checks::capacity_level("facts", 206, 200);
         assert!(result.is_some());
         let (critical, msg) = result.unwrap();

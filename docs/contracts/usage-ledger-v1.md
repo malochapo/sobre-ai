@@ -86,13 +86,15 @@ file again in full.
 |---|---|---|
 | `sobre.tool` | string | `read` |
 | `sobre.tokens.wasted` | int | Tokens of the compressed read that turned out useless |
+| `sobre.tokens.original` | int | Tokens of the whole file, which the full read sent again |
 
 ## Derived figures
 
 `gain` computes these at read time:
 
-- **Net saved tokens**: the sum of `original − sent` over compressions, minus
-  the sum of `wasted` over bounces.
+- **Net saved tokens**: the sum of `original − sent` over compressions, minus,
+  for each bounce, the larger of its `original` and `wasted`: the compressed
+  read saved nothing, and the full read sent the file again.
 - **Real cost**: the price table applied to the tokens each LLM call
   reported, `0` for a call to a local upstream.
   Without the proxy there are no calls and no real cost.

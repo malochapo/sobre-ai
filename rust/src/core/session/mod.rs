@@ -60,7 +60,7 @@ mod tests {
     /// `shell_cwd`. Relative or nonexistent paths are ignored.
     #[test]
     fn note_explicit_cwd_persists_absolute_dirs_only() {
-        let tmp = std::env::temp_dir().join(format!("lc_707_cwd_{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre_cwd_{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
 
         let mut session = SessionState::new();
@@ -111,6 +111,17 @@ mod tests {
             session.last_flush = Some(old);
             assert!(session.should_save(), "stale change must trigger flush");
         }
+    }
+
+    /// A long file summary is cut on a character boundary.
+    #[test]
+    fn file_summary_truncates_multibyte_text() {
+        let mut session = SessionState::new();
+        session.touch_file("src/a.rs", None, "full", 10);
+        session.set_file_summary("src/a.rs", &"я".repeat(60));
+        let summary = session.files_touched[0].summary.clone().unwrap();
+        assert!(summary.ends_with('…'));
+        assert!(summary.len() <= 80 + '…'.len_utf8());
     }
 
     #[test]

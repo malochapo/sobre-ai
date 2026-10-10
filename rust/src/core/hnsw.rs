@@ -55,7 +55,7 @@ impl FlatEmbeddings {
         &self.data[start..][..self.dim]
     }
 
-    /// Build from a `Vec<Vec<f32>>` (for tests / migration).
+    /// Build from a `Vec<Vec<f32>>` (for tests).
     #[cfg(any(test, feature = "test-support"))]
     pub fn from_vecs(vecs: Vec<Vec<f32>>) -> Self {
         let dim = vecs.first().map_or(0, std::vec::Vec::len);
@@ -410,7 +410,7 @@ pub fn brute_force_topk(
     results
 }
 
-/// Cosine similarity via the shared SIMD-friendly dot product (turbovec-derived,
+/// Cosine similarity via the shared SIMD-friendly dot product (`embedding_quant`,
 /// autovectorized chunked accumulators) rather than a scalar triple-accumulate
 /// loop. This is the hot path for every brute-force and HNSW comparison, so the
 /// vectorized kernel matters: each query touches the distance fn O(n) (brute) or

@@ -29,9 +29,9 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
 ## `sobre_compose`
 
 PRIMARY TOOL — call FIRST for understanding code (before editing/debugging/'how does X work').
-Omit task at session start: returns the project overview — structure, markers, last task, recent decisions, facts from previous sessions.
-With a task: returns ranked files with relevant symbol source inline grouped by file.
-Combines BM25 lexical+semantic+associative retrieval+submodular optimization.
+Omit task at session start: returns the project overview — structure, hotspots, last task, recent decisions, facts from previous sessions.
+With a task: returns ranked files with relevant symbol source inline grouped by file, and the recorded pitfalls it matches.
+Combines BM25 lexical+semantic retrieval+submodular optimization.
 ANTIPATTERN: Do NOT chain search→read→symbol — one compose replaces the whole chain.
 ANTIPATTERN: Do NOT Read files whose source compose already returned — it IS the source.
 WORKFLOW: Fire parallel sobre_read or sobre_compose for different areas.
@@ -93,13 +93,13 @@ For understanding code use sobre_compose FIRST.
 ## `sobre_knowledge`
 
 Facts that outlive the session: decisions, conventions, pitfalls.
-remember value= saves one (key derived when omitted; a new value for a key replaces the old); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; remove deletes one; status lists categories. consolidate imports this session's findings and decisions. gotcha trigger= resolution= records a pitfall, recalled for matching tasks.
+remember value= saves one (key derived when omitted; a new value for a key replaces the old); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; remove deletes one; status lists categories. consolidate imports this session's findings and decisions. gotcha trigger= resolution= records a pitfall, which sobre_compose shows for a matching task.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `action` | one of `remember`, `recall`, `search`, `status`, `remove`, `consolidate`, `gotcha` | yes |  |
 | `as_of` | string |  | recall: the facts valid at this date (YYYY-MM-DD) |
-| `category` | string |  | Groups facts (remember: default general) |
+| `category` | string |  | Groups facts (remember: default general; gotcha: default convention) |
 | `confidence` | number |  | remember: 0.0-1.0 (default 0.8) |
 | `dry_run` | boolean |  | consolidate: preview only |
 | `key` | string |  |  |
@@ -120,7 +120,7 @@ remember value= saves one (key derived when omitted; a new value for a key repla
 WORKFLOW: call BEFORE sobre_read to map code structure (a syntax-aware table of contents).
 Accepts a FILE or a DIRECTORY (folder surface — per-file symbols). Symbols come from
 tree-sitter (27 languages, real line spans); a conservative regex fallback covers the rest.
-kind=fn|struct|class|trait|enum|impl|all filters by kind; match=<substr> filters by name
+kind=fn|method|struct|class|interface|trait|enum|impl|type|const|all filters by kind; match=<substr> filters by name
 (case-insensitive); format=json emits deterministic JSON labelling the backend per file.
 ANTIPATTERN: NOT for file content (use sobre_read) or deep understanding (use sobre_compose).
 
@@ -128,7 +128,7 @@ ANTIPATTERN: NOT for file content (use sobre_read) or deep understanding (use so
 |---|---|---|---|
 | `path` | string | yes | File or directory |
 | `format` | string |  | Output format: text (default) \| json (deterministic) |
-| `kind` | string |  | Filter by kind: fn\|struct\|class\|trait\|enum\|impl\|all |
+| `kind` | string |  | Filter by kind: fn\|method\|struct\|class\|interface\|trait\|enum\|impl\|type\|const\|all |
 | `match` | string |  | Keep only symbols whose name contains this (case-insensitive) |
 
 ## `sobre_patch`
@@ -173,7 +173,7 @@ anchored → edit by reference via sobre_patch (no exact-recall).
 | `limit` | integer |  | Max lines |
 | `mode` | string |  | Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via sobre_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive\|entropy\|task=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:N is one line, lines:N- runs to the end, lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens |
 | `offset` | integer |  | start_line alias |
-| `path` | string |  | Absolute path |
+| `path` | string |  | File path |
 | `paths` | array of string |  | Batch read |
 | `protect` | array of string |  | Symbols kept verbatim |
 | `raw` | boolean |  | Same as mode=raw |
@@ -209,13 +209,13 @@ ANTIPATTERN: not for symbol discovery — use sobre_search action=symbol, sobre_
 ## `sobre_review`
 
 What a change to a file touches: the files that depend on it, the call sites of its functions in other files, and its test files.
-Actions: review (one file), diff-review (every file in git diff text, or the uncommitted changes when path is omitted), checklist (review questions). depth=N hops of dependents (default 3).
+Actions: review (one file), diff-review (every file in git diff text, or the uncommitted changes when path is omitted), checklist (review questions). depth=N hops of dependents (default 3; diff-review 2).
 Not a substitute for running the tests.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `action` | one of `review`, `diff-review`, `checklist` | yes |  |
-| `depth` | integer |  | Analysis breadth (default 3) |
+| `depth` | integer |  | Hops of dependents (default 3; diff-review 2) |
 | `path` | string |  | File path (review/checklist) or git diff text (diff-review; omit for the uncommitted changes) |
 
 - When `action` is `review`: requires `action` and `path`.

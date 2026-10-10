@@ -1,32 +1,67 @@
 use chrono::Utc;
 
-use super::{DIM, RST, compact_score, display_user_path, print_compact_status};
+use super::{compact_score, display_user_path, print_compact_status};
 
 pub(super) struct DoctorFixOptions {
     pub json: bool,
 }
 
 pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
-    let report = build_and_persist_fix_report(opts.json)?;
+    let report = build_fix_report(opts.json)?;
     if opts.json {
         let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
         crate::outln!("{json_text}");
     } else {
+        print_repairs(&report);
         let (passed, total) = compact_score();
         print_compact_status(passed, total);
-        if let Ok(path) = crate::core::setup_report::doctor_report_path() {
-            crate::outln!("  {DIM}report saved:{RST} {}", display_user_path(&path));
-        }
     }
     Ok(i32::from(!report.success))
 }
 
-fn build_and_persist_fix_report(
-    quiet: bool,
-) -> Result<crate::core::setup_report::SetupReport, String> {
-    use crate::core::setup_report::{
-        PlatformInfo, SetupItem, SetupReport, SetupStepReport, doctor_report_path,
-    };
+/// Repairs without printing anything: what `doctor integrations --fix
+/// --json` runs before its own report.
+pub(super) fn run_fix_silently() {
+    let _ = build_fix_report(true);
+}
+
+/// What `--fix` changed, one line each; what needed nothing is left out.
+fn print_repairs(report: &crate::core::setup_report::SetupReport) {
+    let mut changed = 0;
+    for step in &report.steps {
+        let label = match step.name.as_str() {
+            "agents" => None,
+            "bm25_cache_prune" => Some("Search indexes"),
+            "graph_cache_prune" => Some("Code graphs"),
+            "proxy_env" => Some("Proxy URLs"),
+            "crash_loop_reset" => Some("MCP start history"),
+            _ => continue,
+        };
+        for item in &step.items {
+            if matches!(item.status.as_str(), "already" | "clean" | "no stale URLs") {
+                continue;
+            }
+            changed += 1;
+            let what = label.unwrap_or(&item.name);
+            match &item.note {
+                Some(note) => crate::outln!("  {what}: {} ({note})", item.status),
+                None => crate::outln!("  {what}: {}", item.status),
+            }
+        }
+        for warning in &step.warnings {
+            crate::outln!("  note: {warning}");
+        }
+        for error in &step.errors {
+            crate::outln!("  error: {error}");
+        }
+    }
+    if changed == 0 {
+        crate::outln!("  Nothing needed repair.");
+    }
+}
+
+fn build_fix_report(quiet: bool) -> Result<crate::core::setup_report::SetupReport, String> {
+    use crate::core::setup_report::{PlatformInfo, SetupItem, SetupReport, SetupStepReport};
 
     let _quiet_guard = quiet.then(crate::core::runtime_flags::scoped_quiet);
     let started_at = Utc::now();
@@ -34,8 +69,9 @@ fn build_and_persist_fix_report(
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
-    // The same agent connection `init` runs: MCP entry, hooks and skill for
-    // every installed agent.
+    // The connection `init` runs (MCP entry, hooks and skill), for the
+    // agents that already have sobre only: connecting another is `init`'s
+    // job.
     let mut agents_step = SetupStepReport {
         name: "agents".to_string(),
         ok: true,
@@ -43,7 +79,14 @@ fn build_and_persist_fix_report(
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-    for outcome in crate::setup::connect_agents(&[], false) {
+    let connected = crate::setup::agents_with_sobre(&home);
+    let connected: Vec<&str> = connected.iter().map(String::as_str).collect();
+    let outcomes = if connected.is_empty() {
+        Vec::new()
+    } else {
+        crate::setup::connect_agents(&connected, false)
+    };
+    for outcome in outcomes {
         if !outcome.detected {
             continue;
         }
@@ -84,7 +127,7 @@ fn build_and_persist_fix_report(
     if agents_step.items.is_empty() {
         agents_step
             .warnings
-            .push("no supported AI tools detected; nothing to repair".to_string());
+            .push("no agent has sobre yet; connect one with `sobre init`".to_string());
     }
     steps.push(agents_step);
 
@@ -147,44 +190,11 @@ fn build_and_persist_fix_report(
         name: "crash_loop_backoff".to_string(),
         status: "reset".to_string(),
         path: None,
-        note: Some(
-            "cleared MCP startup history (fixes backoff after IDE restart loops)".to_string(),
-        ),
+        note: Some("so a restart loop no longer delays the next start".to_string()),
     });
     steps.push(startup_step);
 
-    // Prune knowledge stores whose project_root was deleted (removed git
-    // worktrees, thrown-away projects). They can never be written again, so
-    // their per-store eviction cap can never self-heal — pure accumulated bloat.
-    // Only the explicit --fix path deletes; the background lifecycle
-    // never does, since a missing root can also be a temporarily-unmounted drive.
-    let mut orphan_step = SetupStepReport {
-        name: "orphaned_knowledge".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let prune = crate::core::knowledge::maintenance::prune_orphaned_stores();
-    orphan_step.items.push(SetupItem {
-        name: "prune".to_string(),
-        status: if prune.removed > 0 {
-            format!("removed {}", prune.removed)
-        } else {
-            "clean".to_string()
-        },
-        path: None,
-        note: Some(if prune.removed > 0 {
-            format!(
-                "pruned {} knowledge store(s) for deleted projects ({} reclaimed)",
-                prune.removed,
-                super::common::human_bytes(prune.reclaimed_bytes)
-            )
-        } else {
-            "no knowledge stores for deleted projects".to_string()
-        }),
-    });
-    steps.push(orphan_step);
+    steps.push(orphaned_knowledge_step());
 
     let mut verify_step = SetupStepReport {
         name: "verify".to_string(),
@@ -225,11 +235,30 @@ fn build_and_persist_fix_report(
         errors: Vec::new(),
     };
 
-    let path = doctor_report_path()?;
-    let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-    crate::config_io::write_atomic(&path, &json_text)?;
-
     Ok(report)
+}
+
+/// Knowledge stores whose project root is not on disk, listed and never
+/// deleted: the project may have moved, or sit on an unmounted drive.
+fn orphaned_knowledge_step() -> crate::core::setup_report::SetupStepReport {
+    let warnings = crate::core::knowledge::maintenance::find_orphaned_stores()
+        .into_iter()
+        .map(|orphan| {
+            format!(
+                "kept knowledge store {} ({}): its project is not on disk (moved, deleted, or \
+                 on an unmounted drive); delete it by hand if the project is gone",
+                display_user_path(&orphan.dir),
+                super::common::human_bytes(orphan.size_bytes)
+            )
+        })
+        .collect();
+    crate::core::setup_report::SetupStepReport {
+        name: "orphaned_knowledge".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings,
+        errors: Vec::new(),
+    }
 }
 
 pub(super) struct PruneResult {
@@ -347,7 +376,26 @@ fn dir_size(path: &std::path::Path) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{prune_bm25_caches, prune_graph_caches};
+    use super::{orphaned_knowledge_step, prune_bm25_caches, prune_graph_caches};
+
+    /// A knowledge store whose project is not on disk is reported and kept.
+    #[test]
+    fn knowledge_of_a_missing_project_is_kept() {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let store = data.path().join("knowledge/abc");
+        std::fs::create_dir_all(&store).unwrap();
+        let knowledge = crate::core::knowledge::ProjectKnowledge::new("/nonexistent/sobre-moved");
+        std::fs::write(
+            store.join("knowledge.json"),
+            serde_json::to_string(&knowledge).unwrap(),
+        )
+        .unwrap();
+
+        let step = orphaned_knowledge_step();
+        assert!(store.join("knowledge.json").exists());
+        assert_eq!(step.warnings.len(), 1, "{:?}", step.warnings);
+        assert!(step.warnings[0].starts_with("kept knowledge store"));
+    }
 
     #[test]
     fn prune_drops_indexes_of_deleted_projects_only() {

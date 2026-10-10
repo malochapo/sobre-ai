@@ -16,7 +16,6 @@ fn make_result(file: &str, symbol: &str, kind: ChunkKind, score: f64) -> HybridR
         end_line: 20,
         snippet: format!("fn {symbol}() {{ /* ... */ }}"),
         rrf_score: score,
-        dense_score: None,
         bm25_rank: Some(1),
         dense_rank: None,
     }

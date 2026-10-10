@@ -28,7 +28,7 @@ sobre -c <command>...
 |---|---|
 | `<command>...` | The command: one quoted argument, or several joined with spaces |
 
-What the Cursor and Gemini hooks run. The output says, on stderr, what was compressed; `sobre_expand` brings back the original. Exits with the command's own exit code.
+What the Cursor and Gemini hooks run. The output says, on stderr, what was compressed; `sobre_expand` brings back the original. Exits with the command's own exit code, or 128 plus the signal number when a signal ended it.
 
 ## `sobre raw`
 
@@ -42,7 +42,7 @@ sobre raw <command>...
 |---|---|
 | `<command>...` | The command: one quoted argument, or several joined with spaces |
 
-Exits with the command's own exit code.
+Exits with the command's own exit code, or 128 plus the signal number when a signal ended it.
 
 ## `sobre call`
 
@@ -89,7 +89,7 @@ sobre doctor [--fix] [--json]
 
 | Argument | Meaning |
 |---|---|
-| `--fix` | Repair what can be repaired, and say what was done |
+| `--fix` | Repair the agents that have sobre, drop stale indexes, and say what was done |
 | `--json` | Machine-readable output |
 
 Exits 1 when a check fails. More checks: sobre doctor integrations, doctor overhead, doctor lint-context.
@@ -210,7 +210,7 @@ sobre config set <key> <value> [--yes]
 | `<value>` | Its new value |
 | `-y, --yes` | Skip the confirmation a change that widens what sobre does asks for |
 
-Booleans take true/false (also yes/no, on/off, 1/0); a list takes comma-separated values. The value is checked before the file is written; the file keeps its comments. `default`, an empty value or the key's default value removes the key, so its default applies. Exits 2 on an unknown key or a value sobre would not use.
+Booleans take true/false (also yes/no, 1/0); a list takes comma-separated values. The value is checked before the file is written; the file keeps its comments. `default`, an empty value or the key's default value removes the key, so its default applies. Exits 2 on an unknown key or a value sobre would not use.
 
 ## `sobre config path`
 
@@ -319,7 +319,7 @@ sobre proxy enable [--force]
 |---|---|
 | `--force` | Also rewire agents that point to another endpoint |
 
-Sets proxy.enabled, installs the autostart unit (macOS and Linux) and points the agents at the proxy. On Windows it refuses: start the proxy by hand there.
+Sets proxy.enabled, installs the autostart unit (launchd on macOS, a systemd user service on Linux) and points the agents at the proxy. Where there is no service manager (Windows, Linux without a systemd user session), it needs a proxy started by hand first (sobre proxy start -d), and refuses without one. Exits 1 when the proxy does not run.
 
 ## `sobre proxy disable`
 
@@ -374,7 +374,7 @@ sobre uninstall [--keep-config] [--keep-binary]
 | `--keep-config` | Keep config.toml, for a later reinstall |
 | `--keep-binary` | Leave the sobre binary in place |
 
-Removes the proxy (autostart unit, process, the URLs it put in agent configs); sobre's MCP entry, hooks, skill and plugin from every agent (a file that held nothing else is deleted); all sobre data; and the binary the agents run. Every change is listed as it is made. Running agents keep their sobre server until they restart. Any other argument is an error: nothing is removed.
+Removes the proxy (autostart unit, process, the URLs it put in agent configs); sobre's MCP entry, hooks, skill and plugin from every agent (a file that held nothing else is deleted); all sobre data; and the binary the agents run, unless cargo installed it (cargo uninstall sobre) or it is a build in a cargo target directory. On Windows a running binary cannot be deleted: delete it once uninstall has exited. Every change is listed as it is made. Running agents keep their sobre server until they restart. Any other argument is an error: nothing is removed.
 
 ## `sobre help`
 
@@ -393,5 +393,7 @@ sobre help [all]
 | Code | Meaning |
 |---|---|
 | 0 | Success |
-| 1 | The command ran and failed: a tool error (`call`), a failed check (`doctor`, `doctor overhead --gate`), an agent not connected (`init`), a proxy that would not start |
+| 1 | The command ran and failed: a tool error (`call`), a failed check (`doctor`, `doctor integrations`, an error from `doctor lint-context`, `doctor overhead --gate`), an agent not connected (`init`), a proxy that would not start, a `config set` not confirmed |
 | 2 | Usage error: an unknown command, flag or argument, or a flag without its value. Nothing ran. |
+
+`-c` and `raw` exit with the command's own exit code.

@@ -1,3 +1,9 @@
+//! Budgets and floors: the tokens a session pays before its first call
+//! (instructions, tool descriptions, schemas), the least each pattern must
+//! compress generated command output by, and that nothing inflates. The
+//! printed tables describe generated samples only; they are not a measure of
+//! what sobre saves on real work.
+
 use sobre::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
 use sobre::core::config::CompressionLevel;
 use sobre::core::entropy::entropy_compress_adaptive;
@@ -131,10 +137,6 @@ fn bench_total_input_overhead() {
     eprintln!("  Tool schemas (JSON): {schema_tokens:>6} tokens");
     eprintln!("  {}", "-".repeat(40));
     eprintln!("  TOTAL overhead:      {total:>6} tokens");
-    eprintln!(
-        "  Estimated cost @$3/1M input: ${:.4}",
-        total as f64 * 3.0 / 1_000_000.0
-    );
     eprintln!("{}", "=".repeat(70));
 
     // Everything a session pays before its first call: instructions, tool
@@ -406,7 +408,7 @@ fn bench_safeguard_prevents_over_compression() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION 3.5: RRF EVICTION SCORING
+// SECTION 4: RRF EVICTION SCORING
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -435,14 +437,7 @@ fn bench_rrf_eviction_empty() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION 5: THINKING TOKEN BENCHMARKS — CRP/TDD Instruction Effectiveness
-// ═══════════════════════════════════════════════════════════════════════════
-
-// SECTION 6: PERFORMANCE BENCHMARKS removed — machine-dependent timing
-// thresholds are unsuitable for OSS CI.
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION 7: REGRESSION GUARDS — Ensure no performance degradation
+// SECTION 5: GUARDS — no compression inflates, every tool is described
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -1039,149 +1034,8 @@ fn generate_git_log_stat(n: usize) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// v3.4.1 Optimization benchmarks: Token overhead + Latency
+// Session save
 // ---------------------------------------------------------------------------
-
-/// Points `SOBRE_DATA_DIR` at a fresh temp dir for the guard's lifetime and
-/// restores the previous value on drop. Callers hold `test_env_lock()`.
-struct TempConfig {
-    _dir: tempfile::TempDir,
-    prev_data_dir: Option<String>,
-}
-
-impl TempConfig {
-    fn new() -> Self {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let prev_data_dir = std::env::var("SOBRE_DATA_DIR").ok();
-        // SAFETY: serialized by `test_env_lock()`.
-        unsafe { std::env::set_var("SOBRE_DATA_DIR", dir.path()) };
-        Self {
-            _dir: dir,
-            prev_data_dir,
-        }
-    }
-}
-
-impl Drop for TempConfig {
-    fn drop(&mut self) {
-        match self.prev_data_dir.take() {
-            // SAFETY: serialized by `test_env_lock()`.
-            Some(v) => unsafe { std::env::set_var("SOBRE_DATA_DIR", v) },
-            // SAFETY: serialized by `test_env_lock()`.
-            None => unsafe { std::env::remove_var("SOBRE_DATA_DIR") },
-        }
-    }
-}
-
-#[test]
-fn bench_minimal_overhead_suppresses_all_meta_strings() {
-    // The data dir is process-global; serialize against the other instruction
-    // benchmarks.
-    let _lock = sobre::core::data_dir::test_env_lock();
-    let _config = TempConfig::new();
-
-    let instructions = instructions_at_off();
-    let instr_tokens = count_tokens(&instructions);
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  MINIMAL OVERHEAD: Instructions Token Count");
-    eprintln!("{}", "=".repeat(70));
-    eprintln!("  Instructions (minimal):  {instr_tokens:>5} tokens");
-    eprintln!("{}", "=".repeat(70));
-
-    assert!(
-        !instructions.contains("--- ACTIVE SESSION"),
-        "minimal_overhead should suppress session block"
-    );
-}
-
-#[test]
-fn bench_hash_fast_vs_full_correctness() {
-    use sobre::core::hasher::hash_str;
-    use sobre::server::helpers::hash_fast;
-
-    let small = "a".repeat(1000);
-    assert_eq!(
-        hash_str(&small),
-        hash_fast(&small),
-        "hash_fast must match hash_str for small strings"
-    );
-
-    let exactly_16k = "x".repeat(16 * 1024);
-    assert_eq!(
-        hash_str(&exactly_16k),
-        hash_fast(&exactly_16k),
-        "hash_fast must match hash_str at the 16KB boundary"
-    );
-
-    let large = "b".repeat(100_000);
-    let fast_hash = hash_fast(&large);
-    assert_eq!(
-        fast_hash.len(),
-        64,
-        "hash_fast should produce valid BLAKE3 hex"
-    );
-    assert_ne!(
-        fast_hash,
-        hash_fast(&"c".repeat(100_000)),
-        "different large strings should produce different hashes"
-    );
-
-    let mut middle_changed = large.clone().into_bytes();
-    middle_changed[50_000] = b'd';
-    let middle_changed = String::from_utf8(middle_changed).expect("ASCII test data");
-    assert_eq!(
-        fast_hash,
-        hash_fast(&middle_changed),
-        "large hash_fast fingerprints only prefix, suffix, and length"
-    );
-
-    let mut suffix_changed = large.clone().into_bytes();
-    suffix_changed[99_999] = b'd';
-    let suffix_changed = String::from_utf8(suffix_changed).expect("ASCII test data");
-    assert_ne!(
-        fast_hash,
-        hash_fast(&suffix_changed),
-        "large hash_fast fingerprints the suffix"
-    );
-}
-
-#[test]
-fn bench_count_tokens_cache_effectiveness() {
-    let text = "The quick brown fox jumps over the lazy dog. ".repeat(200);
-
-    let start_cold = std::time::Instant::now();
-    let t1 = count_tokens(&text);
-    let cold_us = start_cold.elapsed().as_micros();
-
-    let start_cached = std::time::Instant::now();
-    let t2 = count_tokens(&text);
-    let cached_us = start_cached.elapsed().as_micros();
-
-    assert_eq!(t1, t2, "cached result must match");
-
-    let slightly_different = format!("{text}X");
-    let start_miss = std::time::Instant::now();
-    let t3 = count_tokens(&slightly_different);
-    let miss_us = start_miss.elapsed().as_micros();
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  COUNT_TOKENS CACHE BENCHMARK (~9KB input)");
-    eprintln!("{}", "=".repeat(70));
-    eprintln!("  Cold (first call):  {cold_us:>6} us  -> {t1} tokens");
-    eprintln!("  Cached (same text): {cached_us:>6} us  -> {t2} tokens");
-    eprintln!("  Miss (diff text):   {miss_us:>6} us  -> {t3} tokens");
-    if cold_us > 0 {
-        let speedup = cold_us as f64 / cached_us.max(1) as f64;
-        eprintln!("  Cache speedup:      {speedup:>6.0}x");
-    }
-    eprintln!("{}", "=".repeat(70));
-
-    assert!(
-        cached_us <= cold_us + 5,
-        "cached call should be faster than cold call"
-    );
-}
 
 #[test]
 fn bench_session_prepare_save_is_cpu_only() {

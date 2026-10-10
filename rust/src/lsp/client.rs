@@ -46,6 +46,52 @@ pub struct LspClient {
     channel: Channel,
     next_id: AtomicI32,
     initialized: bool,
+    open_documents: OpenDocuments,
+}
+
+/// The documents this client has opened, with the version last sent. The
+/// protocol allows one `didOpen` per document: a document opened again is
+/// sent as a full-text `didChange`, so the server sees the file as it is now.
+#[derive(Default)]
+struct OpenDocuments {
+    versions: std::collections::HashMap<String, i32>,
+}
+
+impl OpenDocuments {
+    /// The notification that gives the server `text` as the content of `uri`.
+    fn sync(&mut self, uri: &Uri, language_id: &str, text: &str) -> Result<Notification, String> {
+        use lsp_types::notification::Notification as _;
+        let (method, params) = if let Some(version) = self.versions.get_mut(uri.as_str()) {
+            *version += 1;
+            let params = serde_json::to_value(DidChangeTextDocumentParams {
+                text_document: VersionedTextDocumentIdentifier {
+                    uri: uri.clone(),
+                    version: *version,
+                },
+                content_changes: vec![TextDocumentContentChangeEvent {
+                    range: None,
+                    range_length: None,
+                    text: text.to_string(),
+                }],
+            });
+            (notification::DidChangeTextDocument::METHOD, params)
+        } else {
+            self.versions.insert(uri.as_str().to_string(), 1);
+            let params = serde_json::to_value(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: language_id.to_string(),
+                    version: 1,
+                    text: text.to_string(),
+                },
+            });
+            (notification::DidOpenTextDocument::METHOD, params)
+        };
+        Ok(Notification {
+            method: method.to_string(),
+            params: params.map_err(|e| e.to_string())?,
+        })
+    }
 }
 
 /// The message stream to and from a language server: `lsp-server` frames
@@ -157,11 +203,13 @@ impl LspClient {
         let stdin = child.stdin.take().ok_or("No stdin")?;
         let stdout = child.stdout.take().ok_or("No stdout")?;
 
+        // On a failed initialize, dropping `client` stops the process.
         let mut client = Self {
             child,
             channel: Channel::new(stdout, stdin),
             next_id: AtomicI32::new(1),
             initialized: false,
+            open_documents: OpenDocuments::default(),
         };
 
         client.initialize(root_uri)?;
@@ -174,6 +222,22 @@ impl LspClient {
             Ok(None) => Ok(()),
             Err(e) => Err(format!("Cannot check LSP server status: {e}")),
         }
+    }
+
+    /// Waits up to `SHUTDOWN_TIMEOUT_SECS` for the server to exit, then kills
+    /// it, and reaps it either way: no server outlives its client, none is
+    /// left a zombie.
+    fn reap(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(SHUTDOWN_TIMEOUT_SECS);
+        while Instant::now() < deadline {
+            match self.child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => std::thread::sleep(Duration::from_millis(20)),
+                Err(_) => break,
+            }
+        }
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 
     #[allow(deprecated)]
@@ -214,16 +278,12 @@ impl LspClient {
         Ok(())
     }
 
+    /// Gives the server `text` as the content of `uri`: `didOpen` the first
+    /// time, a full-text `didChange` after that.
     pub fn did_open(&mut self, uri: &Uri, language_id: &str, text: &str) -> Result<(), String> {
         self.check_alive()?;
-        self.send_notification::<notification::DidOpenTextDocument>(DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: uri.clone(),
-                language_id: language_id.to_string(),
-                version: 1,
-                text: text.to_string(),
-            },
-        })
+        let msg = self.open_documents.sync(uri, language_id, text)?;
+        self.channel.send(&msg.into())
     }
 
     pub fn references(&mut self, uri: &Uri, position: Position) -> Result<Vec<Location>, String> {
@@ -361,26 +421,29 @@ impl LspClient {
         )
     }
 
-    pub fn shutdown(&mut self) {
+    fn shutdown(&mut self) {
         let _ = self.request_raw_with_timeout(
             "shutdown",
             Value::Null,
             Duration::from_secs(SHUTDOWN_TIMEOUT_SECS),
         );
         let _ = self.send_notification::<notification::Exit>(());
-        let _ = self.child.wait();
     }
 }
 
 impl Drop for LspClient {
     fn drop(&mut self) {
-        if self.initialized {
+        if self.initialized && self.check_alive().is_ok() {
             self.shutdown();
         }
+        self.reap();
     }
 }
 
 impl crate::lsp::backend::LspBackend for LspClient {
+    fn is_alive(&mut self) -> bool {
+        self.check_alive().is_ok()
+    }
     fn open_file(
         &mut self,
         uri: &lsp_types::Uri,
@@ -578,6 +641,30 @@ mod tests {
             .read_response(&4.into(), Duration::from_secs(5))
             .unwrap_err();
         assert_eq!(err, "LSP error: bad position");
+    }
+
+    /// A document is opened once; opening it again sends its new text as a
+    /// versioned change.
+    #[test]
+    fn reopening_a_document_sends_a_change() {
+        let mut docs = OpenDocuments::default();
+        let uri: Uri = "file:///p/a.rs".parse().unwrap();
+
+        let first = docs.sync(&uri, "rust", "fn a() {}").unwrap();
+        assert_eq!(first.method, "textDocument/didOpen");
+        assert_eq!(first.params["textDocument"]["version"], 1);
+
+        let second = docs.sync(&uri, "rust", "fn b() {}").unwrap();
+        assert_eq!(second.method, "textDocument/didChange");
+        assert_eq!(second.params["textDocument"]["version"], 2);
+        assert_eq!(second.params["contentChanges"][0]["text"], "fn b() {}");
+        assert!(second.params["contentChanges"][0].get("range").is_none());
+
+        let other: Uri = "file:///p/b.rs".parse().unwrap();
+        assert_eq!(
+            docs.sync(&other, "rust", "").unwrap().method,
+            "textDocument/didOpen"
+        );
     }
 
     #[test]

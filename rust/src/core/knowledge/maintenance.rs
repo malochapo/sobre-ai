@@ -2,14 +2,10 @@
 //!
 //! A store at `<data_dir>/knowledge/<hash>/` is keyed to a `project_root`. When
 //! that root is deleted (a removed git worktree, a thrown-away temp project) the
-//! store can never be written again — its per-store eviction cap can therefore
-//! never self-heal (the memory lifecycle only runs on write) and the directory
-//! is pure accumulated bloat. This module finds and prunes those orphaned
-//! stores.
-//!
-//! Pruning is only ever invoked from the explicit `sobre doctor --fix` path;
-//! the background lifecycle must never delete a store, since a missing root can
-//! also mean a temporarily-unmounted drive rather than a deleted project.
+//! store is never written again: its per-store eviction cap cannot self-heal
+//! (the memory lifecycle only runs on write). This module finds those orphaned
+//! stores so `sobre doctor` can list them. Nothing deletes one: a missing root
+//! can also mean a moved project or an unmounted drive.
 
 use std::path::{Path, PathBuf};
 
@@ -22,15 +18,8 @@ pub struct OrphanedStore {
     pub size_bytes: u64,
 }
 
-/// Outcome of a prune pass.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct PruneReport {
-    pub removed: usize,
-    pub reclaimed_bytes: u64,
-}
-
-/// Scan every knowledge store under the real data dir and return the orphaned
-/// ones. See [`find_orphaned_stores_in`] for the detection rules.
+/// Scans every knowledge store under the data dir and returns the orphaned
+/// ones.
 #[must_use]
 pub fn find_orphaned_stores() -> Vec<OrphanedStore> {
     match crate::core::data_dir::sobre_data_dir() {
@@ -39,22 +28,12 @@ pub fn find_orphaned_stores() -> Vec<OrphanedStore> {
     }
 }
 
-/// Remove every orphaned store under the real data dir. Best-effort.
-#[must_use]
-pub fn prune_orphaned_stores() -> PruneReport {
-    match crate::core::data_dir::sobre_data_dir() {
-        Ok(data_dir) => prune_orphaned_stores_in(&data_dir),
-        Err(_) => PruneReport::default(),
-    }
-}
-
-/// Detect orphaned stores under an explicit `data_dir` (the testable core).
+/// Detects orphaned stores under an explicit `data_dir`.
 ///
-/// A store is orphaned when its `project_root` is **non-empty** and does **not**
-/// exist on disk. Stores with an empty root (which cannot be checked) and stores
-/// whose root still exists are always kept.
-#[must_use]
-pub fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
+/// A store is orphaned when its `project_root` is non-empty and does not
+/// exist on disk. A store with an empty root (which cannot be checked), a live
+/// root, or a `knowledge.json` that does not parse is never listed.
+fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
     let knowledge_dir = data_dir.join("knowledge");
     let Ok(entries) = std::fs::read_dir(&knowledge_dir) else {
         return Vec::new();
@@ -87,22 +66,6 @@ pub fn find_orphaned_stores_in(data_dir: &Path) -> Vec<OrphanedStore> {
         orphans.push(OrphanedStore { dir, size_bytes });
     }
     orphans
-}
-
-/// Prune orphaned stores under an explicit `data_dir` (the testable core).
-/// Removes each orphaned `knowledge/<hash>/` directory. A failure on one store
-/// never aborts the rest.
-#[must_use]
-pub fn prune_orphaned_stores_in(data_dir: &Path) -> PruneReport {
-    let mut report = PruneReport::default();
-    for orphan in find_orphaned_stores_in(data_dir) {
-        if std::fs::remove_dir_all(&orphan.dir).is_err() {
-            continue;
-        }
-        report.removed += 1;
-        report.reclaimed_bytes = report.reclaimed_bytes.saturating_add(orphan.size_bytes);
-    }
-    report
 }
 
 /// Recursively sum the size of every regular file under `dir`. Best-effort:
@@ -156,58 +119,5 @@ mod tests {
         assert_eq!(orphans.len(), 1, "only the missing-root store is an orphan");
         assert!(orphans[0].dir.ends_with("dead00000000000000"));
         assert!(orphans[0].size_bytes > 0, "orphan size should be measured");
-    }
-
-    #[test]
-    fn prune_removes_orphans_and_keeps_the_rest() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path();
-
-        let live_root = data_dir.to_string_lossy().to_string();
-        write_store(data_dir, "live0000000000000", &live_root);
-        write_store(data_dir, "empty000000000000", "");
-        let missing_root = data_dir.join("gone").to_string_lossy().to_string();
-        write_store(data_dir, "dead00000000000000", &missing_root);
-
-        let report = prune_orphaned_stores_in(data_dir);
-        assert_eq!(report.removed, 1, "exactly one orphan pruned");
-        assert!(
-            report.reclaimed_bytes > 0,
-            "reclaimed bytes should be reported"
-        );
-
-        assert!(
-            !data_dir
-                .join("knowledge")
-                .join("dead00000000000000")
-                .exists(),
-            "orphan store dir must be gone"
-        );
-        assert!(
-            data_dir
-                .join("knowledge")
-                .join("live0000000000000")
-                .exists(),
-            "live store must be kept"
-        );
-        assert!(
-            data_dir
-                .join("knowledge")
-                .join("empty000000000000")
-                .exists(),
-            "empty-root store must be kept"
-        );
-    }
-
-    #[test]
-    fn prune_is_a_noop_when_nothing_is_orphaned() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path();
-        let live_root = data_dir.to_string_lossy().to_string();
-        write_store(data_dir, "live0000000000000", &live_root);
-
-        let report = prune_orphaned_stores_in(data_dir);
-        assert_eq!(report.removed, 0);
-        assert_eq!(report.reclaimed_bytes, 0);
     }
 }

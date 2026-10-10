@@ -1,5 +1,10 @@
+use std::collections::BTreeSet;
+
 use crate::core::gotcha_tracker::GotchaStore;
 
+/// The project's gotchas that share a word with `task`, best first, as
+/// `[remember]` lines. Words are compared whole; stop words and words shorter
+/// than three characters never match.
 pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
     let task_terms = tokenize(task);
     if task_terms.is_empty() {
@@ -20,24 +25,18 @@ pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
     let mut scored: Vec<Scored> = Vec::new();
 
     for g in &store.gotchas {
-        let searchable = format!(
-            "{} {} {} {}",
-            g.trigger.to_lowercase(),
-            g.resolution.to_lowercase(),
-            g.tags.join(" ").to_lowercase(),
-            g.category.short_label().to_lowercase()
-        );
-        let matches = task_terms
-            .iter()
-            .filter(|t| searchable.contains(*t))
-            .count();
+        let gotcha_terms = tokenize(&format!(
+            "{} {} {}",
+            g.trigger,
+            g.resolution,
+            g.category.short_label()
+        ));
+        let matches = task_terms.intersection(&gotcha_terms).count();
         if matches == 0 {
             continue;
         }
         let rel = matches as f32 / task_terms.len() as f32;
-        let sev = g.severity.multiplier();
-        let rec = (g.prevented_count as f32).ln_1p().min(3.0) / 3.0; // 0..1
-        let score = rel * g.confidence * sev * (1.0 + rec * 0.2);
+        let score = rel * g.confidence * g.severity.multiplier();
 
         let mut line = format!(
             "gotcha: {} → {}",
@@ -62,25 +61,12 @@ pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
         .collect()
 }
 
-fn tokenize(s: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for ch in s.chars() {
-        if ch.is_ascii_alphanumeric() {
-            cur.push(ch.to_ascii_lowercase());
-        } else if !cur.is_empty() {
-            if cur.len() >= 3 {
-                out.push(cur.clone());
-            }
-            cur.clear();
-        }
-    }
-    if !cur.is_empty() && cur.len() >= 3 {
-        out.push(cur);
-    }
-    out.sort();
-    out.dedup();
-    out
+fn tokenize(s: &str) -> BTreeSet<String> {
+    s.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| w.len() >= 3)
+        .map(str::to_ascii_lowercase)
+        .filter(|w| !crate::core::task_relevance::STOP_WORDS.contains(&w.as_str()))
+        .collect()
 }
 
 fn sanitize_one_line(s: &str) -> String {
@@ -110,7 +96,7 @@ fn truncate_chars(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::gotcha_tracker::{Gotcha, GotchaCategory, GotchaSeverity, GotchaSource};
+    use crate::core::gotcha_tracker::{Gotcha, GotchaCategory, GotchaSeverity};
     use chrono::Utc;
 
     #[test]
@@ -131,18 +117,11 @@ mod tests {
                 severity: GotchaSeverity::Warning,
                 trigger: format!("cargo build error E050{i}"),
                 resolution: "split borrows".to_string(),
-                file_patterns: vec![],
                 occurrences: 2,
-                session_ids: vec!["s1".to_string()],
                 first_seen: Utc::now(),
                 last_seen: Utc::now(),
                 confidence: 0.8,
-                source: GotchaSource::AutoDetected {
-                    command: "cargo build".to_string(),
-                    exit_code: 1,
-                },
-                prevented_count: 0,
-                tags: vec!["rust".to_string()],
+                decayed_at: None,
             });
         }
 
@@ -153,5 +132,25 @@ mod tests {
         assert!(reminders.len() <= crate::core::budgets::PROSPECTIVE_REMINDERS_LIMIT);
 
         crate::test_env::remove_var("SOBRE_DATA_DIR");
+    }
+
+    #[test]
+    fn only_whole_words_that_are_not_stop_words_match() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let root = "/tmp/sobre-prospective-whole-words";
+        let mut store = GotchaStore::load(root);
+        store.report_gotcha(
+            "attestation fails when the other cache is stale",
+            "clear it first",
+            "convention",
+            "warning",
+        );
+        store.save(root).unwrap();
+
+        // "the" is a stop word, "test" is only inside "attestation", "her"
+        // only inside "other".
+        assert!(reminders_for_task(root, "test the docs for her").is_empty());
+        let hits = reminders_for_task(root, "the cache is wrong");
+        assert_eq!(hits.len(), 1, "{hits:?}");
     }
 }

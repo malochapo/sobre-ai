@@ -272,48 +272,19 @@ pub fn format_search_results(results: &[SearchResult], compact: bool) -> String 
 
     let mut out = String::new();
     for (i, r) in results.iter().enumerate() {
-        let is_external = r.file_path.contains("://");
-        // Forward-slash normalize local paths so Windows backslashes are never
-        // dropped/escape-mangled by client render layers. External
-        // URIs (provider results, e.g. `github://`) are left untouched.
-        let normalized;
-        let file_path: &str = if is_external {
-            &r.file_path
-        } else {
-            normalized = crate::core::protocol::display_path(&r.file_path);
-            &normalized
-        };
+        // Forward-slash normalize paths so Windows backslashes are never
+        // dropped/escape-mangled by client render layers.
+        let file_path = crate::core::protocol::display_path(&r.file_path);
         if compact {
-            if is_external {
-                out.push_str(&format!(
-                    "{}. {:.2} [{:?}] {} — {}\n",
-                    i + 1,
-                    r.score,
-                    r.kind,
-                    file_path,
-                    r.symbol_name,
-                ));
-            } else {
-                out.push_str(&format!(
-                    "{}. {:.2} {}:{}-{} {:?} {}\n",
-                    i + 1,
-                    r.score,
-                    file_path,
-                    r.start_line,
-                    r.end_line,
-                    r.kind,
-                    r.symbol_name,
-                ));
-            }
-        } else if is_external {
             out.push_str(&format!(
-                "\n--- Result {} (score: {:.2}) [{:?}] ---\n{} — {}\n{}\n",
+                "{}. {:.2} {}:{}-{} {:?} {}\n",
                 i + 1,
                 r.score,
-                r.kind,
                 file_path,
+                r.start_line,
+                r.end_line,
+                r.kind,
                 r.symbol_name,
-                r.snippet,
             ));
         } else {
             out.push_str(&format!(

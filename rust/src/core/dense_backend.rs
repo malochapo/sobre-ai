@@ -25,7 +25,6 @@ pub fn dense_results_as_hybrid(
             end_line: d.end_line,
             snippet: d.snippet,
             rrf_score: d.similarity as f64,
-            dense_score: Some(d.similarity),
             bm25_rank: None,
             dense_rank: None,
         })
@@ -97,8 +96,7 @@ fn dense_results(
 /// during the scan so only matching chunks are considered — post-filtering
 /// cannot drop below `top_k` results regardless of filter selectivity.
 ///
-/// Uses sequential memory access (one dereference) via `FlatEmbeddings::get`,
-/// unlike the old `Arc<[Vec<f32>]>` layout which had two-level indirection.
+/// Uses sequential memory access (one dereference) via `FlatEmbeddings::get`.
 fn top_k_by_similarity(
     query: &[f32],
     embeddings: &FlatEmbeddings,

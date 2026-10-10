@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn relative_resolves_against_project_root() {
-        let tmp = std::env::temp_dir().join(format!("lc_pr_{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre_pr_{}", std::process::id()));
         let _ = fs::create_dir_all(&tmp);
         let file = tmp.join("a.txt");
         fs::write(&file, "x").unwrap();
@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_shell_cwd_when_not_in_project_root() {
-        let base = std::env::temp_dir().join(format!("lc_pr_cwd_{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("sobre_pr_cwd_{}", std::process::id()));
         let root = base.join("root");
         let cwd = base.join("cwd");
         fs::create_dir_all(&root).unwrap();
@@ -214,7 +214,7 @@ mod tests {
             "test premise: CWD contains Cargo.toml"
         );
 
-        let tmp = std::env::temp_dir().join(format!("lc_pr_nocwd_{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre_pr_nocwd_{}", std::process::id()));
         fs::create_dir_all(&tmp).unwrap();
         let root = tmp.to_string_lossy().to_string();
 
@@ -249,7 +249,7 @@ mod tests {
     /// (worktree) must win over the stale project_root copy.
     #[test]
     fn worktree_shell_cwd_outranks_stale_project_root_copy() {
-        let base = std::env::temp_dir().join(format!("lc_707_nested_{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("sobre_worktree_{}", std::process::id()));
         let repo = base.join("repo");
         let wt = repo.join(".claude").join("worktrees").join("fix-x");
         fs::create_dir_all(repo.join("src")).unwrap();
@@ -293,12 +293,12 @@ mod tests {
         let _ = fs::remove_dir_all(&base);
     }
 
-    /// Regression guard from the report: `cd rust/` inside the SAME
+    /// `cd rust/` inside the SAME
     /// checkout (nested `Cargo.toml`, no own `.git`) must NOT count as a
     /// divergent checkout — project_root resolution stays authoritative.
     #[test]
     fn monorepo_subdir_shell_cwd_is_not_a_divergent_checkout() {
-        let base = std::env::temp_dir().join(format!("lc_707_mono_{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("sobre_mono_{}", std::process::id()));
         let repo = base.join("repo");
         fs::create_dir_all(repo.join("rust").join("src")).unwrap();
         fs::create_dir_all(repo.join(".git")).unwrap();
@@ -329,7 +329,7 @@ mod tests {
     /// repository: `cd` into it does not move relative paths there.
     #[test]
     fn nested_repository_and_submodule_are_not_divergent() {
-        let base = std::env::temp_dir().join(format!("lc_g9_nested_{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("sobre_nested_repo_{}", std::process::id()));
         let repo = base.join("repo");
         let nested = repo.join("vendor").join("lib");
         let sub = repo.join("deps").join("sub");
@@ -364,7 +364,7 @@ mod tests {
     /// git upward (scratch dir) gives no signal and must not divert.
     #[test]
     fn gitless_shell_cwd_gives_no_divergence_signal() {
-        let base = std::env::temp_dir().join(format!("lc_707_gitless_{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("sobre_gitless_{}", std::process::id()));
         let repo = base.join("repo");
         let scratch = base.join("scratch");
         fs::create_dir_all(repo.join(".git")).unwrap();
@@ -382,7 +382,7 @@ mod tests {
     #[test]
     fn tool_context_shape_project_root_only() {
         // Mirrors ToolContext::resolve_path_sync (shell_cwd = None).
-        let tmp = std::env::temp_dir().join(format!("lc_pr_ctx_{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre_pr_ctx_{}", std::process::id()));
         fs::create_dir_all(&tmp).unwrap();
         let root = tmp.to_string_lossy().to_string();
         let out = resolve_tool_path(Some(&root), None, "missing.rs").unwrap();
@@ -390,13 +390,12 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    // On Unix an absolute path under a single-letter root (`/c/…`)
-    // was rewritten to `C:/…`, which `Path::is_absolute()` rejects on Unix —
-    // the path was then re-joined under the (also-translated) project root,
-    // producing the doubled `C:/root/C:/root/file` form from the report.
-    // `/c` cannot be created in this test environment, so resolution may
-    // still fail — the regression assertion is that no
-    // `C:/` drive form appears anywhere in the outcome (Ok or Err).
+    // On Unix an absolute path under a single-letter root (`/c/…`) is never
+    // rewritten to `C:/…`: `Path::is_absolute()` rejects that on Unix, so the
+    // path would be re-joined under the (also-translated) project root as
+    // `C:/root/C:/root/file`. `/c` cannot be created in this test environment,
+    // so resolution may fail; what is asserted is that no `C:/` drive form
+    // appears anywhere in the outcome (Ok or Err).
     #[cfg(not(windows))]
     #[test]
     fn single_letter_root_is_never_drive_translated_on_unix() {

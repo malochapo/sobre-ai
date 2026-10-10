@@ -1,5 +1,6 @@
-//! Security hardening tests — validates all Critical and High fixes from the
-//! bank-readiness audit (2026-05-08).
+//! Source-level guards on the server: bounded regex and message sizes, raw
+//! shell output kept out of every post-processing stage, and tools that answer
+//! a missing context handle with an error instead of a panic.
 
 /// Reads the full `SobreServer` dispatch source across its split submodules
 /// (`mod.rs`, `call_tool.rs`, `server_handler.rs`, plus the extracted
@@ -17,7 +18,7 @@ fn server_dispatch_src() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// M2 — ReDoS guard in sobre_search
+// ReDoS guard in sobre_search
 // ---------------------------------------------------------------------------
 #[test]
 fn sobre_search_has_pattern_length_limit() {
@@ -25,20 +26,20 @@ fn sobre_search_has_pattern_length_limit() {
 
     assert!(
         src.contains("MAX_PATTERN_LEN"),
-        "M2: sobre_search must limit pattern length"
+        "sobre_search must limit pattern length"
     );
     assert!(
         src.contains(".size_limit("),
-        "M2: sobre_search must set regex size_limit"
+        "sobre_search must set regex size_limit"
     );
     assert!(
         src.contains("RegexBuilder::new("),
-        "M2: sobre_search must use RegexBuilder (not Regex::new) for size limits"
+        "sobre_search must use RegexBuilder (not Regex::new) for size limits"
     );
 }
 
 // ---------------------------------------------------------------------------
-// M3 — MCP stdio max_length
+// MCP stdio max_length
 // ---------------------------------------------------------------------------
 #[test]
 fn mcp_stdio_has_bounded_max_length() {
@@ -46,11 +47,11 @@ fn mcp_stdio_has_bounded_max_length() {
 
     assert!(
         !src.contains("max_length: usize::MAX"),
-        "M3: MCP stdio must NOT use usize::MAX for max_length"
+        "MCP stdio must NOT use usize::MAX for max_length"
     );
     assert!(
         src.contains("32 * 1024 * 1024"),
-        "M3: MCP stdio max_length must be 32 MiB"
+        "MCP stdio max_length must be 32 MiB"
     );
 }
 
@@ -91,5 +92,33 @@ fn raw_shell_skips_all_postprocessing() {
     assert!(
         src.contains("result_text != pre_compression") && src.contains("verify_output"),
         "output verification must only run on condensed text"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// The optional handles of ToolContext are never unwrapped by a tool
+// ---------------------------------------------------------------------------
+#[test]
+fn tools_never_unwrap_an_optional_context_handle() {
+    let unwrap = regex::Regex::new(r"ctx\.\w+\.as_ref\(\)\.(unwrap|expect)\(").unwrap();
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/tools/registered");
+    let mut scanned = 0;
+    let mut hits = Vec::new();
+    for entry in std::fs::read_dir(&dir).expect("src/tools/registered exists") {
+        let path = entry.unwrap().path();
+        if path.extension().is_none_or(|e| e != "rs") {
+            continue;
+        }
+        scanned += 1;
+        let text = std::fs::read_to_string(&path).unwrap();
+        for m in unwrap.find_iter(&text) {
+            hits.push(format!("{}: {}", path.display(), m.as_str()));
+        }
+    }
+    assert!(scanned > 0, "no tool sources found under {}", dir.display());
+    assert!(
+        hits.is_empty(),
+        "a tool unwraps an optional ToolContext handle:\n{}",
+        hits.join("\n")
     );
 }

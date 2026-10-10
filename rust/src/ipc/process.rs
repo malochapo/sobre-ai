@@ -1,7 +1,7 @@
 //! Process control through the OS itself (`kill`, `pgrep`, `ps`, `tasklist`,
-//! `OpenProcess`). Not `sysinfo`: it is a heavy dependency for what the
-//! uninstall and stop paths need, a liveness check, a signal and a lookup by
-//! name.
+//! `OpenProcess`). Not `sysinfo`: it is a heavy dependency for what stopping
+//! the proxy and the MCP server's startup housekeeping need, a liveness
+//! check, a signal and a lookup by name.
 
 use anyhow::Result;
 
@@ -126,8 +126,8 @@ pub fn is_alive(pid: u32) -> bool {
     }
 }
 
-/// Ask a process to terminate gracefully (SIGTERM on Unix, nothing on Windows
-/// since we prefer HTTP shutdown; the caller should have already tried that).
+/// Ask a process to terminate: SIGTERM on Unix; Windows has no such signal,
+/// so there the process is killed.
 pub fn terminate_gracefully(pid: u32) -> Result<()> {
     #[cfg(unix)]
     {
@@ -196,17 +196,15 @@ pub fn force_kill(pid: u32) -> Result<()> {
 /// PIDs this process must never signal: itself, its ancestor chain, and every
 /// member of its own process group.
 ///
-/// The ancestor chain matters whenever `sobre uninstall` runs *under*
-/// sobre itself — a `sobre -c` wrapper (Cursor/Gemini hooks) can be the
-/// parent, so the process tree is `sobre -c … → sh → sobre uninstall`.
-/// Excluding only `getpid()` SIGTERMs the wrapper parent, which takes the
-/// whole pipeline down mid-run (exit 143).
+/// The ancestor chain matters whenever a sobre command runs *under* sobre
+/// itself — a `sobre -c` wrapper (Cursor/Gemini hooks) can be the parent, so
+/// the process tree is `sobre -c … → sh → sobre …`. Signalling the wrapper
+/// parent would take the whole pipeline down mid-run (exit 143).
 ///
 /// The process *group* matters because agent harnesses (Cursor's shell) can
 /// reparent intermediaries to PID 1 mid-run — the `ps ppid` walk then stops
 /// before reaching the outer wrapper, but the wrapper still shares the
-/// foreground pgid; signalling it kills the pipeline all the same
-/// (reproduced twice on the first fix).
+/// foreground pgid; signalling it kills the pipeline all the same.
 fn protected_self_pids() -> std::collections::HashSet<u32> {
     let mut protected = std::collections::HashSet::new();
     protected.insert(std::process::id());

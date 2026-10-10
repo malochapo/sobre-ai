@@ -40,7 +40,7 @@ impl McpTool for SobreReadTool {
             json!({
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "description": "Absolute path" },
+                    "path": { "type": "string", "description": "File path" },
                     "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch read" },
                     "mode": {
                         "type": "string",
@@ -193,14 +193,7 @@ impl SobreReadTool {
                 .map_or(usize::MAX, |l| start.saturating_add(l.max(1)) - 1);
             let content = crate::tools::sobre_read::raw_line_window(path, start, end)
                 .map_err(|e| ErrorData::invalid_params(format!("{path}: {e}"), None))?;
-            let tokens = crate::core::tokens::count_tokens(&content);
-            return Ok(ToolOutput {
-                text: content,
-                original_tokens: tokens,
-                saved_tokens: 0,
-                shell_outcome: None,
-                content_blocks: None,
-            });
+            return Ok(ToolOutput::simple(content));
         }
 
         // `start_line` (and its `offset`/`limit` aliases) can pin a line window.
@@ -317,14 +310,7 @@ impl SobreReadTool {
         if mode == "raw" {
             let content = crate::tools::sobre_read::read_file_lossy(path)
                 .map_err(|e| ErrorData::invalid_params(format!("{path}: {e}"), None))?;
-            let tokens = crate::core::tokens::count_tokens(&content);
-            return Ok(ToolOutput {
-                text: content,
-                original_tokens: tokens,
-                saved_tokens: 0,
-                shell_outcome: None,
-                content_blocks: None,
-            });
+            return Ok(ToolOutput::simple(content));
         }
 
         let (output, resolved_mode, original, file_ref) = read_through_cache(
@@ -356,8 +342,6 @@ impl SobreReadTool {
         let saved = replaced_tokens.saturating_sub(output_tokens);
 
         // Session updates (bounded lock — 10s timeout, read already succeeded)
-        let mut traversal_working_set: Vec<String> = Vec::new();
-        let project_root_snapshot;
         {
             let rt = tokio::runtime::Handle::current();
             let session_guard = rt.block_on(tokio::time::timeout(
@@ -366,10 +350,6 @@ impl SobreReadTool {
             ));
             if let Ok(mut session) = session_guard {
                 session.touch_file(path, file_ref.as_deref(), &resolved_mode, original);
-                // Capture the recent working set (under the lock) so the
-                // background thread can record a traversal/co-access edge.
-                traversal_working_set =
-                    crate::core::tool_lifecycle::recent_working_set(&session, path);
                 let file_summary = extract_file_summary(&output, path);
                 if !file_summary.is_empty() {
                     session.set_file_summary(path, &file_summary);
@@ -382,67 +362,12 @@ impl SobreReadTool {
                 {
                     session.project_root = Some(root);
                 }
-                project_root_snapshot = session
-                    .project_root
-                    .clone()
-                    .unwrap_or_else(|| ".".to_string());
             } else {
                 tracing::warn!(
                     "session write-lock timeout (10s) in sobre_read post-update for {path}"
                 );
-                project_root_snapshot = ctx.project_root.clone();
             }
         }
-
-        // The co-access edge is a side effect that never influences this
-        // response; keep its disk I/O off the hot path.
-        {
-            let path_bg = path.to_string();
-            let project_root_bg = project_root_snapshot.clone();
-            std::thread::spawn(move || {
-                // A panic here must not poison locks or leave a zombie thread;
-                // it never affects the already-returned read response.
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                    // Traversal/co-access edge: this read fired together with the
-                    // recent working set captured under the session lock.
-                    if let Some(root) =
-                        crate::core::tool_lifecycle::usable_root(Some(project_root_bg.as_str()))
-                    {
-                        crate::core::cooccurrence::record_focus_access(
-                            root,
-                            &path_bg,
-                            &traversal_working_set,
-                        );
-                    }
-                }));
-            });
-        }
-
-        // Cross-source hints: if the property graph has cross-source edges
-        // pointing to this file, append compact hints so the agent knows about
-        // related issues/PRs/schemas without a separate tool call. Only
-        // touch the DB when it already exists — never create graph.db on a read.
-        let hints_suffix = {
-            let graph_db = crate::core::property_graph::graph_dir(&ctx.project_root)
-                .map(|d| d.join("graph.db"));
-            let edges = if graph_db.is_some_and(|db| db.exists()) {
-                crate::core::property_graph::CodeGraph::open(&ctx.project_root)
-                    .map(|g| g.all_cross_source_edges())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            };
-            if edges.is_empty() {
-                String::new()
-            } else {
-                let hints = crate::core::cross_source_hints::hints_for_file(
-                    path,
-                    &edges,
-                    &ctx.project_root,
-                );
-                crate::core::cross_source_hints::format_hints(&hints)
-            }
-        };
 
         let mut warnings = Vec::new();
         if let Some(ref w) = delta_explicit_note {
@@ -451,19 +376,16 @@ impl SobreReadTool {
         if let Some(ref w) = mode_override_note {
             warnings.push(w.as_str());
         }
-        // Notices (mode override, budget, degradation, delta) go BEFORE the
-        // payload so client-side truncation of large outputs cannot hide them.
-        let final_output = if !warnings.is_empty() {
-            format!("{}\n\n{output}{hints_suffix}", warnings.join("\n"))
-        } else if hints_suffix.is_empty() {
+        // Notices (mode override, delta) go BEFORE the payload so client-side
+        // truncation of large outputs cannot hide them.
+        let final_output = if warnings.is_empty() {
             output
         } else {
-            format!("{output}{hints_suffix}")
+            format!("{}\n\n{output}", warnings.join("\n"))
         };
 
         Ok(ToolOutput {
             text: final_output,
-            original_tokens: replaced_tokens,
             saved_tokens: saved,
             shell_outcome: None,
             content_blocks: None,
@@ -512,7 +434,9 @@ fn read_through_cache(
     aggressiveness: Option<f64>,
     protect: &[String],
 ) -> Result<(String, String, usize, Option<String>), String> {
-    use crate::tools::sobre_read::{Prepared, ReadTuning, finish, prepare, render, settle};
+    use crate::tools::sobre_read::{
+        Prepared, ReadTuning, finish, prepare, record_read, render, settle,
+    };
 
     let file_lock = per_file_lock(path);
     let _file_guard = {
@@ -542,17 +466,20 @@ fn read_through_cache(
 
     let tuning = ReadTuning::resolve(aggressiveness, protect);
     let contention = || format!("cache lock contention for {path} — retry in a moment");
+    // The bounce tracker is a static lock: taken only with no cache lock held.
+    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
+        bt.next_seq();
+    }
     let job = {
         let mut cache = write_lock_within(cache_lock, std::time::Duration::from_secs(10))
             .ok_or_else(contention)?;
-        if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
-            bt.next_seq();
-        }
         match prepare(&mut cache, path, mode, fresh, crp_mode, task, tuning, None) {
             Prepared::Done(out) => {
                 let out = settle(&mut cache, path, out);
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
                 let file_ref = cache.file_ref_map().get(path).cloned();
+                drop(cache);
+                record_read(path, &out, orig);
                 return Ok((out.content, out.resolved_mode, orig, file_ref));
             }
             Prepared::Render(job) => job,
@@ -578,6 +505,8 @@ fn read_through_cache(
     let out = settle(&mut cache, path, out);
     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
     let file_ref = cache.file_ref_map().get(path).cloned();
+    drop(cache);
+    record_read(path, &out, orig);
     Ok((out.content, out.resolved_mode, orig, file_ref))
 }
 

@@ -13,59 +13,9 @@ pub enum TaskType {
     Review,
 }
 
-impl TaskType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Generate => "generate",
-            Self::FixBug => "fix_bug",
-            Self::Refactor => "refactor",
-            Self::Explore => "explore",
-            Self::Test => "test",
-            Self::Debug => "debug",
-            Self::Config => "config",
-            Self::Deploy => "deploy",
-            Self::Review => "review",
-        }
-    }
-
-    pub fn output_format(&self) -> OutputFormat {
-        match self {
-            Self::Generate | Self::Test | Self::Config => OutputFormat::CodeOnly,
-            Self::FixBug | Self::Refactor => OutputFormat::DiffOnly,
-            Self::Explore | Self::Review => OutputFormat::ExplainConcise,
-            Self::Debug => OutputFormat::Trace,
-            Self::Deploy => OutputFormat::StepList,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputFormat {
-    CodeOnly,
-    DiffOnly,
-    ExplainConcise,
-    Trace,
-    StepList,
-}
-
-impl OutputFormat {
-    pub fn instruction(&self) -> &'static str {
-        match self {
-            Self::CodeOnly => {
-                "OUTPUT-HINT: Prefer code blocks. Minimize prose unless user asks for explanation."
-            }
-            Self::DiffOnly => "OUTPUT-HINT: Prefer showing only changed lines as +/- diffs.",
-            Self::ExplainConcise => "OUTPUT-HINT: Brief summary, then code/data if relevant.",
-            Self::Trace => "OUTPUT-HINT: Show cause→effect chain with code references.",
-            Self::StepList => "OUTPUT-HINT: Numbered action list, one step at a time.",
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct TaskClassification {
     pub task_type: TaskType,
-    pub confidence: f64,
     pub targets: Vec<String>,
     pub keywords: Vec<String>,
 }
@@ -218,14 +168,8 @@ pub fn classify(query: &str) -> TaskClassification {
     let targets = extract_targets(query, lang);
     let keywords = extract_keywords(&q, lang);
 
-    if best_score < 0.1 {
-        best_type = TaskType::Explore;
-        best_score = 0.3;
-    }
-
     TaskClassification {
         task_type: best_type,
-        confidence: best_score,
         targets,
         keywords,
     }
@@ -400,7 +344,7 @@ pub fn classify_complexity(query: &str, classification: &TaskClassification) -> 
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntentScope {
     SingleFile,
     MultiFile,
@@ -408,16 +352,13 @@ pub enum IntentScope {
     ProjectWide,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// What `aggressive` mode needs from a stated task: its type, its keywords
+/// and how wide it reaches.
+#[derive(Debug, Clone)]
 pub struct StructuredIntent {
     pub task_type: TaskType,
-    pub confidence: f64,
-    pub targets: Vec<String>,
     pub keywords: Vec<String>,
     pub scope: IntentScope,
-    pub language_hint: Option<String>,
-    pub urgency: f64,
-    pub action_verb: Option<String>,
 }
 
 impl StructuredIntent {
@@ -448,230 +389,11 @@ impl StructuredIntent {
             }
         };
 
-        let language_hint = detect_language_hint(query, &classification.targets);
-        let urgency = detect_urgency(query);
-        let action_verb = extract_action_verb(query);
-
         StructuredIntent {
             task_type: classification.task_type,
-            confidence: classification.confidence,
-            targets: classification.targets,
             keywords: classification.keywords,
             scope,
-            language_hint,
-            urgency,
-            action_verb,
         }
-    }
-
-    #[cfg(test)]
-    pub fn format_header(&self) -> String {
-        format!(
-            "[TASK:{} SCOPE:{} CONF:{:.0}%{}{}]",
-            self.task_type.as_str(),
-            match self.scope {
-                IntentScope::SingleFile => "single",
-                IntentScope::MultiFile => "multi",
-                IntentScope::CrossModule => "cross",
-                IntentScope::ProjectWide => "project",
-            },
-            self.confidence * 100.0,
-            self.language_hint
-                .as_ref()
-                .map(|l| format!(" LANG:{l}"))
-                .unwrap_or_default(),
-            if self.urgency > 0.5 { " URGENT" } else { "" },
-        )
-    }
-}
-
-fn detect_language_hint(query: &str, targets: &[String]) -> Option<String> {
-    for t in targets {
-        let ext = std::path::Path::new(t).extension().and_then(|e| e.to_str());
-        match ext {
-            Some("rs") => return Some("rust".into()),
-            Some("ts" | "tsx") => return Some("typescript".into()),
-            Some("js" | "jsx") => return Some("javascript".into()),
-            Some("py") => return Some("python".into()),
-            Some("go") => return Some("go".into()),
-            Some("rb") => return Some("ruby".into()),
-            Some("java") => return Some("java".into()),
-            Some("swift") => return Some("swift".into()),
-            Some("zig") => return Some("zig".into()),
-            _ => {}
-        }
-    }
-
-    let q = query.to_lowercase();
-    let lang_keywords: &[(&str, &str)] = &[
-        ("rust", "rust"),
-        ("python", "python"),
-        ("typescript", "typescript"),
-        ("javascript", "javascript"),
-        ("golang", "go"),
-        (" go ", "go"),
-        ("ruby", "ruby"),
-        ("java ", "java"),
-        ("swift", "swift"),
-    ];
-    for &(kw, lang) in lang_keywords {
-        if q.contains(kw) {
-            return Some(lang.into());
-        }
-    }
-
-    None
-}
-
-fn detect_urgency(query: &str) -> f64 {
-    let q = query.to_lowercase();
-    let urgent_words = [
-        "urgent",
-        "asap",
-        "immediately",
-        "critical",
-        "hotfix",
-        "emergency",
-        "blocker",
-        "breaking",
-    ];
-    let hits = urgent_words.iter().filter(|w| q.contains(*w)).count()
-        + intent_lang::URGENT_WORDS_I18N
-            .iter()
-            .filter(|w| q.contains(*w))
-            .count();
-    (hits as f64 * 0.4).min(1.0)
-}
-
-fn extract_action_verb(query: &str) -> Option<String> {
-    let verbs = [
-        "fix",
-        "add",
-        "create",
-        "implement",
-        "refactor",
-        "debug",
-        "test",
-        "write",
-        "update",
-        "remove",
-        "delete",
-        "rename",
-        "move",
-        "extract",
-        "split",
-        "merge",
-        "deploy",
-        "review",
-        "check",
-        "build",
-        "generate",
-        "optimize",
-        "clean",
-    ];
-    let q = query.to_lowercase();
-    let words: Vec<&str> = q.split_whitespace().collect();
-    for v in &verbs {
-        if words.first() == Some(v) || words.get(1) == Some(v) {
-            return Some(v.to_string());
-        }
-    }
-    for v in &verbs {
-        if words.contains(v) {
-            return Some(v.to_string());
-        }
-    }
-    None
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum IntentDimension {
-    What,
-    How,
-    Do,
-}
-
-impl IntentDimension {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::What => "what",
-            Self::How => "how",
-            Self::Do => "do",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ModelTier {
-    Fast,
-    Standard,
-    Premium,
-}
-
-impl ModelTier {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Fast => "fast",
-            Self::Standard => "standard",
-            Self::Premium => "premium",
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct IntentRoute {
-    pub dimension: IntentDimension,
-    pub model_tier: ModelTier,
-    pub confidence: f64,
-    pub reasoning: String,
-}
-
-pub fn route_intent(query: &str, classification: &TaskClassification) -> IntentRoute {
-    let (base_dimension, base_tier) = match classification.task_type {
-        TaskType::Explore | TaskType::Debug => (IntentDimension::What, ModelTier::Fast),
-        TaskType::Review | TaskType::FixBug | TaskType::Test => {
-            (IntentDimension::How, ModelTier::Standard)
-        }
-        TaskType::Generate | TaskType::Refactor | TaskType::Deploy | TaskType::Config => {
-            (IntentDimension::Do, ModelTier::Premium)
-        }
-    };
-
-    let complexity = classify_complexity(query, classification);
-    let tier = match complexity {
-        TaskComplexity::Architectural => {
-            if base_tier == ModelTier::Fast {
-                ModelTier::Standard
-            } else {
-                ModelTier::Premium
-            }
-        }
-        _ => base_tier,
-    };
-
-    let tier = if classification.confidence < 0.5 {
-        ModelTier::Standard
-    } else {
-        tier
-    };
-
-    let reasoning = format!(
-        "{}({}) + {}complexity -> {}",
-        classification.task_type.as_str(),
-        base_dimension.as_str(),
-        match complexity {
-            TaskComplexity::Mechanical => "low ",
-            TaskComplexity::Standard => "",
-            TaskComplexity::Architectural => "high ",
-        },
-        tier.as_str()
-    );
-
-    IntentRoute {
-        dimension: base_dimension,
-        model_tier: tier,
-        confidence: classification.confidence,
-        reasoning,
     }
 }
 
@@ -683,7 +405,6 @@ mod tests {
     fn classify_fix_bug() {
         let r = classify("fix the bug in entropy.rs where token_entropy returns NaN");
         assert_eq!(r.task_type, TaskType::FixBug);
-        assert!(r.confidence > 0.5);
         assert!(r.targets.iter().any(|t| t.contains("entropy.rs")));
     }
 
@@ -691,7 +412,6 @@ mod tests {
     fn classify_generate() {
         let r = classify("add a new function normalized_token_entropy to entropy.rs");
         assert_eq!(r.task_type, TaskType::Generate);
-        assert!(r.confidence > 0.5);
     }
 
     #[test]
@@ -735,7 +455,6 @@ mod tests {
     fn fallback_to_explore() {
         let r = classify("xyz qqq bbb");
         assert_eq!(r.task_type, TaskType::Explore);
-        assert!(r.confidence < 0.5);
     }
 
     #[test]
@@ -755,70 +474,7 @@ mod tests {
         assert_eq!(c, super::TaskComplexity::Architectural);
     }
 
-    #[test]
-    fn route_explore_is_what() {
-        let c = TaskClassification {
-            task_type: TaskType::Explore,
-            confidence: 0.8,
-            targets: vec![],
-            keywords: vec!["explore".into()],
-        };
-        let route = route_intent("explore the codebase", &c);
-        assert_eq!(route.dimension, IntentDimension::What);
-        assert_eq!(route.model_tier, ModelTier::Fast);
-    }
-
-    #[test]
-    fn route_fixbug_is_how() {
-        let c = TaskClassification {
-            task_type: TaskType::FixBug,
-            confidence: 0.9,
-            targets: vec!["auth.rs".into()],
-            keywords: vec!["fix".into(), "bug".into()],
-        };
-        let route = route_intent("fix the null pointer bug in auth.rs", &c);
-        assert_eq!(route.dimension, IntentDimension::How);
-        assert_eq!(route.model_tier, ModelTier::Standard);
-    }
-
-    #[test]
-    fn route_generate_is_do() {
-        let c = TaskClassification {
-            task_type: TaskType::Generate,
-            confidence: 0.85,
-            targets: vec![],
-            keywords: vec!["generate".into()],
-        };
-        let route = route_intent("generate a new module", &c);
-        assert_eq!(route.dimension, IntentDimension::Do);
-        assert_eq!(route.model_tier, ModelTier::Premium);
-    }
-
-    #[test]
-    fn route_complex_upgrades_tier() {
-        let c = TaskClassification {
-            task_type: TaskType::FixBug,
-            confidence: 0.8,
-            targets: vec!["auth.rs".into(), "middleware.rs".into()],
-            keywords: vec!["fix".into()],
-        };
-        let route = route_intent("fix auth across all files and update the migration", &c);
-        assert_eq!(route.model_tier, ModelTier::Premium);
-    }
-
-    #[test]
-    fn route_low_confidence_standard() {
-        let c = TaskClassification {
-            task_type: TaskType::Explore,
-            confidence: 0.3,
-            targets: vec![],
-            keywords: vec![],
-        };
-        let route = route_intent("something vague", &c);
-        assert_eq!(route.model_tier, ModelTier::Standard);
-    }
-
-    /// Acceptance: de/fr/es sentences per TaskType, ≥90% hit rate.
+    /// de/fr/es sentences per TaskType, ≥90% hit rate.
     #[test]
     fn classify_multilingual_table() {
         let table: &[(&str, TaskType)] = &[
@@ -888,7 +544,7 @@ mod tests {
         );
     }
 
-    /// Acceptance: German filler words must not pollute keywords.
+    /// German filler words must not pollute keywords.
     #[test]
     fn keywords_filter_german_fillers() {
         let r = classify("bitte kannst du diese funktion aufräumen, ich möchte sauberen code");
@@ -911,17 +567,14 @@ mod tests {
     }
 
     #[test]
-    fn urgency_detects_german_markers() {
+    fn german_fix_is_a_bug_fix() {
         let intent = StructuredIntent::from_query("dringend: behebe den absturz sofort");
-        assert!(intent.urgency > 0.5);
         assert_eq!(intent.task_type, TaskType::FixBug);
-        assert!(intent.format_header().contains("URGENT"));
     }
 
     #[test]
-    fn german_refactor_gets_diff_output() {
+    fn german_tidy_up_is_a_refactor() {
         let intent = StructuredIntent::from_query("räum die funktion auf");
         assert_eq!(intent.task_type, TaskType::Refactor);
-        assert_eq!(intent.task_type.output_format(), OutputFormat::DiffOnly);
     }
 }

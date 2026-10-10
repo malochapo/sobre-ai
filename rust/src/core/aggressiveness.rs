@@ -1,13 +1,11 @@
 //! Single 0.0–1.0 compression-intensity knob.
 //!
-//! Callers (the `sobre_read` tool, the proxy, the CLI) can
-//! express "how hard should I compress?" as one number instead of picking among
-//! the ten read modes. The number is *mapped* onto the existing density /
-//! entropy / information-bottleneck stages — it never introduces a model, so the
-//! determinism contract (output = pure function of inputs) is preserved.
-//! Resolution order (see [`effective`]): explicit per-call arg >
-//! `compression_level` in config > `None`. `None` means "use each mode's
-//! adaptive default", the behaviour when `compression_level` is not set.
+//! `sobre_read`'s `aggressiveness` argument expresses "how hard should I
+//! compress?" as one number instead of a read mode. The number is *mapped*
+//! onto the existing density / entropy / information-bottleneck stages — it
+//! never introduces a model, so the output stays a pure function of the
+//! inputs. Without the argument ([`effective`] returns `None`) each mode keeps
+//! its own default; `compression_level` in the config does not set it.
 
 /// Concrete tuning derived from one aggressiveness value. Every field is a pure
 /// function of `a`, so the same `a` always yields the same knobs (determinism).
@@ -25,9 +23,8 @@ pub struct AggressivenessProfile {
 }
 
 impl AggressivenessProfile {
-    /// Maps `a ∈ [0,1]` (clamped) onto the three tuning knobs. The constants are
-    /// a deliberate, monotonic starting point; Epic E (accuracy suite) is meant
-    /// to calibrate them empirically.
+    /// Maps `a ∈ [0,1]` (clamped) onto the three tuning knobs. The constants
+    /// are hand-set and monotonic; no measurement calibrated them.
     #[must_use]
     pub fn from_level(a: f64) -> Self {
         let a = a.clamp(0.0, 1.0);
@@ -51,7 +48,7 @@ pub fn effective(explicit: Option<f64>) -> Option<f64> {
 ///
 /// Buckets to 1/20 (0.05 steps) so float jitter does not fragment the cache,
 /// while distinct settings still get distinct keys. `None` → empty
-/// string so today's keys are unchanged when the knob is unset.
+/// string, so a read without the knob keeps the plain mode key.
 #[must_use]
 pub fn cache_fragment(a: Option<f64>) -> String {
     match a {
@@ -93,7 +90,7 @@ mod tests {
 
     #[test]
     fn cache_fragment_is_stable_and_bucketed() {
-        // None → empty (today's keys unchanged).
+        // None → empty.
         assert_eq!(cache_fragment(None), "");
         // Same value → same fragment (determinism).
         assert_eq!(cache_fragment(Some(0.7)), cache_fragment(Some(0.7)));

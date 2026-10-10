@@ -73,30 +73,37 @@ fn data_dirs() -> Vec<(PathBuf, &'static str)> {
 }
 
 fn remove_data_dirs(home: &Path, keep_config: bool) -> bool {
-    let config_dir = crate::core::paths::config_dir().ok();
+    let kept = crate::core::paths::config_dir()
+        .ok()
+        .filter(|_| keep_config);
+    remove_dirs(home, &data_dirs(), kept.as_deref())
+}
+
+/// Deletes each of `dirs` but `kept`, and returns whether one held anything.
+/// An empty directory is no install (resolving a directory can create it):
+/// it is removed without a word.
+fn remove_dirs(home: &Path, dirs: &[(PathBuf, &str)], kept: Option<&Path>) -> bool {
     let mut removed = false;
-    for (dir, what) in data_dirs() {
+    for (dir, what) in dirs {
+        if fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_none()) {
+            if fs::remove_dir(dir).is_ok() {
+                remove_empty_parents(dir, home);
+            }
+            continue;
+        }
         if !dir.exists() {
             continue;
         }
-        let short = shorten(&dir, home);
-        if keep_config && config_dir.as_ref() == Some(&dir) {
+        let short = shorten(dir, home);
+        if kept == Some(dir.as_path()) {
             println!("  · Kept {short} (--keep-config)");
             continue;
         }
         removed = true;
-        match fs::remove_dir_all(&dir) {
+        match fs::remove_dir_all(dir) {
             Ok(()) => {
                 println!("  ✓ Deleted {short} ({what})");
-                // `~/.local/state` and friends, when sobre was their only user.
-                let mut parent = dir.parent();
-                while let Some(p) = parent
-                    && p != home
-                    && p.starts_with(home)
-                    && fs::remove_dir(p).is_ok()
-                {
-                    parent = p.parent();
-                }
+                remove_empty_parents(dir, home);
             }
             Err(e) => println!("  ✗ Could not delete {short}: {e}"),
         }
@@ -104,10 +111,44 @@ fn remove_data_dirs(home: &Path, keep_config: bool) -> bool {
     removed
 }
 
+/// `~/.local/state` and friends, when sobre was their only user.
+fn remove_empty_parents(dir: &Path, home: &Path) {
+    let mut parent = dir.parent();
+    while let Some(p) = parent
+        && p != home
+        && p.starts_with(home)
+        && fs::remove_dir(p).is_ok()
+    {
+        parent = p.parent();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    /// Directories that hold nothing are no install: they go without a word,
+    /// and uninstall can say there was nothing to remove.
+    #[test]
+    fn empty_data_dirs_are_nothing_to_remove() {
+        let home = tempfile::tempdir().unwrap();
+        let dirs: Vec<(PathBuf, &str)> = [".config/sobre", ".local/share/sobre"]
+            .into_iter()
+            .map(|rel| (home.path().join(rel), "data"))
+            .collect();
+        for (dir, _) in &dirs {
+            fs::create_dir_all(dir).unwrap();
+        }
+        assert!(!remove_dirs(home.path(), &dirs, None));
+        assert!(dirs.iter().all(|(dir, _)| !dir.exists()));
+        assert!(!home.path().join(".local").exists());
+
+        fs::create_dir_all(&dirs[1].0).unwrap();
+        fs::write(dirs[1].0.join("usage.jsonl"), "{}").unwrap();
+        assert!(remove_dirs(home.path(), &dirs, None));
+        assert!(!dirs[1].0.exists());
+    }
 
     #[test]
     fn data_dirs_cover_every_category_once() {

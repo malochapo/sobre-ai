@@ -13,10 +13,9 @@ const TIMEOUT_MARKER: &str = "ERROR: command timed out after ";
 /// produced nothing recoverable.
 ///
 /// Single source of truth for "was anything captured before the timeout?":
-/// `call_tool` decides `isError` with it and `sobre_shell` decides
-/// whether the notice is worth archiving. It lives beside the code that
-/// writes the marker because both callers previously re-derived it by matching
-/// the whole output, so enriching the notice broke them silently.
+/// `sobre_shell` decides with it whether the notice is worth archiving. It
+/// lives beside the code that writes the marker, so enriching the notice
+/// cannot break its readers.
 pub(crate) fn output_before_timeout_marker(output: &str) -> Option<&str> {
     output.find(TIMEOUT_MARKER).map(|idx| output[..idx].trim())
 }
@@ -143,7 +142,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     let mut still_running: Vec<String> = Vec::new();
     let (code, timed_out, cancelled) = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break (status.code().unwrap_or(1), false, false),
+            Ok(Some(status)) => break (crate::shell::exit_code(status), false, false),
             Ok(None) => {
                 if cancel.is_some_and(|signal| signal.load(std::sync::atomic::Ordering::Acquire)) {
                     kill_timed_out_child(&mut child);
@@ -518,6 +517,14 @@ mod tests {
         assert_eq!(output, "Привет", "Cyrillic bytes must survive roundtrip");
     }
 
+    /// A command a signal ends reports `128 + signal`, as a shell does.
+    #[test]
+    #[cfg(unix)]
+    fn a_signal_reports_128_plus_the_signal() {
+        let (output, code) = execute_command_in("kill -TERM $$", ".");
+        assert_eq!(code, 128 + 15, "{output}");
+    }
+
     #[test]
     #[cfg_attr(windows, ignore = "ReadToEnd() blocks indefinitely on Windows")]
     fn execute_command_closes_stdin() {
@@ -532,9 +539,8 @@ mod tests {
 
     /// A command that finishes but leaves a process holding the stdout
     /// pipe open (here a backgrounded `sleep`) must NOT lose the foreground
-    /// output. The old `recv_timeout(...).unwrap_or_default()` discarded
-    /// everything on the reader timeout; now the captured prefix survives and
-    /// the still-draining reader is flagged instead of returning a bare exit.
+    /// output: on the reader timeout the captured prefix survives and the
+    /// still-draining reader is flagged instead of returning a bare exit.
     #[test]
     #[cfg_attr(windows, ignore = "POSIX backgrounding (`&`) and sleep")]
     fn background_pipe_holder_keeps_foreground_output() {

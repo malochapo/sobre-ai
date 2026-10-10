@@ -269,24 +269,31 @@ pub fn compact(
     (archived.len(), archived)
 }
 
+/// Runs decay, consolidation, quality archival and the capacity reclaim over
+/// the facts of the project whose hash is `scope`. Archived facts go to that
+/// project's archive. When an archive cannot be written, the facts it would
+/// have held stay in `facts` and the error is returned.
 pub fn run_lifecycle(
     facts: &mut Vec<KnowledgeFact>,
+    scope: &str,
     config: &LifecycleConfig,
 ) -> Result<LifecycleReport, String> {
     let decayed = apply_confidence_decay(facts, config);
     let consolidated = consolidate_similar(facts, config.consolidation_similarity);
+    let before_compaction = facts.clone();
     let (compacted, archived) = compact(facts, config);
 
-    if !archived.is_empty() {
-        let _ = archive_facts(&archived);
+    if let Err(e) = archive_facts(scope, &archived) {
+        *facts = before_compaction;
+        return Err(e);
     }
 
     // Capacity reclaim: facts settle at headroom via the single capacity
-    // manager, archiving the evicted tail losslessly under the facts archive root
-    // — the same path quality archival uses, so recall rehydration is uniform.
+    // manager, archiving the evicted tail in the same project archive quality
+    // archival uses, so recall rehydration is uniform.
     let capacity_archived = crate::core::memory_capacity::reclaim_store(
         MemoryStore::Facts,
-        None,
+        scope,
         facts,
         config.max_facts,
         config.reclaim_headroom_pct,
@@ -308,12 +315,12 @@ pub fn run_lifecycle(
     })
 }
 
-/// Archive evicted facts (lossless) at the archive root; the generic multi-store archive lives in
-/// [`crate::core::memory_archive`].
-pub fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
+/// Archive evicted facts in the archive of the project whose hash is `scope`;
+/// the generic multi-store archive lives in [`crate::core::memory_archive`].
+pub fn archive_facts(scope: &str, facts: &[KnowledgeFact]) -> Result<(), String> {
     crate::core::memory_archive::archive_items(
         MemoryStore::Facts,
-        None,
+        scope,
         facts,
         &ArchiveConfig::default(),
     )
@@ -325,11 +332,11 @@ pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String>
     crate::core::memory_archive::restore_items(std::path::Path::new(archive_path))
 }
 
-/// The newest reachable facts archives for the recall-miss rehydrate path —
-/// bounded by [`ArchiveConfig::rehydrate_reach`] so every retained archive is
-/// reachable.
-pub fn reachable_archives(cfg: &ArchiveConfig) -> Vec<PathBuf> {
-    crate::core::memory_archive::reachable_archives(MemoryStore::Facts, None, cfg)
+/// The newest facts archives of the project whose hash is `scope`, for the
+/// recall-miss rehydrate path — bounded by [`ArchiveConfig::rehydrate_reach`]
+/// so every retained archive is reachable.
+pub fn reachable_archives(scope: &str, cfg: &ArchiveConfig) -> Vec<PathBuf> {
+    crate::core::memory_archive::reachable_archives(MemoryStore::Facts, scope, cfg)
 }
 
 #[cfg(test)]
@@ -562,7 +569,7 @@ mod tests {
                 .map(|i| make_fact("finding", &format!("k{i}"), &format!("value {i}"), 0.8))
                 .collect();
 
-            let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
+            let report = run_lifecycle(&mut facts, "scope", &config).expect("lifecycle succeeds");
 
             // Hysteresis: at cap (8) → settle to headroom target (6), archive 2.
             assert_eq!(report.capacity_archived, 2);
@@ -586,7 +593,7 @@ mod tests {
             let low = make_fact("misc", "drop-low", "low salience", 0.6);
             let mut facts = vec![old, low, finding, decision];
 
-            let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
+            let report = run_lifecycle(&mut facts, "scope", &config).expect("lifecycle succeeds");
             let keys: Vec<&str> = facts.iter().map(|f| f.key.as_str()).collect();
 
             // 4 at cap → settle to 3; the expired fact sorts last (not current) and
@@ -596,6 +603,61 @@ mod tests {
             assert!(keys.contains(&"keep-finding"));
             assert!(!keys.contains(&"drop-archived"));
         });
+    }
+
+    /// A fact archived in one project is never brought back into another.
+    #[test]
+    fn archived_facts_stay_in_their_project() {
+        with_temp_data_dir(|| {
+            let policy = crate::core::memory_policy::MemoryPolicy::default();
+            let mut a = crate::core::knowledge::ProjectKnowledge::new("/tmp/sobre-archive-proj-a");
+            a.remember("architecture", "db", "PostgreSQL", "s1", 0.1, &policy);
+            a.run_memory_lifecycle(&policy).expect("lifecycle succeeds");
+            assert!(a.facts.is_empty(), "the low-confidence fact is archived");
+
+            let mut b = crate::core::knowledge::ProjectKnowledge::new("/tmp/sobre-archive-proj-b");
+            let found = crate::tools::sobre_knowledge::rehydrate_from_archives(
+                &mut b,
+                None,
+                Some("postgresql"),
+                "s2",
+                &policy,
+            );
+            assert!(!found, "project B must not see project A's archive");
+            assert!(b.facts.is_empty());
+
+            let mut a_again =
+                crate::core::knowledge::ProjectKnowledge::new("/tmp/sobre-archive-proj-a");
+            assert!(crate::tools::sobre_knowledge::rehydrate_from_archives(
+                &mut a_again,
+                None,
+                Some("postgresql"),
+                "s3",
+                &policy,
+            ));
+        });
+    }
+
+    /// When the archive cannot be written, the facts it would have held stay.
+    #[test]
+    fn a_failed_archive_keeps_the_facts() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        // A file where the data directory should be: no archive can be created.
+        let not_a_dir = tmp.path().join("data");
+        std::fs::write(&not_a_dir, "").unwrap();
+        crate::test_env::set_var("SOBRE_DATA_DIR", &not_a_dir);
+
+        let mut facts = vec![
+            make_fact("arch", "db", "PostgreSQL", 0.9),
+            make_fact("arch", "cache", "Redis", 0.1),
+        ];
+        let result = run_lifecycle(&mut facts, "scope", &LifecycleConfig::default());
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
+
+        assert!(result.is_err());
+        let keys: Vec<&str> = facts.iter().map(|f| f.key.as_str()).collect();
+        assert_eq!(keys, ["db", "cache"]);
     }
 
     #[test]
@@ -615,10 +677,11 @@ mod tests {
     }
 
     #[test]
-    fn prune_unretrieved_is_off_by_default() {
-        // Default config (None) must not touch a high-confidence stale fact —
-        // existing tuning stays byte-for-byte.
+    fn prune_unretrieved_spares_a_fact_younger_than_the_default_90_days() {
+        // The default prunes a never-retrieved fact after 90 days, so a
+        // confident 60-day-old one is kept.
         let config = LifecycleConfig::default();
+        assert_eq!(config.prune_unretrieved_after_days, Some(90));
         let mut facts = vec![make_old_fact("arch", "x", "still confident", 0.9, 60)];
         let (count, _) = compact(&mut facts, &config);
         assert_eq!(count, 0);
@@ -669,7 +732,7 @@ mod tests {
             make_fact("ops", "deploy", "docker compose", 0.7),
         ];
 
-        let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
+        let report = run_lifecycle(&mut facts, "scope", &config).expect("lifecycle succeeds");
         assert!(report.remaining_facts <= config.max_facts);
         assert!(report.decayed_count > 0 || report.compacted_count > 0);
     }

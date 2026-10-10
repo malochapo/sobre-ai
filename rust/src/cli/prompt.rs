@@ -1,8 +1,5 @@
-//! Shared interactive-confirmation helpers for consequential CLI writes.
-//!
-//! One governance — *show the consequence, then require explicit approval* —
-//! guards every state-mutating write that can clobber existing state
-//! (knowledge overwrites, behavior-changing `config set`).
+//! Confirmation for a `config set` that widens what sobre does: show the
+//! consequence, then require explicit approval.
 //!
 //! Invariant: with no TTY and no `--yes` we **refuse** rather than silently
 //! apply. An automated/unattended run must never weaken state without an

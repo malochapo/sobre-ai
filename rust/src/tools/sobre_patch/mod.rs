@@ -112,7 +112,7 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
         );
     }
 
-    // BOM parity with `sobre_read` (follow-up): the read side strips a
+    // BOM parity with `sobre_read`: the read side strips a
     // UTF-8 BOM before hashing line 1, so anchors must be validated against
     // the BOM-less body — otherwise every line-1 edit of a BOM file conflicts
     // forever. The BOM itself is preserved on write (prepended below); it is

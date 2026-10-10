@@ -1,9 +1,8 @@
 //! Shared edit-distance "did you mean" helper.
 //!
-//! One policy for every typo-suggestion surface: CLI commands
-//! (`cli/dispatch/suggest.rs`), config keys (`cli/config_cmd.rs`) and MCP
-//! tool names (`server/dispatch`), so all callers agree on what is close
-//! enough. The distance is `strsim`'s optimal string alignment over Unicode
+//! One policy for every typo-suggestion surface: config keys
+//! (`cli/config_cmd.rs`, `doctor`) and MCP tool names (`server/dispatch`), so
+//! all callers agree on what is close enough. The distance is `strsim`'s optimal string alignment over Unicode
 //! scalar values: inserting, deleting or replacing a character, or swapping
 //! two adjacent ones, costs one, so `inti` is one edit from `init`.
 

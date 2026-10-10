@@ -208,7 +208,7 @@ impl McpTool for SobreShellTool {
             // inline wait — the host aborts at ~120s regardless — it only
             // suppressed our own detach, producing exactly the unresolvable
             // task id the cap exists to prevent. Separate knobs, one direction:
-            let soft_cap = std::time::Duration::from_millis(foreground_soft_cap_ms());
+            let soft_cap = FOREGROUND_SOFT_CAP;
             let progress_sender = ctx.progress_sender.clone();
             let progress_label: String = cmd_clone.chars().take(60).collect();
             let cap_secs = soft_cap.as_secs_f64();
@@ -257,9 +257,8 @@ impl McpTool for SobreShellTool {
 
             let output = redact_shell_output_secrets(&raw_output);
 
-            let (result_out, original, saved, tee_hint) = if raw {
-                let tokens = crate::core::tokens::count_tokens(&output);
-                (output, tokens, 0, String::new())
+            let (result_out, saved, tee_hint) = if raw {
+                (output, 0, String::new())
             } else {
                 let result =
                     crate::tools::sobre_shell::handle(&cmd_clone, &output, exit_code, crp_mode);
@@ -291,7 +290,7 @@ impl McpTool for SobreShellTool {
                     String::new()
                 };
 
-                (result, original, saved, tee_hint)
+                (result, saved, tee_hint)
             };
 
             let shell_mismatch = if cfg!(windows) && !raw {
@@ -314,7 +313,6 @@ impl McpTool for SobreShellTool {
 
             Ok(ToolOutput {
                 text: final_out,
-                original_tokens: original,
                 saved_tokens: saved,
                 shell_outcome: Some(ShellOutcome::Exit(exit_code)),
                 content_blocks: None,
@@ -429,9 +427,7 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
 /// pollable background job. Kept below the MCP host's ~120s tool-call abort so
 /// the caller always receives a real `shell_*` job id instead of an
 /// unresolvable task id.
-fn foreground_soft_cap_ms() -> u64 {
-    110_000
-}
+const FOREGROUND_SOFT_CAP: std::time::Duration = std::time::Duration::from_secs(110);
 
 #[cfg(test)]
 mod tests {

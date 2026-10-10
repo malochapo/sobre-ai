@@ -15,7 +15,7 @@ pub fn install_codex_hook() -> Result<Option<String>, String> {
 
     let config_path = crate::core::home::resolve_codex_config_path()
         .unwrap_or_else(|| codex_dir.join("config.toml"));
-    let content = std::fs::read_to_string(&config_path).unwrap_or_default();
+    let content = crate::config_io::read_for_edit(&config_path)?;
     match ensure_codex_hooks_enabled(&content).map_err(|e| {
         format!(
             "{} is not valid TOML ({e}); left unchanged",

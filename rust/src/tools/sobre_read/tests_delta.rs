@@ -26,17 +26,38 @@ fn primed_full_cache(p: &str) -> SessionCache {
     cache
 }
 
+/// A file that can no longer be read is an error, never the cached copy of
+/// what it was, and the cache forgets it.
+#[test]
+fn a_deleted_file_is_an_error_not_its_cached_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("gone.rs");
+    let p = path.to_string_lossy().to_string();
+    std::fs::write(&path, "fn old_body() {}\n").unwrap();
+    let mut cache = primed_full_cache(&p);
+    std::fs::remove_file(&path).unwrap();
+
+    for mode in ["full", "auto"] {
+        let out = handle_with_task_resolved(&mut cache, &p, mode, CrpMode::Off, None);
+        assert_eq!(out.resolved_mode, "error", "{mode}: {}", out.content);
+        assert!(!out.content.contains("old_body"), "{mode}: {}", out.content);
+    }
+    assert!(
+        cache.get(&p).is_none(),
+        "the cache still holds the deleted file"
+    );
+}
+
 /// Regression: an `auto` re-read of an unchanged, already-fully-delivered file
-/// must collapse to the cheap `[unchanged]` stub — not re-deliver the whole body.
-/// The auto path used to resolve modes with `cache: None`, so the resolver's
-/// `("full","cache_hit")` short-circuit was dead and every `auto` re-read re-sent
-/// the file ("re-reads aren't cached"). The cache-aware resolver restores it.
+/// must collapse to the cheap `[unchanged]` stub — not re-deliver the whole body:
+/// the auto path resolves its mode with the cache, so the resolver's
+/// `("full","cache_hit")` short-circuit applies.
 #[test]
 fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("warm.rs");
     let p = path.to_string_lossy().to_string();
-    // Body big enough that a full re-delivery dwarfs the ~13-token stub.
+    // Body big enough that a full re-delivery dwarfs the one-line stub.
     let body = (0..48)
         .map(|i| format!("fn function_number_{i}() {{ let value_{i} = {i} * 2; }}"))
         .collect::<Vec<_>>()
@@ -242,9 +263,9 @@ fn full_read_fallback_never_serves_a_stub() {
     std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
 
     let mut cache = primed_full_cache(&p);
-    // Same bytes on disk, so `store` reports a hit and the old code took the
-    // ungated `full_content_delivered` branch here.
-    let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, "F1", &p, "rs", None);
+    // Same bytes on disk, so `store` reports a hit: the fallback must still
+    // not decide stubbing from `full_content_delivered`.
+    let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, &p, "rs", None).unwrap();
     assert!(
         !out.contains("[unchanged"),
         "full-read fallback must not decide stubbing on its own: {out}"
@@ -263,11 +284,11 @@ fn conversation_scoped_stub_served_when_no_context() {
     std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
 
     let cache = primed_full_cache(&p);
-    // current = None (hooks absent) preserves legacy process-scoped behavior.
+    // current = None (hooks absent): the stub is scoped to this process.
     let out = try_stub_hit_readonly_scoped(&cache, &p, None);
     assert!(
         out.is_some_and(|o| o.content.contains("[unchanged")),
-        "absent conversation context must keep legacy stub behavior"
+        "absent conversation context must keep the process-scoped stub"
     );
 }
 

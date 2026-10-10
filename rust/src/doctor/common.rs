@@ -1,4 +1,5 @@
-// Auto-split from the former monolithic doctor/mod.rs.
+//! Helpers the doctor checks share: rendering, paths, MCP config lookup and
+//! proxy probes.
 
 use super::{BOLD, DIM, GREEN, Outcome, RED, RST, WHITE};
 use std::path::PathBuf;
@@ -94,114 +95,16 @@ pub(super) struct McpLocation {
     pub(super) path: PathBuf,
 }
 
+/// Where each agent keeps sobre's MCP entry: the files `init` writes.
 pub(super) fn mcp_config_locations(home: &std::path::Path) -> Vec<McpLocation> {
-    let mut locations = vec![
-        McpLocation {
-            name: "Cursor",
-            display: "~/.cursor/mcp.json".into(),
-            path: home.join(".cursor").join("mcp.json"),
-        },
-        McpLocation {
-            name: "Claude Code",
-            display: format!(
-                "{}",
-                crate::core::editor_registry::claude_mcp_json_path(home).display()
-            ),
-            path: crate::core::editor_registry::claude_mcp_json_path(home),
-        },
-        McpLocation {
-            name: "Windsurf",
-            display: "~/.codeium/windsurf/mcp_config.json".into(),
-            path: home
-                .join(".codeium")
-                .join("windsurf")
-                .join("mcp_config.json"),
-        },
-        McpLocation {
-            name: "Codex",
-            display: {
-                let codex_dir =
-                    crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
-                format!("{}/config.toml", codex_dir.display())
-            },
-            path: crate::core::home::resolve_codex_dir()
-                .unwrap_or_else(|| home.join(".codex"))
-                .join("config.toml"),
-        },
-        McpLocation {
-            name: "Gemini CLI",
-            display: "~/.gemini/settings.json".into(),
-            path: home.join(".gemini").join("settings.json"),
-        },
-    ];
-
-    {
-        let path = crate::core::editor_registry::zed_settings_path(home);
-        locations.push(McpLocation {
-            name: "Zed",
-            display: path.display().to_string(),
-            path,
-        });
-    }
-
-    {
-        let path = crate::core::editor_registry::opencode_config_path(home);
-        locations.push(McpLocation {
-            name: "OpenCode",
-            display: path.display().to_string(),
-            path,
-        });
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let vscode_mcp = home.join("Library/Application Support/Code/User/mcp.json");
-        locations.push(McpLocation {
-            name: "VS Code",
-            display: "~/Library/Application Support/Code/User/mcp.json".into(),
-            path: vscode_mcp,
-        });
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let user_dirs = [
-            home.join(".config/Code/User"),
-            home.join(".config/Code - Insiders/User"),
-            home.join(".vscode-server/data/User"),
-        ];
-        let user_dir = user_dirs
-            .iter()
-            .find(|p| p.exists())
-            .cloned()
-            .unwrap_or_else(|| user_dirs[0].clone());
-        let vscode_mcp = user_dir.join("mcp.json");
-        let display = vscode_mcp.strip_prefix(home).unwrap_or(&vscode_mcp);
-        let display_str = format!("~/{}", display.display());
-        locations.push(McpLocation {
-            name: "VS Code",
-            display: display_str,
-            path: vscode_mcp,
-        });
-    }
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            let vscode_mcp = std::path::PathBuf::from(&appdata).join("Code/User/mcp.json");
-            locations.push(McpLocation {
-                name: "VS Code",
-                display: "%APPDATA%/Code/User/mcp.json".into(),
-                path: vscode_mcp,
-            });
-        }
-    }
-
-    locations.push(McpLocation {
-        name: "Copilot CLI",
-        display: "~/.copilot/mcp-config.json".into(),
-        path: home.join(".copilot/mcp-config.json"),
-    });
-
-    locations
+    crate::core::editor_registry::build_targets(home)
+        .into_iter()
+        .map(|target| McpLocation {
+            name: target.name,
+            display: display_user_path(&target.config_path),
+            path: target.config_path,
+        })
+        .collect()
 }
 
 pub(super) fn has_sobre_mcp_entry(content: &str) -> bool {
@@ -248,45 +151,32 @@ pub(super) fn sobre_mcp_location_names(
     names
 }
 
-pub(super) fn proxy_auth_probe(port: u16) -> bool {
-    use std::io::{Read, Write};
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+/// `GET /status` on the proxy at `port` with this machine's session token:
+/// the body, or `None` when nothing answers within 3 seconds or the proxy
+/// refuses the token.
+fn proxy_status_body(port: u16) -> Option<String> {
     let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
+    let resp = ureq::get(&format!("http://127.0.0.1:{port}/status"))
+        .header("Authorization", &format!("Bearer {token}"))
+        .config()
+        .timeout_global(Some(std::time::Duration::from_secs(3)))
+        .build()
+        .call()
+        .ok()?;
+    resp.into_body().read_to_string().ok()
+}
 
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout())
-    else {
-        return false;
-    };
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
-
-    let req = format!(
-        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
-    );
-    if stream.write_all(req.as_bytes()).is_err() {
-        return false;
-    }
-
-    let mut buf = [0u8; 128];
-    let Ok(n) = stream.read(&mut buf) else {
-        return false;
-    };
-    let response = String::from_utf8_lossy(&buf[..n]);
-    response.contains("200") || response.contains("ok")
+/// Whether the proxy on `port` accepts this machine's session token
+/// (`/health` takes none, so it cannot tell).
+pub(super) fn proxy_auth_probe(port: u16) -> bool {
+    proxy_status_body(port).is_some()
 }
 
 /// Fetches the proxy's live upstreams from the authenticated `/status` endpoint.
 /// Returns `(anthropic, openai)`, or `None` if unreachable or
 /// the response lacks the `upstreams` block. Drives the drift check.
 pub(super) fn proxy_live_upstreams(port: u16) -> Option<(String, String)> {
-    let token = crate::core::session_token::resolve_proxy_token("SOBRE_PROXY_TOKEN");
-    let url = format!("http://127.0.0.1:{port}/status");
-    let resp = ureq::get(&url)
-        .header("Authorization", &format!("Bearer {token}"))
-        .call()
-        .ok()?;
-    let body = resp.into_body().read_to_string().ok()?;
+    let body = proxy_status_body(port)?;
     let v: serde_json::Value = serde_json::from_str(&body).ok()?;
     let up = v.get("upstreams")?;
     Some((

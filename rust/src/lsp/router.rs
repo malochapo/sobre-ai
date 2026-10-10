@@ -12,18 +12,12 @@ use super::config::{
 static BACKENDS: std::sync::LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
-fn resolve_config_for_language(language: &str) -> LspServerConfig {
-    let servers = default_servers();
-    servers.get(language).cloned().unwrap_or(LspServerConfig {
-        command: format!("{language}-language-server"),
-        args: vec![],
-    })
-}
-
 /// Starts the language server for `language` found on PATH.
 fn select_backend(language: &str, project_root: &str) -> Result<Box<dyn LspBackend>, String> {
-    // Backing A: rust-analyzer (today's behavior).
-    let config = resolve_config_for_language(language);
+    let config: LspServerConfig = default_servers()
+        .get(language)
+        .cloned()
+        .ok_or_else(|| format!("No LSP server configured for '{language}'"))?;
     if which::which(&config.command).is_err() && !Path::new(&config.command).is_file() {
         check_server_available(language)?;
     }
@@ -61,6 +55,9 @@ where
     let key = backend_key(language, project_root);
     let mut backends = BACKENDS.lock().map_err(|e| e.to_string())?;
 
+    if backends.get_mut(&key).is_some_and(|b| !b.is_alive()) {
+        backends.remove(&key);
+    }
     if !backends.contains_key(&key) {
         let backend = select_backend(language, project_root)?;
         backends.insert(key.clone(), backend);

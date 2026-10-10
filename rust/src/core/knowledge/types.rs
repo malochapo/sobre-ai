@@ -35,43 +35,6 @@ impl KnowledgeArchetype {
         }
     }
 
-    /// Stable lowercase token used as the Open Knowledge Format (OKF) `type`
-    /// field and in `sobre_archetype`. Single words, so snake_case == the
-    /// serde name; kept as an explicit method to avoid a serde round-trip on
-    /// the export hot path and to give a symmetric [`Self::from_type_str`].
-    pub fn as_type_str(&self) -> &'static str {
-        match self {
-            Self::Pattern => "pattern",
-            Self::Preference => "preference",
-            Self::Architecture => "architecture",
-            Self::Gotcha => "gotcha",
-            Self::Convention => "convention",
-            Self::Dependency => "dependency",
-            Self::Workflow => "workflow",
-            Self::Observation => "observation",
-            Self::Decision => "decision",
-            Self::Fact => "fact",
-        }
-    }
-
-    /// Inverse of [`Self::as_type_str`]. Foreign OKF `type` values that sobre
-    /// does not model fall back to [`Self::Fact`] — OKF only mandates `type`, so
-    /// an unknown producer type is imported as a plain fact rather than rejected.
-    pub fn from_type_str(s: &str) -> Self {
-        match s.trim().to_lowercase().as_str() {
-            "pattern" => Self::Pattern,
-            "preference" => Self::Preference,
-            "architecture" => Self::Architecture,
-            "gotcha" => Self::Gotcha,
-            "convention" => Self::Convention,
-            "dependency" => Self::Dependency,
-            "workflow" => Self::Workflow,
-            "observation" => Self::Observation,
-            "decision" => Self::Decision,
-            _ => Self::Fact,
-        }
-    }
-
     pub fn infer_from_category(category: &str) -> Self {
         match category.to_lowercase().as_str() {
             // `data_model`/`schema` are structural (provider-extracted); they join arch.

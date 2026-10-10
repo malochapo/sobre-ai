@@ -1,0 +1,17 @@
+Third-party licences
+====================
+
+sobre is built with the crates listed below. Each licence text follows the
+crates it covers.
+{{#each licenses}}
+
+--------------------------------------------------------------------------------
+{{{name}}}
+
+Used by:
+{{#each used_by}}
+  {{{crate.name}}} {{{crate.version}}}
+{{/each}}
+
+{{{text}}}
+{{/each}}

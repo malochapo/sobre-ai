@@ -56,8 +56,20 @@ impl ModelPricing {
         let mut models: HashMap<String, ModelCost> = HashMap::new();
 
         // Anthropic pricing — source: https://platform.claude.com/docs/en/about-claude/pricing
-        // (June 2026). One entry per price tier; the 4.5 keys cover the whole
-        // 4.5–4.8 generation since Anthropic prices them identically.
+        // (October 2026). One entry per price tier; the 4.5 keys cover the whole
+        // 4.5–4.8 generation since Anthropic prices them identically. Cache
+        // writes are the 5-minute rate (1.25x input). Haiku 5.5 is priced for
+        // prompts up to 100K tokens; longer prompts cost 5x, which this table
+        // does not model.
+        models.insert(
+            "claude-fable-5.1".to_string(),
+            ModelCost {
+                input_per_m: 10.00,
+                output_per_m: 50.00,
+                cache_write_per_m: 12.50,
+                cache_read_per_m: 0.25,
+            },
+        );
         models.insert(
             "claude-fable-5".to_string(),
             ModelCost {
@@ -65,6 +77,51 @@ impl ModelPricing {
                 output_per_m: 50.00,
                 cache_write_per_m: 12.50,
                 cache_read_per_m: 1.00,
+            },
+        );
+        models.insert(
+            "claude-opus-5.5".to_string(),
+            ModelCost {
+                input_per_m: 4.00,
+                output_per_m: 20.00,
+                cache_write_per_m: 5.00,
+                cache_read_per_m: 0.20,
+            },
+        );
+        models.insert(
+            "claude-opus-5".to_string(),
+            ModelCost {
+                input_per_m: 5.00,
+                output_per_m: 25.00,
+                cache_write_per_m: 6.25,
+                cache_read_per_m: 0.50,
+            },
+        );
+        models.insert(
+            "claude-sonnet-5.5".to_string(),
+            ModelCost {
+                input_per_m: 2.00,
+                output_per_m: 10.00,
+                cache_write_per_m: 2.50,
+                cache_read_per_m: 0.20,
+            },
+        );
+        models.insert(
+            "claude-sonnet-5".to_string(),
+            ModelCost {
+                input_per_m: 2.00,
+                output_per_m: 10.00,
+                cache_write_per_m: 2.50,
+                cache_read_per_m: 0.20,
+            },
+        );
+        models.insert(
+            "claude-haiku-5.5".to_string(),
+            ModelCost {
+                input_per_m: 0.10,
+                output_per_m: 0.50,
+                cache_write_per_m: 0.125,
+                cache_read_per_m: 0.01,
             },
         );
         models.insert(
@@ -94,7 +151,7 @@ impl ModelPricing {
                 cache_read_per_m: 0.10,
             },
         );
-        // Legacy Claude 3.x tiers (still seen in older configs/logs).
+        // Claude 3.x tiers.
         models.insert(
             "claude-3.5-sonnet".to_string(),
             ModelCost {
@@ -320,12 +377,17 @@ impl ModelPricing {
         }
 
         // Claude family: accept loose naming (e.g. "claude sonnet", "claude-4.6-sonnet").
-        // 3.x names map to legacy tiers; everything else gets the current
-        // generation's price — defaulting to 3.x would overstate Opus cost 3×.
+        // 3.x names map to the 3.x tiers; every other unlisted name gets the
+        // 4.5–4.8 generation's price, which 3.x would overstate 3× for Opus.
         if m.contains("claude") || m.contains("fable") || m.contains("mythos") {
             let legacy = m.contains("claude-3");
             if m.contains("fable") || m.contains("mythos") {
-                return Some(("claude-fable-5".to_string(), PricingMatchKind::Heuristic));
+                let key = if m.contains("5.1") || m.contains("5-1") {
+                    "claude-fable-5.1"
+                } else {
+                    "claude-fable-5"
+                };
+                return Some((key.to_string(), PricingMatchKind::Heuristic));
             }
             if m.contains("sonnet") {
                 return Some(if legacy {
@@ -365,7 +427,8 @@ impl ModelPricing {
             }
         }
 
-        // OpenAI family: accept "gpt-5.4" variants and legacy "gpt-4o" as alias to blended fallback.
+        // OpenAI family: "gpt-5.4" variants, and "gpt-4o", whose list price is
+        // the blended fallback's.
         if m.contains("gpt-5.4") && m.contains("mini") {
             return Some(("gpt-5.4-mini".to_string(), PricingMatchKind::Alias));
         }
@@ -379,7 +442,7 @@ impl ModelPricing {
             return Some(("fallback-blended".to_string(), PricingMatchKind::Heuristic));
         }
 
-        // Foundry OSS families (enterprise#14): deployment names carry suffixes
+        // Foundry OSS families: deployment names carry suffixes
         // ("Phi-4-reasoning", "DeepSeek-V3-0324", "Llama-3.3-70B-Instruct") —
         // match the family, keep mini/lite variants on their cheaper tier.
         if m.contains("phi-4") {
@@ -499,6 +562,32 @@ mod tests {
         }
     }
 
+    /// Current API ids hit their own price, not an older generation's.
+    #[test]
+    fn current_claude_ids_are_priced_exactly() {
+        let p = ModelPricing::embedded();
+        for (api_id, key, input, cache_read) in [
+            ("claude-opus-5-5", "claude-opus-5.5", 4.00, 0.20),
+            ("claude-opus-5", "claude-opus-5", 5.00, 0.50),
+            ("claude-sonnet-5-5", "claude-sonnet-5.5", 2.00, 0.20),
+            ("claude-sonnet-5", "claude-sonnet-5", 2.00, 0.20),
+            ("claude-haiku-5-5", "claude-haiku-5.5", 0.10, 0.01),
+            ("claude-fable-5-1", "claude-fable-5.1", 10.00, 0.25),
+        ] {
+            let q = p.quote(Some(api_id));
+            assert_eq!(q.model_key, key, "for {api_id}");
+            assert_eq!(q.match_kind, PricingMatchKind::Exact, "for {api_id}");
+            assert!(
+                (q.cost.input_per_m - input).abs() < f64::EPSILON,
+                "for {api_id}"
+            );
+            assert!(
+                (q.cost.cache_read_per_m - cache_read).abs() < f64::EPSILON,
+                "for {api_id}"
+            );
+        }
+    }
+
     #[test]
     fn claude_fable_matches_frontier_tier() {
         let p = ModelPricing::embedded();
@@ -509,9 +598,8 @@ mod tests {
 
     #[test]
     fn foundry_families_map_deployment_names_to_price_keys() {
-        // enterprise#14: Foundry deployment names carry suffixes; the family
-        // heuristics must land on the right (cheap) tier — mispricing the
-        // downgrade target would corrupt the savings evidence.
+        // Foundry deployment names carry suffixes; the family heuristics must
+        // land on the right (cheap) tier.
         let p = ModelPricing::embedded();
         for (name, key, input) in [
             ("Phi-4", "phi-4", 0.125),

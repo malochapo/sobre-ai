@@ -31,7 +31,6 @@ pub mod prospective_memory;
 // Domain: Graph
 // ---------------------------------------------------------------------------
 pub mod call_graph;
-pub mod graph_context;
 pub mod graph_index;
 pub mod graph_provider;
 pub mod property_graph;
@@ -41,7 +40,6 @@ pub mod property_graph;
 // ---------------------------------------------------------------------------
 pub mod context_lint;
 pub mod context_overhead;
-pub mod cross_source_hints;
 
 // ---------------------------------------------------------------------------
 // Domain: Knowledge
@@ -60,9 +58,7 @@ pub mod knowledge_embedding;
 pub mod bm25_cache;
 pub mod bm25_index;
 pub mod content_cache;
-pub mod content_chunk;
 pub mod context_packing;
-pub mod cooccurrence;
 #[cfg(feature = "dense")]
 pub mod dense_backend;
 #[cfg(feature = "dense")]
@@ -77,9 +73,6 @@ pub mod embeddings;
 pub mod hybrid_search;
 #[cfg(feature = "dense")]
 pub mod search_reranking;
-#[cfg(feature = "dense")]
-pub mod splade_retrieval;
-pub mod spreading_activation;
 
 // ---------------------------------------------------------------------------
 // Domain: Session & Handoff
@@ -90,7 +83,6 @@ pub mod session;
 // ---------------------------------------------------------------------------
 // Domain: Neural / ML
 // ---------------------------------------------------------------------------
-pub mod neural;
 // ORT runtime glue links against the `ort` crate, which is only pulled in by the
 // `dense` feature. On platforms ORT does not support (e.g.
 // FreeBSD) it is disabled, so the modules must be gated
@@ -142,7 +134,6 @@ pub mod budgets;
 pub mod cache;
 pub mod cloud_files;
 pub mod config;
-pub mod consolidation;
 pub mod consolidation_engine;
 pub mod conversation;
 pub mod crash_log;
@@ -153,18 +144,14 @@ pub mod error;
 pub mod eviction_orchestrator;
 pub mod extractors;
 pub mod git;
-pub mod git_cache;
-pub mod git_signals;
 pub mod git_util;
 pub mod godot;
 pub mod gotcha_tracker;
 pub mod handle;
 pub mod hasher;
-pub mod hebbian_cache;
 #[cfg(feature = "dense")]
 pub mod hnsw;
 pub mod home;
-pub mod homeostasis;
 pub mod pricing;
 
 pub mod edit_quality;
@@ -181,7 +168,6 @@ pub mod index_progress;
 pub mod ingestion;
 pub mod intent_engine;
 pub(crate) mod intent_lang;
-pub mod intent_router;
 pub mod io_health;
 pub mod jsonc;
 pub mod language_capabilities;
@@ -211,7 +197,6 @@ pub mod sensitivity;
 pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
-pub mod task_briefing;
 /// macOS Seatbelt self-sandbox: wraps the launchd-owned proxy in a
 /// `sandbox-exec` profile that denies `~/Documents`/`~/Desktop`/`~/Downloads`,
 /// so the TCC privacy prompt can never appear.

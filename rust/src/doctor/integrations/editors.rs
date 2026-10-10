@@ -48,14 +48,14 @@ pub(crate) fn integration_generic(
         }
     }
 
-    // Windsurf is wired through MCP + Cascade hooks and has no skills. Surface a consolidated status so an empty
-    // `watch` or a "missing skill" is not misread as a broken install, and show
-    // the last real sobre_* MCP call so users can see whether Cascade actually
-    // drives sobre (GLM 5.2 and other weaker models often call native tools).
+    // Windsurf is wired through MCP + Cascade hooks and has no skills. Say so,
+    // so a "missing skill" is not misread as a broken install, and show the
+    // last sobre_* MCP call, so users can see whether Cascade actually drives
+    // sobre (weaker models often call native tools instead).
     if target.name == "Windsurf" {
         checks.push(check_windsurf_hooks(home));
         checks.push(skill_not_applicable_note());
-        checks.push(last_ctx_call_check());
+        checks.push(last_sobre_call_check());
     }
 
     let ok = checks.iter().all(|c| c.ok);

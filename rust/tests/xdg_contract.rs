@@ -4,7 +4,7 @@
 //! This runs as an INTEGRATION test on purpose: the library is then compiled
 //! WITHOUT `#[cfg(test)]`, so the real (non-sandbox) resolvers execute exactly as
 //! they do in production — the unit-test sandbox would otherwise short-circuit
-//! `config_dir`/`state_dir`/`cache_dir` to a temp dir and hide the regression.
+//! `config_dir`/`state_dir`/`cache_dir` to a temp dir and hide a wrong one.
 
 #![cfg(unix)]
 

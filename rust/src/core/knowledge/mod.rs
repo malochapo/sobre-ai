@@ -172,9 +172,8 @@ mod tests {
 
     #[test]
     fn facts_evict_down_to_cap_not_double() {
-        // Regression: remember() must keep the fact count at or below max_facts.
-        // Previously the lifecycle only fired above 2 * max_facts, so a store
-        // could silently grow to twice its configured budget before reclaiming.
+        // remember() keeps the fact count at or below max_facts: a store never
+        // grows past its configured budget before reclaiming.
         let mut policy = default_policy();
         policy.knowledge.max_facts = 5;
         let mut k = ProjectKnowledge::new("/tmp/test-evict");
@@ -477,6 +476,19 @@ mod tests {
         assert_eq!(similar[0].category, "decision");
         assert_eq!(similar[0].key, "session-model");
         assert!(similar[0].similarity > 0.35);
+    }
+
+    /// The preview of a long similar value is cut on a character boundary.
+    #[test]
+    fn cross_key_similar_previews_multibyte_values() {
+        let policy = default_policy();
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        let value = "я".repeat(40);
+        k.remember("arch", "a", &value, "s1", 0.9, &policy);
+        let similar = find_cross_key_similar("arch", "b", &value, &k.facts, 3);
+        assert_eq!(similar.len(), 1);
+        assert!(similar[0].value_preview.ends_with("..."));
+        assert!(value.starts_with(similar[0].value_preview.trim_end_matches("...")));
     }
 
     #[test]

@@ -1,9 +1,10 @@
 use serde_json::json;
 use std::fs;
-use std::path::PathBuf;
 
-fn test_project_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join("sobre-lsp-test");
+/// A one-file Cargo project in a fresh temp dir (kept alive by the caller).
+fn test_project() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
     let src = dir.join("src");
     fs::create_dir_all(&src).unwrap();
 
@@ -33,7 +34,7 @@ fn main() {
     )
     .unwrap();
 
-    dir
+    tmp
 }
 
 fn has_rust_analyzer() -> bool {
@@ -72,7 +73,8 @@ fn wait_for_lsp_ready(dir: &std::path::Path, root: &str) {
 fn test_lsp_definition() {
     assert!(has_rust_analyzer(), "rust-analyzer not found in PATH");
 
-    let dir = test_project_dir();
+    let tmp = test_project();
+    let dir = tmp.path().to_path_buf();
     let root = dir.to_string_lossy().to_string();
 
     wait_for_lsp_ready(&dir, &root);
@@ -96,7 +98,8 @@ fn test_lsp_definition() {
 fn test_lsp_references() {
     assert!(has_rust_analyzer(), "rust-analyzer not found in PATH");
 
-    let dir = test_project_dir();
+    let tmp = test_project();
+    let dir = tmp.path().to_path_buf();
     let root = dir.to_string_lossy().to_string();
 
     wait_for_lsp_ready(&dir, &root);
@@ -113,11 +116,10 @@ fn test_lsp_references() {
 
 #[test]
 fn test_lsp_missing_path() {
-    // §4.5: the inner handle no longer guards `path` presence — that check now
-    // lives in the wrapper (require_resolved_path, unit-tested in tool_trait).
-    // Here `path` is absent, so call_refactor forwards an empty abs_path; the
-    // inner handle must still degrade gracefully to an ERROR (never panic) when
-    // open_file cannot resolve a language/file for it.
+    // `path` presence is checked by the registered tool's wrapper
+    // (require_resolved_path). Here `path` is absent, so call_refactor
+    // forwards an empty abs_path; the handler must still answer with an ERROR
+    // (never panic) when it cannot resolve a language or file for it.
     let result = call_refactor(
         &json!({"action": "definition", "line": 1}),
         "/tmp/nonexistent",
@@ -134,7 +136,8 @@ fn test_lsp_missing_path() {
 fn test_lsp_unknown_action() {
     assert!(has_rust_analyzer(), "rust-analyzer not found in PATH");
 
-    let dir = test_project_dir();
+    let tmp = test_project();
+    let dir = tmp.path().to_path_buf();
     let path = dir.join("src/main.rs").to_string_lossy().to_string();
 
     let result = call_refactor(
@@ -150,8 +153,8 @@ fn test_lsp_unknown_action() {
 
 #[test]
 fn test_lsp_unsupported_extension() {
-    let dir = std::env::temp_dir().join("sobre-lsp-test-ext");
-    fs::create_dir_all(&dir).unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path();
     let test_file = dir.join("test.xyz");
     fs::write(&test_file, "content").unwrap();
 
@@ -176,7 +179,8 @@ fn test_lsp_unsupported_extension() {
 fn test_lsp_timeout_not_triggered_on_valid_request() {
     assert!(has_rust_analyzer(), "rust-analyzer not found in PATH");
 
-    let dir = test_project_dir();
+    let tmp = test_project();
+    let dir = tmp.path().to_path_buf();
     let root = dir.to_string_lossy().to_string();
     let path = dir.join("src/main.rs").to_string_lossy().to_string();
 

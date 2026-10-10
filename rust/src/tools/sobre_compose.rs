@@ -11,146 +11,22 @@
 //!   3. exact match locations (index-backed `sobre_search`),
 //!   4. the body of the most relevant symbol, inline.
 
-use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::core::graph_provider;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
 /// Wall-time budget for the semantic-ranking stage. The exact-match and symbol
 /// stages are index-backed and cheap; only semantic ranking can hit a cold
 /// `O(corpus)` BM25 build. We never let that block the agent loop: past the
-/// budget (4s, tuned for cold-start coverage) we return what we have and let the detached worker finish warming the
-/// resident cache for the next call.
-const DEFAULT_SEMANTIC_BUDGET_MS: u64 = 4000;
-
-fn semantic_budget() -> Duration {
-    Duration::from_millis(DEFAULT_SEMANTIC_BUDGET_MS)
-}
+/// budget (4s, tuned for cold-start coverage) we return what we have and let
+/// the detached worker finish warming the resident cache for the next call.
+const SEMANTIC_BUDGET: Duration = Duration::from_secs(4);
 
 /// Token budget for the inlined symbol bodies. Submodular selection fills it
 /// with the most coverage-effective, non-redundant set of symbols.
-const DEFAULT_SYMBOL_BUDGET_TOKENS: usize = 600;
-
-fn symbol_budget_tokens() -> usize {
-    DEFAULT_SYMBOL_BUDGET_TOKENS
-}
-
-/// Wall-time budget for the associative (graph spreading-activation) stage.
-/// Opening/building the graph index is `O(corpus)` on a cold repo, so — like
-/// semantic ranking — we bound it and skip the (purely additive) section on
-/// overrun while the detached worker warms the index.
-const DEFAULT_GRAPH_BUDGET_MS: u64 = 1500;
-
-fn graph_budget() -> Duration {
-    Duration::from_millis(DEFAULT_GRAPH_BUDGET_MS)
-}
-
-/// Per-hop activation decay and hop count for spreading activation. Small decay
-/// keeps activation local (structurally near the seeds); 3 hops covers
-/// import→callee→sibling chains without diffusing across the whole graph.
-const SPREAD_DECAY: f64 = 0.6;
-const SPREAD_HOPS: usize = 3;
-/// How many associative neighbours to surface.
-const SPREAD_TOP_K: usize = 8;
-
-/// Build the associative-relevance block: spreading activation seeded at the
-/// files the task keywords resolve to, propagated over the union of the static
-/// import/call graph and the *learned* Hebbian co-access graph. Returns an empty
-/// string when no graph/seeds are available. Runs entirely in the worker thread
-/// so [`associative_block_budgeted`] can bound it.
-fn build_associative_block(project_root: &str, keywords: &[String]) -> String {
-    let Some(open) = graph_provider::open_or_build(project_root) else {
-        return String::new();
-    };
-    let gp = &open;
-
-    // Seeds: distinct files the keywords resolve to via symbol lookup.
-    let mut seed_files: Vec<String> = Vec::new();
-    for kw in keywords {
-        for sym in gp.find_symbols(kw, None, None) {
-            if !seed_files.contains(&sym.file) {
-                seed_files.push(sym.file);
-            }
-        }
-    }
-    if seed_files.is_empty() {
-        return String::new();
-    }
-
-    // Hebbian update: files relevant to the same task "fire together", so record
-    // their co-access (strengthens future associative recall). Persisted.
-    crate::core::cooccurrence::record_access(project_root, &seed_files);
-
-    // Adjacency = static structural edges ∪ learned co-access edges. Edges are
-    // made bidirectional so activation spreads both up and down the graph.
-    let mut adjacency: HashMap<String, Vec<(String, f64)>> = HashMap::new();
-    let mut add_edge = |a: &str, b: &str, w: f64| {
-        adjacency
-            .entry(a.to_string())
-            .or_default()
-            .push((b.to_string(), w));
-        adjacency
-            .entry(b.to_string())
-            .or_default()
-            .push((a.to_string(), w));
-    };
-    for e in gp.edges() {
-        add_edge(&e.from, &e.to, if e.weight > 0.0 { e.weight } else { 1.0 });
-    }
-    let coaccess = crate::core::cooccurrence::load(project_root);
-    for sf in &seed_files {
-        for (nbr, w) in coaccess.related(sf, 16) {
-            add_edge(sf, &nbr, w);
-        }
-    }
-
-    let seeds: HashMap<String, f64> = seed_files.iter().map(|f| (f.clone(), 1.0)).collect();
-    let ranked = crate::core::spreading_activation::related_ranked(
-        &seeds,
-        &adjacency,
-        SPREAD_DECAY,
-        SPREAD_HOPS,
-        SPREAD_TOP_K,
-    );
-    if ranked.is_empty() {
-        return String::new();
-    }
-
-    let mut s = String::from("\n## Related (associative: import/call graph + learned co-access)\n");
-    for (file, activation) in ranked {
-        // Forward-slash normalize so Windows backslash paths are never escape-
-        // mangled by client render layers.
-        let file = crate::core::protocol::display_path(&file);
-        s.push_str(&format!("- {file} (activation {activation:.2})\n"));
-    }
-    s
-}
-
-/// Run [`build_associative_block`] under [`graph_budget`]. The Hebbian record is
-/// a side effect of the worker, so it persists even when we time out and drop
-/// the (optional) section.
-fn associative_block_budgeted(project_root: &str, keywords: &[String]) -> String {
-    if keywords.is_empty() {
-        return String::new();
-    }
-    let (tx, rx) = mpsc::channel::<String>();
-    let root = project_root.to_string();
-    let kws = keywords.to_vec();
-    std::thread::spawn(move || {
-        let block = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            build_associative_block(&root, &kws)
-        }))
-        .unwrap_or_else(|_| {
-            tracing::warn!("[sobre_compose: associative block panicked; omitting section]");
-            String::new()
-        });
-        let _ = tx.send(block);
-    });
-    rx.recv_timeout(graph_budget()).unwrap_or_default()
-}
+const SYMBOL_BUDGET_TOKENS: usize = 600;
 
 /// Words that carry no retrieval signal — dropped from keyword extraction.
 const STOPWORDS: &[&str] = &[
@@ -235,8 +111,8 @@ fn extract_keywords(task: &str, max: usize) -> Vec<String> {
 /// corpus (df 0) sinks to the end — grepping it yields nothing useful.
 ///
 /// Non-blocking and best-effort: if the resident index isn't warm yet we return
-/// the keywords in their original first-seen order (the previous behaviour), so
-/// this can only improve the seed, never stall the call to build an index.
+/// the keywords in their original first-seen order, so this can only improve
+/// the seed, never stall the call to build an index.
 fn order_by_specificity(keywords: &[String], project_root: &str) -> Vec<String> {
     let Some(index) = resident_index(project_root) else {
         return keywords.to_vec();
@@ -249,12 +125,12 @@ fn order_by_specificity(keywords: &[String], project_root: &str) -> Vec<String> 
 /// The seed feeds a case-sensitive regex grep, so raw rarity is the wrong sort:
 /// the rarest task token is often a lowercase prose word (`measurand`) that the
 /// index counts case-insensitively but the grep then misses against `Measurand`
-/// — 0 hits, worse than before. Instead prefer *code identifiers* (camelCase or
+/// — 0 hits. Instead prefer *code identifiers* (camelCase or
 /// snake_case: `GetMaxCurrent`, `CurrentGetter`), which grep straight to code,
 /// over acronyms (`OCPP`) and prose (`current`) that also match READMEs. Within
 /// each class, rarer (lower document frequency) wins; absent tokens (df 0) sink.
 /// Keys are lowercased in `doc_freqs`; a stable sort keeps first-seen order on
-/// ties, so a task with no identifiers degrades to the previous rarity order.
+/// ties, so a task with no identifiers is ordered by rarity alone.
 fn rank_by_doc_freq(
     keywords: &[String],
     doc_freqs: &std::collections::HashMap<String, usize>,
@@ -324,20 +200,16 @@ fn ranked_files_budgeted(task: &str, project_root: &str, crp_mode: CrpMode) -> S
         let _ = tx.send(ranked);
     });
 
-    match rx.recv_timeout(semantic_budget()) {
+    match rx.recv_timeout(SEMANTIC_BUDGET) {
         Ok(ranked) => ranked.trim().to_string(),
         Err(_) => deferred_ranking_note(project_root),
     }
 }
 
-/// Honest, state-aware note when semantic ranking overruns its wall-time budget.
-///
-/// The old message always promised ranking would be "instant on the next call".
-/// That is a lie when the index build *failed* or the index is too large to
-/// persist — in those cases every call rebuilds and the promise never comes
-/// true ("keeps saying it's warming up … but it never happens").
-/// We now read the real orchestrator state and tell the agent exactly what is
-/// happening and what to do about it.
+/// State-aware note when semantic ranking overruns its wall-time budget: it
+/// reads the orchestrator state, so a failed build or an index too large to
+/// persist is named as such instead of promising a fast next call that never
+/// comes.
 fn deferred_ranking_note(project_root: &str) -> String {
     let exact = "the exact matches below are authoritative for this call";
     let s = crate::core::index_orchestrator::bm25_summary(project_root);
@@ -392,7 +264,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
     }
 
     // 1. Semantically ranked files for the whole task — budgeted so a cold
-    //    BM25 build can never stall the agent loop (hardening H1). The worker
+    //    BM25 build can never stall the agent loop. The worker
     //    inherits the resident cache, so a build that overruns the budget still
     //    warms the cache for the next call rather than being wasted.
     out.push_str("\n## Ranked files (semantic)\n");
@@ -454,7 +326,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
         }
     }
     if !items.is_empty() {
-        let chosen = greedy_max_coverage(&items, symbol_budget_tokens(), |_| 1.0);
+        let chosen = greedy_max_coverage(&items, SYMBOL_BUDGET_TOKENS, |_| 1.0);
         let mut seen = std::collections::HashSet::new();
         let mut header_written = false;
         for idx in chosen {
@@ -472,10 +344,15 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
         }
     }
 
-    // 4. Associative neighbours via spreading activation over the import/call
-    //    graph unified with the learned Hebbian co-access graph (budgeted,
-    //    additive — surfaces structurally-close files lexical search misses).
-    out.push_str(&associative_block_budgeted(project_root, &keywords));
+    // 4. Pitfalls recorded with `sobre_knowledge action=gotcha`, or learned
+    //    from a failed command and its fix, that match the task.
+    let pitfalls = crate::core::prospective_memory::reminders_for_task(project_root, task);
+    if !pitfalls.is_empty() {
+        out.push_str("\n## Known pitfalls\n");
+        for pitfall in pitfalls {
+            out.push_str(&format!("- {pitfall}\n"));
+        }
+    }
 
     let sent = count_tokens(&out);
     (out, sent)
@@ -487,7 +364,7 @@ mod tests {
 
     #[test]
     fn rank_by_doc_freq_puts_rare_identifier_first() {
-        // The evcc/#993 shape: an "OCPP … GetMaxCurrent" task. `Current` and
+        // An "OCPP … GetMaxCurrent" task. `Current` and
         // `OCPP` are common tokens; `GetMaxCurrent` is rare. The rare one must
         // seed the exact-match grep so it lands on code, not README/Dockerfile.
         let keywords = vec![
@@ -590,6 +467,30 @@ mod tests {
         // but handle() must not panic.
         assert!(tokens > 0);
         assert!(output.contains("TASK:"));
+    }
+
+    /// A pitfall recorded with `sobre_knowledge action=gotcha` comes back
+    /// when a task matches it.
+    #[test]
+    fn a_matching_gotcha_is_recalled_for_the_task() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().to_string();
+        let mut store = crate::core::gotcha_tracker::GotchaStore::load(&root);
+        store.report_gotcha(
+            "migration lock timeout",
+            "run the migrations one by one",
+            "convention",
+            "warning",
+        );
+        store.save(&root).unwrap();
+
+        let (out, _) = handle("fix the migration lock timeout", &root, CrpMode::Off);
+        assert!(out.contains("## Known pitfalls"), "{out}");
+        assert!(out.contains("run the migrations one by one"), "{out}");
+
+        let (unrelated, _) = handle("render sidebar", &root, CrpMode::Off);
+        assert!(!unrelated.contains("## Known pitfalls"), "{unrelated}");
     }
 
     #[test]

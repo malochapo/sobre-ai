@@ -1,9 +1,7 @@
 use crate::core::patterns;
 use crate::core::tokens::count_tokens;
 
-use super::classification::{
-    has_structural_output, is_search_output, is_verbatim_output, looks_like_toon,
-};
+use super::classification::{has_structural_output, is_search_output, looks_like_toon};
 
 pub(in crate::shell) fn compress_and_measure(
     command: &str,
@@ -43,7 +41,7 @@ pub(in crate::shell) fn compress_and_measure(
 /// reaches the model and the agent never has to re-run the command without
 /// sobre. This generalizes the build-tool-error guard inside
 /// [`compress_if_beneficial`] to ANY non-zero exit. Empty output and explicit
-/// `<lc_safe>` spans keep the normal pipeline (the latter so its markers are
+/// `<sobre_safe>` spans keep the normal pipeline (the latter so its markers are
 /// stripped correctly); a succeeding command still compresses as before.
 pub(crate) fn compress_for_outcome(command: &str, output: &str, exit_code: i32) -> String {
     if exit_code != 0 && !output.trim().is_empty() && !crate::core::protect::has_markers(output) {
@@ -68,7 +66,7 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
         return String::new();
     }
 
-    // Honour explicit <lc_safe>…</lc_safe> spans. Secret redaction has
+    // Honour explicit <sobre_safe>…</sobre_safe> spans. Secret redaction has
     // already run upstream (sobre_shell::handle → redact_shell_output_secrets), so
     // the pipeline order is redact → protect → compress and a marker can never
     // smuggle a secret past redaction. Protected spans pass through verbatim;
@@ -140,10 +138,6 @@ fn compress_if_beneficial_with_exit(command: &str, output: &str, exit_code: i32)
     // agent relies on to validate a CLI output contract. This is output-shape
     // based, so any tool emitting the format is covered without listing commands.
     if looks_like_toon(output) {
-        return truncate_verbatim(output, original_tokens);
-    }
-
-    if is_verbatim_output(command) {
         return truncate_verbatim(output, original_tokens);
     }
 
@@ -308,9 +302,31 @@ fn is_diagnostic_line(line: &str) -> bool {
     false
 }
 
-fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
-    let cmd = command.trim().to_ascii_lowercase();
+/// Linters that print nothing but findings and can exit 0 with some: any
+/// output they give is diagnostics, whatever words it uses (ESLint's stylish
+/// format has no `warning:`, stylelint and biome mark severity with symbols,
+/// a ruff finding is a rule code such as `F401`, under `--exit-zero`).
+const FINDINGS_ONLY_LINTERS: &[&str] = &[
+    "eslint",
+    "npx eslint",
+    "biome ",
+    "stylelint",
+    "yamllint",
+    "oxlint",
+    "ruff check",
+];
 
+fn is_findings_only_linter(command: &str) -> bool {
+    let cmd = command.trim().to_ascii_lowercase();
+    FINDINGS_ONLY_LINTERS.iter().any(|l| cmd.starts_with(l))
+}
+
+fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
+    if is_findings_only_linter(command) {
+        return true;
+    }
+
+    let cmd = command.trim().to_ascii_lowercase();
     let is_build_tool = cmd.starts_with("cargo check")
         || cmd.starts_with("cargo build")
         || cmd.starts_with("cargo clippy")
@@ -332,14 +348,10 @@ fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
         || cmd.starts_with("tsc\t")
         || cmd == "tsc"
         || cmd.starts_with("npx tsc")
-        || cmd.starts_with("eslint")
-        || cmd.starts_with("npx eslint")
-        || cmd.starts_with("biome ")
         || cmd.starts_with("prettier ")
         || cmd.starts_with("mypy ")
         || cmd.starts_with("pyright ")
         || cmd.starts_with("pylint ")
-        || cmd.starts_with("ruff check")
         || cmd.starts_with("flake8")
         || cmd.starts_with("black --check")
         || cmd.starts_with("swift build")
@@ -471,7 +483,7 @@ const MAX_VERBATIM_TOKENS: usize = 8000;
 /// middle is preserved (test-result summaries, panics, failures, errors). This
 /// guarantees a large test run — even a fully passing one with dozens of
 /// per-suite `test result:` lines — never silently loses its outcome lines,
-/// regardless of OS or client (issue: compression must never swallow signal).
+/// regardless of OS or client.
 fn truncate_verbatim(output: &str, original_tokens: usize) -> String {
     if original_tokens <= MAX_VERBATIM_TOKENS {
         return output.to_string();
@@ -694,6 +706,21 @@ pub(crate) fn is_chained_command(command: &str) -> bool {
 #[cfg(any(test, feature = "test-support"))]
 pub fn compress_if_beneficial_pub(command: &str, output: &str) -> String {
     compress_if_beneficial(command, output)
+}
+
+/// Whether shell compression hands a successful run of `command` to the
+/// per-command pattern table: the command is not a
+/// findings-only linter or a test runner, the output policy does not protect
+/// it (built-in rules only), and it is not a chain. What depends on the
+/// output (a build tool's errors, the size floors) is not checked. The
+/// pattern snapshot tests assert it, so a snapshot never pins a compressor
+/// production does not run for its command.
+#[cfg(any(test, feature = "test-support"))]
+pub fn reaches_pattern_table(command: &str) -> bool {
+    !is_findings_only_linter(command)
+        && !is_test_runner_command(command)
+        && !crate::shell::output_policy::classify(command, &[]).is_protected()
+        && !is_chained_command(command)
 }
 
 /// Preserve build/test output verbatim, applying only the safety-line-preserving

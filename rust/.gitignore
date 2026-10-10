@@ -1,7 +1,0 @@
-/target
-*.swp
-*.swo
-.DS_Store
-
-# Local build-speed tuning (linker, sccache path) — machine-specific, not a team default.
-/.cargo/config.toml

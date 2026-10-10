@@ -13,7 +13,7 @@ impl ProjectKnowledge {
         policy: &MemoryPolicy,
     ) -> Result<crate::core::memory_lifecycle::LifecycleReport, String> {
         let cfg = crate::core::memory_lifecycle::LifecycleConfig::from_policy(policy);
-        crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &cfg)
+        crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &self.project_hash, &cfg)
     }
 
     pub fn new(project_root: &str) -> Self {

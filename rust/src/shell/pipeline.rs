@@ -82,7 +82,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
 
     let output = wait_collecting(child, exec_byte_cap(command));
 
-    let exit_code = output.status.code().unwrap_or(1);
+    let exit_code = super::exec::exit_code(output.status);
     let stdout =
         super::platform::resolve_carriage_returns(&super::platform::decode_output(&output.stdout));
     let stderr =
@@ -92,7 +92,6 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
     let input_tokens = count_tokens(&full_output);
 
     crate::core::diagnostics_store::record_from_shell(command, &full_output, exit_code);
-    crate::core::gotcha_tracker::record_shell_outcome(command, &full_output, exit_code);
 
     let (compressed, output_tokens) =
         super::compress::compress_and_measure(command, &stdout, &stderr, exit_code);
@@ -116,9 +115,7 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
         } else {
             String::new()
         };
-        if !crate::core::runtime_flags::quiet_enabled() {
-            eprintln!("[sobre: output compressed, {input_tokens} → {output_tokens} tokens{kept}]");
-        }
+        eprintln!("[sobre: output compressed, {input_tokens} → {output_tokens} tokens{kept}]");
     }
 
     exit_code

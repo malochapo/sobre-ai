@@ -24,7 +24,7 @@ Feature notes:
   the `gen_docs` example).
 - `test-support` exposes helpers the integration tests call; never part of a
   release build.
-- `jemalloc` (on by default) is the allocator.
+- `jemalloc` (on by default) is the allocator on Linux and macOS.
 - `ort-cuda`, `ort-rocm`, `ort-webgpu`, `ort-directml` and `ort-coreml` each
   turn on `dense` with a GPU execution provider.
 - Never audit warnings under `--no-default-features`: `dead_code = "deny"`
@@ -48,7 +48,7 @@ under `tests/` pin a good deal of behaviour and `--lib` never runs them.
 ```
 src/
 ├─ main.rs              entry point
-├─ lib.rs               crate root; re-exports drive what dead_code can see
+├─ lib.rs               crate root; its `pub mod`s hide `pub` items from dead_code
 ├─ cli/                 subcommands, dispatch, help; args.rs declares the command
 │                       line (clap)
 ├─ server/              MCP server: registry, dispatch, path resolution, roots,
@@ -60,12 +60,14 @@ src/
 ├─ core/                the engine: config, paths, compression, read cache,
 │                       search and graph indexes, embeddings, session,
 │                       knowledge, usage ledger, reference generators
-├─ shell/               shell execution and the output-compression patterns
-├─ compound_lexer.rs    splits `a && b | c` into the segments hooks may wrap
+├─ shell/               shell execution and output compression (the per-command
+│                       patterns are in core/patterns/)
+├─ compound_lexer.rs    splits a shell line at its operators, for the pre-run hooks
 ├─ rewrite_registry.rs  commands the pre-run hooks wrap in `sobre -c`
 ├─ hooks/               per-agent hook installers (Claude Code, Cursor, ...)
 ├─ hook_handlers/       the `sobre hook ...` commands agents call
-├─ setup/               init, per-agent MCP config and the skill installer
+├─ setup/               init and the skill installer (core/editor_registry/ writes
+│                       each agent's MCP entry)
 ├─ config_io.rs         backup-then-write for the agent config files init edits
 ├─ proxy/               the local provider proxy: forward, compress, meter
 ├─ proxy_setup/         points Claude Code, Codex and OpenCode at the proxy
@@ -73,15 +75,16 @@ src/
 ├─ lsp/                 language-server client behind sobre_refactor
 ├─ doctor/              `sobre doctor`: checks and --fix
 ├─ uninstall/           `sobre uninstall`: agent entries, data, binary
-├─ ipc/                 child processes with a hard timeout
-├─ terminal_ui.rs       progress and colours for the CLI
+├─ ipc/                 process control: run with a timeout, detach, find, signal
+├─ terminal_ui.rs       the progress indicator of long CLI commands
 ├─ engine/              in-process tool calls, for the integration tests only
 ├─ test_env.rs          environment helpers for tests
 └─ bin/gen_docs.rs      the reference generator, behind `dev-tools`
 
 skill/SKILL.md          the `sobre` skill, embedded in the binary
 tests/                  integration suites
-benches/                compression and efficiency benchmarks
+benches/                latency of the output compressor, the token counter and
+                        sobre_search (time, not savings)
 ```
 
 How the parts fit at run time is in

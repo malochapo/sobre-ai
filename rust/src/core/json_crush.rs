@@ -1,24 +1,19 @@
-//! Deterministic JSON crusher — single source of truth for structural JSON
-//! compaction (a port of Headroom's "Smart Crusher").
+//! Deterministic JSON crusher: structural JSON compaction (a port of
+//! Headroom's "Smart Crusher").
 //!
-//! Real JSON payloads (API responses, `kubectl get -o json`, DB dumps, RAG
-//! chunks) are dominated by arrays of objects that repeat the same keys and
-//! values on every row. This module factors that redundancy out:
-//!
-//! - [`crush_lossless`] hoists every key that is present in *all* objects of an
-//!   array to its dominant value (a `_defaults` block); each item then keeps
-//!   only the fields that *deviate* from the default. A field absent from an
-//!   item means "equals the default", so the transform is **exactly**
-//!   reconstructible via `reconstruct` (test-only).
-//! - [`crush_lossy`] additionally *drops* near-unique high-entropy columns
-//!   (timestamps, UUIDs — pure noise for an agent) recorded in `_dropped`. The
-//!   exact original is then recovered out-of-band via CCR, never from the text.
+//! Real JSON payloads (API responses, `kubectl get -o json`, DB dumps) are
+//! dominated by arrays of objects that repeat the same keys and values on
+//! every row. [`crush_lossless`] factors that redundancy out: every key present
+//! in *all* objects of an array is hoisted to its dominant value (a
+//! `_defaults` block), and each item keeps only the fields that *deviate* from
+//! the default. A field absent from an item means "equals the default", so the
+//! transform is exactly reconstructible (`reconstruct`, test-only).
 //!
 //! Determinism: the output is a pure function of the input `Value` — no
 //! timestamps, counters, randomness, or hash-map order leakage (candidate keys
 //! are walked through a [`BTreeSet`], value frequencies through a [`BTreeMap`]).
-//! The crusher never inflates: callers gate on `shorter_only`, and a no-op input
-//! returns [`None`].
+//! A no-op input returns [`None`], and callers keep the result only when it at
+//! least halves the input ([`KEEP_DATA_DIVISOR`]).
 
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,10 +21,9 @@ use std::collections::{BTreeMap, BTreeSet};
 /// Marks an object that encodes a crushed array. Chosen to be vanishingly
 /// unlikely in real data; if the input already contains this key anywhere, the
 /// crusher bails (returns `None`) so reconstruction can never be ambiguous.
-const MARKER: &str = "_lc_crush";
+const MARKER: &str = "_sobre_crush";
 const MARKER_ARRAY: &str = "arr";
 const DEFAULTS_KEY: &str = "_defaults";
-const DROPPED_KEY: &str = "_dropped";
 const ITEMS_KEY: &str = "_items";
 
 /// Below this item count, factoring rarely beats its own structural overhead.
@@ -37,72 +31,29 @@ const MIN_ITEMS: usize = 3;
 /// A key is only hoisted into `_defaults` when its dominant value covers at
 /// least this fraction of items (constants are the 100% case).
 const MIN_DOMINANCE: f64 = 0.5;
+/// Subtrees deeper than this are left untouched.
+const MAX_DEPTH: usize = 64;
+/// Arrays larger than this are left untouched (pathology guard).
+const MAX_ITEMS: usize = 100_000;
 
-/// Shared "the crush must at least halve the payload" threshold. The lossless
-/// crusher keeps every datum, so reshaping only pays when the array is redundant
+/// Shared "the crush must at least halve the payload" threshold. The crusher
+/// keeps every datum, so reshaping only pays when the array is redundant
 /// enough that the compact form is at most `1/KEEP_DATA_DIVISOR` of the input;
-/// heterogeneous/low-redundancy data falls through to each caller's own outline.
-/// Single source for the shell (`json_schema`, `curl`) and read (`structured_read`)
-/// paths so the gate can never drift.
+/// heterogeneous/low-redundancy data falls through to each caller's own path.
+/// One gate for the shell (`json_schema`, `curl`) and read (`sobre_read`
+/// aggressive) paths.
 pub const KEEP_DATA_DIVISOR: usize = 2;
 
-/// Result of a crush pass.
-#[derive(Debug, Clone)]
-pub struct CrushResult {
-    /// Compact JSON the agent sees.
-    pub text: String,
-    /// `true` when `reconstruct(text)` yields the exact original; `false` when a
-    /// lossy stage dropped columns and the original must come from CCR.
-    pub lossless: bool,
-}
-
-/// Tuning for a crush pass.
-#[derive(Debug, Clone)]
-pub struct CrushOpts {
-    /// Distinct-value ratio (`distinct / items`) at or above which an
-    /// all-present column is *dropped* (lossy). `1.0` disables dropping, making
-    /// the pass strictly lossless.
-    pub drop_entropy: f64,
-    /// Maximum recursion depth before a subtree is left untouched.
-    pub max_depth: usize,
-    /// Arrays larger than this are left untouched (pathology guard).
-    pub max_items: usize,
-}
-
-impl Default for CrushOpts {
-    fn default() -> Self {
-        Self {
-            drop_entropy: 1.0,
-            max_depth: 64,
-            max_items: 100_000,
-        }
+/// Lossless crush: the compact JSON text, or `None` when nothing was factored.
+pub fn crush_lossless(value: &Value) -> Option<String> {
+    if contains_marker(value) {
+        return None;
     }
-}
-
-impl CrushOpts {
-    /// Strictly lossless options (no column dropping).
-    pub fn lossless() -> Self {
-        Self::default()
+    let crushed = crush_node(value, 0);
+    if !crushed.changed {
+        return None;
     }
-
-    /// Lossy options that drop columns whose distinct-value ratio is
-    /// `>= drop_entropy` (clamped to `[0, 1]`).
-    pub fn lossy(drop_entropy: f64) -> Self {
-        Self {
-            drop_entropy: drop_entropy.clamp(0.0, 1.0),
-            ..Self::default()
-        }
-    }
-}
-
-/// Lossless crush: returns `Some` only when something was actually factored.
-pub fn crush_lossless(value: &Value) -> Option<CrushResult> {
-    crush_with(value, &CrushOpts::lossless())
-}
-
-/// Lossy crush: lossless factoring plus high-entropy column dropping.
-pub fn crush_lossy(value: &Value, opts: &CrushOpts) -> Option<CrushResult> {
-    crush_with(value, opts)
+    serde_json::to_string(&crushed.value).ok()
 }
 
 /// Lossless crush of `value`, returning the compact text only when it at least
@@ -110,13 +61,13 @@ pub fn crush_lossy(value: &Value, opts: &CrushOpts) -> Option<CrushResult> {
 /// already hold a parsed `Value` plus its source length (`json_schema`, `curl`).
 pub fn crush_value_if_beneficial(value: &Value, raw_len: usize) -> Option<String> {
     let crushed = crush_lossless(value)?;
-    (crushed.text.len().saturating_mul(KEEP_DATA_DIVISOR) <= raw_len).then_some(crushed.text)
+    (crushed.len().saturating_mul(KEEP_DATA_DIVISOR) <= raw_len).then_some(crushed)
 }
 
 /// Parse `text` as JSON and losslessly crush it, returning the compact form only
 /// when it at least halves the input ([`KEEP_DATA_DIVISOR`]). The shared gate for
-/// callers that start from raw text (`structured_read`, `sobre_read` aggressive).
-/// `None` for non-JSON or low-redundancy input — the caller keeps its own path.
+/// callers that start from raw text (`sobre_read` aggressive). `None` for
+/// non-JSON or low-redundancy input — the caller keeps its own path.
 pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
     let trimmed = text.trim();
     if !trimmed.starts_with('{') && !trimmed.starts_with('[') {
@@ -126,33 +77,16 @@ pub fn crush_text_if_beneficial(text: &str) -> Option<String> {
     crush_value_if_beneficial(&val, trimmed.len())
 }
 
-/// Rebuild a `Value` from crushed text. Exact for lossless forms; for lossy
-/// forms the `_dropped` columns are simply absent (recover them via CCR).
+/// Rebuild a `Value` from crushed text.
 #[cfg(test)]
 pub fn reconstruct(crushed_text: &str) -> Option<Value> {
     let v: Value = serde_json::from_str(crushed_text).ok()?;
     Some(uncrush_node(&v))
 }
 
-fn crush_with(value: &Value, opts: &CrushOpts) -> Option<CrushResult> {
-    if contains_marker(value) {
-        return None;
-    }
-    let crushed = crush_node(value, opts, 0);
-    if !crushed.changed {
-        return None;
-    }
-    let text = serde_json::to_string(&crushed.value).ok()?;
-    Some(CrushResult {
-        text,
-        lossless: crushed.lossless,
-    })
-}
-
 struct Crushed {
     value: Value,
     changed: bool,
-    lossless: bool,
 }
 
 impl Crushed {
@@ -160,58 +94,50 @@ impl Crushed {
         Self {
             value,
             changed: false,
-            lossless: true,
         }
     }
 }
 
-fn crush_node(value: &Value, opts: &CrushOpts, depth: usize) -> Crushed {
-    if depth > opts.max_depth {
+fn crush_node(value: &Value, depth: usize) -> Crushed {
+    if depth > MAX_DEPTH {
         return Crushed::unchanged(value.clone());
     }
     match value {
-        Value::Array(arr) => crush_array(arr, opts, depth),
+        Value::Array(arr) => crush_array(arr, depth),
         Value::Object(map) => {
             let mut out = Map::new();
             let mut changed = false;
-            let mut lossless = true;
             for (key, val) in map {
-                let child = crush_node(val, opts, depth + 1);
+                let child = crush_node(val, depth + 1);
                 changed |= child.changed;
-                lossless &= child.lossless;
                 out.insert(key.clone(), child.value);
             }
             Crushed {
                 value: Value::Object(out),
                 changed,
-                lossless,
             }
         }
         other => Crushed::unchanged(other.clone()),
     }
 }
 
-fn crush_array(arr: &[Value], opts: &CrushOpts, depth: usize) -> Crushed {
+fn crush_array(arr: &[Value], depth: usize) -> Crushed {
     // Crush each element first, so nested arrays inside items also compact and
     // factoring compares already-normalized values.
     let mut items: Vec<Value> = Vec::with_capacity(arr.len());
     let mut child_changed = false;
-    let mut child_lossless = true;
     for el in arr {
-        let child = crush_node(el, opts, depth + 1);
+        let child = crush_node(el, depth + 1);
         child_changed |= child.changed;
-        child_lossless &= child.lossless;
         items.push(child.value);
     }
 
-    let factorable = items.len() >= MIN_ITEMS
-        && items.len() <= opts.max_items
-        && items.iter().all(Value::is_object);
+    let factorable =
+        items.len() >= MIN_ITEMS && items.len() <= MAX_ITEMS && items.iter().all(Value::is_object);
     if !factorable {
         return Crushed {
             value: Value::Array(items),
             changed: child_changed,
-            lossless: child_lossless,
         };
     }
 
@@ -229,25 +155,18 @@ fn crush_array(arr: &[Value], opts: &CrushOpts, depth: usize) -> Crushed {
 
     let n = items.len();
     let mut defaults = Map::new();
-    let mut dropped: BTreeSet<String> = BTreeSet::new();
     for key in &candidates {
         let values: Vec<&Value> = items.iter().filter_map(|it| it.get(key)).collect();
-        let (dominant, dominant_count, distinct) = dominant_value(&values);
-        let entropy = distinct as f64 / n as f64;
-        if opts.drop_entropy < 1.0 && entropy >= opts.drop_entropy {
-            dropped.insert(key.clone());
-            continue;
-        }
+        let (dominant, dominant_count) = dominant_value(&values);
         if dominant_count >= min_dominant_count(n) {
             defaults.insert(key.clone(), dominant);
         }
     }
 
-    if defaults.is_empty() && dropped.is_empty() {
+    if defaults.is_empty() {
         return Crushed {
             value: Value::Array(items),
             changed: child_changed,
-            lossless: child_lossless,
         };
     }
 
@@ -257,38 +176,23 @@ fn crush_array(arr: &[Value], opts: &CrushOpts, depth: usize) -> Crushed {
             let mut slim = Map::new();
             if let Some(obj) = item.as_object() {
                 for (key, val) in obj {
-                    if dropped.contains(key) {
-                        continue;
+                    if defaults.get(key) != Some(val) {
+                        slim.insert(key.clone(), val.clone());
                     }
-                    if defaults.get(key) == Some(val) {
-                        continue;
-                    }
-                    slim.insert(key.clone(), val.clone());
                 }
             }
             Value::Object(slim)
         })
         .collect();
 
-    let had_drops = !dropped.is_empty();
-
     let mut crushed = Map::new();
     crushed.insert(MARKER.to_string(), Value::String(MARKER_ARRAY.to_string()));
-    if !defaults.is_empty() {
-        crushed.insert(DEFAULTS_KEY.to_string(), Value::Object(defaults));
-    }
-    if had_drops {
-        crushed.insert(
-            DROPPED_KEY.to_string(),
-            Value::Array(dropped.into_iter().map(Value::String).collect()),
-        );
-    }
+    crushed.insert(DEFAULTS_KEY.to_string(), Value::Object(defaults));
     crushed.insert(ITEMS_KEY.to_string(), Value::Array(new_items));
 
     Crushed {
         value: Value::Object(crushed),
         changed: true,
-        lossless: child_lossless && !had_drops,
     }
 }
 
@@ -296,17 +200,16 @@ fn min_dominant_count(n: usize) -> usize {
     (((n as f64) * MIN_DOMINANCE).ceil() as usize).max(2)
 }
 
-/// Returns the most frequent value, its count, and the distinct-value count.
-/// Frequencies key on the canonical JSON serialization; ties break toward the
-/// lexicographically smallest serialization for determinism.
-fn dominant_value(values: &[&Value]) -> (Value, usize, usize) {
+/// Returns the most frequent value and its count. Frequencies key on the
+/// canonical JSON serialization; ties break toward the lexicographically
+/// smallest serialization for determinism.
+fn dominant_value(values: &[&Value]) -> (Value, usize) {
     let mut freq: BTreeMap<String, (usize, Value)> = BTreeMap::new();
     for v in values {
         let key = serde_json::to_string(v).unwrap_or_default();
         let entry = freq.entry(key).or_insert_with(|| (0, (*v).clone()));
         entry.0 += 1;
     }
-    let distinct = freq.len();
     let mut best_count = 0usize;
     let mut best_value = Value::Null;
     for (count, value) in freq.values() {
@@ -315,7 +218,7 @@ fn dominant_value(values: &[&Value]) -> (Value, usize, usize) {
             best_value = value.clone();
         }
     }
-    (best_value, best_count, distinct)
+    (best_value, best_count)
 }
 
 fn contains_marker(value: &Value) -> bool {
@@ -382,24 +285,23 @@ mod tests {
     fn lossless_factors_constant_columns() {
         let v = homogeneous();
         let crushed = crush_lossless(&v).expect("should crush");
-        assert!(crushed.lossless);
         // Constants appear once in _defaults, not on every item.
-        assert!(crushed.text.contains("_defaults"));
-        assert_eq!(crushed.text.matches("success").count(), 1);
+        assert!(crushed.contains("_defaults"));
+        assert_eq!(crushed.matches("success").count(), 1);
     }
 
     #[test]
     fn lossless_roundtrips_exactly() {
         let v = homogeneous();
         let crushed = crush_lossless(&v).unwrap();
-        let restored = reconstruct(&crushed.text).unwrap();
+        let restored = reconstruct(&crushed).unwrap();
         assert_eq!(restored, v);
     }
 
     #[test]
     fn output_is_byte_stable_across_calls() {
         let v = homogeneous();
-        let run = || crush_lossless(&v).unwrap().text;
+        let run = || crush_lossless(&v).unwrap();
         assert_eq!(run(), run(), "crush output must be deterministic");
     }
 
@@ -409,9 +311,9 @@ mod tests {
         let crushed = crush_lossless(&v).unwrap();
         let compact = serde_json::to_string(&v).unwrap();
         assert!(
-            crushed.text.len() < compact.len(),
+            crushed.len() < compact.len(),
             "crushed {} should be shorter than {}",
-            crushed.text.len(),
+            crushed.len(),
             compact.len()
         );
     }
@@ -441,8 +343,7 @@ mod tests {
             ]
         });
         let crushed = crush_lossless(&v).unwrap();
-        assert!(crushed.lossless);
-        assert_eq!(reconstruct(&crushed.text).unwrap(), v);
+        assert_eq!(reconstruct(&crushed).unwrap(), v);
     }
 
     #[test]
@@ -453,7 +354,7 @@ mod tests {
             {"tag": "café", "note": "tab\tend", "id": 3}
         ]);
         let crushed = crush_lossless(&v).unwrap();
-        assert_eq!(reconstruct(&crushed.text).unwrap(), v);
+        assert_eq!(reconstruct(&crushed).unwrap(), v);
     }
 
     #[test]
@@ -465,43 +366,9 @@ mod tests {
             {"state": "err", "code": 500}
         ]);
         let crushed = crush_lossless(&v).unwrap();
-        assert!(crushed.lossless);
         // The minority row keeps its own state/code; majority omit them.
-        assert!(crushed.text.contains("err"));
-        assert_eq!(reconstruct(&crushed.text).unwrap(), v);
-    }
-
-    #[test]
-    fn lossy_drops_high_entropy_columns() {
-        let v = json!([
-            {"status": "ok", "uuid": "a1b2"},
-            {"status": "ok", "uuid": "c3d4"},
-            {"status": "ok", "uuid": "e5f6"},
-            {"status": "ok", "uuid": "g7h8"}
-        ]);
-        let crushed = crush_lossy(&v, &CrushOpts::lossy(0.9)).unwrap();
-        assert!(!crushed.lossless, "dropping a column is lossy");
-        assert!(crushed.text.contains("_dropped"));
-        assert!(!crushed.text.contains("a1b2"));
-        // The lossless columns still round-trip; dropped column is simply gone.
-        let restored = reconstruct(&crushed.text).unwrap();
-        let arr = restored.as_array().unwrap();
-        assert_eq!(arr.len(), 4);
-        assert_eq!(arr[0]["status"], json!("ok"));
-        assert!(arr[0].get("uuid").is_none());
-    }
-
-    #[test]
-    fn lossy_is_byte_stable() {
-        let v = json!([
-            {"status": "ok", "uuid": "a1b2"},
-            {"status": "ok", "uuid": "c3d4"},
-            {"status": "ok", "uuid": "e5f6"},
-            {"status": "ok", "uuid": "g7h8"}
-        ]);
-        let opts = CrushOpts::lossy(0.9);
-        let run = || crush_lossy(&v, &opts).unwrap().text;
-        assert_eq!(run(), run());
+        assert!(crushed.contains("err"));
+        assert_eq!(reconstruct(&crushed).unwrap(), v);
     }
 
     #[test]
@@ -534,9 +401,9 @@ mod tests {
     #[test]
     fn input_with_marker_key_is_left_alone() {
         let v = json!([
-            {"_lc_crush": "x", "id": 1},
-            {"_lc_crush": "y", "id": 2},
-            {"_lc_crush": "z", "id": 3}
+            {"_sobre_crush": "x", "id": 1},
+            {"_sobre_crush": "y", "id": 2},
+            {"_sobre_crush": "z", "id": 3}
         ]);
         assert!(crush_lossless(&v).is_none());
     }

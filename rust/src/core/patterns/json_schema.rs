@@ -121,7 +121,7 @@ mod tests {
 
         // Lossless crush is chosen (marker present) — not the value-dropping
         // schema outline.
-        assert!(out.contains("_lc_crush"), "expected crushed form: {out}");
+        assert!(out.contains("_sobre_crush"), "expected crushed form: {out}");
         assert!(!out.contains("items, each"), "schema outline leaked: {out}");
 
         // It actually pays: at least halves the payload.
@@ -143,7 +143,7 @@ mod tests {
         let raw = r#"[{"id":1,"name":"alice","email":"a@x.io"},{"id":2,"name":"bob","email":"b@y.io"},{"id":3,"name":"cara","email":"c@z.io"}]"#;
         let out = compress(raw).expect("array compresses to schema");
         assert!(
-            !out.contains("_lc_crush"),
+            !out.contains("_sobre_crush"),
             "should not crush low-redundancy"
         );
         assert!(

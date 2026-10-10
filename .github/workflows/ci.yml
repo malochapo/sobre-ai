@@ -11,9 +11,12 @@ on:
   workflow_call:
   workflow_dispatch:
 
+# A new push to a pull request cancels the run it supersedes. A release's run
+# (push, through release.yml) and a manual run do not cancel a run in progress,
+# and each event has its own group, so neither can cancel the other.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -40,7 +43,7 @@ jobs:
       - name: fmt, clippy, doc, generated docs, file size
         run: scripts/preflight.sh
       - name: Dependency licenses and advisories
-        uses: EmbarkStudios/cargo-deny-action@5bb39ff5d5a0e94dc9e2dc94eced0c6129743a57 # v2
+        uses: EmbarkStudios/cargo-deny-action@91bf2b620e09e18d6eb78b92e7861937469acedb # v2.0.17
         with:
           manifest-path: rust/Cargo.toml
 

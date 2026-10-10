@@ -1,26 +1,31 @@
-//! Tests verifying that `sobre_read` never hangs indefinitely due to session lock contention.
-//! Covers the Windows deadlock scenario: shell-hook holds session write-lock while
-//! `sobre_read` waits on session read-lock, causing circular dependency.
+//! Path resolution on the read path returns instead of hanging: bounded
+//! canonicalization falls back to the path as given, and reading a missing
+//! file fails at once.
+//!
+//! The bounds below are generous on purpose: they catch a hang, not a slow
+//! machine.
 
 use sobre::core::pathutil::safe_canonicalize_bounded;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+/// Far above any real canonicalization, far below a hang.
+const NO_HANG: Duration = Duration::from_secs(5);
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// 1. safe_canonicalize_bounded — timeout behavior
+// safe_canonicalize_bounded
 // ═══════════════════════════════════════════════════════════════════════════════
 
 #[test]
-fn canonicalize_existing_path_succeeds_quickly() {
+fn canonicalize_existing_path_resolves() {
+    let dir = tempfile::tempdir().unwrap();
     let start = Instant::now();
-    let result = safe_canonicalize_bounded(Path::new("/tmp"), 2000);
-    let elapsed = start.elapsed();
+    let result = safe_canonicalize_bounded(dir.path(), 2000);
 
-    assert!(elapsed < Duration::from_secs(1));
-    // On macOS /tmp -> /private/tmp
+    assert!(start.elapsed() < NO_HANG);
     assert!(
-        result.to_str().unwrap().contains("tmp"),
-        "should resolve to a path containing 'tmp', got: {}",
+        result.is_absolute() && result.is_dir(),
+        "an existing path resolves to an absolute path to it: {}",
         result.display()
     );
 }
@@ -30,21 +35,17 @@ fn canonicalize_nonexistent_path_returns_original() {
     let fake = Path::new("/nonexistent/path/that/does/not/exist/xyzzy123");
     let start = Instant::now();
     let result = safe_canonicalize_bounded(fake, 2000);
-    let elapsed = start.elapsed();
 
-    assert!(elapsed < Duration::from_secs(1));
+    assert!(start.elapsed() < NO_HANG);
     assert_eq!(result, fake.to_path_buf());
 }
 
 #[test]
-fn canonicalize_bounded_respects_timeout() {
-    // We can't easily simulate a hanging canonicalize on non-Windows,
-    // but we verify the function doesn't panic and completes quickly
-    // for various path types
-    let paths = &[
-        "/tmp",
-        "/var",
-        "/usr/bin",
+fn canonicalize_bounded_returns_for_every_kind_of_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let existing = dir.path().to_string_lossy().into_owned();
+    let paths = [
+        existing.as_str(),
         "/this/does/not/exist",
         "relative/path/here",
     ];
@@ -52,30 +53,25 @@ fn canonicalize_bounded_respects_timeout() {
     for p in paths {
         let start = Instant::now();
         let _ = safe_canonicalize_bounded(Path::new(p), 500);
-        assert!(
-            start.elapsed() < Duration::from_millis(600),
-            "canonicalize took too long for {p}"
-        );
+        assert!(start.elapsed() < NO_HANG, "canonicalize hung for {p}");
     }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. Integration: read_file_lossy doesn't hang on nonexistent/weird paths
+// read_file_lossy on paths that do not exist
 // ═══════════════════════════════════════════════════════════════════════════════
 
 mod read_file_safety {
+    use super::NO_HANG;
     use sobre::tools::sobre_read::read_file_lossy;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     #[test]
     fn nonexistent_file_errors_quickly() {
         let start = Instant::now();
         let result = read_file_lossy("/this/path/does/not/exist/file.rs");
         assert!(result.is_err());
-        assert!(
-            start.elapsed() < Duration::from_secs(3),
-            "should fail fast, not hang"
-        );
+        assert!(start.elapsed() < NO_HANG, "should fail fast, not hang");
     }
 
     #[test]
@@ -84,19 +80,18 @@ mod read_file_safety {
         let start = Instant::now();
         let result = read_file_lossy(deep);
         assert!(result.is_err());
-        assert!(start.elapsed() < Duration::from_secs(3));
+        assert!(start.elapsed() < NO_HANG);
     }
 
     #[cfg(windows)]
     #[test]
-    fn windows_gemini_path_doesnt_hang() {
-        // Simulates the exact path pattern from the bug report
+    fn windows_profile_path_does_not_hang() {
         let path = r"C:\Users\USER\.gemini\some_config.json";
         let start = Instant::now();
         let _ = read_file_lossy(path);
         assert!(
-            start.elapsed() < Duration::from_secs(5),
-            "Windows .gemini path must not hang"
+            start.elapsed() < NO_HANG,
+            "a path under the user profile must not hang"
         );
     }
 }

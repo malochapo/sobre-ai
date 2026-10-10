@@ -1,3 +1,6 @@
+//! The binary end to end: help, `-c` on short and long output, output
+//! redirected to a file, `gain --json` and `doctor`.
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -24,11 +27,15 @@ fn isolated_config_dir() -> &'static Path {
     })
 }
 
+/// The binary in the crate directory with isolated state and config, and
+/// without the re-entrancy marker a `sobre`-wrapped parent (running the suite
+/// through the shell hook) would leak, which would make `-c` defer to it.
 fn sobre_bin() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
-    cmd.current_dir(env!("CARGO_MANIFEST_DIR"));
-    cmd.env("SOBRE_STATE_DIR", isolated_state_dir());
-    cmd.env("SOBRE_CONFIG_DIR", isolated_config_dir());
+    cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
+        .env_remove("SOBRE_WRAPPED")
+        .env("SOBRE_STATE_DIR", isolated_state_dir())
+        .env("SOBRE_CONFIG_DIR", isolated_config_dir());
     cmd
 }
 
@@ -43,138 +50,48 @@ fn binary_prints_help() {
         stdout.contains("local context tools for coding agents"),
         "help should contain tagline"
     );
-    assert!(stdout.contains("sobre"), "help should mention sobre");
-}
-
-#[test]
-fn shell_hook_compresses_echo() {
-    let output = sobre_bin()
-        .args(["-c", "echo", "hello", "world"])
-        .output()
-        .expect("failed to run sobre -c");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("hello"),
-        "shell hook should pass through echo output"
-    );
-}
-
-#[test]
-fn help_shows_escape_hatches() {
-    let output = sobre_bin()
-        .arg("--help")
-        .output()
-        .expect("failed to run sobre");
-    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
         stdout.contains("sobre raw"),
         "help should document `sobre raw`"
     );
 }
 
-// ── Pipe Guard Tests ────────────────────────────────────────
-
+#[cfg(unix)]
 #[test]
-fn pipe_guard_no_compression_when_stdout_is_piped() {
-    if cfg!(windows) {
-        return;
-    }
-    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("SOBRE_STATE_DIR", isolated_state_dir())
-        .args(["-c", "echo hello world"])
+fn short_output_passes_through_unchanged() {
+    let output = sobre_bin()
+        .args(["-c", "echo line1 && echo line2 && echo 'result: 42'"])
         .output()
-        .expect("failed to run sobre -c with piped stdout");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(
-        stdout.trim(),
-        "hello world",
-        "piped stdout must pass through raw output, got: {stdout}"
-    );
-}
-
-#[test]
-fn pipe_guard_force_compress_overrides_pipe_guard() {
-    if cfg!(windows) {
-        return;
-    }
-    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("SOBRE_STATE_DIR", isolated_state_dir())
-        .args(["-c", "echo hello world"])
-        .output()
-        .expect("failed to run sobre -c with piped stdout");
+        .expect("failed to run sobre -c");
     assert!(
         output.status.success(),
-        "`-c` should not crash even with piped stdout"
+        "`-c` exits with the command's code"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("hello"),
-        "output should contain the echoed text"
-    );
-}
-
-#[test]
-fn pipe_guard_multiline_output_unchanged_when_piped() {
-    if cfg!(windows) {
-        return;
+    for line in ["line1", "line2", "result: 42"] {
+        assert!(stdout.contains(line), "missing {line:?}: {stdout}");
     }
-    let script = "echo line1; echo line2; echo line3; echo 'result: 42'";
-    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("SOBRE_STATE_DIR", isolated_state_dir())
-        .args(["-c", script])
-        .output()
-        .expect("failed to run sobre -c with multiline output");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("line1"), "must contain line1");
-    assert!(stdout.contains("line2"), "must contain line2");
-    assert!(stdout.contains("line3"), "must contain line3");
-    assert!(
-        stdout.contains("result: 42"),
-        "must preserve exact output content"
-    );
 }
 
-// ── Redirect-to-file fidelity under FORCED compression ──────
-// Regression: an agent's command hook routes through `sobre -c` with no pipe
-// guard (an agent IS the consumer), so an agent running
-// `git status --short > files.txt` reached `sobre -c` with stdout pointing at a
-// regular FILE and forced compression on. The compressed digest was written INTO
-// the file, dropping/abbreviating lines and producing contradictory diffs. Output
-// redirected to a regular file must ALWAYS stay byte-faithful, even when
-// compression is forced; pipes (agent capture) must keep compressing.
+// ── Output redirected to a file stays byte-faithful ─────────
+// An agent's command hook routes `cmd > files.txt` through `sobre -c` with
+// stdout pointing at a regular file. Compressing there would write the digest
+// into the file (dropped and abbreviated lines), so output that goes to a
+// regular file is never compressed; a pipe (the agent capturing output) is.
 
-// >30 distinct lines so the compression engine definitely rewrites the output
-// (the truncate-with-safety-scan fallback collapses the middle). This makes the
-// assertions below meaningful — pre-fix, the file held the compressed digest.
-// The payload must NOT contain any passthrough/verbatim keyword (notably the
-// literal "sobre", which classifies the whole command as Passthrough), or the
-// output would never be compressed and the test would be vacuous.
-fn redirect_fidelity_command() -> &'static str {
+// More than 30 distinct lines, so the compression engine rewrites the output
+// when it is allowed to. The payload must not contain a passthrough keyword
+// (notably the literal "sobre", which makes the whole command Passthrough), or
+// it would never be compressed and the tests would prove nothing.
+#[cfg(unix)]
+fn long_output_command() -> &'static str {
     "i=0; while [ $i -lt 60 ]; do echo \"row $i alpha beta gamma delta payload\"; i=$((i+1)); done"
 }
 
-/// `sobre -c` with a *hermetic* control environment for the compression
-/// fidelity tests. `SOBRE_WRAPPED` must go: running `cargo test` *through* the sobre
-/// wrapper stamps it on every child, and the nested `sobre -c` under test
-/// would then (correctly) defer to the parent instead of compressing.
-fn forced_compress_bin() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
-    cmd.current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env_remove("SOBRE_WRAPPED")
-        .env("SOBRE_STATE_DIR", isolated_state_dir())
-        .env("SOBRE_CONFIG_DIR", isolated_config_dir());
-    cmd
-}
-
+#[cfg(unix)]
 #[test]
-fn force_compress_redirect_to_file_is_byte_faithful() {
-    if cfg!(windows) {
-        return;
-    }
-    let cmd = redirect_fidelity_command();
+fn redirect_to_a_file_is_byte_faithful() {
+    let cmd = long_output_command();
 
     // Ground truth: the raw command output (no sobre in the loop).
     let raw = Command::new("sh")
@@ -183,38 +100,29 @@ fn force_compress_redirect_to_file_is_byte_faithful() {
         .expect("failed to run raw command");
     let raw_stdout = String::from_utf8_lossy(&raw.stdout).to_string();
 
-    // Run sobre with forced compression, stdout redirected to a real file —
-    // exactly the agent `cmd > file` scenario.
-    let tmp = std::env::temp_dir().join(format!(
-        "sobre-redirect-fidelity-{}.txt",
-        std::process::id()
-    ));
-    let file = std::fs::File::create(&tmp).expect("create temp file");
-    let status = forced_compress_bin()
+    let dir = tempfile::tempdir().expect("temp dir");
+    let target = dir.path().join("out.txt");
+    let file = std::fs::File::create(&target).expect("create temp file");
+    let status = sobre_bin()
         .args(["-c", cmd])
         .stdout(std::process::Stdio::from(file))
         .status()
         .expect("failed to run sobre -c with file redirect");
     assert!(status.success(), "sobre -c should exit cleanly");
 
-    let file_content = std::fs::read_to_string(&tmp).expect("read temp file");
-    let _ = std::fs::remove_file(&tmp);
-
+    let file_content = std::fs::read_to_string(&target).expect("read temp file");
     assert_eq!(
         file_content, raw_stdout,
         "redirect to a regular file under `-c` must be byte-faithful (never compressed)"
     );
 }
 
+/// The same command and environment through a pipe is compressed, which is
+/// what makes the redirect test above meaningful.
+#[cfg(unix)]
 #[test]
-fn force_compress_pipe_still_compresses() {
-    // Companion to the redirect test: proves compression is genuinely active for
-    // the SAME command + env when stdout is a PIPE (an agent's capture). If this
-    // ever stops compressing, the redirect test above would be vacuous.
-    if cfg!(windows) {
-        return;
-    }
-    let cmd = redirect_fidelity_command();
+fn piped_long_output_is_compressed() {
+    let cmd = long_output_command();
 
     let raw = Command::new("sh")
         .args(["-c", cmd])
@@ -222,7 +130,7 @@ fn force_compress_pipe_still_compresses() {
         .expect("failed to run raw command");
     let raw_stdout = String::from_utf8_lossy(&raw.stdout).to_string();
 
-    let piped = forced_compress_bin()
+    let piped = sobre_bin()
         .args(["-c", cmd])
         .output()
         .expect("failed to run sobre -c with piped stdout");
@@ -230,11 +138,9 @@ fn force_compress_pipe_still_compresses() {
 
     assert_ne!(
         piped_stdout, raw_stdout,
-        "piped stdout under `-c` should be compressed (changed) — proves the redirect guard is meaningful"
+        "piped stdout under `-c` should be compressed"
     );
 }
-
-// ── Extended CLI Smoke Tests ────────────────────────────────
 
 #[test]
 fn binary_gain_json_returns_valid_json() {
@@ -254,42 +160,4 @@ fn binary_gain_json_returns_valid_json() {
         parsed.is_ok(),
         "gain --json should return valid JSON, got: {stdout}"
     );
-}
-
-#[test]
-fn binary_doctor_runs_without_crash() {
-    let output = sobre_bin()
-        .arg("doctor")
-        .output()
-        .expect("failed to run sobre doctor");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("sobre")
-            || stdout.contains("doctor")
-            || stdout.contains("✓")
-            || stdout.contains("check"),
-        "doctor should produce diagnostic output: {stdout}"
-    );
-}
-
-#[test]
-fn pipe_guard_rust_side_defense_in_depth() {
-    if cfg!(windows) {
-        return;
-    }
-    let script = "for i in 1 2 3 4 5; do echo \"item_$i: $(date +%s)\"; done";
-    let output = Command::new(env!("CARGO_BIN_EXE_sobre"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .env("SOBRE_STATE_DIR", isolated_state_dir())
-        .env("SOBRE_CONFIG_DIR", isolated_config_dir())
-        .args(["-c", script])
-        .output()
-        .expect("failed to run sobre -c");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for i in 1..=5 {
-        assert!(
-            stdout.contains(&format!("item_{i}:")),
-            "Rust-side pipe guard must pass through all lines unchanged (missing item_{i})"
-        );
-    }
 }

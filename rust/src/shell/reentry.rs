@@ -30,17 +30,9 @@ pub(crate) fn mark_child(cmd: &mut Command) {
     cmd.env(WRAP_MARKER, "1");
 }
 
-/// Clear the ownership marker before handing a command to the user's shell
-/// as-is, so it behaves like typing the command in that shell.
-pub(crate) fn clear_shell_default_markers(cmd: &mut Command) {
-    cmd.env_remove(WRAP_MARKER);
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{
-        WRAP_MARKER, clear_shell_default_markers, is_wrapped, mark_child, should_pass_through,
-    };
+    use super::{WRAP_MARKER, is_wrapped, mark_child, should_pass_through};
 
     #[test]
     fn wrap_marker_triggers_passthrough() {
@@ -52,7 +44,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_child_sets_the_marker_and_clear_removes_it() {
+    fn mark_child_sets_the_marker() {
         let mut cmd = std::process::Command::new("true");
         mark_child(&mut cmd);
         let set: Option<String> = cmd
@@ -60,12 +52,5 @@ mod tests {
             .find(|(k, _)| *k == WRAP_MARKER)
             .and_then(|(_, v)| v.and_then(|v| v.to_str().map(str::to_string)));
         assert_eq!(set.as_deref(), Some("1"));
-
-        clear_shell_default_markers(&mut cmd);
-        let cleared = cmd
-            .get_envs()
-            .find(|(k, _)| *k == WRAP_MARKER)
-            .map(|(_, v)| v.is_none());
-        assert_eq!(cleared, Some(true));
     }
 }

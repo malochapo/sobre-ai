@@ -1,5 +1,8 @@
 //! Token counting: one tokenizer (tiktoken `o200k_base`) for every count the
 //! usage ledger records, so savings on every path are in the same unit.
+//!
+//! `o200k_base` is OpenAI's encoding. For Claude, Gemini and other models
+//! every count is an estimate of what their own tokenizer would give.
 
 use std::sync::OnceLock;
 use tiktoken_rs::CoreBPE;
@@ -17,7 +20,7 @@ fn get_bpe_o200k() -> Option<&'static CoreBPE> {
 }
 
 /// Bytes per token assumed when the tokenizer fails to load.
-const CHARS_PER_TOKEN_ESTIMATE: f64 = 3.5;
+const BYTES_PER_TOKEN_ESTIMATE: f64 = 3.5;
 
 const TOKEN_CACHE_MAX: u64 = 4096;
 
@@ -50,7 +53,7 @@ pub fn count_tokens(text: &str) -> usize {
 
     let count = match get_bpe_o200k() {
         Some(bpe) => bpe.encode_with_special_tokens(text).len(),
-        None => (text.len() as f64 / CHARS_PER_TOKEN_ESTIMATE).ceil() as usize,
+        None => (text.len() as f64 / BYTES_PER_TOKEN_ESTIMATE).ceil() as usize,
     };
     cache.insert(key, count);
     count
@@ -98,9 +101,8 @@ mod tests {
 
     #[test]
     fn count_tokens_reference_snapshot_o200k() {
-        // Reference counts captured at tiktoken-rs 0.6 baseline (Plan B Task 0).
-        // o200k_base encoding tables are a fixed spec; counts MUST stay identical
-        // across the 0.6→0.12 crate bump. A mismatch = silently wrong accounting.
+        // o200k_base is a fixed encoding: these counts must not move when the
+        // tokenizer crate is upgraded, or every recorded saving changes unit.
         let cases: [(&str, usize); 5] = [
             ("", 0),
             ("hello world", 2),

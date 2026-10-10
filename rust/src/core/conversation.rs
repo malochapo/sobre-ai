@@ -17,8 +17,7 @@
 //! miss, so a momentary read failure never spuriously invalidates valid stubs.
 //!
 //! A Cursor subagent (`CURSOR_TASK_ID` set) is given its own `task:{id}` scope,
-//! so it is never served — nor records — a stub under another agent's identity;
-//! this lets the stub gate replace the old blanket subagent force-fresh.
+//! so it is never served — nor records — a stub under another agent's identity.
 //!
 //! ## Concurrency hardening
 //!
@@ -97,7 +96,7 @@ fn subagent_scope_from(task_id: Option<&str>) -> Option<String> {
 /// Giving it a distinct, non-`None` scope means it can never match the parent's
 /// (or a sibling's) `delivered_conversation`, so it is never served a stub for
 /// content only another agent received — while its *own* re-reads still collapse
-/// to the cheap stub. This replaces the old blanket force-fresh for subagents.
+/// to the cheap stub.
 fn subagent_scope() -> Option<String> {
     static SCOPE: OnceLock<Option<String>> = OnceLock::new();
     SCOPE

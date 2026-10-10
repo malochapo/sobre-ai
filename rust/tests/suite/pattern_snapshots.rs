@@ -1,13 +1,25 @@
-//! Snapshot regression tests for all compression pattern modules.
+//! Snapshots of what the pattern table makes of a command's output:
+//! `try_specific_pattern` (the per-command compressor) and `compress_output`
+//! (that compressor, then the json, log and test fallbacks).
 //!
-//! Tests `try_specific_pattern` (pattern dispatch) and `compress_output` (full pipeline)
-//! to ensure every pattern module produces stable, expected output.
+//! Every command here is one shell compression hands to the pattern table
+//! (`reaches_pattern_table`), so a snapshot never pins a compressor
+//! production does not run for its command.
 //!
 //! Run `cargo insta review` after intentional pattern changes to accept new snapshots.
 
 use sobre::core::patterns::{compress_output, try_specific_pattern};
+use sobre::shell::compress::reaches_pattern_table;
+
+fn assert_reaches_pattern_table(name: &str, cmd: &str) {
+    assert!(
+        reaches_pattern_table(cmd),
+        "[{name}] shell compression never hands {cmd:?} to the pattern table"
+    );
+}
 
 fn assert_pattern(name: &str, cmd: &str, output: &str) {
+    assert_reaches_pattern_table(name, cmd);
     let result = try_specific_pattern(cmd, output);
     let compressed = result
         .unwrap_or_else(|| panic!("[{name}] try_specific_pattern({cmd:?}, ...) returned None"));
@@ -15,6 +27,7 @@ fn assert_pattern(name: &str, cmd: &str, output: &str) {
 }
 
 fn assert_pipeline(name: &str, cmd: &str, output: &str) {
+    assert_reaches_pattern_table(name, cmd);
     let result = compress_output(cmd, output);
     let compressed =
         result.unwrap_or_else(|| panic!("[{name}] compress_output({cmd:?}, ...) returned None"));
@@ -142,34 +155,6 @@ fn pattern_glab_mr_list() {
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
-fn pattern_cargo_test() {
-    assert_pattern(
-        "cargo_test",
-        "cargo test",
-        "   Compiling myapp v0.1.0 (/home/user/myapp)\n\
-            Finished `test` profile [unoptimized + debuginfo] target(s) in 2.34s\n\
-              Running unittests src/lib.rs (target/debug/deps/myapp-abc123)\n\n\
-         running 15 tests\n\
-         test auth::tests::login_ok ... ok\n\
-         test auth::tests::login_fail ... ok\n\
-         test auth::tests::refresh_token ... ok\n\
-         test db::tests::connect ... ok\n\
-         test db::tests::migrate ... ok\n\
-         test db::tests::query_users ... ok\n\
-         test api::tests::health ... ok\n\
-         test api::tests::create_user ... ok\n\
-         test api::tests::delete_user ... ok\n\
-         test api::tests::list_users ... ok\n\
-         test cache::tests::set_get ... ok\n\
-         test cache::tests::expire ... ok\n\
-         test cache::tests::evict ... ok\n\
-         test config::tests::load ... ok\n\
-         test config::tests::validate ... ok\n\n\
-         test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.45s\n",
-    );
-}
-
-#[test]
 fn pattern_cargo_build() {
     assert_pattern(
         "cargo_build",
@@ -226,21 +211,8 @@ fn pattern_docker_build() {
     );
 }
 
-#[test]
-fn pattern_docker_ps() {
-    assert_pattern(
-        "docker_ps",
-        "docker ps",
-        "CONTAINER ID   IMAGE          COMMAND                  CREATED        STATUS        PORTS                    NAMES\n\
-         abc1234def56   nginx:latest   \"/docker-entrypoint.…\"   3 days ago     Up 3 days     0.0.0.0:80->80/tcp       web\n\
-         789ghi012jkl   redis:7        \"docker-entrypoint.s…\"   7 days ago     Up 7 days     0.0.0.0:6379->6379/tcp   cache\n\
-         mno345pqr678   postgres:16    \"docker-entrypoint.s…\"   14 days ago    Up 14 days    0.0.0.0:5432->5432/tcp   db\n\
-         stu901vwx234   rabbitmq:3     \"docker-entrypoint.s…\"   30 days ago    Up 30 days    0.0.0.0:5672->5672/tcp   queue\n",
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// npm / pnpm / bun / deno
+// npm / pnpm
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -271,53 +243,8 @@ fn pattern_pnpm_install() {
     );
 }
 
-#[test]
-fn pattern_bun_test() {
-    assert_pattern(
-        "bun_test",
-        "bun test",
-        "bun test v1.0.0\n\n\
-         tests/auth.test.ts:\n\
-         \u{2713} login succeeds [2.34ms]\n\
-         \u{2713} logout clears session [1.23ms]\n\
-         \u{2713} register creates user [3.45ms]\n\n\
-         tests/api.test.ts:\n\
-         \u{2713} GET /health returns 200 [0.56ms]\n\
-         \u{2713} POST /users creates user [4.56ms]\n\
-         \u{2717} DELETE /users/:id returns 204 [1.23ms]\n\n\
-          5 pass\n\
-          1 fail\n\
-          6 expect() calls\n\
-         Ran 6 tests across 2 files [52.00ms]\n",
-    );
-}
-
-#[test]
-fn pattern_deno_test() {
-    assert_pattern(
-        "deno_test",
-        "deno test",
-        "running 8 tests from ./tests/auth_test.ts\n\
-         test login ... ok (15ms)\n\
-         test logout ... ok (8ms)\n\
-         test register ... ok (23ms)\n\
-         running 5 tests from ./tests/api_test.ts\n\
-         test health ... ok (5ms)\n\
-         test create ... ok (12ms)\n\
-         test delete ... FAILED (10ms)\n\
-         test update ... ok (8ms)\n\
-         test list ... ok (6ms)\n\n\
-          ERRORS \n\n\
-         delete => ./tests/api_test.ts:25:6\n\
-         error: AssertionError: Expected 204 but got 403\n\n\
-          FAILURES \n\n\
-         delete => ./tests/api_test.ts:25:6\n\n\
-         ok | 7 passed | 1 failed (120ms)\n",
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// pip / poetry / mypy / ruff / pytest
+// pip / poetry / mypy
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -384,71 +311,8 @@ fn pattern_mypy() {
     );
 }
 
-#[test]
-fn pattern_ruff() {
-    assert_pattern(
-        "ruff_check",
-        "ruff check src/",
-        "src/auth.py:3:1: F401 [*] `os` imported but unused\n\
-         src/auth.py:15:5: E712 Comparison to `True` should be `if cond:` or `if cond is True:`\n\
-         src/auth.py:22:1: F841 Local variable `result` is assigned to but never used\n\
-         src/db.py:8:1: E501 Line too long (120 > 88)\n\
-         src/db.py:22:5: W291 Trailing whitespace\n\
-         src/db.py:35:1: E302 Expected 2 blank lines after class or function definition, found 1\n\
-         src/api.py:1:1: I001 [*] Import block is un-sorted or un-formatted\n\
-         src/api.py:15:5: B006 Do not use mutable data structures for argument defaults\n\
-         src/api.py:28:1: E303 Too many blank lines (3)\n\
-         src/utils.py:10:5: B006 Do not use mutable data structures for argument defaults\n\
-         src/utils.py:18:9: SIM108 [*] Use ternary operator\n\
-         src/config.py:5:1: F811 Redefinition of unused `load` from line 3\n\
-         Found 12 errors.\n\
-         [*] 3 fixable with the `--fix` option.\n",
-    );
-}
-
-#[test]
-fn pattern_pytest() {
-    assert_pattern(
-        "pytest",
-        "pytest tests/ -v",
-        "============================= test session starts ==============================\n\
-         platform linux -- Python 3.12.0, pytest-8.0.0, pluggy-1.4.0\n\
-         rootdir: /home/user/project\n\
-         collected 20 items\n\n\
-         tests/test_auth.py::test_login PASSED                                   [  5%]\n\
-         tests/test_auth.py::test_logout PASSED                                  [ 10%]\n\
-         tests/test_auth.py::test_register PASSED                                [ 15%]\n\
-         tests/test_db.py::test_connect PASSED                                   [ 20%]\n\
-         tests/test_db.py::test_query PASSED                                     [ 25%]\n\
-         tests/test_db.py::test_migrate PASSED                                   [ 30%]\n\
-         tests/test_api.py::test_health PASSED                                   [ 35%]\n\
-         tests/test_api.py::test_create PASSED                                   [ 40%]\n\
-         tests/test_api.py::test_delete FAILED                                   [ 45%]\n\
-         tests/test_api.py::test_update PASSED                                   [ 50%]\n\
-         tests/test_cache.py::test_set PASSED                                    [ 55%]\n\
-         tests/test_cache.py::test_get PASSED                                    [ 60%]\n\
-         tests/test_cache.py::test_expire PASSED                                 [ 65%]\n\
-         tests/test_cache.py::test_evict PASSED                                  [ 70%]\n\
-         tests/test_config.py::test_load PASSED                                  [ 75%]\n\
-         tests/test_config.py::test_validate PASSED                              [ 80%]\n\
-         tests/test_config.py::test_defaults PASSED                              [ 85%]\n\
-         tests/test_utils.py::test_parse PASSED                                  [ 90%]\n\
-         tests/test_utils.py::test_format PASSED                                 [ 95%]\n\
-         tests/test_utils.py::test_sanitize PASSED                               [100%]\n\n\
-         =================================== FAILURES ===================================\n\
-         ________________________________ test_delete ___________________________________\n\n\
-             def test_delete():\n\
-         >       assert response.status_code == 204\n\
-         E       AssertionError: assert 403 == 204\n\n\
-         tests/test_api.py:45: AssertionError\n\
-         =========================== short test summary info ============================\n\
-         FAILED tests/test_api.py::test_delete - AssertionError: assert 403 == 204\n\
-         ========================= 19 passed, 1 failed in 2.34s =========================\n",
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// terraform / kubectl / helm
+// terraform / kubectl
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -498,83 +362,9 @@ fn pattern_kubectl_get_pods() {
     );
 }
 
-#[test]
-fn pattern_helm_list() {
-    assert_pattern(
-        "helm_list",
-        "helm list -A",
-        "NAME          \tNAMESPACE  \tREVISION\tUPDATED                                \tSTATUS  \tCHART              \tAPP VERSION\n\
-         cert-manager  \tcert-mgr   \t3       \t2024-01-15 10:23:45.123456 +0000 UTC   \tdeployed\tcert-manager-1.13.3\tv1.13.3    \n\
-         ingress-nginx \tingress    \t5       \t2024-02-20 14:30:00.000000 +0000 UTC   \tdeployed\tingress-nginx-4.9.0\t1.9.5      \n\
-         prometheus    \tmonitoring \t2       \t2024-03-01 09:00:00.000000 +0000 UTC   \tdeployed\tprometheus-25.8.0  \tv2.48.0    \n\
-         grafana       \tmonitoring \t4       \t2024-03-10 11:15:00.000000 +0000 UTC   \tdeployed\tgrafana-7.0.19     \t10.2.3     \n\
-         redis         \tdefault    \t1       \t2024-03-15 08:45:00.000000 +0000 UTC   \tdeployed\tredis-18.6.1       \t7.2.4      \n",
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// golang
+// prettier
 // ═══════════════════════════════════════════════════════════════════════
-
-#[test]
-fn pattern_go_test() {
-    assert_pattern(
-        "go_test",
-        "go test ./...",
-        "ok  \tmyapp/auth\t0.234s\n\
-         ok  \tmyapp/db  \t1.456s\n\
-         ok  \tmyapp/api \t0.789s\n\
-         ok  \tmyapp/cache\t0.123s\n\
-         --- FAIL: TestUserCreate (0.01s)\n\
-             user_test.go:45: expected status 201, got 400\n\
-         FAIL\tmyapp/handlers\t0.567s\n\
-         ok  \tmyapp/middleware\t0.234s\n\
-         ok  \tmyapp/config\t0.100s\n",
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// eslint / typescript / prettier
-// ═══════════════════════════════════════════════════════════════════════
-
-#[test]
-fn pattern_eslint() {
-    assert_pattern(
-        "eslint",
-        "eslint src/",
-        "\n/home/user/project/src/App.tsx\n\
-           3:1   warning  Unexpected console statement       no-console\n\
-           7:10  error    'unused' is defined but never used  no-unused-vars\n\
-          15:5   warning  Unexpected console statement       no-console\n\n\
-         /home/user/project/src/utils.ts\n\
-           1:1   error    Missing return type on function    @typescript-eslint/explicit-function-return-type\n\
-          12:3   warning  Unexpected any                     @typescript-eslint/no-explicit-any\n\
-          18:1   error    Prefer const over let              prefer-const\n\n\
-         /home/user/project/src/api.ts\n\
-           5:10  error    'axios' is not defined             no-undef\n\n\
-         \u{2716} 7 problems (4 errors, 3 warnings)\n\
-           1 error and 1 warning potentially fixable with the `--fix` option.\n",
-    );
-}
-
-#[test]
-fn pattern_typescript() {
-    assert_pattern(
-        "typescript",
-        "tsc --noEmit",
-        "src/App.tsx(12,5): error TS2322: Type 'string' is not assignable to type 'number'.\n\
-         src/App.tsx(25,10): error TS2345: Argument of type 'null' is not assignable to parameter of type 'User'.\n\
-         src/utils.ts(3,1): error TS7006: Parameter 'x' implicitly has an 'any' type.\n\
-         src/api.ts(15,3): error TS2304: Cannot find name 'Response'.\n\
-         src/types.ts(8,5): error TS2739: Type '{}' is missing the following properties from type 'Config': host, port\n\n\
-         Found 5 errors in 4 files.\n\n\
-         Errors  Files\n\
-              2  src/App.tsx\n\
-              1  src/utils.ts\n\
-              1  src/api.ts\n\
-              1  src/types.ts\n",
-    );
-}
 
 #[test]
 fn pattern_prettier() {
@@ -676,7 +466,7 @@ fn pattern_just() {
 fn pattern_playwright() {
     assert_pattern(
         "playwright",
-        "npx playwright test",
+        "playwright test",
         "\nRunning 12 tests using 4 workers\n\n\
            \u{2713}  1 [chromium] > tests/login.spec.ts:5:3 > should login (2.3s)\n\
            \u{2713}  2 [chromium] > tests/login.spec.ts:15:3 > should show error (1.2s)\n\
@@ -896,72 +686,14 @@ fn pattern_ansible_playbook() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// aws / psql / mysql / prisma
+// prisma
 // ═══════════════════════════════════════════════════════════════════════
-
-#[test]
-fn pattern_aws_ec2() {
-    assert_pattern(
-        "aws_ec2",
-        "aws ec2 describe-instances",
-        r#"{"Reservations":[{"Instances":[{"InstanceId":"i-abc123","InstanceType":"t3.micro","State":{"Name":"running"},"PublicIpAddress":"54.1.2.3","PrivateIpAddress":"10.0.1.5","Tags":[{"Key":"Name","Value":"web-1"}]},{"InstanceId":"i-def456","InstanceType":"t3.small","State":{"Name":"running"},"PublicIpAddress":"54.4.5.6","PrivateIpAddress":"10.0.1.6","Tags":[{"Key":"Name","Value":"web-2"}]},{"InstanceId":"i-ghi789","InstanceType":"m5.large","State":{"Name":"stopped"},"PrivateIpAddress":"10.0.2.10","Tags":[{"Key":"Name","Value":"worker-1"}]}]}]}"#,
-    );
-}
-
-#[test]
-fn pattern_psql() {
-    assert_pattern(
-        "psql_query",
-        "psql -c 'SELECT * FROM users'",
-        " id |   name    |        email         | role      | active | created_at\n\
-         ----+-----------+----------------------+-----------+--------+------------------------\n\
-           1 | Alice     | alice@example.com    | admin     | t      | 2024-01-15 10:23:45+00\n\
-           2 | Bob       | bob@example.com      | user      | t      | 2024-01-16 08:00:00+00\n\
-           3 | Charlie   | charlie@example.com  | user      | f      | 2024-01-17 12:30:00+00\n\
-           4 | Diana     | diana@example.com    | moderator | t      | 2024-01-18 09:15:00+00\n\
-           5 | Eve       | eve@example.com      | user      | t      | 2024-01-19 14:00:00+00\n\
-           6 | Frank     | frank@example.com    | user      | f      | 2024-01-20 06:00:00+00\n\
-           7 | Grace     | grace@example.com    | admin     | t      | 2024-01-21 11:45:00+00\n\
-           8 | Hank      | hank@example.com     | user      | t      | 2024-01-22 15:30:00+00\n\
-           9 | Irene     | irene@example.com    | user      | t      | 2024-01-23 09:00:00+00\n\
-          10 | Jack      | jack@example.com     | moderator | t      | 2024-01-24 13:15:00+00\n\
-         (10 rows)\n",
-    );
-}
-
-#[test]
-fn pattern_mysql() {
-    assert_pattern(
-        "mysql_query",
-        "mysql -e 'SHOW TABLES'",
-        "+-------------------+\n\
-         | Tables_in_mydb    |\n\
-         +-------------------+\n\
-         | users             |\n\
-         | posts             |\n\
-         | comments          |\n\
-         | categories        |\n\
-         | tags              |\n\
-         | post_tags         |\n\
-         | sessions          |\n\
-         | migrations        |\n\
-         | audit_logs        |\n\
-         | permissions       |\n\
-         | roles             |\n\
-         | role_permissions  |\n\
-         | user_roles        |\n\
-         | api_tokens        |\n\
-         | rate_limits       |\n\
-         +-------------------+\n\
-         15 rows in set (0.00 sec)\n",
-    );
-}
 
 #[test]
 fn pattern_prisma_migrate() {
     assert_pattern(
         "prisma_migrate",
-        "npx prisma migrate dev",
+        "prisma migrate dev",
         "Environment variables loaded from .env\n\
          Prisma schema loaded from prisma/schema.prisma\n\
          Datasource \"db\": PostgreSQL database \"mydb\", schema \"public\" at \"localhost:5432\"\n\n\
@@ -982,7 +714,7 @@ fn pattern_prisma_migrate() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// composer / artisan / mix
+// composer / artisan
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -1031,22 +763,8 @@ fn pattern_artisan() {
     );
 }
 
-#[test]
-fn pattern_mix_test() {
-    assert_pattern(
-        "mix_test",
-        "mix test",
-        "Compiling 3 files (.ex)\n\
-         Generated myapp app\n\
-         ....\n\n\
-         Finished in 0.8 seconds (0.3s async, 0.5s sync)\n\
-         4 tests, 0 failures\n\n\
-         Randomized with seed 12345\n",
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// grep / find / fd / ls / curl / wget / env
+// grep
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]
@@ -1076,145 +794,8 @@ fn pattern_grep() {
     assert_pattern("grep_search", "grep -rn TODO src/", &lines);
 }
 
-#[test]
-fn pattern_find() {
-    assert_pattern(
-        "find",
-        "find src/ -name '*.rs'",
-        "src/main.rs\n\
-         src/lib.rs\n\
-         src/config.rs\n\
-         src/utils.rs\n\
-         src/api/mod.rs\n\
-         src/api/handlers.rs\n\
-         src/api/middleware.rs\n\
-         src/api/routes.rs\n\
-         src/api/auth.rs\n\
-         src/db/mod.rs\n\
-         src/db/models.rs\n\
-         src/db/migrations.rs\n\
-         src/db/pool.rs\n\
-         src/db/schema.rs\n\
-         src/auth/mod.rs\n\
-         src/auth/jwt.rs\n\
-         src/auth/oauth.rs\n\
-         src/auth/session.rs\n\
-         src/cache/mod.rs\n\
-         src/cache/redis.rs\n\
-         src/cache/memory.rs\n\
-         src/cache/policy.rs\n\
-         src/core/mod.rs\n\
-         src/core/engine.rs\n\
-         src/core/parser.rs\n",
-    );
-}
-
-#[test]
-fn pattern_fd() {
-    assert_pattern(
-        "fd_search",
-        "fd '.rs$' src/",
-        "src/main.rs\n\
-         src/lib.rs\n\
-         src/config.rs\n\
-         src/utils.rs\n\
-         src/api/mod.rs\n\
-         src/api/handlers.rs\n\
-         src/api/middleware.rs\n\
-         src/api/routes.rs\n\
-         src/db/mod.rs\n\
-         src/db/models.rs\n\
-         src/db/migrations.rs\n\
-         src/db/pool.rs\n\
-         src/auth/mod.rs\n\
-         src/auth/jwt.rs\n\
-         src/auth/oauth.rs\n\
-         src/cache/mod.rs\n\
-         src/cache/redis.rs\n\
-         src/cache/memory.rs\n",
-    );
-}
-
-#[test]
-fn pattern_ls() {
-    assert_pattern(
-        "ls",
-        "ls -la",
-        "total 128\n\
-         drwxr-xr-x  12 user user  384 Jan 15 10:23 .\n\
-         drwxr-xr-x   5 user user  160 Jan 10 08:00 ..\n\
-         drwxr-xr-x   8 user user  256 Jan 15 10:23 .git\n\
-         -rw-r--r--   1 user user   45 Jan 15 10:23 .gitignore\n\
-         -rw-r--r--   1 user user  234 Jan 14 09:00 Cargo.toml\n\
-         -rw-r--r--   1 user user 1234 Jan 14 09:00 Cargo.lock\n\
-         -rw-r--r--   1 user user  567 Jan 13 12:30 README.md\n\
-         drwxr-xr-x   4 user user  128 Jan 15 10:23 src\n\
-         drwxr-xr-x   3 user user   96 Jan 12 14:00 tests\n\
-         drwxr-xr-x   2 user user   64 Jan 11 11:00 benches\n\
-         -rw-r--r--   1 user user  890 Jan 10 08:00 LICENSE\n\
-         drwxr-xr-x   2 user user   64 Jan 15 10:23 target\n",
-    );
-}
-
-#[test]
-fn pattern_curl() {
-    assert_pattern(
-        "curl",
-        "curl https://api.example.com/users",
-        r#"{"users":[{"id":1,"name":"Alice","email":"alice@example.com","role":"admin"},{"id":2,"name":"Bob","email":"bob@example.com","role":"user"},{"id":3,"name":"Charlie","email":"charlie@example.com","role":"user"},{"id":4,"name":"Diana","email":"diana@example.com","role":"mod"},{"id":5,"name":"Eve","email":"eve@example.com","role":"user"}],"total":5,"page":1}"#,
-    );
-}
-
-#[test]
-fn pattern_wget() {
-    assert_pattern(
-        "wget",
-        "wget https://example.com/data.tar.gz",
-        "--2024-01-15 10:23:45--  https://example.com/data.tar.gz\n\
-         Resolving example.com (example.com)... 93.184.216.34\n\
-         Connecting to example.com (example.com)|93.184.216.34|:443... connected.\n\
-         HTTP request sent, awaiting response... 200 OK\n\
-         Length: 10485760 (10M) [application/gzip]\n\
-         Saving to: 'data.tar.gz'\n\n\
-         data.tar.gz         100%[===================>]  10.00M  5.23MB/s    in 1.9s\n\n\
-         2024-01-15 10:23:47 (5.23 MB/s) - 'data.tar.gz' saved [10485760/10485760]\n",
-    );
-}
-
-#[test]
-fn pattern_env() {
-    assert_pattern(
-        "env_filter",
-        "env",
-        "HOME=/home/user\n\
-         USER=user\n\
-         SHELL=/bin/bash\n\
-         PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin\n\
-         LANG=en_US.UTF-8\n\
-         TERM=xterm-256color\n\
-         EDITOR=vim\n\
-         DISPLAY=:0\n\
-         XDG_SESSION_TYPE=x11\n\
-         XDG_RUNTIME_DIR=/run/user/1000\n\
-         DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\n\
-         SSH_AUTH_SOCK=/tmp/ssh-abc123/agent.1234\n\
-         GPG_AGENT_INFO=/tmp/gpg-def456/S.gpg-agent:1:1\n\
-         DOCKER_HOST=unix:///var/run/docker.sock\n\
-         GOPATH=/home/user/go\n\
-         CARGO_HOME=/home/user/.cargo\n\
-         RUSTUP_HOME=/home/user/.rustup\n\
-         NVM_DIR=/home/user/.nvm\n\
-         NODE_VERSION=20.11.0\n\
-         PYTHON_VERSION=3.12.0\n\
-         VIRTUAL_ENV=/home/user/project/.venv\n\
-         CONDA_DEFAULT_ENV=base\n\
-         AWS_PROFILE=production\n\
-         KUBECONFIG=/home/user/.kube/config\n",
-    );
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// systemd / composer / sysinfo
+// systemd
 // ═══════════════════════════════════════════════════════════════════════
 
 #[test]

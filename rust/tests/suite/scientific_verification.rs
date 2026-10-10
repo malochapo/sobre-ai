@@ -1,19 +1,11 @@
+//! Properties of the scoring functions behind compression: the Kolmogorov
+//! proxy, the information-bottleneck budget and filter, and the safeguard that
+//! refuses over-compression.
+
 use sobre::core::entropy::kolmogorov_proxy;
 
 // ═══════════════════════════════════════════════════════════════════
-// 1. SHANNON ENTROPY — mathematical invariants
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 2. NORMALIZED ENTROPY — must be in [0, 1]
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 3. TOKEN ENTROPY vs CHARACTER ENTROPY — relationship
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 4. KOLMOGOROV PROXY — mathematical properties
+// 1. KOLMOGOROV PROXY — mathematical properties
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -54,23 +46,7 @@ fn kolmogorov_invariant_under_repetition() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 5. JACCARD SIMILARITY — metric space axioms
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 7. COMBINED ATTENTION — geometric mean properties
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 8. ATTENTION EFFICIENCY — percentage bounds
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 9. SYMBOL MAP ROI — break-even analysis
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 10. INFORMATION BOTTLENECK — task relevance filtering
+// 2. INFORMATION BOTTLENECK — task relevance filtering
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -102,8 +78,8 @@ fn ib_filter_preserves_task_relevant_lines() {
 }
 
 #[test]
-fn ib_filter_reduces_more_for_repetitive_content() {
-    use sobre::core::task_relevance::{adaptive_ib_budget, information_bottleneck_filter};
+fn ib_budget_is_lower_for_repetitive_content() {
+    use sobre::core::task_relevance::adaptive_ib_budget;
 
     let repetitive = "let x = compute(a);\n".repeat(100);
     let diverse = (0..100).fold(String::new(), |mut s, i| {
@@ -119,22 +95,10 @@ fn ib_filter_reduces_more_for_repetitive_content() {
         budget_rep < budget_div,
         "repetitive content should get lower IB budget: {budget_rep:.3} < {budget_div:.3}"
     );
-
-    let kw = vec!["compute".to_string()];
-    let filtered_rep = information_bottleneck_filter(&repetitive, &kw, 0.3, &[]);
-    let filtered_div = information_bottleneck_filter(&diverse, &kw, 0.3, &[]);
-
-    eprintln!(
-        "[IB adaptive] repetitive: {}→{} lines, diverse: {}→{} lines",
-        100,
-        filtered_rep.lines().count(),
-        100,
-        filtered_div.lines().count()
-    );
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 11. SAFEGUARD RATIO — rate-distortion boundary
+// 3. SAFEGUARD RATIO — rate-distortion boundary
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -160,11 +124,3 @@ fn safeguard_allows_good_compression() {
         "safeguard must allow reasonable compression"
     );
 }
-
-// ═══════════════════════════════════════════════════════════════════
-// 12. COST MODEL — economic sanity checks
-// ═══════════════════════════════════════════════════════════════════
-
-// ═══════════════════════════════════════════════════════════════════
-// 13. INTEGRATED SCIENTIFIC AUDIT
-// ═══════════════════════════════════════════════════════════════════

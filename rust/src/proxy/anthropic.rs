@@ -54,8 +54,7 @@ pub(super) fn compress_request_body(
         // Never rewrite content the client has marked with `cache_control`:
         // pruning inside the already-cached prefix invalidates Anthropic's
         // prompt cache from the first changed message. Pruning therefore
-        // starts after the last breakpoint; with no breakpoint this is 0, i.e.
-        // the previous behaviour.
+        // starts after the last breakpoint (0 when there is none).
         modified |=
             super::history_prune::prune_history_range(messages, cached, boundary, &tool_names);
 
@@ -182,7 +181,8 @@ mod tests {
     #[test]
     fn forge_shell_tool_result_compresses() {
         // A vendor-prefixed foreign shell tool reaches the proxy; its log output
-        // must still be compressed (rtk/sobre_* never see another server's tools).
+        // must still be compressed (sobre's own tools never see another
+        // server's tools).
         let body = forge_log_body("forge_shell");
         let bytes = serde_json::to_vec(&body).unwrap();
         let (_out, orig, comp) = compress_request_body(body, bytes.len());
@@ -378,9 +378,8 @@ mod tests {
 
     #[test]
     fn cache_aligner_measures_without_mutating_body() {
-        // The volatile-field scan is telemetry-only — it is on and must leave
-        // the request byte-identical (measurement, not a rewrite), even on a
-        // volatile-field-rich system prompt.
+        // The volatile-field scan only measures: it must leave the request
+        // byte-identical, even on a volatile-field-rich system prompt.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let body = serde_json::json!({
             "model": "claude-opus-4-8",
@@ -391,7 +390,7 @@ mod tests {
         let (out, _o, _c) = compress_request_body(body, bytes.len());
         assert_eq!(
             out, bytes,
-            "cache-aligner telemetry must never mutate the request body"
+            "the cache-aligner scan must never mutate the request body"
         );
     }
 

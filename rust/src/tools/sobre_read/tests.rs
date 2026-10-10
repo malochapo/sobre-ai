@@ -550,7 +550,7 @@ fn aggressive_json_uses_lossless_crush_core() {
     );
 
     assert!(
-        out.contains("_lc_crush"),
+        out.contains("_sobre_crush"),
         "aggressive json must compact via the crush core: {out}"
     );
     assert!(
@@ -1007,7 +1007,7 @@ fn full_read_never_inflates_tiny_file() {
 
 #[test]
 fn auto_read_still_compresses_large_file() {
-    // Isolate learning state so the resolver falls through to the size
+    // Isolate the data dir so the resolver falls through to the size
     // heuristic (large code file → map), proving the guard never blocks a
     // genuine compression win.
     let _iso = crate::core::data_dir::isolated_data_dir();
@@ -1269,4 +1269,32 @@ fn read_line_window_streams_only_the_requested_span() {
     assert_eq!(window.start, 10);
     assert_eq!(window.end, 12);
     assert_eq!(window.body, "line 10\nline 11\nline 12");
+}
+
+/// When the quality gate rejects a density compression, the whole file
+/// comes back and the header says so instead of reporting the rejected
+/// attempt's kept-line counts.
+#[test]
+fn a_density_read_rejected_by_the_gate_says_it_is_the_full_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("lib.rs");
+    let body = (0..40)
+        .map(|i| {
+            format!("pub fn compute_value_{i}(input: u64) -> u64 {{\n    input * {i} + {i}\n}}\n")
+        })
+        .collect::<Vec<_>>()
+        .concat();
+    std::fs::write(&path, &body).unwrap();
+    let p = path.to_string_lossy().to_string();
+    let mut cache = SessionCache::new();
+    let out = handle_with_task_resolved(&mut cache, &p, "density:0.10", CrpMode::Off, None);
+    let header = out.content.lines().next().unwrap_or_default();
+    let full = body.lines().all(|line| out.content.contains(line));
+    assert!(
+        full,
+        "the gate is expected to reject this one:\n{}",
+        out.content
+    );
+    assert!(header.contains("rejected"), "{header}");
+    assert!(!header.contains("kept"), "{header}");
 }

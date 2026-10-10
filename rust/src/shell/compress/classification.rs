@@ -85,7 +85,7 @@ pub fn has_structural_output(command: &str) -> bool {
 /// never applies terse dictionaries. This is the correct middle tier: verbatim
 /// wastes tokens, terse corrupts source identifiers.
 fn is_source_search(command: &str) -> bool {
-    is_grep_binary(first_binary(command))
+    is_grep_binary(&first_binary(command))
         || is_source_search_pipe_tail(command)
         || is_source_search_compound_tail(command)
 }
@@ -102,7 +102,7 @@ fn is_source_search_pipe_tail(command: &str) -> bool {
         return false;
     }
     let last = command.rsplit('|').next().unwrap_or("").trim();
-    !last.is_empty() && is_grep_binary(first_binary(last))
+    !last.is_empty() && is_grep_binary(&first_binary(last))
 }
 
 fn is_source_search_compound_tail(command: &str) -> bool {
@@ -116,7 +116,7 @@ fn is_source_search_compound_tail(command: &str) -> bool {
     if last.is_empty() || last == command.trim() {
         return false;
     }
-    is_grep_binary(first_binary(last))
+    is_grep_binary(&first_binary(last))
 }
 
 /// Returns true for commands where the output IS the purpose of the command.
@@ -194,7 +194,7 @@ fn is_cli_api_data_command(command: &str) -> bool {
     // Stripe, Twilio, Vercel, Netlify, Fly, Railway, Supabase CLIs
     let first = first_binary(command);
     if matches!(
-        first,
+        first.as_str(),
         "stripe" | "twilio" | "vercel" | "netlify" | "flyctl" | "fly" | "railway" | "supabase"
     ) && (cl.contains(" list")
         || cl.contains(" get")
@@ -264,19 +264,19 @@ fn is_verbatim_compound_tail(command: &str) -> bool {
 fn is_http_client(command: &str) -> bool {
     let first = first_binary(command);
     matches!(
-        first,
+        first.as_str(),
         "curl" | "wget" | "http" | "https" | "xh" | "curlie" | "grpcurl" | "grpc_cli"
     )
 }
 
 fn is_file_viewer(command: &str) -> bool {
     let first = first_binary(command);
-    match first {
+    match first.as_str() {
         "cat" | "bat" | "batcat" | "pygmentize" | "highlight" => true,
         // Grep-family routes to `has_structural_output` via
         // `is_source_search` — the dedicated `patterns::grep` compressor
         // handles them dictionary-free. NOT in is_file_viewer.
-        "head" | "tail" => !command.contains("-f") && !command.contains("--follow"),
+        "head" | "tail" => !follows(command, &['f', 'F']),
         // sed/awk are commonly used as range/pattern file viewers
         // (`sed -n '10,50p' file`, `awk '{print}' file`). Their stdout
         // is file payload and must never enter the generic terse pipeline —
@@ -314,7 +314,7 @@ fn has_in_place_flag(command: &str) -> bool {
 fn is_data_format_tool(command: &str) -> bool {
     let first = first_binary(command);
     matches!(
-        first,
+        first.as_str(),
         "jq" | "yq"
             | "xq"
             | "fx"
@@ -333,7 +333,10 @@ fn is_data_format_tool(command: &str) -> bool {
 
 fn is_binary_viewer(command: &str) -> bool {
     let first = first_binary(command);
-    matches!(first, "xxd" | "hexdump" | "od" | "strings" | "file")
+    matches!(
+        first.as_str(),
+        "xxd" | "hexdump" | "od" | "strings" | "file"
+    )
 }
 
 fn is_infra_inspection(command: &str) -> bool {
@@ -382,7 +385,7 @@ fn is_crypto_command(command: &str) -> bool {
     if first == "openssl" {
         return true;
     }
-    matches!(first, "gpg" | "age" | "ssh-keygen" | "certutil")
+    matches!(first.as_str(), "gpg" | "age" | "ssh-keygen" | "certutil")
 }
 
 fn is_database_query(command: &str) -> bool {
@@ -408,7 +411,7 @@ fn is_database_query(command: &str) -> bool {
 fn is_dns_network_inspection(command: &str) -> bool {
     let first = first_binary(command);
     matches!(
-        first,
+        first.as_str(),
         "dig" | "nslookup" | "host" | "whois" | "drill" | "resolvectl"
     )
 }
@@ -444,7 +447,7 @@ fn is_container_listing(command: &str) -> bool {
 fn is_file_listing(command: &str) -> bool {
     let first = first_binary(command);
     matches!(
-        first,
+        first.as_str(),
         "find" | "fd" | "fdfind" | "ls" | "exa" | "eza" | "lsd"
     )
 }
@@ -452,7 +455,7 @@ fn is_file_listing(command: &str) -> bool {
 fn is_system_query(command: &str) -> bool {
     let first = first_binary(command);
     matches!(
-        first,
+        first.as_str(),
         "stat"
             | "wc"
             | "du"
@@ -621,22 +624,38 @@ fn is_config_viewer(command: &str) -> bool {
 
 fn is_log_viewer(command: &str) -> bool {
     let cl = command.trim().to_ascii_lowercase();
-    if cl.starts_with("journalctl") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("journalctl") && !follows(&cl, &['f']) {
         return true;
     }
-    if cl.starts_with("dmesg") && !cl.contains("-w") && !cl.contains("--follow") {
+    if cl.starts_with("dmesg") && !follows(&cl, &['w']) {
         return true;
     }
-    if cl.starts_with("docker logs") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("docker logs") && !follows(&cl, &['f']) {
         return true;
     }
-    if cl.starts_with("kubectl logs") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("kubectl logs") && !follows(&cl, &['f']) {
         return true;
     }
-    if cl.starts_with("docker compose logs") && !cl.contains("-f") && !cl.contains("--follow") {
+    if cl.starts_with("docker compose logs") && !follows(&cl, &['f']) {
         return true;
     }
     false
+}
+
+/// True when `command` asks to keep streaming: a `--follow` word, or a
+/// short-flag word (`-f`, `-fn`, `-xef`) holding one of `short`. An `f` in a
+/// file name or in another flag (`--file=`, `short-full`) does not count.
+fn follows(command: &str, short: &[char]) -> bool {
+    command.split_whitespace().any(|word| {
+        if let Some(long) = word.strip_prefix("--") {
+            return long == "follow" || long.starts_with("follow=");
+        }
+        word.strip_prefix('-').is_some_and(|flags| {
+            !flags.is_empty()
+                && flags.chars().all(|c| c.is_ascii_alphanumeric())
+                && flags.chars().any(|c| short.contains(&c))
+        })
+    })
 }
 
 fn is_archive_listing(command: &str) -> bool {
@@ -648,14 +667,14 @@ fn is_archive_listing(command: &str) -> bool {
         return true;
     }
     let first = first_binary(command);
-    matches!(first, "zipinfo" | "lsar" | "7z" if cl.contains(" l ") || cl.contains(" l\t"))
+    matches!(first.as_str(), "zipinfo" | "lsar" | "7z" if cl.contains(" l ") || cl.contains(" l\t"))
         || first == "zipinfo"
         || first == "lsar"
 }
 
 fn is_clipboard_tool(command: &str) -> bool {
     let first = first_binary(command);
-    if matches!(first, "pbpaste" | "wl-paste") {
+    if matches!(first.as_str(), "pbpaste" | "wl-paste") {
         return true;
     }
     let cl = command.trim().to_ascii_lowercase();
@@ -763,13 +782,22 @@ fn is_task_dry_run(command: &str) -> bool {
 
 fn is_env_dump(command: &str) -> bool {
     let first = first_binary(command);
-    matches!(first, "env" | "printenv" | "set" | "export" | "locale")
+    matches!(
+        first.as_str(),
+        "env" | "printenv" | "set" | "export" | "locale"
+    )
 }
 
-/// Extracts the binary name (basename, no path) from the first token of a command.
-fn first_binary(command: &str) -> &str {
+/// The binary name of a command's first token: its basename, lowercased. A
+/// case-insensitive file system (macOS, Windows) runs `CURL` as `curl`, and
+/// the pattern table matches commands in any case, so the policy does too.
+fn first_binary(command: &str) -> String {
     let first = command.split_whitespace().next().unwrap_or("");
-    first.rsplit('/').next().unwrap_or(first)
+    first
+        .rsplit('/')
+        .next()
+        .unwrap_or(first)
+        .to_ascii_lowercase()
 }
 
 /// Non-git diff tools: `diff`, `colordiff`, `icdiff`, `delta`.
@@ -1011,5 +1039,55 @@ mod verbatim_classification_tests {
     #[test]
     fn non_viewer_compound_not_verbatim() {
         assert!(!is_verbatim_output("cd /repo && cargo build"));
+    }
+
+    /// A command name matches in any case: a case-insensitive file system
+    /// (macOS, Windows) runs `CURL` as `curl`, and the pattern table matches
+    /// commands case-insensitively too.
+    #[test]
+    fn a_command_name_matches_in_any_case() {
+        for cmd in [
+            "CURL https://api.example.com/users",
+            "Wget https://example.com/data.tar.gz",
+            "Cat package.json",
+            "LS -la",
+            "Find src -name '*.rs'",
+            "FD rs src",
+            "ENV",
+            "Printenv HOME",
+            "JQ . data.json",
+        ] {
+            assert!(is_verbatim_output(cmd), "{cmd}");
+        }
+        assert!(has_structural_output("RG TODO src/"));
+    }
+
+    /// Only a follow flag makes a log or file viewer stream; an `-f` inside a
+    /// file name or another flag does not.
+    #[test]
+    fn a_follow_flag_is_a_word_not_a_substring() {
+        for cmd in [
+            "tail -n 50 app-frontend.log",
+            "head -20 my-file.txt",
+            "journalctl --file=/var/log/journal/system.journal",
+            "journalctl -u nginx -o short-full",
+            "dmesg --level=warn -T",
+            "kubectl logs my-pod --tail=100 -c side-feed",
+            "docker logs --since 1h web-frontend",
+        ] {
+            assert!(is_verbatim_output(cmd), "{cmd}");
+        }
+        for cmd in [
+            "tail -f app.log",
+            "tail -F app.log",
+            "tail -fn 100 app.log",
+            "journalctl -fu nginx",
+            "journalctl --follow",
+            "dmesg -w",
+            "kubectl logs -f my-pod",
+            "docker logs --follow web",
+        ] {
+            assert!(!is_verbatim_output(cmd), "{cmd}");
+        }
     }
 }

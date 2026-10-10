@@ -51,7 +51,7 @@ pub(crate) fn handle_remember(
         r
     }) {
         Ok(pair) => pair,
-        Err(e) => return format!("Remembered [{cat}] {k}: {v}\n(save failed: {e})"),
+        Err(e) => return format!("ERROR: [{cat}] {k} was not saved: {e}"),
     };
 
     // The contradiction (if any) only exists on the normal stored path.
@@ -147,10 +147,8 @@ pub(crate) fn handle_remember(
             // Serialize the embedding index's read-modify-write under the same
             // per-project lock as the fact write above, and compact against the
             // freshly committed on-disk knowledge instead of this call's
-            // snapshot. The side-car write previously ran lock-free against a
-            // stale snapshot, so parallel `remember` calls clobbered each
-            // other's vectors and pruned just-stored embeddings — semantic
-            // recall then returned far fewer hits than facts stored.
+            // snapshot, so parallel `remember` calls cannot clobber each
+            // other's vectors or prune just-stored embeddings.
             let (warn, semantic) = ProjectKnowledge::with_project_lock(project_root, || {
                 let mut idx = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                     &knowledge.project_hash,
@@ -285,8 +283,10 @@ pub(crate) fn handle_recall(
     mode: Option<&str>,
     as_of: Option<&str>,
 ) -> String {
-    let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
-        return "No knowledge stored for this project yet.".to_string();
+    let mut knowledge = match ProjectKnowledge::try_load(project_root) {
+        Ok(Some(knowledge)) => knowledge,
+        Ok(None) => return "No knowledge stored for this project yet.".to_string(),
+        Err(e) => return format!("ERROR: {e}"),
     };
     let policy = crate::core::memory_policy::MemoryPolicy::default();
 
@@ -588,10 +588,9 @@ pub(crate) fn rehydrate_from_archives(
     session_id: &str,
     policy: &MemoryPolicy,
 ) -> bool {
-    // Scan every *retained* archive: the reach now aligns with retention,
-    // so a recall miss can recover from any archive still on disk instead of only
-    // the newest few that the prior fixed cap left reachable.
+    // Every retained archive of this project, and only of this project.
     let archives = crate::core::memory_lifecycle::reachable_archives(
+        &knowledge.project_hash,
         &crate::core::memory_archive::ArchiveConfig::default(),
     );
     if archives.is_empty() {

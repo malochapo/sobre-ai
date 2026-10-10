@@ -1,9 +1,7 @@
 //! Resident line-search index for `sobre_search`.
 //!
-//! Historically `sobre_search` walked the filesystem, read every file, and ran a
-//! regex on every line on *every* call — `O(files × lines)`. That is the
-//! 40–200 ms latency floor this module eliminates.
-//!
+//! Without it, every search walks the filesystem, reads every file and runs
+//! the regex on every line — `O(files × lines)`, a 40–200 ms floor per call.
 //! This module keeps a RAM-resident trigram index (`trigram → file ids`) so the
 //! common case (an identifier / literal query) collapses to: intersect a few
 //! posting lists in memory → read & regex-verify only the handful of candidate
@@ -27,8 +25,6 @@
 //!   only when the signature matches live disk — so an edit, *even through a
 //!   tool sobre never observes* (native editors, `git checkout`), is
 //!   reflected on the very next search instead of lingering for a TTL window.
-//!   A push-based fs-watcher (zero per-lookup cost) is a possible future
-//!   optimization on top of this correctness gate.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -659,9 +655,9 @@ pub fn ensure_background(root: &str, respect_gitignore: bool) {
     }
 }
 
-/// Build the index synchronously and install it in the resident cache.
-/// Returns `true` on success. Useful for CLI prewarm and benchmarks that need a
-/// guaranteed-warm index. Respects the disable env var.
+/// Build the index synchronously and install it in the resident cache, for
+/// tests and benches that need a warm index. Returns `true` on success, and
+/// `false` when `respect_gitignore` is off: that walk never uses the index.
 #[cfg(any(test, feature = "test-support"))]
 pub fn warm_blocking(root: &str, respect_gitignore: bool) -> bool {
     if !respect_gitignore {

@@ -1,11 +1,7 @@
-//! Property Graph Engine — SQLite-backed code knowledge graph.
-//!
-//! Stores nodes (File, Symbol, Module) and edges (imports, calls, defines,
-//! exports) extracted by `deep_queries` + `import_resolver`.  Provides
-//! efficient traversal queries for impact analysis, architecture discovery,
-//! and graph-driven context loading.
+//! The code graph's store, in SQLite: file and symbol nodes, file edges
+//! (imports, modules, type uses, co-change, siblings) as the `graph_index`
+//! scan extracts them (`sync`), and the queries over them (`queries`).
 
-mod cross_source;
 mod edge;
 pub mod file_catalog;
 mod meta;
@@ -155,10 +151,6 @@ impl CodeGraph {
         edge::to_node(&self.conn, node_id)
     }
 
-    pub fn dependents(&self, file_path: &str) -> anyhow::Result<Vec<String>> {
-        queries::dependents(&self.conn, file_path)
-    }
-
     pub fn impact_analysis(
         &self,
         file_path: &str,
@@ -183,40 +175,8 @@ impl CodeGraph {
         edge::count(&self.conn)
     }
 
-    /// Persist a cross-source edge (code file ↔ external source URI) into the
-    /// dedicated `cross_source_edges` table. Keeps the higher weight on conflict
-    /// so repeated provider ingests don't downgrade an established link.
-    pub fn upsert_cross_source_edge(
-        &self,
-        from: &str,
-        to: &str,
-        kind: &str,
-        weight: f32,
-    ) -> anyhow::Result<()> {
-        cross_source::upsert(&self.conn, from, to, kind, weight)
-    }
-
-    /// All cross-source edges as `IndexEdge`s, ready for `cross_source_hints`.
-    pub fn all_cross_source_edges(&self) -> Vec<crate::core::graph_index::IndexEdge> {
-        cross_source::all(&self.conn).unwrap_or_default()
-    }
-
-    #[cfg(test)]
-    pub fn cross_source_edge_count(&self) -> anyhow::Result<usize> {
-        cross_source::count(&self.conn)
-    }
-
-    /// Delete every cross-source edge of a given `kind`. Used by the code-health
-    /// fabric to replace its `health_hotspot` edges on each pass so resolved
-    /// hotspots never persist as stale hints. Returns the number removed.
-    pub fn delete_cross_source_edges_by_kind(&self, kind: &str) -> anyhow::Result<usize> {
-        cross_source::delete_by_kind(&self.conn, kind)
-    }
-
-    /// Clear only the code graph (nodes, edges, file catalog), preserving
-    /// provider `cross_source_edges`. Used by the graph_index→PG mirror
-    /// so rebuilding the code graph never drops lateral provider hints, which
-    /// live in their own table and are repopulated on a separate ingest cycle.
+    /// Clear the code graph (nodes, edges, file catalog, paths) before the
+    /// graph_index→PG mirror rebuilds it.
     pub fn clear_code_graph(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
             "DELETE FROM edges; DELETE FROM nodes; DELETE FROM file_catalog; DELETE FROM paths;",
@@ -259,14 +219,13 @@ impl CodeGraph {
         node::symbol_count(&self.conn)
     }
 
-    /// Count of `file` nodes (accurate on both builder paths). Backed by
-    /// `node::file_count`.
+    /// Count of `file` nodes.
     pub fn file_node_count(&self) -> anyhow::Result<usize> {
         node::file_count(&self.conn)
     }
 
-    /// Every symbol node with its line span (unfiltered). Backend for the
-    /// call-graph symbol table after the `graph_index` teardown.
+    /// Every symbol node with its line span (unfiltered): the call graph's
+    /// symbol table.
     pub fn all_symbols(&self) -> anyhow::Result<Vec<Node>> {
         node::all_symbols(&self.conn)
     }
@@ -313,25 +272,6 @@ mod tests {
         let to_b = g.edges_to(b).unwrap();
         assert_eq!(to_b.len(), 1);
         assert_eq!(to_b[0].source_id, a);
-    }
-
-    #[test]
-    fn dependents_query() {
-        let g = test_graph();
-
-        let main = g.upsert_node(&Node::file("src/main.rs")).unwrap();
-        let lib = g.upsert_node(&Node::file("src/lib.rs")).unwrap();
-        let utils = g.upsert_node(&Node::file("src/utils.rs")).unwrap();
-
-        g.upsert_edge(&Edge::new(main, lib, EdgeKind::Imports))
-            .unwrap();
-        g.upsert_edge(&Edge::new(utils, lib, EdgeKind::Imports))
-            .unwrap();
-
-        let deps = g.dependents("src/lib.rs").unwrap();
-        assert_eq!(deps.len(), 2);
-        assert!(deps.contains(&"src/main.rs".to_string()));
-        assert!(deps.contains(&"src/utils.rs".to_string()));
     }
 
     #[test]
@@ -382,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn dependents_follow_references_not_heuristics() {
+    fn direct_impact_follows_references_not_heuristics() {
         let g = test_graph();
 
         let a = g.upsert_node(&Node::file("src/a.rs")).unwrap();
@@ -398,9 +338,49 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            g.dependents("src/a.rs").unwrap(),
+            g.impact_analysis("src/a.rs", 1).unwrap().affected_files,
             vec!["src/b.rs".to_string(), "src/c.rs".to_string()]
         );
+    }
+
+    /// A file reached by a weak path and a strong one is weighed by the strong
+    /// one, whichever comes first: the answer is the same on every run.
+    #[test]
+    #[allow(clippy::many_single_char_names)] // graph test nodes: t, x, y, z
+    fn impact_keeps_the_strongest_path() {
+        let g = test_graph();
+
+        let node = |p: &str| g.upsert_node(&Node::file(p)).unwrap();
+        let (t, weak, strong, x, y, z) = (
+            node("t.rs"),
+            node("weak.rs"),
+            node("strong.rs"),
+            node("x.rs"),
+            node("y.rs"),
+            node("z.rs"),
+        );
+        // t ← weak (type use), t ← strong (import), both ← x ← y ← z (type uses).
+        g.upsert_edge(&Edge::new(weak, t, EdgeKind::TypeRef))
+            .unwrap();
+        g.upsert_edge(&Edge::new(strong, t, EdgeKind::Imports))
+            .unwrap();
+        g.upsert_edge(&Edge::new(x, weak, EdgeKind::TypeRef))
+            .unwrap();
+        g.upsert_edge(&Edge::new(x, strong, EdgeKind::TypeRef))
+            .unwrap();
+        g.upsert_edge(&Edge::new(y, x, EdgeKind::TypeRef)).unwrap();
+        g.upsert_edge(&Edge::new(z, y, EdgeKind::TypeRef)).unwrap();
+
+        // Through `strong`, z keeps 1.0 · 0.5³ = 0.125 ≥ 0.1; through `weak`
+        // only 0.5⁴ = 0.0625.
+        for _ in 0..20 {
+            let impact = g.impact_analysis("t.rs", 5).unwrap();
+            assert_eq!(
+                impact.affected_files,
+                ["strong.rs", "weak.rs", "x.rs", "y.rs", "z.rs"]
+            );
+            assert_eq!(impact.max_depth_reached, 4);
+        }
     }
 
     #[test]
@@ -439,6 +419,23 @@ mod tests {
         let related = g.related_files("a.rs", 10).unwrap();
         let order: Vec<&str> = related.iter().map(|(p, _)| p.as_str()).collect();
         assert_eq!(order, vec!["b.rs", "c.rs", "d.rs"]);
+    }
+
+    #[test]
+    fn related_files_break_ties_by_path() {
+        let g = test_graph();
+
+        let a = g.upsert_node(&Node::file("a.rs")).unwrap();
+        for p in ["e.rs", "c.rs", "d.rs", "b.rs"] {
+            let n = g.upsert_node(&Node::file(p)).unwrap();
+            g.upsert_edge(&Edge::new(a, n, EdgeKind::Imports)).unwrap();
+        }
+
+        for _ in 0..20 {
+            let related = g.related_files("a.rs", 3).unwrap();
+            let order: Vec<&str> = related.iter().map(|(p, _)| p.as_str()).collect();
+            assert_eq!(order, ["b.rs", "c.rs", "d.rs"]);
+        }
     }
 
     #[test]

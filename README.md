@@ -3,29 +3,72 @@
 **Context tools for coding agents that run on your machine and nowhere else.**
 
 `sobre` sits between your coding agent and your repository. The agent asks for a
-file, a search or a shell command; `sobre` answers with the smallest output that
-still does the job — signatures instead of whole files, a compressed build log
-instead of ten thousand lines, a short stub instead of the same file read three
-times. Every output it changes says so, and the original stays reachable.
+file, a search or a shell command; `sobre` aims to answer with less: signatures
+instead of a whole file, a compressed build log instead of the full one, a
+one-line stub when the agent re-reads a file it already has. Every output it
+changes says so, and the original stays reachable.
 
 It works with Claude Code, Codex, Copilot CLI, Cursor, Gemini CLI, OpenCode,
 VS Code, Windsurf and Zed.
 
 ```bash
-tar xzf sobre-<target>.tar.gz -C ~/.local/bin   # a release binary, see Install
-sobre init                                      # connect every agent it finds
-sobre doctor                                    # check the wiring
+curl -fsSL https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.sh | sh
+sobre init    # connect every agent it finds
 ```
+
+On Windows, in PowerShell, the first line is
+`irm https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.ps1 | iex`.
 
 Then restart your agent.
 
 ## Install
 
-### A release binary
+On Linux and macOS:
 
-Each [release](https://github.com/malochapo/sobre-ai/releases) has two builds
-per platform. `sobre-dense-…` adds local embeddings (search by meaning); the
-other one does everything else.
+```bash
+curl -fsSL https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.ps1 | iex
+```
+
+The script picks the build for your platform from the latest
+[release](https://github.com/malochapo/sobre-ai/releases) (the newest
+pre-release while there is no release yet), checks it against the release's
+`SHA256SUMS`, and puts the binary in `~/.local/bin`, or on Windows in
+`%LOCALAPPDATA%\Programs\sobre`, which it adds to your user `PATH`. It
+downloads from GitHub only, and runs nothing but `sobre --version`: run
+`sobre init` next.
+
+| `install.sh` | `install.ps1` | |
+|---|---|---|
+| `--version v0.1.0-rc.1` | `-Version v0.1.0-rc.1` | install that release |
+| `--dense` | `-Dense` | the build with local embeddings (search by meaning) |
+| `--dir <path>` | `-Dir <path>` | install the binary there |
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.sh | sh -s -- --dense
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/malochapo/sobre-ai/main/install.ps1))) -Dense
+```
+
+To upgrade, run the same command again (see [Upgrade](#upgrade)). To remove
+sobre, run `sobre uninstall`: it removes what `init` wrote and sobre's data, then
+the binary itself (see [Uninstall](#uninstall)). On Windows it cannot delete
+the `sobre.exe` it runs from: afterwards, delete
+`%LOCALAPPDATA%\Programs\sobre` and remove it from your user `PATH`.
+
+### By hand
+
+Each release has two builds per platform; `sobre-dense-…` adds local
+embeddings. Each archive holds the binary, `LICENSE`, `NOTICE` and
+`THIRD-PARTY-LICENSES.txt`. `SHA256SUMS` lists every file's checksum:
+`sha256sum --check --ignore-missing SHA256SUMS`.
 
 | Platform | Without embeddings | With embeddings |
 |---|---|---|
@@ -35,66 +78,43 @@ other one does everything else.
 | macOS Intel | `sobre-x86_64-apple-darwin.tar.gz` | none (see [Platform notes](#platform-notes)) |
 | Windows x64 | `sobre-x86_64-pc-windows-msvc.zip` | `sobre-dense-x86_64-pc-windows-msvc.zip` |
 
-`SHA256SUMS` lists every file's checksum:
-`sha256sum --check --ignore-missing SHA256SUMS`.
-
-Each archive holds the one binary. Put it in a directory on your `PATH` that it
-will stay in:
-
 ```bash
 mkdir -p ~/.local/bin
-tar xzf sobre-aarch64-apple-darwin.tar.gz -C ~/.local/bin
+tar xzf sobre-aarch64-apple-darwin.tar.gz -C ~/.local/bin sobre
 ```
 
 On Windows, unzip `sobre.exe` into a folder on your `PATH`.
 
+`init` writes the binary's absolute path into every agent's configuration, so
+put the binary where it will stay first. If you move it, run
+`sobre doctor --fix` from the new location.
+
 ### From source
 
-You need [rustup](https://rustup.rs) — a distribution's own `cargo` ignores the
-toolchain pinned in `rust/rust-toolchain.toml` — and a C compiler: the Xcode
+You need [rustup](https://rustup.rs) (a distribution's own `cargo` ignores the
+toolchain pinned in `rust/rust-toolchain.toml`) and a C compiler: the Xcode
 Command Line Tools on macOS, `build-essential` on Debian and Ubuntu, the Visual
 Studio Build Tools on Windows. A release build takes several minutes.
 
 ```bash
 git clone https://github.com/malochapo/sobre-ai
 cd sobre-ai
-make install        # installs ~/.local/bin/sobre
+make install        # installs ~/.local/bin/sobre, without embeddings
 ```
 
-Add `~/.local/bin` to your `PATH` if it is not there. `make install` builds
-without embeddings; with them, or on Windows where there is no `make`, run cargo
-from `rust/` so rustup picks up the pinned toolchain:
+Add `~/.local/bin` to your `PATH` if it is not there. With embeddings, or on
+Windows where there is no `make`, run cargo from `rust/` so rustup picks up the
+pinned toolchain:
 
 ```bash
 cd rust
 cargo install --path . --locked --root ~/.local --features dense
 ```
 
-### Install before you connect
+## The rules
 
-`init` writes the binary's absolute path into every agent's configuration. Put
-the binary where it will stay first: a binary run from `rust/target/release`
-breaks every agent at the next `cargo clean`. If you move it, run
-`sobre doctor --fix` from the new location.
-
-## What it is not
-
-`sobre` is a reduced hard fork of [lean-ctx](https://github.com/yvgude/lean-ctx)
-by Yves Gugger (Apache-2.0). lean-ctx is a broader product: hosted plans, team
-servers, shared indexes, an addon marketplace, a plugin system. Those are real
-features and they are not defects — they are simply not what this fork is for.
-
-`sobre` keeps one shape: **one machine, one person, one config file.** Anything
-that only makes sense with a second user, a second machine or a paid tier has
-been removed. If you want the full product, use lean-ctx.
-
-See [FORK.md](FORK.md) for the statement of changes required by Apache-2.0, and
-[NOTICE](NOTICE) for attribution.
-
-## The rules this fork holds itself to
-
-These are enforced, not aspirational — see [INVARIANTS.md](INVARIANTS.md) for
-the measured state of each.
+`sobre` has one shape: **one machine, one person, one config file.**
+[INVARIANTS.md](INVARIANTS.md) states each rule in full.
 
 1. **A small tool surface.** At most 20 MCP tools, and no universal invoker that
    smuggles the rest back in behind one name.
@@ -109,11 +129,10 @@ the measured state of each.
 6. **Use what exists.** What a maintained library already does, `sobre` uses
    rather than rewrites, copies or vendors.
 
-The first five hold today: 15 tools, one fixed surface per build; one config
-file with 11 keys and no per-project files, profiles or behaviour-changing
-environment variables; no network request you did not ask for; and no gate,
-approval or hidden transform of sobre's own. The code written before the sixth
-is being brought in line; issue #69 lists it.
+Today: 15 tools, one fixed surface per build; one config file with 11 keys and
+no per-project files, profiles or behaviour-changing environment variables; no
+network request you did not ask for; and no gate, approval or hidden transform
+of sobre's own. Issue #69 lists the code that does not yet meet the sixth rule.
 
 ## Connect agents
 
@@ -124,11 +143,11 @@ sobre init claude        # one agent: claude, codex, copilot, cursor, gemini,
 sobre init --check       # what init would change; writes nothing
 ```
 
-Run with no agent named, in a terminal, `init` asks two questions:
+Run with no agent named, in a terminal, `init` asks up to two questions:
 
-- whether to turn on the local [proxy](#proxy);
-- in a build with embeddings, whether to download ONNX Runtime and the
-  embedding model now (about 120 MB).
+- whether to turn on the local [proxy](#proxy), until you have answered once;
+- in a build with embeddings, while they are missing, whether to download ONNX
+  Runtime and the embedding model now (about 120 MB).
 
 Then restart the agent, or reload its MCP servers, so it starts `sobre`.
 
@@ -140,18 +159,19 @@ writes nothing into your shell rc files or your own instruction files
 tools from the MCP server instructions, and from the skill when it opens it.
 
 The first time `sobre` edits an existing file, it copies it to
-`<file>.sobre.bak` next to it; `uninstall` restores from that copy. A file
-`sobre` creates gets an empty `<file>.sobre.bak`, so `uninstall` knows it can
-delete the file when nothing but `sobre`'s entries is left in it.
+`<file>.sobre.bak` next to it; `uninstall` puts that copy back when `sobre`'s
+entries were the only change. A file `sobre` creates gets an empty
+`<file>.sobre.bak`, so `uninstall` knows it can delete the file when nothing but
+`sobre`'s entries is left in it.
 
 | Agent | MCP server entry | Hooks | Skill |
 |---|---|---|---|
 | Claude Code | `~/.claude.json` | `~/.claude/settings.json`: compress shell output, stub unchanged re-reads, session observer | `~/.claude/skills/sobre/` |
-| Codex | `~/.codex/config.toml`, or the active profile's `<name>.config.toml` | `~/.codex/hooks.json`: session observer; sets `[features] hooks = true` | `~/.codex/skills/sobre/` |
+| Codex | `~/.codex/config.toml`, or the active profile's `<name>.config.toml` | `~/.codex/hooks.json`: session observer; sets `[features] hooks = true` unless you set it | `~/.codex/skills/sobre/` |
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/hooks/hooks.json`: compress shell output, session observer | `~/.copilot/skills/sobre/` |
 | Cursor | `~/.cursor/mcp.json` | `~/.cursor/hooks.json`: wrap shell commands, session observer | `~/.cursor/skills/sobre/` |
 | Gemini CLI | `~/.gemini/settings.json` | the same file: wrap shell commands, session observer | — |
-| OpenCode | `~/.config/opencode/opencode.json` | the plugin `~/.config/opencode/plugins/sobre.js`: compress shell output | `~/.config/opencode/skills/sobre/` |
+| OpenCode | `~/.config/opencode/opencode.json` (also on Windows) | the plugin `~/.config/opencode/plugins/sobre.js`: compress shell output | `~/.config/opencode/skills/sobre/` |
 | VS Code | `mcp.json` in VS Code's user settings directory | the Copilot CLI hooks file | `~/.copilot/skills/sobre/` |
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` | `~/.codeium/windsurf/hooks.json`: session observer | — |
 | Zed | `~/.config/zed/settings.json` (under `$XDG_CONFIG_HOME` on Linux when set, `%APPDATA%\Zed\` on Windows) | — | — |
@@ -169,8 +189,9 @@ commands:
 | Agent | Shell output compression |
 |---|---|
 | Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy. The command itself is never changed. |
+| VS Code | The same, in Copilot (Agent Host) sessions, which run the Copilot CLI hooks. The Local agent runs them too but cannot replace a tool's output, so it gets none. |
 | Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `sobre -c`, only when none of the host's own command rules tells the two forms apart. |
-| Codex, VS Code, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool. |
+| Codex, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool. |
 
 Compressed output always ends with a `[sobre: …]` line that says so and where
 the full output was kept. `sobre` never approves, denies or blocks anything:
@@ -182,13 +203,17 @@ writes no approval setting into its configuration.
 ```bash
 sobre doctor                  # the install, the agents, the data directories
 sobre doctor integrations     # each agent's MCP entry, hooks and skill
-sobre doctor --fix            # rewire the agents, prune stale caches
+sobre doctor --fix            # repair the agents sobre is connected to, prune stale caches
 ```
 
-`doctor --fix` repairs what sobre wrote in your user configuration. It never
-edits files in a repository: when a project's own `.vscode/mcp.json` or
-`.cursor/mcp.json` also registers `sobre`, `doctor` names the file, and you
-remove the entry if you do not want it there.
+`doctor --fix` repairs what sobre wrote in your user configuration, for the
+agents sobre is already connected to (`init` connects new ones), and lists
+what it changed. It never deletes knowledge: a store whose project is not on
+disk is listed, and you delete it by hand if the project is gone. It never
+edits files in a repository: when a project's own MCP file (`.vscode/mcp.json`,
+`.cursor/mcp.json`, `.github/mcp.json`, `.zed/settings.json`) also registers
+`sobre`, `doctor` names the file, and you remove the entry if you do not want
+it there.
 
 In the agent, the MCP server list shows `sobre` with 15 tools (`/mcp` in Claude
 Code). From a shell, without an agent:
@@ -214,15 +239,18 @@ fit, and its native tools keep working. The 15 tools
 | `sobre_graph` | Callers, callees and call chains; the files a change affects |
 | `sobre_review` | What a change to a file touches: dependents, call sites, tests |
 | `sobre_patch` | Edits by line anchors, unique replacements, new files |
-| `sobre_refactor` | References, definitions and rename previews through the language server |
+| `sobre_refactor` | References, definitions, implementations and rename previews through a language server; symbol-body edits without one |
 | `sobre_shell` | Shell commands with compressed output, in the background if long |
 | `sobre_expand` | The full original behind a compressed output |
 | `sobre_checkpoint` | Snapshots of the agent's changes, kept apart from your git history |
 | `sobre_session`, `sobre_knowledge` | The session's task and decisions; facts kept across sessions |
 
-Each server process starts an empty session: nothing a previous run recorded
-is loaded until the agent asks (`sobre_session action=load`), and neither the
-session nor the knowledge store changes how `sobre_read` picks a mode.
+Each server process starts an empty session: a saved session comes back only
+when the agent asks (`sobre_session action=load`), and neither the session nor
+the knowledge store changes how `sobre_read` picks a mode. One thing does: a
+file a compiler or linter reported an error in, through `sobre -c` or
+`sobre_shell`, in the last 15 minutes is read in full until that tool next
+succeeds.
 
 Each build has one fixed list of tools and parameters: the build with
 embeddings adds a single parameter, `sobre_search`'s `mode`. The reference
@@ -307,10 +335,13 @@ sobre gain --by-tool        # per tool or command
 sobre gain --daily          # per day
 ```
 
-Tokens saved are measured. What they are worth in money is only measured when
-the optional proxy sits between the agent and its provider: it records the
-tokens each call was billed, and `gain` prices them. Without the proxy, `gain`
-prices saved tokens at a model's input rate and says it is an estimate.
+A saving is counted as the tokens of the output without compression (the whole
+file for a read, the full output for a command) minus the tokens `sobre` sent.
+That is a count against an assumed alternative, not a measurement of what the
+agent would otherwise have read. With the optional proxy between the agent and
+its provider, `gain` also shows the tokens each call was billed, as the
+provider reported them. Saved tokens are priced at a model's uncached input
+rate, and `gain` says that figure is an estimate.
 
 ## Proxy
 
@@ -325,9 +356,10 @@ that can use it at it, each through its own configuration: Claude Code
 (`settings.json`), Codex (`config.toml`) and OpenCode (`opencode.json`). It
 forwards Anthropic Messages and OpenAI Chat Completions and Responses traffic,
 compresses the tool results inside each request, and records the usage the
-provider reports. Every tool result it rewrites ends with a `[sobre: …]` line
-that says so and where the full original was kept; the rest of the request body
-goes upstream as the agent sent it.
+provider reports. Older tool results in the conversation history are shortened
+too, in steps that keep the provider's prompt cache valid. Every tool result it
+rewrites ends with a `[sobre: …]` line that says so and where the full original
+was kept; the rest of the request body goes upstream as the agent sent it.
 
 It starts at login through a LaunchAgent on macOS
 (`~/Library/LaunchAgents/com.sobre.proxy.plist`) and a systemd user service on
@@ -388,10 +420,10 @@ hooks changed; `sobre doctor` prints where.
 
 ## Upgrade
 
-Replace the binary at the same path — download the new release, or
-`make install` again — and restart your agents. With the proxy on, also run
-`sobre proxy restart`. If the binary's path changed, run `sobre doctor --fix`
-from the new one.
+Re-run the install command (with the same options), or `make install` for a
+source build: the new binary replaces the old one at the same path. Then
+restart your agents, and with the proxy on, run `sobre proxy restart`. If the
+binary's path changed, run `sobre doctor --fix` from the new one.
 
 ## Uninstall
 
@@ -414,22 +446,28 @@ sobre uninstall
 `--keep-config` keeps `config.toml`, `--keep-binary` keeps the binary. Any
 other argument is an error, and nothing is removed.
 
+On Windows, `uninstall` cannot delete the `sobre.exe` it runs from. Afterwards,
+delete it by hand and, after an install with `install.ps1`, its folder
+(`%LOCALAPPDATA%\Programs\sobre` by default) and that folder's entry in your
+user `PATH`.
+
 ## Platform notes
 
 - **Linux.** The builds without embeddings are static and run on any
   distribution. The `sobre-dense-…` builds need glibc 2.28 or later, which rules
   out Alpine and other musl distributions: ONNX Runtime has to be loaded at run
   time, which a static binary cannot do.
-- **macOS.** The binaries are neither signed nor notarized. If Gatekeeper
-  refuses to run one, clear the download flag:
-  `xattr -d com.apple.quarantine ~/.local/bin/sobre`. Intel Macs have no
-  `sobre-dense` build because Microsoft ships no ONNX Runtime for them: build
+- **macOS.** The binaries are neither signed nor notarized. `install.sh`
+  downloads with `curl`, which sets no quarantine flag. An archive downloaded
+  with a browser does get one: if Gatekeeper refuses to run that binary, clear
+  it with `xattr -d com.apple.quarantine ~/.local/bin/sobre`. Intel Macs have no
+  `sobre-dense` build because Microsoft ships no ONNX Runtime 1.24 for them: build
   from source with `--features dense`, install ONNX Runtime with
   `brew install onnxruntime`, and point `ORT_DYLIB_PATH` at its
   `libonnxruntime.dylib`.
 - **Windows.** No `make` and no proxy login service (see [Proxy](#proxy)).
-  `uninstall` cannot delete the `sobre.exe` it runs from: delete it by hand
-  afterwards.
+  `uninstall` leaves the binary and the installer's folder and `PATH` entry
+  (see [Uninstall](#uninstall)).
 
 ## Reference
 
@@ -445,7 +483,7 @@ Everything below lives in this repository; nothing is published elsewhere.
   code (`sobre help all` prints the same).
 - [Environment variables](docs/reference/generated/env-vars.md): every variable
   `sobre` reads or sets.
-- [Contracts](docs/contracts/): the on-disk formats other tools may rely on.
+- [Contracts](docs/contracts/): formats and guarantees other tools may rely on.
 - [Invariants](INVARIANTS.md): the rules every change is held to.
 - [Rust crate](rust/README.md): building, testing and the source layout.
 
@@ -453,4 +491,6 @@ The four reference pages are generated from the code; `rust/README.md` says how.
 
 ## License
 
-Apache-2.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE). `sobre` is a fork of
+[lean-ctx](https://github.com/yvgude/lean-ctx) by Yves Gugger:
+[FORK.md](FORK.md) states the changes, [NOTICE](NOTICE) the attribution.

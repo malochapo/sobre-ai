@@ -22,8 +22,8 @@ const HEADER: &str = "\
 # commented out — remove the `# ` to set it.
 #
 # A key left at its default may be deleted — sobre falls back to the documented
-# default. Edits apply on the next tool call; the proxy reads them on
-# `sobre proxy restart`.
+# default. Edits apply on the next tool call. A running proxy re-reads its
+# upstream URLs every 5 s; its port changes on `sobre proxy restart`.
 
 ";
 
@@ -222,13 +222,6 @@ fn append_key_comment(out: &mut String, key_schema: &KeySchema) {
     if !key_schema.default.is_null() {
         out.push_str("#   default: ");
         out.push_str(&key_schema.default.to_string());
-        out.push('\n');
-    }
-    if let Some(values) = &key_schema.values
-        && !values.is_empty()
-    {
-        out.push_str("#   values: ");
-        out.push_str(&values.join(", "));
         out.push('\n');
     }
 }

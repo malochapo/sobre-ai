@@ -137,9 +137,8 @@ pub(crate) struct Resolved {
 }
 
 /// Apply a resolved edit through the headless range writer.
-pub(crate) fn apply_symbol_edit(
+fn apply_symbol_edit(
     action: &str,
-    _project_root: &str,
     edit: &crate::lsp::backend::RangeEdit,
 ) -> Result<crate::lsp::backend::EditResult, String> {
     use crate::lsp::backend::LspBackend;
@@ -153,7 +152,7 @@ pub(crate) fn apply_symbol_edit(
 }
 
 /// Leading whitespace of the 1-based `line` in `content` (anchor indentation).
-pub(crate) fn anchor_indent(content: &str, line: usize) -> String {
+fn anchor_indent(content: &str, line: usize) -> String {
     content
         .lines()
         .nth(line.saturating_sub(1))
@@ -162,9 +161,8 @@ pub(crate) fn anchor_indent(content: &str, line: usize) -> String {
 }
 
 /// Prefix `indent` to the first line of `text` iff that line has no leading
-/// whitespace of its own (deterministic; the same Rust computes it for both
-/// apply paths, so the wire text is byte-identical).
-pub(crate) fn reindent_first_line(text: &str, indent: &str) -> String {
+/// whitespace of its own.
+fn reindent_first_line(text: &str, indent: &str) -> String {
     if text.starts_with(' ') || text.starts_with('\t') || indent.is_empty() {
         return text.to_string();
     }
@@ -384,10 +382,9 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         other => return format!("ERROR: INTERNAL: not an edit action: {other}"),
     };
 
-    // CONFLICT guard (BLAKE3, same source as headless local_range_write): verify
-    // expected_hash against the current on-disk range BEFORE dispatch. This makes
-    // the IDE path enforce CONFLICT identically to the headless path (which also
-    // re-checks atomically). hash_hex == blake3::hash(...).to_hex().
+    // CONFLICT guard: verify expected_hash (BLAKE3 hex of the range) against
+    // the file as it is now, so a dry run reports the conflict too. The
+    // writer re-checks it under the file lock.
     if let Some(exp) = &expected_hash {
         let s =
             match crate::lsp::edit_apply::offset_of(&content, range.start_line, range.start_char) {
@@ -446,7 +443,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
     }
 
     // 5) Write the range and format the result.
-    match apply_symbol_edit(action, project_root, &edit) {
+    match apply_symbol_edit(action, &edit) {
         Ok(res) => {
             let mut out = format_edit_result(action, &edit.abs_path, &res);
             crate::tools::impl_edit::append_notice(&mut out, syntax_notice);

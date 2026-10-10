@@ -8,6 +8,8 @@ pub const CRASH_LOOP_MAX_BACKOFF_SECS: u64 = 30;
 
 pub const MCP_PROCESS_NAME: &str = "mcp-server";
 
+/// The file of recent start times `crash_loop_backoff` keeps for
+/// `process_name`.
 pub fn crash_loop_log_path(process_name: &str) -> Option<PathBuf> {
     crate::core::data_dir::sobre_data_dir()
         .ok()
@@ -78,11 +80,12 @@ pub fn try_acquire_lock(name: &str, wait: Duration) -> Option<StartupLockGuard> 
 /// Records each startup timestamp; if too many happen within the window, sleeps
 /// with exponential backoff to break the loop and avoid host degradation.
 pub fn crash_loop_backoff(process_name: &str) {
-    let Some(dir) = crate::core::data_dir::sobre_data_dir().ok() else {
+    let Some(ts_path) = crash_loop_log_path(process_name) else {
         return;
     };
-    let _ = std::fs::create_dir_all(&dir);
-    let ts_path = dir.join(format!(".{}-starts.log", sanitize_lock_name(process_name)));
+    if let Some(dir) = ts_path.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -123,11 +126,9 @@ pub fn crash_loop_backoff(process_name: &str) {
 
 /// Clears the crash-loop history file, resetting any active backoff.
 pub fn reset_crash_loop(process_name: &str) {
-    let Some(dir) = crate::core::data_dir::sobre_data_dir().ok() else {
-        return;
-    };
-    let ts_path = dir.join(format!(".{}-starts.log", sanitize_lock_name(process_name)));
-    let _ = std::fs::remove_file(&ts_path);
+    if let Some(ts_path) = crash_loop_log_path(process_name) {
+        let _ = std::fs::remove_file(ts_path);
+    }
 }
 
 #[cfg(test)]

@@ -1,11 +1,12 @@
-//! Generate the code-derived reference appendices under
-//! `docs/reference/generated/` (MCP tools + config keys).
+//! Generate the code-derived reference pages under
+//! `docs/reference/generated/`: MCP tools, config keys, the command line and
+//! environment variables.
 //!
 //! Run:   `cargo run --example gen_docs --features dev-tools`
 //! Check: `cargo run --example gen_docs --features dev-tools -- --check`
 //!
-//! The `--check` mode is used by CI to fail the build when the committed docs
-//! drift from the actual feature surface (new MCP tool / config key).
+//! CI runs `--check` to fail the build when a committed page differs from
+//! what the code generates.
 
 use std::path::{Path, PathBuf};
 

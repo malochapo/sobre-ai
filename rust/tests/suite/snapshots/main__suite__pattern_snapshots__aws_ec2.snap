@@ -1,8 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
-3 instances:
-  i-abc123 running t3.micro "web-1"
-  i-def456 running t3.small "web-2"
-  i-ghi789 stopped m5.large "worker-1"

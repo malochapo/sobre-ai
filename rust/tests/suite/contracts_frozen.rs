@@ -3,9 +3,9 @@
 //! Two invariants, enforced on every CI run:
 //!
 //! 1. **Completeness** — every `docs/contracts/*.md` file is classified in
-//!    `core::contracts::contract_docs()` (frozen / stable / experimental) and
+//!    `core::contracts::contract_docs()` (frozen or stable) and
 //!    every classified entry actually exists on disk. No contract can stay
-//!    unclassified (pattern: `feature_keys_partition` in plans.rs).
+//!    unclassified.
 //! 2. **Immutability** — the content hash of every `frozen` contract doc
 //!    matches the committed snapshot `docs/contracts/frozen-hashes.json`. A
 //!    drifting hash means someone edited a frozen artifact: semantic changes
@@ -76,7 +76,7 @@ fn every_contract_doc_is_classified() {
     assert!(
         unclassified.is_empty(),
         "unclassified contract docs (add them to core::contracts::contract_docs() \
-         with a frozen/stable/experimental status): {unclassified:?}"
+         with a frozen or stable status): {unclassified:?}"
     );
 
     let missing: Vec<_> = classified.iter().filter(|f| !on_disk.contains(f)).collect();

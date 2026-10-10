@@ -25,9 +25,8 @@ fn normalize_key(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-/// Built-in token budget for the in-memory read cache.
-/// 2M covers ~100 typical source files, reducing premature eviction
-/// before re-reads occur. RAM-pressure eviction via EvictionOrchestrator
+/// Built-in token budget for the in-memory read cache: several hundred
+/// typical source files. RAM-pressure eviction via EvictionOrchestrator
 /// provides an independent safety net regardless of this budget.
 /// Shared with `eviction_orchestrator` so both eviction rails read one budget.
 pub(crate) const CACHE_MAX_TOKENS: usize = 2_000_000;
@@ -36,7 +35,7 @@ pub(crate) const CACHE_MAX_TOKENS: usize = 2_000_000;
 ///
 /// `read_count` and `last_access` use interior mutability (atomics) so cache
 /// hits can be recorded under a shared (read) lock — parallel reads of distinct
-/// files no longer serialize on a global write lock.
+/// files do not serialize on a global write lock.
 #[derive(Debug)]
 pub struct CacheEntry {
     compressed_content: Vec<u8>,
@@ -173,15 +172,6 @@ impl CacheEntry {
 
 const RRF_K: f64 = 60.0;
 
-/// Hebbian protection added to an entry's RRF eviction score per unit of
-/// association strength with the currently-active working set. Files that
-/// are read together resist eviction together ("fire together, wire together").
-/// Deterministic: a fixed multiplier, no sampling.
-const HEBBIAN_PROTECT_WEIGHT: f64 = 0.05;
-/// Size of the "active working set" (most-recently-accessed entries) against
-/// which Hebbian association is measured during eviction.
-const HEBBIAN_ACTIVE_SET: usize = 8;
-
 /// Compute Reciprocal Rank Fusion eviction scores for a batch of cache entries.
 /// Each signal (recency, frequency, size) produces an independent ranking.
 /// The final score is the sum of `1/(k + rank)` across all signals.
@@ -245,19 +235,6 @@ pub fn eviction_scores_rrf(entries: &[(&String, &CacheEntry)], now: Instant) -> 
         .collect()
 }
 
-/// Add the Hebbian co-access bonus to RRF eviction scores in place. A
-/// higher score means "keep longer", so co-accessed entries are protected.
-fn apply_hebbian_bonus(scores: &mut [(String, f64)], bonus: &HashMap<String, f64>) {
-    if bonus.is_empty() {
-        return;
-    }
-    for s in scores.iter_mut() {
-        if let Some(b) = bonus.get(&s.0) {
-            s.1 += *b;
-        }
-    }
-}
-
 /// A block shared across multiple files, identified by its canonical source.
 #[derive(Clone, Debug)]
 pub struct SharedBlock {
@@ -268,17 +245,13 @@ pub struct SharedBlock {
     pub content: String,
 }
 
-/// In-memory file cache with segmented LRU eviction (probationary vs protected),
-/// file references, and cross-file dedup.
+/// In-memory file cache with RRF eviction (recency, frequency, size), file
+/// references, and cross-file dedup.
 pub struct SessionCache {
     entries: HashMap<String, CacheEntry>,
     file_refs: HashMap<String, String>,
     next_ref: usize,
     shared_blocks: Vec<SharedBlock>,
-    /// Hebbian co-access matrix: tracks which files are read together so
-    /// eviction can protect co-accessed clusters. Updated on `store`, consulted
-    /// during eviction.
-    co_access: crate::core::hebbian_cache::CoAccessMatrix,
 }
 
 impl Default for SessionCache {
@@ -295,50 +268,7 @@ impl SessionCache {
             file_refs: HashMap::new(),
             next_ref: 1,
             shared_blocks: Vec::new(),
-            co_access: crate::core::hebbian_cache::CoAccessMatrix::new(),
         }
-    }
-
-    /// Commit the pending co-access burst now (tests; production commits it
-    /// on the first access after the burst window).
-    #[cfg(test)]
-    pub fn flush_co_access(&mut self) {
-        self.co_access.end_burst();
-    }
-
-    /// Per-entry Hebbian eviction bonus: each cached entry that is
-    /// co-accessed with the recently-active working set earns a positive bonus
-    /// that is added to its RRF score, so clustered files survive eviction
-    /// together. Deterministic (no sampling); ticks the activation registry when
-    /// any association actually influences the decision.
-    pub(crate) fn hebbian_eviction_bonus(&self) -> HashMap<String, f64> {
-        use crate::core::hebbian_cache::path_hash;
-        if self.entries.is_empty() {
-            return HashMap::new();
-        }
-        let mut by_recency: Vec<(&String, Instant)> = self
-            .entries
-            .iter()
-            .map(|(k, e)| (k, e.last_access()))
-            .collect();
-        by_recency.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
-        let active: Vec<u64> = by_recency
-            .iter()
-            .take(HEBBIAN_ACTIVE_SET)
-            .map(|(k, _)| path_hash(k))
-            .collect();
-
-        let mut out = HashMap::new();
-        for k in self.entries.keys() {
-            let h = path_hash(k);
-            // Exclude self so an entry never "protects itself".
-            let peers: Vec<u64> = active.iter().copied().filter(|&a| a != h).collect();
-            let strength = self.co_access.association_strength(h, &peers);
-            if strength > 0.0 {
-                out.insert(k.clone(), f64::from(strength) * HEBBIAN_PROTECT_WEIGHT);
-            }
-        }
-        out
     }
 
     /// Returns or assigns a short file reference label (F1, F2, ...) for the given path.
@@ -383,10 +313,6 @@ impl SessionCache {
     /// Stores file content in the cache; returns a hit if content hash matches.
     pub fn store(&mut self, path: &str, content: &str) -> StoreResult {
         let key = normalize_key(path);
-        // Feed the Hebbian co-access matrix on every read so eviction can
-        // later protect files that are habitually read together.
-        self.co_access
-            .record_access(crate::core::hebbian_cache::path_hash(&key));
         let hash = content_hash(content);
         let line_count = content.lines().count();
         let original_tokens = count_tokens(content);
@@ -454,7 +380,6 @@ impl SessionCache {
         let now = Instant::now();
         let all: Vec<(&String, &CacheEntry)> = self.entries.iter().collect();
         let mut scores = eviction_scores_rrf(&all, now);
-        apply_hebbian_bonus(&mut scores, &self.hebbian_eviction_bonus());
         // Sort ascending: lowest RRF score = least valuable = evict first
         scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
@@ -514,9 +439,13 @@ impl SessionCache {
         Some(result)
     }
 
-    /// Removes a file from the cache, forcing a fresh read on next access.
+    /// Removes a file from the cache, and its delivery record from the
+    /// persistent stub index, so the next read returns the content and never
+    /// an `[unchanged]` stub.
     pub fn invalidate(&mut self, path: &str) -> bool {
-        self.entries.remove(&normalize_key(path)).is_some()
+        let key = normalize_key(path);
+        crate::core::read_stub_index::forget(&key);
+        self.entries.remove(&key).is_some()
     }
 
     /// Returns a cached compressed output for a given file and mode key.
@@ -612,31 +541,6 @@ impl SessionCache {
         count
     }
 
-    /// Evicts entries via RRF scoring until total tokens are at or below `target_tokens`.
-    pub fn evict_to_budget(&mut self, target_tokens: usize) {
-        let current = self.total_cached_tokens();
-        if current <= target_tokens {
-            return;
-        }
-        let now = Instant::now();
-        let all: Vec<(&String, &CacheEntry)> = self.entries.iter().collect();
-        let mut scores = eviction_scores_rrf(&all, now);
-        apply_hebbian_bonus(&mut scores, &self.hebbian_eviction_bonus());
-        scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let mut freed = 0usize;
-        let target_free = current.saturating_sub(target_tokens);
-        for (path, _score) in &scores {
-            if freed >= target_free {
-                break;
-            }
-            if let Some(entry) = self.entries.remove(path) {
-                freed += entry.original_tokens;
-                self.file_refs.remove(path);
-            }
-        }
-    }
-
     const MAX_SHARED_BLOCKS: usize = 100;
 
     /// Trims shared blocks to a maximum count, keeping the most recent.
@@ -675,8 +579,10 @@ pub fn is_cache_entry_stale(path: &str, cached_mtime: Option<SystemTime>) -> boo
     }
 }
 
-/// Files larger than this are not content-hashed for stub verification; the
-/// mtime check alone decides. Keeps the stub fast-path O(small-file-read).
+/// Files larger than this are not content-hashed for stub verification and
+/// always read as stale. A read is capped well below it
+/// ([`crate::core::limits::max_read_bytes`]), so only a file that grew past it
+/// since it was cached gets here.
 const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 
 /// Staleness with content verification: like [`is_cache_entry_stale`], but when
@@ -690,9 +596,8 @@ const VERIFY_HASH_CAP_BYTES: u64 = 8 * 1024 * 1024;
 /// can have. The extra disk read costs microseconds for typical source files;
 /// the stub's token savings are unaffected.
 ///
-/// Note: entries whose stored content differs from disk by design (e.g. secret
-/// redaction) hash differently and therefore never serve stubs — conservative
-/// and correct.
+/// The cache stores the file as read (redaction applies to output only), so
+/// an unchanged file hashes the same.
 pub fn is_cache_entry_stale_verified(
     path: &str,
     cached_mtime: Option<SystemTime>,
@@ -709,7 +614,8 @@ pub fn is_cache_entry_stale_verified(
         return true;
     };
     if meta.len() > VERIFY_HASH_CAP_BYTES {
-        return false;
+        // Too large to hash: the content cannot be vouched for.
+        return true;
     }
     match std::fs::read(path) {
         // Hash the same view of the bytes that `store()` hashed: lossy UTF-8,
@@ -784,6 +690,31 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(stub_index)]
+    fn invalidate_drops_the_persisted_delivery_record() {
+        crate::core::read_stub_index::clear_for_test();
+        let mut cache = SessionCache::new();
+        cache.store("/test/sent-then-dropped.rs", "fn a() {}");
+        let entry = cache.get("/test/sent-then-dropped.rs").unwrap();
+        crate::core::read_stub_index::record(crate::core::read_stub_index::StubRecord::new(
+            normalize_key("/test/sent-then-dropped.rs"),
+            entry.hash.clone(),
+            entry.stored_mtime,
+            entry.line_count,
+            "F1".to_string(),
+            Some("conv-a".to_string()),
+        ));
+        assert!(crate::core::read_stub_index::lookup("/test/sent-then-dropped.rs").is_some());
+
+        assert!(cache.invalidate("/test/sent-then-dropped.rs"));
+        assert!(
+            crate::core::read_stub_index::lookup("/test/sent-then-dropped.rs").is_none(),
+            "a cold read must not find a record for content that was dropped"
+        );
+        crate::core::read_stub_index::clear_for_test();
+    }
+
+    #[test]
     fn record_cache_hit_works_through_shared_ref() {
         let mut cache = SessionCache::new();
         cache.store("/x.rs", "hello world");
@@ -802,7 +733,7 @@ mod tests {
         cache.store("/a.rs", "a");
         cache.store("/b.rs", "b");
         // Shared (no RwLock): proves SessionCache is Sync and hit recording is
-        // lock-free and atomic — the whole point of the read-mostly refactor.
+        // lock-free and atomic.
         let cache = Arc::new(cache);
         let threads = 8;
         let iters = 1_000;
@@ -823,28 +754,6 @@ mod tests {
         let total = threads * iters;
         assert_eq!(cache.get("/a.rs").unwrap().read_count(), 1 + total as u32);
         assert_eq!(cache.get("/b.rs").unwrap().read_count(), 1 + total as u32);
-    }
-
-    #[test]
-    fn hebbian_eviction_bonus_is_wired() {
-        // Files read together build a Hebbian association via store's
-        // recording, and that association must feed the eviction bonus.
-        //
-        // Warm up tiktoken first: the very first count_tokens() in the process
-        // lazily loads the BPE tables (can exceed the 500ms co-access burst
-        // window). store() calls count_tokens() internally, so without warming
-        // up, the two store() calls below straddle that window and never
-        // associate — a flaky-empty bonus. Warming up keeps them in one burst.
-        let _ = count_tokens("warmup");
-        let mut cache = SessionCache::new();
-        cache.store("/a.rs", "fn a() {}");
-        cache.store("/b.rs", "fn b() {}");
-        cache.flush_co_access(); // commit the burst → association (a,b) forms
-        let bonus = cache.hebbian_eviction_bonus();
-        assert!(
-            !bonus.is_empty(),
-            "co-accessed reads must yield a Hebbian eviction bonus (#3 wired)"
-        );
     }
 
     #[test]
@@ -918,7 +827,7 @@ mod tests {
         assert!(is_cache_entry_stale(&p, entry.stored_mtime));
     }
 
-    // P0-7: a *backward* mtime (git checkout, touch -t) is a change.
+    // A *backward* mtime (git checkout, touch -t) is a change.
     #[test]
     fn stale_detection_flags_backward_mtime() {
         let dir = tempfile::tempdir().unwrap();
@@ -944,7 +853,7 @@ mod tests {
         );
     }
 
-    // P0-7: identical mtime with different content (same-second write,
+    // Identical mtime with different content (same-second write,
     // restored timestamps) is caught by the content-hash verification.
     #[test]
     fn verified_staleness_catches_same_mtime_content_change() {
@@ -978,6 +887,31 @@ mod tests {
             is_cache_entry_stale_verified(&p, mtime, &hash),
             "hash verification must catch the change"
         );
+    }
+
+    /// A file too large to hash is never vouched for by its mtime alone.
+    #[test]
+    fn verified_staleness_flags_file_too_large_to_hash() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grown.txt");
+        let p = path.to_string_lossy().to_string();
+
+        std::fs::write(&path, "one").unwrap();
+        let original_mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
+        let mut cache = SessionCache::new();
+        cache.store(&p, "one");
+        let (mtime, hash) = {
+            let e = cache.get(&p).unwrap();
+            (e.stored_mtime, e.hash.clone())
+        };
+
+        let big = vec![b'x'; usize::try_from(VERIFY_HASH_CAP_BYTES).unwrap() + 1];
+        std::fs::write(&path, big).unwrap();
+        let f = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
+        f.set_modified(original_mtime).unwrap();
+        drop(f);
+
+        assert!(is_cache_entry_stale_verified(&p, mtime, &hash));
     }
 
     #[test]

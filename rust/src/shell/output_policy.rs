@@ -13,9 +13,8 @@
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputPolicy {
-    /// Auth flows, dev servers, interactive, streaming, installs.
-    /// Output is passed through with ZERO modification, even when
-    /// `-c` (force_compress) is set.
+    /// Auth flows, dev servers, interactive and streaming commands.
+    /// Output is passed through with no modification.
     Passthrough,
 
     /// API data, file content, structured queries, HTTP responses.
@@ -169,13 +168,11 @@ mod tests {
         assert!(!OutputPolicy::Compressible.is_protected());
     }
 
-    // --- Regression tests for GitHub Issues ---
-
     #[test]
     fn gh_api_jq() {
         // gh api returns JSON — verbatim (API data)
         assert_eq!(
-            classify("gh api repos/yvgude/sobre/issues/198 --jq '.body'", &[]),
+            classify("gh api repos/owner/repo/issues/1 --jq '.body'", &[]),
             OutputPolicy::Verbatim
         );
     }
@@ -263,8 +260,6 @@ mod tests {
     fn stripe_list_is_verbatim() {
         assert_eq!(classify("stripe charges list", &[]), OutputPolicy::Verbatim);
     }
-
-    // --- Regression: git command rewriting bug ---
 
     #[test]
     fn git_commit_is_verbatim() {

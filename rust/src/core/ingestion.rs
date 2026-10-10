@@ -1,12 +1,9 @@
-//! Ingestion front-door (`ingestion-spec-v1`).
+//! Which files reach the BM25 index (and the semantic index built on it).
 //!
-//! Decides what reaches the index — BM25, semantic, knowledge — **independent of
-//! code-ness**. Historically only files passing `is_code_file` were indexed,
-//! which locked sobre to source repositories. Intake is now driven by a
-//! content-*kind* classification (extension fast-path + a bounded binary sniff),
-//! so any text corpus (docs, data, transcripts, logs) is ingestible while
-//! genuine binaries are excluded. Code repositories behave exactly as before:
-//! every kind that used to index still indexes.
+//! Intake is decided by content kind (extension fast path + a bounded binary
+//! sniff), not by whether a file is source code: any text corpus (docs, data,
+//! transcripts, logs) is ingestible, while binaries and generated lockfiles
+//! are not.
 
 use std::path::Path;
 
@@ -161,8 +158,7 @@ pub fn classify_path(path: &Path) -> IngestKind {
     }
 }
 
-/// Whether a path should be fed to the index. Single front-door replacing the
-/// old `is_code_file` gate.
+/// Whether a path should be fed to the index.
 #[must_use]
 pub fn is_ingestible(path: &Path) -> bool {
     classify_path(path).is_ingestible()

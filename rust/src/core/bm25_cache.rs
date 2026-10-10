@@ -4,7 +4,9 @@ use std::time::{Instant, SystemTime};
 
 use super::bm25_index::BM25Index;
 
-const DEFAULT_TTL_SECS: u64 = 60;
+/// How long a loaded index is served before it is checked against the disk
+/// again (a background refresh).
+const TTL_SECS: u64 = 60;
 
 /// Cheap content fingerprint of the persisted index file: `(mtime, size)`.
 ///
@@ -28,7 +30,7 @@ pub struct Bm25CacheEntry {
 
 impl Bm25CacheEntry {
     pub fn is_fresh(&self) -> bool {
-        if self.loaded_at.elapsed().as_secs() >= ttl_secs() {
+        if self.loaded_at.elapsed().as_secs() >= TTL_SECS {
             return false;
         }
         // Precise invalidation: if a background rebuild changed the index file
@@ -46,10 +48,6 @@ pub(crate) fn index_fingerprint(root: &Path) -> IndexFingerprint {
         },
         _ => IndexFingerprint::default(),
     }
-}
-
-fn ttl_secs() -> u64 {
-    DEFAULT_TTL_SECS
 }
 
 pub type SharedBm25Cache = std::sync::Arc<std::sync::Mutex<Option<Bm25CacheEntry>>>;

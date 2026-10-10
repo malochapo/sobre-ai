@@ -1,13 +1,9 @@
-//! Entrypoint smoke gate: every advertised entrypoint must be reachable.
+//! Every advertised entrypoint is reachable: "implemented" must imply
+//! "invokable". Two surfaces are guarded:
 //!
-//! Background: the v3.4.7 release shipped tools/commands whose *implementation*
-//! existed but whose *entrypoint* was not wired — `sobre pack` / `index` fell
-//! through to the global help, and some tools were missing from the manifest.
-//! "Implemented" must imply "invokable". Two independent surfaces are guarded:
-//!
-//! 1. MCP — key entrypoint tools are present in the manifest SSOT.
-//! 2. CLI — top-level subcommands route to their handler instead of falling
-//!    through to the global help (the exact `pack`/`index` regression).
+//! 1. MCP — key entrypoint tools are present in the manifest.
+//! 2. CLI — commands with subcommands route to their handler instead of
+//!    falling through to the unknown-command error.
 //!
 //! Dispatch on the MCP side is registry-driven (`registry.get_arc(name)`), and
 //! the generated tool reference is checked against the registry by
@@ -50,9 +46,8 @@ fn mcp_entrypoint_tools_are_advertised() {
         "manifest advertises no tools — manifest_value() produced an empty surface"
     );
 
-    // The entrypoint tools that back the regressed CLI commands plus the core
-    // read/search surface. If a handler exists but is not advertised here, the
-    // tool is unreachable for MCP clients (the v3.4.7 "missing manifest entry").
+    // The core surface. A handler that is not advertised here is unreachable
+    // for MCP clients.
     let required = [
         "sobre_read",
         "sobre_shell",
@@ -72,12 +67,10 @@ fn mcp_entrypoint_tools_are_advertised() {
     }
 }
 
+/// The binary under test, in this test process's sandboxed HOME and XDG dirs
+/// (tests/support/user_dirs.rs), so no subcommand touches the real ones.
 fn sobre() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_sobre"));
-    // Mirror cli_characterization.rs: sandbox the binary so subcommands are
-    // side-effect-free (no background process, no real HOME writes).
-    cmd.env("HOME", "/tmp/sobre-entrypoint-test");
-    cmd
+    Command::new(env!("CARGO_BIN_EXE_sobre"))
 }
 
 /// Run the sandboxed binary; return trimmed stdout, trimmed stderr and the exit
@@ -97,9 +90,8 @@ fn run(args: &[&str]) -> (String, String, i32) {
 fn cli_subcommands_are_wired() {
     // An unknown command is reported on stderr — clap's `unrecognized
     // subcommand '<cmd>'` — with empty stdout and exit 2. That stderr marker is
-    // the *signature* of "not wired" — the exact v3.4.7 `pack`/`index`
-    // regression. Derive it from a token that can never be a real command, so
-    // the detector validates itself.
+    // the *signature* of "not wired". Derive it from a token that can never be
+    // a real command, so the detector validates itself.
     let (stdout, stderr, code) = run(&["__sobre_not_a_command__"]);
     assert!(
         stdout.is_empty()
@@ -123,7 +115,7 @@ fn cli_subcommands_are_wired() {
         assert!(
             !stderr.contains(&format!("unrecognized subcommand '{cmd}'")),
             "`sobre {cmd}` is not a declared command — it is not wired in \
-             cli/args.rs (the v3.4.7 entrypoint regression)."
+             cli/args.rs."
         );
     }
 }

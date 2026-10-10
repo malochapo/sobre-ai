@@ -25,7 +25,7 @@ impl McpTool for SobreReviewTool {
              its functions in other files, and its test files.\n\
              Actions: review (one file), diff-review (every file in git diff text, or the \
              uncommitted changes when path is omitted), checklist (review questions). \
-             depth=N hops of dependents (default 3).\n\
+             depth=N hops of dependents (default 3; diff-review 2).\n\
              Not a substitute for running the tests.",
             json!({
                 "type": "object",
@@ -40,7 +40,7 @@ impl McpTool for SobreReviewTool {
                     },
                     "depth": {
                         "type": "integer",
-                        "description": "Analysis breadth (default 3)"
+                        "description": "Hops of dependents (default 3; diff-review 2)"
                     }
                 },
                 "required": ["action"],

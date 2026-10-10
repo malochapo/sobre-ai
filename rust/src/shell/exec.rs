@@ -110,13 +110,23 @@ pub(super) fn wait_collecting(mut child: Child, max_bytes: usize) -> Output {
     }
 }
 
+/// The exit code a shell would report for `status`: the process's own code,
+/// or `128 + signal` for a process a signal ended (Unix).
+pub(crate) fn exit_code(status: std::process::ExitStatus) -> i32 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return 128 + signal;
+        }
+    }
+    status.code().unwrap_or(1)
+}
+
 /// A synthetic failed `ExitStatus`, used only when `Child::wait()` itself
 /// errors (e.g. the process was already reaped by another waiter) and there
-/// is no real status to report. The previous fallback shelled out to
-/// `Command::new("false").status()` to manufacture one, which panicked via
-/// `.expect()` wherever no `false` binary exists on `PATH` — Windows, and
-/// minimal/scratch containers. `ExitStatusExt::from_raw` builds the status
-/// value directly, with no subprocess involved, so it can't fail.
+/// is no real status to report. Built directly, with no subprocess, so it
+/// cannot fail.
 #[cfg(unix)]
 fn synthetic_failure_status() -> std::process::ExitStatus {
     use std::os::unix::process::ExitStatusExt;
@@ -174,20 +184,6 @@ mod nested_sobre_exec_tests {
     #[test]
     fn leaves_non_wrappers_alone() {
         assert!(super::collapse_nested_sobre_exec("git status").is_none());
-    }
-
-    #[test]
-    fn wrapped_nested_wrapper_still_owns_one_compression_pass() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var(super::super::reentry::WRAP_MARKER, "1");
-
-        assert!(super::should_delegate_wrapped_to_shell_default(false));
-        assert!(
-            !super::should_delegate_wrapped_to_shell_default(true),
-            "collapsed nested wrappers must not fall through to raw shell-default path"
-        );
-
-        crate::test_env::remove_var(super::super::reentry::WRAP_MARKER);
     }
 }
 
@@ -391,21 +387,10 @@ pub enum ExecMode {
 }
 
 pub fn exec(command: &str, mode: ExecMode) -> i32 {
-    let mut collapsed_nested = false;
-    let collapsed;
-    let command = if let Some(c) = collapse_nested_sobre_exec(command) {
-        collapsed_nested = true;
-        collapsed = c;
-        collapsed.as_str()
-    } else {
-        command
-    };
+    let collapsed = collapse_nested_sobre_exec(command);
+    let command = collapsed.as_deref().unwrap_or(command);
 
     let (shell, shell_flag) = super::platform::shell_and_flag();
-
-    if should_delegate_wrapped_to_shell_default(collapsed_nested) {
-        return exec_shell_default(command, &shell, &shell_flag);
-    }
 
     if mode == ExecMode::Raw {
         return exec_inherit_tracked(command, &shell, &shell_flag);
@@ -447,13 +432,6 @@ fn collapse_nested_sobre_exec(command: &str) -> Option<String> {
     }
 
     changed.then_some(current)
-}
-
-fn should_delegate_wrapped_to_shell_default(collapsed_nested: bool) -> bool {
-    // After collapsing `sobre -c "sobre -c ..."` the current process is the
-    // one compression pass that would otherwise be owned by the shell default.
-    // Delegating again would drop back to raw execution or re-enter the hook.
-    super::reentry::is_wrapped() && !collapsed_nested
 }
 
 fn strip_one_sobre_exec(command: &str) -> Option<String> {
@@ -551,29 +529,9 @@ fn exec_inherit(command: &str, shell: &str, shell_flag: &str) -> i32 {
     let status = cmd.status();
 
     match status {
-        Ok(s) => s.code().unwrap_or(1),
+        Ok(s) => exit_code(s),
         Err(e) => {
             tracing::error!("sobre: failed to execute: {e}");
-            127
-        }
-    }
-}
-
-fn exec_shell_default(command: &str, shell: &str, shell_flag: &str) -> i32 {
-    let mut cmd = Command::new(shell);
-    cmd.arg(shell_flag)
-        .arg(command)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
-    super::reentry::clear_shell_default_markers(&mut cmd);
-    super::platform::apply_utf8_locale(&mut cmd);
-    let status = cmd.status();
-
-    match status {
-        Ok(s) => s.code().unwrap_or(1),
-        Err(e) => {
-            eprintln!("sobre: failed to execute '{command}': {e}");
             127
         }
     }
@@ -675,6 +633,17 @@ mod exec_tests {
             stderr.contains("more bytes of stderr not kept"),
             "{stderr:.200}"
         );
+    }
+
+    /// A command killed by a signal reports `128 + signal`, as the shell
+    /// itself would, not a plain 1.
+    #[cfg(unix)]
+    #[test]
+    fn a_signal_exit_reports_128_plus_the_signal() {
+        let output = super::wait_collecting(piped(&["kill -TERM $$"]), 1024);
+        assert_eq!(super::exit_code(output.status), 128 + 15);
+        let output = super::wait_collecting(piped(&["exit 3"]), 1024);
+        assert_eq!(super::exit_code(output.status), 3);
     }
 
     #[test]

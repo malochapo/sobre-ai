@@ -164,8 +164,8 @@ mod tests {
     fn display_path_normalizes_windows_separators() {
         // Backslashes were dropped/escaped by client render layers.
         assert_eq!(
-            display_path(r"C:\Users\zir\AppData\Local\Temp\win-build-log.txt"),
-            "C:/Users/zir/AppData/Local/Temp/win-build-log.txt"
+            display_path(r"C:\Users\dev\AppData\Local\Temp\win-build-log.txt"),
+            "C:/Users/dev/AppData/Local/Temp/win-build-log.txt"
         );
         assert_eq!(display_path("src/main.rs"), "src/main.rs");
     }
@@ -192,9 +192,9 @@ mod tests {
             "src/main.rs"
         );
         // A non-prefix abs path falls back to a clean basename, never a
-        // separator-stripped blob like "CUserszir…".
+        // separator-stripped blob like "CUsersdev…".
         assert_eq!(
-            shorten_path_relative(r"C:\Users\zir\Temp\build.log", r"D:\proj"),
+            shorten_path_relative(r"C:\Users\dev\Temp\build.log", r"D:\proj"),
             "build.log"
         );
     }

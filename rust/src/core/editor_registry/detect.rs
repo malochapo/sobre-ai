@@ -65,8 +65,8 @@ pub fn build_targets(home: &Path) -> Vec<EditorTarget> {
         EditorTarget {
             name: "Copilot CLI",
             agent_key: "copilot".to_string(),
-            config_path: home.join(".copilot/mcp-config.json"),
-            detect_path: home.join(".copilot"),
+            config_path: crate::core::home::resolve_copilot_dir(home).join("mcp-config.json"),
+            detect_path: crate::core::home::resolve_copilot_dir(home),
             config_type: ConfigType::CopilotCli,
         },
         EditorTarget {

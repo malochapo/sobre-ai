@@ -22,9 +22,6 @@ fn status_branch_re() -> &'static regex::Regex {
 fn ahead_re() -> &'static regex::Regex {
     static_regex!(r"ahead of .+ by (\d+) commit")
 }
-fn commit_hash_re() -> &'static regex::Regex {
-    static_regex!(r"\[([\w/.:-]+)\s+([a-f0-9]+)\]")
-}
 fn insertions_re() -> &'static regex::Regex {
     static_regex!(r"(\d+) insertions?\(\+\)")
 }
@@ -84,6 +81,10 @@ fn extract_change_stats(output: &str) -> String {
     }
 }
 
+/// The compressor for a git subcommand's output. The write commands
+/// (`commit`, `push`, `pull`, `merge`, `rebase`, `cherry-pick`, `tag`,
+/// `reset`) and `remote` have none: the output policy keeps them verbatim,
+/// so they never reach the pattern table.
 pub fn compress(command: &str, output: &str) -> Option<String> {
     let sub = extract_git_subcommand(command)?;
     match sub {
@@ -91,32 +92,18 @@ pub fn compress(command: &str, output: &str) -> Option<String> {
         "log" => Some(log::compress_log(command, output)),
         "diff" => Some(diff::compress_diff(output)),
         "add" => Some(commit::compress_add(output)),
-        "commit" => Some(commit::compress_commit(output)),
-        "push" => Some(commit::compress_push(output)),
-        "pull" => Some(commit::compress_pull(output)),
         "fetch" => Some(commit::compress_fetch(output)),
         "clone" => Some(commit::compress_clone(output)),
         "branch" => Some(commit::compress_branch(output)),
         "checkout" | "switch" => Some(commit::compress_checkout(output)),
-        "merge" => Some(commit::compress_merge(output)),
         "stash" => {
             if command.contains("stash show") || command.contains("show stash") {
                 return Some(commit::compress_show(output));
             }
             Some(commit::compress_stash(output))
         }
-        "tag" => Some(commit::compress_tag(output)),
-        "reset" => Some(commit::compress_reset(output)),
-        "remote" => {
-            if command.contains("remote add") {
-                return Some(commit::compress_add(output));
-            }
-            Some(commit::compress_remote(output))
-        }
         "blame" => Some(commit::compress_blame(output)),
-        "cherry-pick" => Some(commit::compress_cherry_pick(output)),
         "show" => Some(commit::compress_show(output)),
-        "rebase" => Some(commit::compress_rebase(output)),
         "submodule" => Some(commit::compress_submodule(output)),
         "worktree" => Some(commit::compress_worktree(output)),
         "bisect" => Some(commit::compress_bisect(output)),
@@ -143,14 +130,16 @@ mod tests {
         assert!(result.contains("ok"), "git add should compress to 'ok'");
     }
 
-    // A chained `git add … && git commit …` routes the whole compound output
-    // through the add-compressor, which used to label OUTPUT LINE COUNT as a
-    // file count ("ok (+7 files)" for a 1-file commit). Numbers in summaries
-    // must come from the output, not be fabricated (limitations audit).
+    // `git add` output that is not `add '<path>'` lines (here line-ending
+    // warnings) is not reported as a file count: numbers in summaries come
+    // from the output.
     #[test]
     fn git_add_does_not_label_line_count_as_files() {
-        let output = "[main abc1234] fix: x\n 1 file changed, 1 insertion(+)\nhook line\nanother\nmore\nlines\nseven\n";
-        let result = compress("git add . && git commit -m 'x'", output).unwrap();
+        let output = (0..7)
+            .map(|i| format!("warning: in the working copy of 'src/f{i}.rs', LF will be replaced by CRLF the next time Git touches it"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let result = compress("git add .", &output).unwrap();
         assert!(
             !result.contains("files)"),
             "line count must not be presented as a file count: {result}"
@@ -165,13 +154,6 @@ mod tests {
             result.contains("+4 files"),
             "verbose add lines are the real file count: {result}"
         );
-    }
-
-    #[test]
-    fn git_push_compresses() {
-        let output = "Enumerating objects: 5, done.\nCounting objects: 100% (5/5), done.\nDelta compression using up to 8 threads\nCompressing objects: 100% (3/3), done.\nWriting objects: 100% (3/3), 1.2 KiB | 1.2 MiB/s, done.\nTotal 3 (delta 2), reused 0 (delta 0)\nTo github.com:user/repo.git\n   abc1234..def5678  main -> main\n";
-        let result = compress("git push", output).unwrap();
-        assert!(result.len() < output.len(), "should compress push output");
     }
 
     #[test]
@@ -280,57 +262,6 @@ mod tests {
     }
 
     #[test]
-    fn git_push_preserves_pipeline_url() {
-        let output = "Enumerating objects: 5, done.\nCounting objects: 100% (5/5), done.\nDelta compression using up to 8 threads\nCompressing objects: 100% (3/3), done.\nWriting objects: 100% (3/3), 1.2 KiB | 1.2 MiB/s, done.\nTotal 3 (delta 2), reused 0 (delta 0)\nremote:\nremote: To create a merge request for main, visit:\nremote:   https://gitlab.com/user/repo/-/merge_requests/new?source=main\nremote:\nremote: View pipeline for this push:\nremote:   https://gitlab.com/user/repo/-/pipelines/12345\nremote:\nTo gitlab.com:user/repo.git\n   abc1234..def5678  main -> main\n";
-        let result = compress("git push", output).unwrap();
-        assert!(
-            result.contains("pipeline"),
-            "should preserve pipeline URL, got: {result}"
-        );
-        assert!(
-            result.contains("merge_request"),
-            "should preserve merge request URL"
-        );
-        assert!(result.contains("->"), "should contain ref update line");
-    }
-
-    #[test]
-    fn git_push_preserves_github_pr_url() {
-        let output = "Enumerating objects: 5, done.\nremote:\nremote: Create a pull request for 'feature' on GitHub by visiting:\nremote:   https://github.com/user/repo/pull/new/feature\nremote:\nTo github.com:user/repo.git\n   abc1234..def5678  feature -> feature\n";
-        let result = compress("git push", output).unwrap();
-        assert!(
-            result.contains("pull/"),
-            "should preserve GitHub PR URL, got: {result}"
-        );
-    }
-
-    #[test]
-    fn git_commit_preserves_hook_output() {
-        let output = "Running pre-commit hooks...\ncheck-yaml..........passed\ncheck-json..........passed\nruff.................failed\nfixing src/app.py\n[main abc1234] fix: resolve bug\n 2 files changed, 10 insertions(+), 3 deletions(-)\n";
-        let result = compress("git commit -m 'fix'", output).unwrap();
-        assert!(
-            result.contains("ruff"),
-            "should preserve hook output, got: {result}"
-        );
-        assert!(
-            result.contains("abc1234"),
-            "should still extract commit hash"
-        );
-    }
-
-    #[test]
-    fn git_commit_no_hooks() {
-        let output =
-            "[main abc1234] fix: resolve bug\n 2 files changed, 10 insertions(+), 3 deletions(-)\n";
-        let result = compress("git commit -m 'fix'", output).unwrap();
-        assert!(result.contains("abc1234"), "should extract commit hash");
-        assert!(
-            !result.contains("hook"),
-            "should not mention hooks when none present"
-        );
-    }
-
-    #[test]
     fn git_log_with_patch_keeps_hunks_for_few_commits() {
         let output = "commit abc1234567890\nAuthor: User <user@email.com>\nDate:   Mon Mar 25 10:00:00 2026 +0100\n\n    feat: add feature\n\ndiff --git a/src/main.rs b/src/main.rs\nindex abc1234..def5678 100644\n--- a/src/main.rs\n+++ b/src/main.rs\n@@ -1,3 +1,4 @@\n fn main() {\n+    println!(\"hello\");\n     let x = 1;\n }\n\ncommit def4567890abc\nAuthor: User <user@email.com>\nDate:   Sun Mar 24 09:00:00 2026 +0100\n\n    fix: resolve issue\n\ndiff --git a/src/lib.rs b/src/lib.rs\nindex 111..222 100644\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1,2 @@\n+pub fn helper() {}\n";
         let result = compress("git log -p", output).unwrap();
@@ -399,41 +330,6 @@ mod tests {
         }
         let result = compress("git log --stat", &output).unwrap();
         assert!(result.contains("+20/-30 total"), "{result}");
-    }
-
-    #[test]
-    fn git_commit_with_feature_branch() {
-        let output = "[feature/my-branch abc1234] feat: add new thing\n 3 files changed, 20 insertions(+), 5 deletions(-)\n";
-        let result = compress("git commit -m 'feat'", output).unwrap();
-        assert!(
-            result.contains("abc1234"),
-            "should extract hash from feature branch, got: {result}"
-        );
-        assert!(
-            result.contains("feature/my-branch"),
-            "should preserve branch name, got: {result}"
-        );
-    }
-
-    #[test]
-    fn git_commit_many_hooks_compressed() {
-        let mut output = String::new();
-        for i in 0..30 {
-            output.push_str(&format!("check-{i}..........passed\n"));
-        }
-        output.push_str("[main abc1234] fix: resolve bug\n 1 file changed, 1 insertion(+)\n");
-        let result = compress("git commit -m 'fix'", &output).unwrap();
-        assert!(result.contains("abc1234"), "should contain commit hash");
-        assert!(
-            result.contains("hooks passed"),
-            "should summarize passed hooks, got: {result}"
-        );
-        assert!(
-            result.len() < output.len() / 2,
-            "should compress verbose hook output ({} vs {})",
-            result.len(),
-            output.len()
-        );
     }
 
     #[test]

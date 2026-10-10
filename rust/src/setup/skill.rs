@@ -25,10 +25,20 @@ fn skills_dir(agent: &str, home: &Path) -> Option<PathBuf> {
                 .join("skills"),
         ),
         "cursor" => Some(home.join(".cursor/skills")),
-        "copilot" | "vscode" => Some(home.join(".copilot/skills")),
+        "copilot" | "vscode" => Some(copilot_dir(home).join("skills")),
         "opencode" => Some(home.join(".config/opencode/skills")),
         _ => None,
     }
+}
+
+/// Copilot's config directory: `$COPILOT_HOME`, else `~/.copilot`, as the
+/// Copilot hooks resolve it.
+fn copilot_dir(home: &Path) -> PathBuf {
+    std::env::var("COPILOT_HOME")
+        .ok()
+        .map(|dir| dir.trim().to_string())
+        .filter(|dir| !dir.is_empty())
+        .map_or_else(|| home.join(".copilot"), PathBuf::from)
 }
 
 /// Where the skill lives for `agent`, if that agent supports skills.
@@ -131,5 +141,21 @@ mod tests {
             installed_dirs(home),
             vec![home.join(".claude/skills/sobre")]
         );
+    }
+
+    /// Copilot's skill goes where Copilot looks: `$COPILOT_HOME` when set.
+    #[test]
+    fn copilot_skill_follows_copilot_home() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let copilot = home.join("elsewhere/copilot");
+        let _copilot = crate::setup::EnvVarGuard::set("COPILOT_HOME", copilot.to_str().unwrap());
+
+        let path = install("copilot", home)
+            .unwrap()
+            .expect("copilot has skills");
+        assert_eq!(path, copilot.join("skills/sobre/SKILL.md"));
+        assert!(installed_dirs(home).contains(&copilot.join("skills/sobre")));
     }
 }

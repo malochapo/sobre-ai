@@ -1,7 +1,8 @@
-//! Golden test for the quality loop v1: an edit failure after a
-//! compressed read must escalate the next auto read of that file to `full`,
-//! and repeated failures must make the (ext × mode) pair risky so *other*
-//! files of the same type stop being compressed with the failing mode.
+//! Golden test for the quality loop (`core/edit_quality.rs`): an
+//! edit failure after a compressed read must escalate the next auto read of
+//! that file to `full`, and repeated failures must make the (ext × mode) pair
+//! risky so *other* files of the same type stop being compressed with the
+//! failing mode.
 //!
 //! Single test in its own binary: it sets `SOBRE_DATA_DIR` process-wide
 //! before the edit-quality store's `OnceLock` is first touched.
@@ -30,10 +31,12 @@ fn params_for(path: &str, old_text: &str) -> EditParams {
 #[test]
 fn edit_fail_after_map_read_escalates_and_penalizes() {
     let tmp = tempfile::tempdir().unwrap();
-    // SAFETY: the project's test suite always runs with `--test-threads=1`
-    // (env-race legacy — see .github/workflows/ci.yml), so no other test in
-    // this binary touches the environment concurrently.
-    unsafe { std::env::set_var("SOBRE_DATA_DIR", tmp.path()) };
+    {
+        // The harness test reads the environment under the same lock.
+        let _lock = sobre::core::data_dir::test_env_lock();
+        // SAFETY: serialized by `test_env_lock()`.
+        unsafe { std::env::set_var("SOBRE_DATA_DIR", tmp.path()) };
+    }
 
     let file = tmp.path().join("golden.rs");
     std::fs::write(&file, "fn real_function() { 1 }\n".repeat(60)).unwrap();
@@ -73,9 +76,9 @@ fn edit_fail_after_map_read_escalates_and_penalizes() {
     let other_path = other.to_string_lossy().to_string();
     let other_ctx = AutoModeContext {
         path: &other_path,
-        // > 6000 tokens so the deterministic size heuristic resolves a code file
-        // to `map` (raised the map floor from 3000 → 6000). Only a non-full
-        // base mode can be escalated to `full` by the risky (rs × map) penalty.
+        // > 6000 tokens, so the size heuristic resolves a code file to `map`.
+        // Only a non-full base mode can be escalated to `full` by the risky
+        // (rs × map) penalty.
         token_count: 7000,
         cache: None,
     };

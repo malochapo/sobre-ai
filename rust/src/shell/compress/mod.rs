@@ -7,7 +7,7 @@ mod tests;
 mod tests_engine;
 
 #[cfg(any(test, feature = "test-support"))]
-pub use engine::compress_if_beneficial_pub;
+pub use engine::{compress_if_beneficial_pub, reaches_pattern_table};
 
 pub(super) use classification::is_excluded_command;
 pub(super) use engine::compress_and_measure;

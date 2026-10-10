@@ -1,4 +1,4 @@
-//! Regression: `replace_unique` must work inside a `sobre_patch`
+//! `replace_unique` works inside a `sobre_patch`
 //! ops[] batch, applied in order against the post-state of preceding ops.
 use std::sync::Arc;
 
@@ -27,7 +27,7 @@ async fn batched_replace_unique_applies_sequentially() {
     let ctx = ctx_for(dir.path());
 
     // Op 2's old_text only exists AFTER op 1 ran — proves in-order, post-state
-    // evaluation (the semantics requested).
+    // evaluation.
     let args = json!({
         "ops": [
             { "op": "replace_unique", "path": p, "old_text": "alpha", "new_text": "gamma" },
