@@ -139,9 +139,13 @@ pub fn diff(project: &Path, from: Option<&str>, to: Option<&str>) -> Result<Stri
         return Err("no checkpoints yet — run snapshot first".to_string());
     }
     let env = base_env(&git_dir, project);
-    let mut arg_refs: Vec<&str> = vec!["diff", from.unwrap_or("HEAD")];
-    arg_refs.extend(to);
-    git(&arg_refs, project, Duration::from_secs(30), &env)?.ok_stdout()
+    let mut args: Vec<&str> = vec!["diff", checked_ref(from.unwrap_or("HEAD"))?];
+    if let Some(to) = to {
+        args.push(checked_ref(to)?);
+    }
+    // `--` makes git read both as revisions, never as paths.
+    args.push("--");
+    git(&args, project, Duration::from_secs(30), &env)?.ok_stdout()
 }
 
 /// Restore files from a checkpoint into the working tree: `path` (a file or
@@ -153,6 +157,7 @@ pub fn restore(project: &Path, git_ref: &str, path: Option<&str>) -> Result<Stri
     if !git_dir.join("HEAD").exists() {
         return Err("no checkpoints yet — nothing to restore".to_string());
     }
+    checked_ref(git_ref)?;
     let before = snapshot(project, &format!("before restoring {git_ref}"))?;
     let env = base_env(&git_dir, project);
     let target = path.unwrap_or(".");
@@ -173,6 +178,16 @@ pub fn restore(project: &Path, git_ref: &str, path: Option<&str>) -> Result<Stri
 }
 
 // ── internals ──────────────────────────────────────────────────────────────
+
+/// A checkpoint reference from the caller, refused when git would read it as
+/// an option (`--output=<file>` makes `git diff` write a file): no revision
+/// starts with `-`.
+fn checked_ref(git_ref: &str) -> Result<&str, String> {
+    if git_ref.is_empty() || git_ref.starts_with('-') {
+        return Err(format!("invalid checkpoint reference {git_ref:?}"));
+    }
+    Ok(git_ref)
+}
 
 fn git(
     args: &[&str],
@@ -290,7 +305,7 @@ mod tests {
     }
 
     fn temp_project(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("lc_shadow_{tag}_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("sobre_shadow_{tag}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -355,6 +370,32 @@ mod tests {
             !project.join(".git").exists(),
             "shadow history must not touch the user's project .git"
         );
+
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
+        let _ = std::fs::remove_dir_all(&data);
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    #[test]
+    fn a_reference_git_would_read_as_an_option_is_refused() {
+        if !git_ready() {
+            return;
+        }
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = temp_project("optdata");
+        crate::test_env::set_var("SOBRE_DATA_DIR", &data);
+        let project = temp_project("optproj");
+        std::fs::write(project.join("a.txt"), "v1\n").unwrap();
+        snapshot(&project, "first").expect("snapshot");
+        std::fs::write(project.join("a.txt"), "v2\n").unwrap();
+
+        let written = data.join("written-by-git");
+        let option = format!("--output={}", written.display());
+        assert!(diff(&project, Some(&option), None).is_err());
+        assert!(diff(&project, Some("HEAD"), Some(&option)).is_err());
+        assert!(restore(&project, &option, Some("a.txt")).is_err());
+        assert!(!written.exists(), "git must not have run with the option");
+        assert_eq!(log(&project, 10).expect("log").len(), 1, "nothing snapshotted");
 
         crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&data);
