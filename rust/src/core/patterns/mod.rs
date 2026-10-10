@@ -255,8 +255,11 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("mypy") || c.starts_with("python -m mypy") || c.starts_with("dmypy "),
         |c, output| mypy::compress(c, output),
     ),
+    // A `pytest` run takes the test-runner path before this table. Only a
+    // command behind an assignment whose name starts with the word lands
+    // here: `PYTEST_ADDOPTS=-x make test`.
     (
-        |c| c.starts_with("pytest") || c.starts_with("python -m pytest"),
+        |c| c.starts_with("pytest"),
         |c, output| pytest::compress(c, output).or_else(|| test::compress(output)),
     ),
     (
@@ -264,7 +267,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| ruff::compress(c, output),
     ),
     (
-        |c| c.starts_with("prettier") || c.starts_with("npx prettier"),
+        |c| c.starts_with("prettier"),
         |_c, output| prettier::compress(output),
     ),
     (
@@ -272,20 +275,13 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| golang::compress(c, output),
     ),
     (
-        |c| {
-            c.starts_with("playwright")
-                || c.starts_with("npx playwright")
-                || c.starts_with("cypress")
-                || c.starts_with("npx cypress")
-        },
+        |c| c.starts_with("playwright") || c.starts_with("cypress"),
         |c, output| playwright::compress(c, output),
     ),
     (
         |c| {
             c.starts_with("next ")
-                || c.starts_with("npx next")
                 || c.starts_with("vite ")
-                || c.starts_with("npx vite")
                 || c.starts_with("vp ")
                 || c.starts_with("vite-plus ")
         },
@@ -328,15 +324,15 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| aws::compress(c, output),
     ),
     (
-        |c| c.starts_with("psql ") || c.starts_with("pg_"),
+        |c| c.starts_with("pg_"),
         |c, output| psql::compress(c, output),
     ),
     (
-        |c| c.starts_with("mysql ") || c.starts_with("mariadb "),
+        |c| c.starts_with("mariadb "),
         |c, output| mysql::compress(c, output),
     ),
     (
-        |c| c.starts_with("prisma ") || c.starts_with("npx prisma"),
+        |c| c.starts_with("prisma "),
         |c, output| prisma::compress(c, output),
     ),
     (
@@ -383,8 +379,10 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c| c.starts_with("systemctl ") || c.starts_with("journalctl"),
         |c, output| systemd::compress(c, output),
     ),
+    // Like `pytest` above: a `jest` run is a test runner's; this sees
+    // `JEST_JUNIT_OUTPUT_DIR=out make test`.
     (
-        |c| c.starts_with("jest") || c.starts_with("npx jest") || c.starts_with("pnpm jest"),
+        |c| c.starts_with("jest"),
         |_c, output| test::compress(output),
     ),
     (
@@ -400,7 +398,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| mypy::compress(c, output),
     ),
     (
-        |c| c.starts_with("nx ") || c.starts_with("npx nx"),
+        |c| c.starts_with("nx "),
         |c, output| npm::compress(c, output),
     ),
     (
@@ -608,13 +606,6 @@ mod tests {
     }
 
     #[test]
-    fn routes_pytest_commands() {
-        let output = "===== test session starts =====\ncollected 5 items\ntest_main.py ..... [100%]\n===== 5 passed in 0.5s =====";
-        assert!(compress_output("pytest", output).is_some());
-        assert!(compress_output("python -m pytest tests/", output).is_some());
-    }
-
-    #[test]
     fn routes_data_domain() {
         let dbt =
             "20:14:02  Found 12 models\n20:14:20  Done. PASS=11 WARN=0 ERROR=1 SKIP=0 TOTAL=12";
@@ -717,13 +708,6 @@ mod tests {
     fn routes_deno_task() {
         let output = "Task dev deno run --allow-net server.ts\nListening on http://localhost:8000";
         assert!(try_specific_pattern("deno task dev", output).is_some());
-    }
-
-    #[test]
-    fn routes_jest_commands() {
-        let output = "PASS  tests/main.test.js\nTest Suites: 1 passed, 1 total\nTests:       5 passed, 5 total\nTime:        2.5 s";
-        assert!(try_specific_pattern("jest", output).is_some());
-        assert!(try_specific_pattern("npx jest --coverage", output).is_some());
     }
 
     #[test]
