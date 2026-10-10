@@ -104,15 +104,6 @@ pub fn entropy_compress(content: &str) -> EntropyResult {
     entropy_compress_with_thresholds(content, BPE_ENTROPY_THRESHOLD, 0.7, &[])
 }
 
-/// Entropy compression with the opportunistic semantic redundancy filter
-/// pinned OFF. The regular path uses the shared embedding engine
-/// whenever it happens to be loaded, so its output depends on runtime state;
-/// the property tests go through this entry point to stay reproducible.
-#[cfg(test)]
-pub fn entropy_compress_deterministic(content: &str) -> EntropyResult {
-    entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[])
-}
-
 /// Entropy compression with the per-file-type thresholds of
 /// [`super::adaptive_thresholds`]. `force_keep` lines (explicit `protect`
 /// tokens) survive verbatim.
@@ -157,79 +148,11 @@ pub fn entropy_compress_task_conditioned(
 ) -> EntropyResult {
     let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
 
-    entropy_compress_with_task(
+    entropy_compress_inner(
         content,
         thresholds.bpe_entropy,
         thresholds.jaccard,
         task_keywords,
-        force_keep,
-    )
-}
-
-/// Real line embedder for the semantic redundancy filter: uses the
-/// shared neural engine only when it is ALREADY loaded (never blocks a read
-/// on a model load) and only for files small enough that per-line embedding
-/// stays within the read-path latency budget. Embeddings are cached by line
-/// hash so re-reads cost nothing.
-#[cfg(feature = "dense")]
-fn line_embedder(line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-
-    const MAX_LINES_FOR_SEMANTIC: usize = 400;
-    const CACHE_CAP: usize = 8192;
-    static LINE_EMBED_CACHE: Mutex<Option<HashMap<u64, Vec<f32>>>> = Mutex::new(None);
-
-    let engine = if line_count <= MAX_LINES_FOR_SEMANTIC {
-        crate::tools::sobre_knowledge::embeddings::embedding_engine_nonblocking()
-    } else {
-        None
-    };
-
-    move |line: &str| {
-        let engine = engine?;
-        if line.len() < 8 {
-            return None;
-        }
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        std::hash::Hash::hash(&line, &mut hasher);
-        let key = std::hash::Hasher::finish(&hasher);
-
-        if let Ok(mut guard) = LINE_EMBED_CACHE.lock()
-            && let Some(hit) = guard.get_or_insert_with(HashMap::new).get(&key)
-        {
-            return Some(hit.clone());
-        }
-        let emb = engine.embed(line).ok()?;
-        if let Ok(mut guard) = LINE_EMBED_CACHE.lock() {
-            let map = guard.get_or_insert_with(HashMap::new);
-            if map.len() >= CACHE_CAP {
-                map.clear();
-            }
-            map.insert(key, emb.clone());
-        }
-        Some(emb)
-    }
-}
-
-#[cfg(not(feature = "dense"))]
-fn line_embedder(_line_count: usize) -> impl Fn(&str) -> Option<Vec<f32>> {
-    |_: &str| None
-}
-
-fn entropy_compress_with_task(
-    content: &str,
-    entropy_threshold: f64,
-    jaccard_threshold: f64,
-    task_keywords: &[String],
-    force_keep: &[String],
-) -> EntropyResult {
-    entropy_compress_inner(
-        content,
-        entropy_threshold,
-        jaccard_threshold,
-        task_keywords,
-        true,
         force_keep,
     )
 }
@@ -239,7 +162,6 @@ fn entropy_compress_inner(
     entropy_threshold: f64,
     jaccard_threshold: f64,
     task_keywords: &[String],
-    semantic: bool,
     force_keep: &[String],
 ) -> EntropyResult {
     let original_tokens = count_tokens(content);
@@ -249,14 +171,6 @@ fn entropy_compress_inner(
     let kw_lower: Vec<String> = task_keywords.iter().map(|k| k.to_lowercase()).collect();
     let original_count = lines.len();
     let mut task_rescued = 0usize;
-    // Semantic redundancy: when the embedding engine is already
-    // loaded, kept lines that embed near-identically to earlier kept lines
-    // are dropped (MMR). Without the engine the closure returns None and the
-    // decision path is byte-identical to the Zipf-only filter.
-    // `semantic=false` (deterministic contract) requests an embedder above
-    // the size cutoff, which never resolves an engine.
-    let embed = line_embedder(if semantic { original_count } else { usize::MAX });
-    let mut scoring_ctx = super::surprise::ScoringCtx::new();
     lines.retain(|line| {
         let trimmed = line.trim();
         // Explicit protect tokens win over every lossy heuristic: a line
@@ -264,12 +178,7 @@ fn entropy_compress_inner(
         if super::protect::line_is_protected(line, force_keep) {
             return true;
         }
-        if super::surprise::should_keep_line_semantic(
-            trimmed,
-            entropy_threshold,
-            &embed,
-            &mut scoring_ctx,
-        ) {
+        if super::surprise::should_keep_line(trimmed, entropy_threshold) {
             return true;
         }
         // Task-conditioned rescue: keep low-entropy lines that mention task keywords.
@@ -363,7 +272,7 @@ fn entropy_compress_with_thresholds(
     jaccard_threshold: f64,
     force_keep: &[String],
 ) -> EntropyResult {
-    entropy_compress_with_task(
+    entropy_compress_inner(
         content,
         entropy_threshold,
         jaccard_threshold,
@@ -625,14 +534,12 @@ mod tests {
         for _ in 0..15 {
             content.push_str("boilerplate noise line\n");
         }
-        let baseline =
-            entropy_compress_inner(&content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[]);
+        let baseline = entropy_compress_inner(&content, BPE_ENTROPY_THRESHOLD, 0.7, &[], &[]);
         let protected = entropy_compress_inner(
             &content,
             BPE_ENTROPY_THRESHOLD,
             0.7,
             &[],
-            false,
             &["boilerplate".to_string()],
         );
         let baseline_hits = baseline.output.matches("boilerplate").count();
@@ -658,7 +565,7 @@ mod tests {
         let b = "let beta_value = compute_beta(request.payload, config.limits);";
         let c = "const GAMMA_LIMIT: usize = 4096;";
         let content = format!("{a}\n{b}\n\n{a}\n{b}\n\n{c}\n");
-        let out = entropy_compress_inner(&content, 0.0, 0.7, &[], false, &[]).output;
+        let out = entropy_compress_inner(&content, 0.0, 0.7, &[], &[]).output;
         assert_eq!(out.matches("alpha_handler").count(), 1, "{out}");
         assert_eq!(out.matches("compute_beta").count(), 1, "{out}");
         assert!(out.contains(c), "{out}");
@@ -666,15 +573,6 @@ mod tests {
             out.find("alpha_handler") < out.find("compute_beta"),
             "{out}"
         );
-    }
-
-    #[test]
-    fn empty_force_keep_is_byte_identical() {
-        // The protect feature must not perturb the unprotected path.
-        let content = "fn a() {}\n// note\nlet x = 1;\nlet x = 1;\n// note\n";
-        let a = entropy_compress_inner(content, BPE_ENTROPY_THRESHOLD, 0.7, &[], false, &[]);
-        let b = entropy_compress_deterministic(content);
-        assert_eq!(a.output, b.output);
     }
 
     #[test]
@@ -889,13 +787,10 @@ mod tests {
         );
     }
 
-    // Property/fuzz tests go through the deterministic entry point: the
-    // semantic-redundancy filter would otherwise depend on whether the
-    // embedding engine happens to be loaded.
     proptest::proptest! {
         #[test]
         fn output_is_subset_of_lines(content in "[a-zA-Z0-9(){};= \n]{10,800}") {
-            let result = entropy_compress_deterministic(&content);
+            let result = entropy_compress(&content);
             for line in result.output.lines() {
                 if line.trim().is_empty() {
                     continue;
@@ -910,7 +805,7 @@ mod tests {
 
         #[test]
         fn tokens_not_greater(content in "[a-zA-Z0-9(){};= \n]{10,600}") {
-            let result = entropy_compress_deterministic(&content);
+            let result = entropy_compress(&content);
             let compressed = count_tokens(&result.output);
             proptest::prop_assert!(
                 compressed <= result.original_tokens,
@@ -922,7 +817,7 @@ mod tests {
 
         #[test]
         fn no_panic_on_arbitrary_utf8(content in "\\PC{0,1000}") {
-            let _ = entropy_compress_deterministic(&content);
+            let _ = entropy_compress(&content);
         }
     }
 }
