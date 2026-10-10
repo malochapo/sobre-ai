@@ -176,8 +176,8 @@ provides: the compression, the tools' behaviour, the agent integration.
 > formats whose parser is already a dependency.
 
 The code written before this rule is inventoried, with a verdict for each
-case, in issue #69. Each item there is either replaced or given its written
-reason.
+case, in [issue #2](https://github.com/malochapo/sobre-ai/issues/2). Each item
+there is either replaced or given its written reason.
 
 ## Process rules (not invariants, but not optional either)
 
