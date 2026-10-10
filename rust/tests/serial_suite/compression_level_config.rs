@@ -59,7 +59,10 @@ fn no_compression_level_changes_the_instructions() {
         let _g = set_compression(value);
         let text = instructions::build_instructions();
         assert_eq!(text, baseline, "compression_level = {value}");
-        assert!(!text.contains("OUTPUT STYLE"), "compression_level = {value}");
+        assert!(
+            !text.contains("OUTPUT STYLE"),
+            "compression_level = {value}"
+        );
     }
 }
 

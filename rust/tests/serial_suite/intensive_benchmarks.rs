@@ -9,7 +9,6 @@ use sobre::core::entropy::entropy_compress_adaptive;
 use sobre::core::signatures::extract_signatures;
 use sobre::core::tokens::count_tokens;
 
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -499,7 +498,11 @@ fn guard_tool_descriptions_not_empty() {
 #[test]
 fn guard_essential_instructions_present() {
     let instr = sobre::instructions::build_instructions();
-    for keyword in ["native tools keep working", "sobre_compose", "the `sobre` skill"] {
+    for keyword in [
+        "native tools keep working",
+        "sobre_compose",
+        "the `sobre` skill",
+    ] {
         assert!(
             instr.contains(keyword),
             "System instructions must contain '{keyword}'"

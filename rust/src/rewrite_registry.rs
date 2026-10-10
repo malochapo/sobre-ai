@@ -124,7 +124,11 @@ fn reads_file(command: &str) -> bool {
     let Some((first, args)) = words.split_first() else {
         return false;
     };
-    let program = first.rsplit('/').next().unwrap_or(first).to_ascii_lowercase();
+    let program = first
+        .rsplit('/')
+        .next()
+        .unwrap_or(first)
+        .to_ascii_lowercase();
     match program.as_str() {
         "sed" | "awk" | "gawk" | "mawk" | "nawk" => {
             !crate::shell::compress::has_in_place_flag(command)

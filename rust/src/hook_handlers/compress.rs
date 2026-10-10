@@ -368,7 +368,8 @@ mod tests {
                     "def handler_{i}(request, filters):\n    if not filters:\n        return None\n    result = apply(request, filters)\n    return result\n\n"
                 )
             })
-            .collect()
+            .collect::<Vec<_>>()
+            .concat()
     }
 
     /// The commands of the pilot whose output was source code, and others
@@ -413,10 +414,21 @@ mod tests {
     #[test]
     fn output_without_a_dedicated_compressor_is_left_alone() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        let log: String = (0..300)
-            .map(|i| format!("2026-01-01 10:00:{:02} INFO worker: processed batch {}\n", i % 60, i % 7))
-            .collect();
-        for cmd in ["./scripts/report.sh", "python manage.py migrate", "make-report"] {
+        let log = (0..300)
+            .map(|i| {
+                format!(
+                    "2026-01-01 10:00:{:02} INFO worker: processed batch {}\n",
+                    i % 60,
+                    i % 7
+                )
+            })
+            .collect::<Vec<_>>()
+            .concat();
+        for cmd in [
+            "./scripts/report.sh",
+            "python manage.py migrate",
+            "make-report",
+        ] {
             assert_eq!(compute_compress(&claude_payload(cmd, &log)), None, "{cmd}");
         }
         // Two commands that both print: no single owner for the whole output.
@@ -432,7 +444,8 @@ mod tests {
     fn git_log_and_pytest_output_still_compress() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let pytest: String = [
-            "============================= test session starts ==============================\n".to_string(),
+            "============================= test session starts ==============================\n"
+                .to_string(),
             "platform linux -- Python 3.12.3, pytest-8.3.2, pluggy-1.5.0\n".to_string(),
             "rootdir: /repo\ncollected 150 items\n\n".to_string(),
         ]
@@ -460,7 +473,10 @@ mod tests {
             let stdout = v["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
                 .as_str()
                 .unwrap();
-            assert!(stdout.contains("[sobre: output compressed"), "{cmd}: {stdout}");
+            assert!(
+                stdout.contains("[sobre: output compressed"),
+                "{cmd}: {stdout}"
+            );
             assert!(stdout.len() < out.len(), "{cmd}");
         }
     }

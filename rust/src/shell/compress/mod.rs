@@ -12,8 +12,8 @@ pub use engine::{compress_if_beneficial_pub, reaches_pattern_table};
 pub(super) use classification::is_excluded_command;
 pub(super) use engine::compress_and_measure;
 
-pub use classification::has_structural_output;
 pub(crate) use classification::has_in_place_flag;
+pub use classification::has_structural_output;
 pub use classification::is_verbatim_output;
 
 /// The built-in passthrough rules, for the generated reference: the command

@@ -89,7 +89,11 @@ fn operators(line: &str) -> Vec<(usize, usize, bool)> {
                 if redirection {
                     i += 1;
                 } else {
-                    let to = if i + 1 < len && b[i + 1] == b'&' { i + 2 } else { i + 1 };
+                    let to = if i + 1 < len && b[i + 1] == b'&' {
+                        i + 2
+                    } else {
+                        i + 1
+                    };
                     ops.push((i, to, false));
                     i = to;
                 }
