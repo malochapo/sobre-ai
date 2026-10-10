@@ -23,6 +23,8 @@ pub(crate) enum Kind {
     SetBySobre,
     /// Read by tests only.
     Test,
+    /// Read when sobre is built, never when it runs.
+    Build,
 }
 
 impl Kind {
@@ -34,6 +36,7 @@ impl Kind {
             Self::Platform => "Platform",
             Self::SetBySobre => "Set by sobre",
             Self::Test => "Tests only",
+            Self::Build => "Build time",
         }
     }
 }
@@ -294,6 +297,13 @@ pub(crate) const VARS: &[EnvVar] = &[
         Kind::Test,
         "Rewrites docs/contracts/frozen-hashes.json (see CONTRIBUTING)",
     ),
+    var(
+        "SOBRE_RELEASE_VERSION",
+        Kind::Build,
+        "The version a release build reports (`--version`, `doctor`, the MCP server \
+         info): the release workflow sets it to the tag's version, for example \
+         `0.1.0-rc.2`. Without it, sobre reports the crate version",
+    ),
 ];
 
 /// `docs/reference/generated/env-vars.md`.
@@ -316,6 +326,7 @@ pub(crate) fn markdown() -> String {
         Kind::Platform,
         Kind::SetBySobre,
         Kind::Test,
+        Kind::Build,
     ] {
         out.push_str(&format!(
             "## {}\n\n| Variable | Meaning |\n|---|---|\n",

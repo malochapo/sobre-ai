@@ -20,7 +20,7 @@ impl ServerHandler for SobreServer {
         let instructions = crate::instructions::build_instructions();
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("sobre", crate::VERSION))
             .with_instructions(instructions)
     }
 
@@ -131,7 +131,7 @@ impl ServerHandler for SobreServer {
         let capabilities = server_capabilities();
 
         Ok(InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("sobre", env!("CARGO_PKG_VERSION")))
+            .with_server_info(Implementation::new("sobre", crate::VERSION))
             .with_instructions(instructions))
     }
 

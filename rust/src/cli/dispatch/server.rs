@@ -60,7 +60,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
     let result = rt.block_on(async {
         core::logging::init_logging("info");
 
-        tracing::info!("sobre v{} MCP server starting", env!("CARGO_PKG_VERSION"));
+        tracing::info!("sobre v{} MCP server starting", crate::VERSION);
 
         // Orphan watchdog: if our parent process dies (IDE crashed/closed without
         // closing stdin), we exit cleanly instead of hanging forever.

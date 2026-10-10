@@ -343,7 +343,7 @@ pub fn run(json: bool) -> u32 {
     let needs_attention = total.saturating_sub(passed);
     if json {
         let report = serde_json::json!({
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": crate::VERSION,
             "passed": passed,
             "total": total,
             "tools_advertised": advertised,
@@ -367,7 +367,7 @@ pub fn run(json: bool) -> u32 {
         crate::outln!("  {GREEN}Everything looks good.{RST}");
     }
     crate::outln!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
-    crate::outln!("  {DIM}sobre {}{RST}", env!("CARGO_PKG_VERSION"));
+    crate::outln!("  {DIM}sobre {}{RST}", crate::VERSION);
 
     needs_attention
 }
@@ -375,7 +375,7 @@ pub fn run(json: bool) -> u32 {
 /// One line on the install: the running version and which detected agents
 /// have a sobre MCP entry.
 fn summary_line() -> String {
-    let version = env!("CARGO_PKG_VERSION");
+    let version = crate::VERSION;
     let detected: Vec<_> = dirs::home_dir()
         .map(|home| crate::core::editor_registry::build_targets(&home))
         .unwrap_or_default()

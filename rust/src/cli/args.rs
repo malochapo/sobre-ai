@@ -17,7 +17,7 @@ use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 #[command(
     name = "sobre",
     bin_name = "sobre",
-    version,
+    version = crate::VERSION,
     // `sobre help [all]` is sobre's own command; `<command> --help` prints a
     // command's help.
     disable_help_subcommand = true
