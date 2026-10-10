@@ -19,7 +19,7 @@ fn sobre_knowledge_recall_is_budgeted_and_deterministic() {
     let project_root_str = project_root.to_string_lossy().to_string();
 
     let policy = MemoryPolicy::default();
-    let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
+    let mut knowledge = ProjectKnowledge::new(&project_root_str);
     for i in 0..50 {
         knowledge.remember(
             "architecture",
@@ -87,7 +87,7 @@ fn sobre_knowledge_recall_as_of_time_travels() {
     let project_root_str = project_root.to_string_lossy().to_string();
 
     let policy = MemoryPolicy::default();
-    let mut knowledge = ProjectKnowledge::load_or_create(&project_root_str);
+    let mut knowledge = ProjectKnowledge::new(&project_root_str);
     knowledge.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
     knowledge.facts[0].confirmation_count = 3;
     let between = chrono::Utc::now();

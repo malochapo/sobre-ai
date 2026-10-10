@@ -84,7 +84,7 @@ async fn remembered_facts_are_written_to_the_data_dir() {
     .await;
     // 3) Assert artifacts exist on disk. Persistence runs on a background thread,
     //    so poll with a bounded timeout rather than asserting immediately.
-    let knowledge = sobre::core::knowledge::ProjectKnowledge::load_or_create(&root_str);
+    let knowledge = sobre::core::knowledge::ProjectKnowledge::new(&root_str);
     let knowledge_dir = data_dir
         .path()
         .join("knowledge")

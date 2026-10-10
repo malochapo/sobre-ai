@@ -18,7 +18,7 @@ fn recall_rehydrates_from_archive_when_active_set_empty() {
 
     // Create a fact that will be archived by lifecycle (low confidence).
     let policy = MemoryPolicy::default();
-    let mut k = ProjectKnowledge::load_or_create(&project_root_str);
+    let mut k = ProjectKnowledge::new(&project_root_str);
     k.remember("architecture", "db", "PostgreSQL", "s1", 0.1, &policy);
     let _ = k.run_memory_lifecycle(&policy);
     k.save().expect("save");

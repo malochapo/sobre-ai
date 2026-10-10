@@ -123,19 +123,22 @@ impl McpTool for SobreKnowledgeTool {
                 ));
             }
 
-            let mut store = crate::core::gotcha_tracker::GotchaStore::load(&project_root);
-            let msg = match store.report_gotcha(&trigger, &resolution, cat, &severity, &session_id)
-            {
-                Some(gotcha) => {
-                    let conf = (gotcha.confidence * 100.0) as u32;
-                    let label = gotcha.category.short_label();
-                    format!("Gotcha recorded: [{label}] {trigger} (confidence: {conf}%)")
-                }
-                None => {
-                    format!("Gotcha noted: {trigger} (evicted by higher-confidence entries)")
-                }
-            };
-            if let Err(e) = store.save(&project_root) {
+            let mut msg = String::new();
+            let saved = crate::core::gotcha_tracker::GotchaStore::update(&project_root, |store| {
+                msg = match store.report_gotcha(&trigger, &resolution, cat, &severity, &session_id)
+                {
+                    Some(gotcha) => {
+                        let conf = (gotcha.confidence * 100.0) as u32;
+                        let label = gotcha.category.short_label();
+                        format!("Gotcha recorded: [{label}] {trigger} (confidence: {conf}%)")
+                    }
+                    None => {
+                        format!("Gotcha noted: {trigger} (evicted by higher-confidence entries)")
+                    }
+                };
+                true
+            });
+            if let Err(e) = saved {
                 return Ok(text_output(format!("ERROR: the gotcha was not saved: {e}")));
             }
             return Ok(text_output(msg));

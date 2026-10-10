@@ -43,8 +43,10 @@ pub fn handle(
 }
 
 fn handle_status(project_root: &str) -> String {
-    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
-        return "No knowledge stored for this project yet. Use sobre_knowledge(action=\"remember\") to start.".to_string();
+    let knowledge = match ProjectKnowledge::try_load(project_root) {
+        Ok(Some(knowledge)) => knowledge,
+        Ok(None) => return "No knowledge stored for this project yet. Use sobre_knowledge(action=\"remember\") to start.".to_string(),
+        Err(e) => return format!("ERROR: {e}"),
     };
 
     let current_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
@@ -81,8 +83,10 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
         return "Error: key is required for remove".to_string();
     };
     // A project with no knowledge has nothing to remove: write nothing.
-    if ProjectKnowledge::load(project_root).is_none() {
-        return format!("No fact found: [{cat}] {k}");
+    match ProjectKnowledge::try_load(project_root) {
+        Ok(Some(_)) => {}
+        Ok(None) => return format!("No fact found: [{cat}] {k}"),
+        Err(e) => return format!("ERROR: {e}"),
     }
     let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Read-modify-write under the cross-process lock. The embedding
