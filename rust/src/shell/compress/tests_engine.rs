@@ -240,6 +240,38 @@ fn reaches_pattern_table_follows_the_gates() {
 mod build_warning_tests {
     use super::super::engine::compress_for_outcome;
 
+    /// `npm run` keeps every warning and error line, not only its last
+    /// lines; npm's own `npm warn` lines included.
+    #[test]
+    fn npm_run_keeps_its_warnings() {
+        let mut out = String::from("\n> app@1.0.0 build\n> webpack --mode production\n\n");
+        for i in 0..40 {
+            out.push_str(&format!(
+                "asset chunk-{i}.js {}.{} KiB [emitted] [minimized] (name: chunk-{i})\n",
+                10 + i,
+                i % 10
+            ));
+        }
+        out.push_str("WARNING in ./src/legacy.js 12:4-20\n");
+        out.push_str("Module not found: Error: Can't resolve 'fs' in '/app/src'\n");
+        out.push_str("npm warn config production Use `--omit=dev` instead.\n");
+        for i in 0..40 {
+            out.push_str(&format!(
+                "orphan modules {i}.{i} KiB [orphan] {i} modules\n"
+            ));
+        }
+        out.push_str("webpack 5.89.0 compiled with 1 warning in 4321 ms\n");
+
+        let result = compress_for_outcome("npm run build", &out, 0);
+        for line in [
+            "WARNING in ./src/legacy.js 12:4-20",
+            "Module not found: Error: Can't resolve 'fs' in '/app/src'",
+            "npm warn config production Use `--omit=dev` instead.",
+        ] {
+            assert!(result.contains(line), "{line:?} lost:\n{result}");
+        }
+    }
+
     #[test]
     fn dotnet_build_keeps_every_warning() {
         let warning = |i: usize| {
