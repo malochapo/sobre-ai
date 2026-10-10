@@ -3,9 +3,10 @@ Copyright 2026 The sobre contributors
 
 Licensed under the Apache License, Version 2.0.
 
-sobre is a modified version of lean-ctx. The files in this repository have
-been changed from the original: see FORK.md, the statement of changes
-required by section 4(b) of the licence.
+sobre is a modified version of lean-ctx. Its files have been changed from
+the original: FORK.md, in the source repository
+(https://github.com/malochapo/sobre-ai), is the statement of changes required
+by section 4(b) of the licence.
 
 The attribution notices below are reproduced from the NOTICE files of the
 works sobre is derived from, as section 4(d) of the licence requires.
