@@ -147,10 +147,8 @@ pub(crate) fn handle_remember(
             // Serialize the embedding index's read-modify-write under the same
             // per-project lock as the fact write above, and compact against the
             // freshly committed on-disk knowledge instead of this call's
-            // snapshot. The side-car write previously ran lock-free against a
-            // stale snapshot, so parallel `remember` calls clobbered each
-            // other's vectors and pruned just-stored embeddings — semantic
-            // recall then returned far fewer hits than facts stored.
+            // snapshot, so parallel `remember` calls cannot clobber each
+            // other's vectors or prune just-stored embeddings.
             let (warn, semantic) = ProjectKnowledge::with_project_lock(project_root, || {
                 let mut idx = crate::core::knowledge_embedding::KnowledgeEmbeddingIndex::load(
                     &knowledge.project_hash,

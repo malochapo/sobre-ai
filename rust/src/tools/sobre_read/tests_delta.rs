@@ -46,10 +46,9 @@ fn a_deleted_file_is_an_error_not_its_cached_body() {
 }
 
 /// Regression: an `auto` re-read of an unchanged, already-fully-delivered file
-/// must collapse to the cheap `[unchanged]` stub — not re-deliver the whole body.
-/// The auto path used to resolve modes with `cache: None`, so the resolver's
-/// `("full","cache_hit")` short-circuit was dead and every `auto` re-read re-sent
-/// the file ("re-reads aren't cached"). The cache-aware resolver restores it.
+/// must collapse to the cheap `[unchanged]` stub — not re-deliver the whole body:
+/// the auto path resolves its mode with the cache, so the resolver's
+/// `("full","cache_hit")` short-circuit applies.
 #[test]
 fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
     let dir = tempfile::tempdir().unwrap();
@@ -261,8 +260,8 @@ fn full_read_fallback_never_serves_a_stub() {
     std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
 
     let mut cache = primed_full_cache(&p);
-    // Same bytes on disk, so `store` reports a hit and the old code took the
-    // ungated `full_content_delivered` branch here.
+    // Same bytes on disk, so `store` reports a hit: the fallback must still
+    // not decide stubbing from `full_content_delivered`.
     let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, &p, "rs", None).unwrap();
     assert!(
         !out.contains("[unchanged"),
@@ -282,11 +281,11 @@ fn conversation_scoped_stub_served_when_no_context() {
     std::fs::write(&path, "fn main() { let x = 1; }\n").unwrap();
 
     let cache = primed_full_cache(&p);
-    // current = None (hooks absent) preserves legacy process-scoped behavior.
+    // current = None (hooks absent): the stub is scoped to this process.
     let out = try_stub_hit_readonly_scoped(&cache, &p, None);
     assert!(
         out.is_some_and(|o| o.content.contains("[unchanged")),
-        "absent conversation context must keep legacy stub behavior"
+        "absent conversation context must keep the process-scoped stub"
     );
 }
 

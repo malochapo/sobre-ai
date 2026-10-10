@@ -208,7 +208,7 @@ impl McpTool for SobreShellTool {
             // inline wait — the host aborts at ~120s regardless — it only
             // suppressed our own detach, producing exactly the unresolvable
             // task id the cap exists to prevent. Separate knobs, one direction:
-            let soft_cap = std::time::Duration::from_millis(foreground_soft_cap_ms());
+            let soft_cap = FOREGROUND_SOFT_CAP;
             let progress_sender = ctx.progress_sender.clone();
             let progress_label: String = cmd_clone.chars().take(60).collect();
             let cap_secs = soft_cap.as_secs_f64();
@@ -427,9 +427,7 @@ fn should_auto_background(command: &str, timeout_ms: Option<u64>) -> bool {
 /// pollable background job. Kept below the MCP host's ~120s tool-call abort so
 /// the caller always receives a real `shell_*` job id instead of an
 /// unresolvable task id.
-fn foreground_soft_cap_ms() -> u64 {
-    110_000
-}
+const FOREGROUND_SOFT_CAP: std::time::Duration = std::time::Duration::from_secs(110);
 
 #[cfg(test)]
 mod tests {

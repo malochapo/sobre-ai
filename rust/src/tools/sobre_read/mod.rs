@@ -639,7 +639,7 @@ pub(crate) fn record_read(path: &str, out: &ReadOutput, original_tokens: usize) 
 ///
 /// This is the read-locked fast path: it needs no `&mut SessionCache`, so the
 /// dominant "re-read an unchanged file" case proceeds under a shared lock and
-/// parallel reads of distinct files no longer serialize on a global write lock.
+/// parallel reads of distinct files do not serialize on a global write lock.
 pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOutput> {
     // Resolve the caller *fresh* (TTL-bypassed): the stub gate's concurrency
     // detection must see a just-appeared second chat with zero lag, else a stub
@@ -675,8 +675,7 @@ pub(crate) fn try_stub_hit_readonly_scoped(
         // Conversation scoping: only stub when THIS conversation received
         // the content. A different (or unknown) conversation re-delivers in full
         // rather than emit a misleading stub. `current == None` (hooks absent)
-        // preserves legacy process-scoped behavior, so single-chat hit rates are
-        // unchanged.
+        // scopes the stub to this process.
         if !crate::core::conversation::conversation_allows_stub(
             current_conversation,
             delivered_conv.as_deref(),
@@ -690,8 +689,8 @@ pub(crate) fn try_stub_hit_readonly_scoped(
     // Cold fallback: no live entry (e.g. after an MCP restart or idle
     // clear). Serve the stub from the persisted index iff the file is unchanged
     // AND the *same known* conversation is asking — a stricter gate than the warm
-    // path, because a cold stub crosses a process boundary (no "no context →
-    // legacy" escape; see `conversation_allows_cold_stub`).
+    // path, because a cold stub crosses a process boundary (an unknown
+    // conversation never gets one; see `conversation_allows_cold_stub`).
     let rec = crate::core::read_stub_index::lookup(path)?;
     if crate::core::cache::is_cache_entry_stale_verified(path, rec.stored_mtime(), &rec.hash) {
         return None;
@@ -979,8 +978,7 @@ fn prepare_inner(
 
     // Two-Phase Read: when pre-read content was provided (disk I/O
     // already happened outside the cache lock), use it directly. Otherwise
-    // fall back to reading from disk (legacy path, still used by fast-path
-    // inline calls where the write lock was immediately available).
+    // read from disk here.
     let content = if let Some(pr) = preread {
         pr
     } else {

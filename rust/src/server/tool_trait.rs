@@ -171,7 +171,7 @@ pub struct ToolContext {
 impl Default for ToolContext {
     /// Minimal context: `project_root` empty, all shared-state handles `None`.
     /// Single source for the one-shot CLI ctx (`cli::call_cmd::oneshot_ctx`) and
-    /// the `empty_ctx` test helper — adding a field no longer breaks either.
+    /// the `empty_ctx` test helper, so adding a field breaks neither.
     fn default() -> Self {
         Self {
             project_root: String::new(),
@@ -254,9 +254,9 @@ pub fn get_int(args: &Map<String, Value>, key: &str) -> Option<i64> {
 
 /// Read a non-negative integer argument as `usize`.
 ///
-/// Returns `None` for missing or negative values. This avoids the
-/// `negative_i64 as usize` wrap to `usize::MAX`, which previously let an agent
-/// trigger unbounded allocations (e.g. `top_k`, `limit`, `max_results`) → OOM.
+/// Returns `None` for missing or negative values, never the
+/// `negative_i64 as usize` wrap to `usize::MAX` that would let an agent
+/// trigger unbounded allocations (`top_k`, `limit`, `max_results`).
 /// Callers should still apply a sensible upper cap on the result.
 pub fn get_usize(args: &Map<String, Value>, key: &str) -> Option<usize> {
     get_int(args, key).and_then(|n| usize::try_from(n).ok())

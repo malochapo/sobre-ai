@@ -268,8 +268,8 @@ fn partial_overview(project_root: &str) -> String {
     }
 
     out.push(
-        "The full task-relevant graph view (signatures, neighbors, relevance) will be \
-         available shortly — call sobre_compose again without a task to get it."
+        "The graph-based overview (structure, hotspots) will be available shortly — \
+         call sobre_compose again without a task to get it."
             .to_string(),
     );
     out.join("\n")
