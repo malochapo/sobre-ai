@@ -78,7 +78,6 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         });
@@ -98,12 +97,10 @@ pub fn reciprocal_rank_fusion(
             end_line: result.end_line,
             snippet: result.snippet.clone(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         });
         entry.rrf_score += rrf_score;
-        entry.dense_score = Some(result.similarity);
         entry.dense_rank = Some(rank + 1);
     }
 
@@ -227,7 +224,6 @@ pub struct HybridResult {
     pub end_line: usize,
     pub snippet: String,
     pub rrf_score: f64,
-    pub dense_score: Option<f32>,
     pub bm25_rank: Option<usize>,
     pub dense_rank: Option<usize>,
 }
@@ -246,7 +242,6 @@ impl HybridResult {
             end_line: result.end_line,
             snippet: result.snippet,
             rrf_score: result.score,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         }
@@ -467,7 +462,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
         }];
@@ -487,7 +481,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.0156,
-            dense_score: Some(0.91),
             bm25_rank: Some(1),
             dense_rank: Some(2),
         }];
@@ -507,7 +500,6 @@ mod tests {
             end_line: 20,
             snippet: "fn validate() {}".into(),
             rrf_score: 0.5898,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         }];
@@ -529,7 +521,6 @@ mod tests {
             end_line: 0,
             snippet: String::new(),
             rrf_score: 0.0,
-            dense_score: None,
             bm25_rank: None,
             dense_rank: None,
         };

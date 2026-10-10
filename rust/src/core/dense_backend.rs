@@ -25,7 +25,6 @@ pub fn dense_results_as_hybrid(
             end_line: d.end_line,
             snippet: d.snippet,
             rrf_score: d.similarity as f64,
-            dense_score: Some(d.similarity),
             bm25_rank: None,
             dense_rank: None,
         })
