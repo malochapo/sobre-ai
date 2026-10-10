@@ -26,8 +26,6 @@ pub struct KeySchema {
     pub ty: String,
     pub default: serde_json::Value,
     pub description: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub values: Option<Vec<String>>,
 }
 
 fn key(ty: &str, default: serde_json::Value, desc: &str) -> KeySchema {
@@ -35,7 +33,6 @@ fn key(ty: &str, default: serde_json::Value, desc: &str) -> KeySchema {
         ty: ty.to_string(),
         default,
         description: desc.to_string(),
-        values: None,
     }
 }
 

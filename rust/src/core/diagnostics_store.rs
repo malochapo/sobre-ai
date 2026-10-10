@@ -204,11 +204,7 @@ fn cap_message(msg: &str) -> String {
     if trimmed.len() <= 160 {
         trimmed.to_string()
     } else {
-        let mut end = 157;
-        while end > 0 && !trimmed.is_char_boundary(end) {
-            end -= 1;
-        }
-        format!("{}...", &trimmed[..end])
+        format!("{}...", &trimmed[..trimmed.floor_char_boundary(157)])
     }
 }
 

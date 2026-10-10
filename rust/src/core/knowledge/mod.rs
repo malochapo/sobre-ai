@@ -479,6 +479,19 @@ mod tests {
         assert!(similar[0].similarity > 0.35);
     }
 
+    /// The preview of a long similar value is cut on a character boundary.
+    #[test]
+    fn cross_key_similar_previews_multibyte_values() {
+        let policy = default_policy();
+        let mut k = ProjectKnowledge::new("/tmp/test");
+        let value = "я".repeat(40);
+        k.remember("arch", "a", &value, "s1", 0.9, &policy);
+        let similar = find_cross_key_similar("arch", "b", &value, &k.facts, 3);
+        assert_eq!(similar.len(), 1);
+        assert!(similar[0].value_preview.ends_with("..."));
+        assert!(value.starts_with(similar[0].value_preview.trim_end_matches("...")));
+    }
+
     #[test]
     fn cross_key_similar_excludes_same_key() {
         let policy = default_policy();

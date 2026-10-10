@@ -69,6 +69,19 @@ pub fn resolve_codex_dir() -> Option<PathBuf> {
     resolve_home_dir().map(|h| h.join(".codex"))
 }
 
+/// Copilot CLI's config directory: `$COPILOT_HOME` when set, else
+/// `<home>/.copilot`. Its `mcp-config.json`, hooks and skills live there.
+pub fn resolve_copilot_dir(home: &Path) -> PathBuf {
+    copilot_dir_from(std::env::var("COPILOT_HOME").ok().as_deref(), home)
+}
+
+fn copilot_dir_from(copilot_home: Option<&str>, home: &Path) -> PathBuf {
+    match copilot_home.map(str::trim) {
+        Some(dir) if !dir.is_empty() => PathBuf::from(dir),
+        _ => home.join(".copilot"),
+    }
+}
+
 /// Resolve the Codex profile name from `CODEX_PROFILE`.
 fn env_codex_profile() -> Option<String> {
     std::env::var(CODEX_PROFILE_ENV)
@@ -155,6 +168,17 @@ mod tests {
         let result = resolve_codex_dir();
         assert!(result.is_some());
         assert!(result.unwrap().ends_with(".codex"));
+    }
+
+    #[test]
+    fn copilot_dir_honours_copilot_home() {
+        let home = Path::new("/home/someone");
+        assert_eq!(
+            copilot_dir_from(Some("/opt/copilot"), home),
+            PathBuf::from("/opt/copilot")
+        );
+        assert_eq!(copilot_dir_from(Some(" "), home), home.join(".copilot"));
+        assert_eq!(copilot_dir_from(None, home), home.join(".copilot"));
     }
 
     #[test]

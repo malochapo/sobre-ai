@@ -107,6 +107,10 @@ pub struct Gotcha {
     pub source: GotchaSource,
     pub prevented_count: u32,
     pub tags: Vec<String>,
+    /// When decay was last taken off `confidence`, so a store loaded and
+    /// saved again is not decayed twice for the same time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decayed_at: Option<DateTime<Utc>>,
 }
 
 impl Gotcha {
@@ -139,6 +143,7 @@ impl Gotcha {
             source,
             prevented_count: 0,
             tags: Vec::new(),
+            decayed_at: None,
         }
     }
 
@@ -223,10 +228,9 @@ pub struct GotchaStore {
     pub error_log: Vec<SessionErrorLog>,
     pub updated_at: DateTime<Utc>,
 
-    // Persisted (shell-ding): a fail→fix spanning two `sobre -c`
-    // invocations is two separate processes, so the in-memory active store
-    // cannot bridge them. Persisting pending errors lets the later process load
-    // and correlate the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on
+    // Persisted: a fail→fix spanning two `sobre -c` invocations is two
+    // separate processes, so the later one loads the pending error and
+    // correlates the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on
     // load and on every detect/resolve), so the file stays tiny.
     pub pending_errors: Vec<PendingError>,
 }

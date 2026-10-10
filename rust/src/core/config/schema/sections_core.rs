@@ -60,17 +60,17 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     root.insert(
         "embedding_model".into(),
         key(
-            "string?",
-            serde_json::json!(null),
-            "Embedding model for semantic search (dense builds): minilm (default: sentence-transformers/all-MiniLM-L6-v2), nomic (nomic-ai/nomic-embed-text-v1.5), each pinned to a commit, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search",
+            "string",
+            serde_json::json!("minilm"),
+            "Embedding model for semantic search (dense builds): minilm (sentence-transformers/all-MiniLM-L6-v2), nomic (nomic-ai/nomic-embed-text-v1.5), each pinned to a commit, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search",
         ),
     );
     root.insert(
         "shell_timeout_secs".into(),
         key(
-            "u64?",
-            serde_json::json!(null),
-            "sobre_shell stops a command after this many seconds without new output (null = 120; 0 stops it at once; builds and tests get at least 600; a call's timeout_ms wins). A foreground command still running after about 110 s moves to the background and returns a job id",
+            "u64",
+            serde_json::json!(120),
+            "sobre_shell stops a command after this many seconds without new output (0 stops it at once; builds and tests get at least 600; a call's timeout_ms wins). A foreground command still running after about 110 s moves to the background and returns a job id",
         ),
     );
 

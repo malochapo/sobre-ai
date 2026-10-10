@@ -154,7 +154,7 @@ pub fn find_cross_key_similar(
         let sim = string_similarity(new_value, &f.value);
         if sim > 0.35 {
             let preview = if f.value.len() > 60 {
-                format!("{}...", &f.value[..57])
+                format!("{}...", &f.value[..f.value.floor_char_boundary(57)])
             } else {
                 f.value.clone()
             };

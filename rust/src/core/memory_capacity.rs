@@ -1,10 +1,8 @@
 //! Single memory capacity manager.
 //!
 //! One reclaim formula and one generic, archive-backed, hysteresis reclaim used
-//! by every store. Replaces the duplicated `reclaim_target_capacity` and the
-//! per-store hard drops (history drain, procedure/pattern truncate): eviction is
-//! now lossless everywhere because the dropped tail is archived (and restorable)
-//! before removal.
+//! by every store. Eviction is lossless: the dropped tail is archived (and
+//! restorable) before removal.
 
 use serde::Serialize;
 use std::cmp::Ordering;
@@ -49,7 +47,7 @@ pub fn reclaim_preview(len: usize, max: usize, headroom_pct: f32) -> usize {
 /// unchanged.
 pub fn reclaim_store<T, F>(
     store: MemoryStore,
-    scope: Option<&str>,
+    scope: &str,
     items: &mut Vec<T>,
     max: usize,
     headroom_pct: f32,
@@ -155,14 +153,9 @@ mod tests {
         with_temp_data_dir(|| {
             // rank 0 = best kept (retention_cmp ascending by rank).
             let mut items: Vec<Item> = (0..8).map(|rank| Item { rank }).collect();
-            let archived = reclaim_store(
-                MemoryStore::History,
-                Some("p"),
-                &mut items,
-                8,
-                0.25,
-                |a, b| a.rank.cmp(&b.rank),
-            )
+            let archived = reclaim_store(MemoryStore::History, "p", &mut items, 8, 0.25, |a, b| {
+                a.rank.cmp(&b.rank)
+            })
             .expect("reclaim succeeds");
             // 8 -> keep 6, archive 2.
             assert_eq!(items.len(), 6);
@@ -183,15 +176,11 @@ mod tests {
     fn reclaim_store_noop_under_cap() {
         with_temp_data_dir(|| {
             let mut items: Vec<Item> = (0..3).map(|rank| Item { rank }).collect();
-            let archived = reclaim_store(
-                MemoryStore::History,
-                Some("p"),
-                &mut items,
-                10,
-                0.25,
-                |a, b| a.rank.cmp(&b.rank),
-            )
-            .expect("reclaim succeeds");
+            let archived =
+                reclaim_store(MemoryStore::History, "p", &mut items, 10, 0.25, |a, b| {
+                    a.rank.cmp(&b.rank)
+                })
+                .expect("reclaim succeeds");
             assert!(archived.is_empty());
             assert_eq!(items.len(), 3);
         });
@@ -210,14 +199,9 @@ mod tests {
 
         let mut items: Vec<Item> = (0..8).map(|rank| Item { rank }).collect();
         let original = items.clone();
-        let result = reclaim_store(
-            MemoryStore::History,
-            Some("p"),
-            &mut items,
-            8,
-            0.25,
-            |a, b| a.rank.cmp(&b.rank),
-        );
+        let result = reclaim_store(MemoryStore::History, "p", &mut items, 8, 0.25, |a, b| {
+            a.rank.cmp(&b.rank)
+        });
 
         crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_file(path);

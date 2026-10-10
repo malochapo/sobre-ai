@@ -143,6 +143,7 @@ mod tests {
                 },
                 prevented_count: 0,
                 tags: vec!["rust".to_string()],
+                decayed_at: None,
             });
         }
 

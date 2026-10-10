@@ -233,18 +233,31 @@ impl GotchaStore {
 
     // -- Decay --------------------------------------------------------------
 
+    /// Lowers each gotcha's confidence with the time since it was last seen,
+    /// from its first day on, and drops the gotchas that fall below the
+    /// threshold. Only the decay not taken off yet (since `decayed_at`) is
+    /// applied, so applying it again later never counts the same days twice.
     pub fn apply_decay(&mut self) {
         let now = Utc::now();
 
         for gotcha in &mut self.gotchas {
-            let days_since = (now - gotcha.last_seen).num_days().max(0) as f32;
-            if days_since < 1.0 {
+            let age_at = |t: chrono::DateTime<Utc>| {
+                (t - gotcha.last_seen).num_seconds().max(0) as f32 / 86_400.0
+            };
+            let age = age_at(now);
+            if age < 1.0 {
                 continue;
             }
+            let already = gotcha
+                .decayed_at
+                .map(age_at)
+                .filter(|a| *a >= 1.0)
+                .unwrap_or(0.0);
             let base_rate = gotcha.source.decay_rate();
             let occurrence_factor = 1.0 / (1.0 + gotcha.occurrences as f32 * 0.1);
-            let decay = base_rate * occurrence_factor * (days_since / 7.0);
+            let decay = base_rate * occurrence_factor * ((age - already).max(0.0) / 7.0);
             gotcha.confidence = (gotcha.confidence - decay).max(0.0);
+            gotcha.decayed_at = Some(now);
         }
 
         self.gotchas
@@ -410,6 +423,41 @@ mod tests {
 
         store.apply_decay();
         assert!(store.gotchas[0].confidence < 0.5);
+    }
+
+    /// Loading the store applies decay, and every load is saved back: the
+    /// decay a gotcha's age calls for is taken off once, not on every load.
+    #[test]
+    fn decay_is_applied_once_across_loads() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = "/tmp/sobre-gotcha-decay-once";
+        let mut store = GotchaStore::new("h");
+        let mut g = Gotcha::new(
+            GotchaCategory::Build,
+            GotchaSeverity::Warning,
+            "old error",
+            "old fix",
+            GotchaSource::AgentReported {
+                session_id: "s1".into(),
+            },
+            "s1",
+        );
+        g.last_seen = Utc::now() - chrono::Duration::days(14);
+        g.confidence = 0.9;
+        store.gotchas.push(g);
+        store.save(root).unwrap();
+
+        let first = GotchaStore::load(root);
+        let decayed = first.gotchas[0].confidence;
+        assert!(decayed < 0.9);
+        first.save(root).unwrap();
+        let second = GotchaStore::load(root);
+        assert!(
+            (second.gotchas[0].confidence - decayed).abs() < 1e-4,
+            "{} then {}",
+            decayed,
+            second.gotchas[0].confidence
+        );
     }
 
     #[test]

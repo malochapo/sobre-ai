@@ -7,7 +7,7 @@ Source of truth: `rust/src/core/config/schema/`.
 sobre reads one file, `~/.config/sobre/config.toml` (the directory follows `$XDG_CONFIG_HOME`, or `$SOBRE_CONFIG_DIR` when set). Below is every recognized key with its type and default.
 
 - **Reading.** The file is read again when it changes. A file that does not parse is ignored whole: every key takes its default, and a warning goes to stderr once. An unknown key is ignored; `sobre doctor` names it.
-- **`sobre config set <key> <value>`.** Booleans take `true`/`false` (also `yes`/`no`, `on`/`off`, `1`/`0`); a list takes comma-separated values. The value is checked before the file is written, and the file keeps its comments and key order. `default` or an empty value removes the key, so its default applies.
+- **`sobre config set <key> <value>`.** Booleans take `true`/`false` (also `yes`/`no`, `1`/`0`); a list takes comma-separated values. The value is checked before the file is written, and the file keeps its comments and key order. `default` or an empty value removes the key, so its default applies.
 - **`sobre config init`** writes the file with every key documented, keeping an existing one as `config.toml.sobre.bak`.
 
 ## Top-level keys
@@ -16,12 +16,12 @@ Top-level configuration keys
 
 - `compression_level` (f64, default `0.3`) — Compression intensity 0.0 (none) – 1.0 (densest), default 0.3. Picks the prose, shell-output and CRP style by band: <0.2 off, <0.4 lite, <0.6 standard, <0.8 max, else raw. File reads choose their mode per file
 - `debug_log` (bool, default `false`) — Opt-in (default off): write a human-readable debug log of MCP tool calls and of the native tool calls hooks changed (with the reason) to <state_dir>/logs/debug.log; `sobre doctor` prints the path
-- `embedding_model` (string?, default `null`) — Embedding model for semantic search (dense builds): minilm (default: sentence-transformers/all-MiniLM-L6-v2), nomic (nomic-ai/nomic-embed-text-v1.5), each pinned to a commit, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search
+- `embedding_model` (string, default `minilm`) — Embedding model for semantic search (dense builds): minilm (sentence-transformers/all-MiniLM-L6-v2), nomic (nomic-ai/nomic-embed-text-v1.5), each pinned to a commit, or any HuggingFace repo with an ONNX export and a tokenizer.json, as org/repo[@revision]. Pooling and query/document prompts come from the repo's sentence-transformers metadata. Changing it re-indexes on the next semantic search
 - `hook_binary` (string?, default `null`) — Verbatim binary path/expression for generated agent-hook commands (e.g. $HOME/.local/bin/sobre) — for settings files synced across machines with different usernames. Shell-expanded by the hook host at run time; doctor accepts it as current. Empty = automatic absolute-path resolution
 - `ignore` (string[], default `[]`) — Globs kept out of the search and graph indexes (BM25, dense, graph), on top of .gitignore (always respected). sobre_glob, sobre_tree and regex search do not read it
 - `passthrough_commands` (string[], default `[]`) — Commands whose output is passed through uncompressed (the command still runs normally). An entry matches a command that is the entry or starts with it and a space, case-insensitively: `mytool` matches `mytool --watch`. Adds to the built-in list below
 - `search_roots` (string[], default `[]`) — Extra directories searched alongside the project root, as the other roots of a multi-root workspace
-- `shell_timeout_secs` (u64?, default `null`) — sobre_shell stops a command after this many seconds without new output (null = 120; 0 stops it at once; builds and tests get at least 600; a call's timeout_ms wins). A foreground command still running after about 110 s moves to the background and returns a job id
+- `shell_timeout_secs` (u64, default `120`) — sobre_shell stops a command after this many seconds without new output (0 stops it at once; builds and tests get at least 600; a call's timeout_ms wins). A foreground command still running after about 110 s moves to the background and returns a job id
 
 ## `[proxy]`
 
@@ -29,8 +29,8 @@ The local API proxy: switch, port and upstream URLs. Built in: the proxy never c
 
 - `enabled` (bool?, default `null`) — Run the local API proxy and point installed agents at it. null = not decided yet (init asks), false = never touch it
 - `port` (u16?, default `null`) — Port the proxy listens on (default: 4444 + uid mod 1000 on Unix, 4444 on Windows)
-- `upstreams.anthropic` (string?, default `null`) — Upstream URL for the anthropic provider (unset = https://api.anthropic.com). Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)
-- `upstreams.openai` (string?, default `null`) — Upstream URL for the openai provider (unset = https://api.openai.com). Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)
+- `upstreams.anthropic` (string, default `https://api.anthropic.com`) — Upstream URL for the anthropic provider. Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)
+- `upstreams.openai` (string, default `https://api.openai.com`) — Upstream URL for the openai provider. Writing a URL is the opt-in for a custom or plaintext host. Must start with http:// or https://; a running proxy re-reads it every 5 s and keeps its last good value when a new one is invalid (`sobre proxy status` shows the drift)
 
 ## Built-in passthrough commands
 

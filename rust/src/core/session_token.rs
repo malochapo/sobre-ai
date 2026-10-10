@@ -44,18 +44,31 @@ pub fn resolve_proxy_token(env_var: &str) -> String {
     token
 }
 
-/// Write token to file with restrictive permissions (0600 on Unix).
+/// Write token to file with restrictive permissions (0600 on Unix): a new
+/// file is created with them, so the token is never readable by others.
 fn write_token_file(path: &PathBuf, token: &str) {
+    use std::io::Write;
     if let Some(parent) = path.parent()
         && let Err(e) = std::fs::create_dir_all(parent)
     {
         tracing::error!("Failed to create token directory {}: {e}", parent.display());
         return;
     }
-    if let Err(e) = std::fs::write(path, token) {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let written = options
+        .open(path)
+        .and_then(|mut file| file.write_all(token.as_bytes()));
+    if let Err(e) = written {
         tracing::error!("Failed to write session token to {}: {e}", path.display());
         return;
     }
+    // An existing file keeps the mode it was created with.
     set_restrictive_permissions(path);
 }
 
@@ -88,6 +101,18 @@ mod tests {
         let token = generate_token();
         assert_eq!(token.len(), 64);
         assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn token_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("session_token");
+        write_token_file(&path, "abc");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "abc");
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
     }
 
     #[test]

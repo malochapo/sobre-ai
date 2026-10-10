@@ -53,12 +53,6 @@ pub enum ConfigError {
     #[error("Expected number, got: {value}")]
     ExpectedNumber { value: String },
 
-    #[error("Invalid value '{value}'. Allowed: {allowed}")]
-    InvalidEnumValue { value: String, allowed: String },
-
-    #[error("Cannot set table '{value}' via CLI. Edit config.toml directly.")]
-    CannotSetTable { value: String },
-
     #[error(
         "Cannot set '{key}': '{part}' already holds a non-table value in config.toml. Fix or remove that key first."
     )]
@@ -70,9 +64,6 @@ pub enum ConfigError {
 
 #[derive(Error, Debug)]
 pub enum DispatchError {
-    #[error("path resolution failed: {message}")]
-    PathResolution { message: String },
-
     #[error("{message}")]
     Tool { message: String },
 }

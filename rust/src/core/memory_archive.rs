@@ -1,16 +1,15 @@
 //! Multi-store, lossless memory archive.
 //!
-//! Every memory store — facts, history, patterns — archives the
-//! items it evicts here *before* dropping them, so capacity management is never
+//! Both memory stores, facts and consolidation history, archive the items
+//! they evict here *before* dropping them, so capacity management is never
 //! lossy and anything reclaimed can be restored. This is the single archive
 //! subsystem behind [`crate::core::memory_capacity`] and the recall-miss
 //! rehydrate path.
 //!
 //! ## On-disk layout
-//! - Facts live at the root, `memory/archive/archive-*.json`.
-//! - Every other store lives under `memory/archive/<store>/<scope>/archive-*.json`,
-//!   where `<scope>` is the per-project hash so a restore lands in the right
-//!   project.
+//! Every store lives under `memory/archive/<store>/<scope>/archive-*.json`,
+//! where `<scope>` is the project hash: an archive belongs to one project, and
+//! a restore reads only that project's archives.
 //!
 //! ## Format
 //! A single envelope ([`ArchiveEnvelope`]) is used for all stores. The item
@@ -46,14 +45,6 @@ impl MemoryStore {
     fn all() -> [MemoryStore; 2] {
         [MemoryStore::Facts, MemoryStore::History]
     }
-
-    /// Subdirectory under `memory/archive`. Facts return `None` (the root).
-    fn subdir(self) -> Option<&'static str> {
-        match self {
-            MemoryStore::Facts => None,
-            MemoryStore::History => Some(MemoryStore::History.as_str()),
-        }
-    }
 }
 
 /// Archive bounds. `rehydrate_reach` is how many of the newest archives the
@@ -88,21 +79,16 @@ pub struct ArchiveEnvelope<T> {
 struct ArchiveEnvelopeRef<'a, T: Serialize> {
     archived_at: DateTime<Utc>,
     store: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    scope: Option<&'a str>,
+    scope: &'a str,
     items: &'a [T],
 }
 
-fn archive_dir(store: MemoryStore, scope: Option<&str>) -> Result<PathBuf, String> {
-    let base = crate::core::data_dir::sobre_data_dir()?
+fn archive_dir(store: MemoryStore, scope: &str) -> Result<PathBuf, String> {
+    Ok(crate::core::data_dir::sobre_data_dir()?
         .join("memory")
-        .join("archive");
-    let dir = match (store.subdir(), scope) {
-        (None, _) => base,                   // facts: the root
-        (Some(sub), None) => base.join(sub), // store-global
-        (Some(sub), Some(s)) => base.join(sub).join(sanitize_scope(s)),
-    };
-    Ok(dir)
+        .join("archive")
+        .join(store.as_str())
+        .join(sanitize_scope(scope)))
 }
 
 /// Scopes are project hashes (hex). Guard against path traversal regardless,
@@ -125,7 +111,7 @@ fn sanitize_scope(scope: &str) -> String {
 /// nothing to archive. Best-effort prune: a prune failure never fails the write.
 pub fn archive_items<T: Serialize>(
     store: MemoryStore,
-    scope: Option<&str>,
+    scope: &str,
     items: &[T],
     cfg: &ArchiveConfig,
 ) -> Result<Option<PathBuf>, String> {
@@ -162,7 +148,7 @@ pub fn archive_items<T: Serialize>(
 
 /// All archive files for `store`/`scope`, sorted ascending (lexical ==
 /// chronological for the zero-padded timestamp filename prefix).
-pub fn list_archives(store: MemoryStore, scope: Option<&str>) -> Vec<PathBuf> {
+pub fn list_archives(store: MemoryStore, scope: &str) -> Vec<PathBuf> {
     let Ok(dir) = archive_dir(store, scope) else {
         return Vec::new();
     };
@@ -183,11 +169,7 @@ pub fn list_archives(store: MemoryStore, scope: Option<&str>) -> Vec<PathBuf> {
 /// The newest `cfg.rehydrate_reach` archives for `store`/`scope` — the set a
 /// recall miss should scan. Aligned with retention so nothing retained is
 /// unreachable.
-pub fn reachable_archives(
-    store: MemoryStore,
-    scope: Option<&str>,
-    cfg: &ArchiveConfig,
-) -> Vec<PathBuf> {
+pub fn reachable_archives(store: MemoryStore, scope: &str, cfg: &ArchiveConfig) -> Vec<PathBuf> {
     let mut archives = list_archives(store, scope);
     if archives.len() > cfg.rehydrate_reach {
         archives = archives[archives.len() - cfg.rehydrate_reach..].to_vec();
@@ -241,12 +223,7 @@ mod tests {
         with_temp_data_dir(|| {
             let cfg = ArchiveConfig::default();
             for store in MemoryStore::all() {
-                let scope = if store == MemoryStore::Facts {
-                    None
-                } else {
-                    Some("projhash")
-                };
-                let path = archive_items(store, scope, &items(3), &cfg)
+                let path = archive_items(store, "projhash", &items(3), &cfg)
                     .unwrap()
                     .expect("wrote an archive");
                 let restored: Vec<Item> = restore_items(&path).unwrap();
@@ -259,25 +236,31 @@ mod tests {
     fn empty_archive_is_noop() {
         with_temp_data_dir(|| {
             let cfg = ArchiveConfig::default();
-            let res =
-                archive_items(MemoryStore::History, Some("p"), &Vec::<Item>::new(), &cfg).unwrap();
+            let res = archive_items(MemoryStore::History, "p", &Vec::<Item>::new(), &cfg).unwrap();
             assert!(res.is_none());
-            assert!(list_archives(MemoryStore::History, Some("p")).is_empty());
+            assert!(list_archives(MemoryStore::History, "p").is_empty());
         });
     }
 
     #[test]
-    fn facts_use_root_other_stores_are_scoped() {
+    fn every_store_is_scoped_to_its_project() {
         with_temp_data_dir(|| {
             let base = crate::core::data_dir::sobre_data_dir()
                 .unwrap()
                 .join("memory")
                 .join("archive");
-            assert_eq!(archive_dir(MemoryStore::Facts, None).unwrap(), base);
             assert_eq!(
-                archive_dir(MemoryStore::History, Some("h")).unwrap(),
+                archive_dir(MemoryStore::Facts, "h").unwrap(),
+                base.join("facts").join("h")
+            );
+            assert_eq!(
+                archive_dir(MemoryStore::History, "h").unwrap(),
                 base.join("history").join("h")
             );
+            let cfg = ArchiveConfig::default();
+            archive_items(MemoryStore::Facts, "a", &items(1), &cfg).unwrap();
+            assert_eq!(list_archives(MemoryStore::Facts, "a").len(), 1);
+            assert!(list_archives(MemoryStore::Facts, "b").is_empty());
         });
     }
 
@@ -291,10 +274,10 @@ mod tests {
             for _ in 0..6 {
                 // Distinct filenames require distinct sub-second suffixes; a tiny
                 // sleep guarantees monotonic timestamps on fast machines.
-                archive_items(MemoryStore::History, Some("p"), &items(1), &cfg).unwrap();
+                archive_items(MemoryStore::History, "p", &items(1), &cfg).unwrap();
                 std::thread::sleep(std::time::Duration::from_millis(2));
             }
-            let archives = list_archives(MemoryStore::History, Some("p"));
+            let archives = list_archives(MemoryStore::History, "p");
             assert!(
                 archives.len() <= 3,
                 "prune should bound to max_files, got {}",
