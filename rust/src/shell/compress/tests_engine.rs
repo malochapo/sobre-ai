@@ -207,11 +207,113 @@ fn small_output_stays_verbatim() {
     );
 }
 
+/// The guard the pattern snapshot tests use follows the gates in front of
+/// the pattern table: test runners, findings-only linters, the output
+/// policy and chains never reach it.
+#[test]
+fn reaches_pattern_table_follows_the_gates() {
+    use super::engine::reaches_pattern_table;
+    for cmd in [
+        "cargo build",
+        "git status",
+        "grep -rn TODO src/",
+        "ruff format .",
+    ] {
+        assert!(reaches_pattern_table(cmd), "{cmd}");
+    }
+    for cmd in [
+        "cargo test",
+        "pytest -q",
+        "eslint src/",
+        "ruff check .",
+        "curl https://api.example.com",
+        "npx prisma migrate dev",
+        "git commit -m x",
+        "git status && git log",
+    ] {
+        assert!(!reaches_pattern_table(cmd), "{cmd}");
+    }
+}
+
 /// A successful build's warnings reach the agent: every distinct one, with
 /// its location.
 #[cfg(test)]
 mod build_warning_tests {
     use super::super::engine::compress_for_outcome;
+
+    /// `npm run` keeps every warning and error line, not only its last
+    /// lines; npm's own `npm warn` lines included.
+    #[test]
+    fn npm_run_keeps_its_warnings() {
+        let mut out = String::from("\n> app@1.0.0 build\n> webpack --mode production\n\n");
+        for i in 0..40 {
+            out.push_str(&format!(
+                "asset chunk-{i}.js {}.{} KiB [emitted] [minimized] (name: chunk-{i})\n",
+                10 + i,
+                i % 10
+            ));
+        }
+        out.push_str("WARNING in ./src/legacy.js 12:4-20\n");
+        out.push_str("Module not found: Error: Can't resolve 'fs' in '/app/src'\n");
+        out.push_str("npm warn config production Use `--omit=dev` instead.\n");
+        for i in 0..40 {
+            out.push_str(&format!(
+                "orphan modules {i}.{i} KiB [orphan] {i} modules\n"
+            ));
+        }
+        out.push_str("webpack 5.89.0 compiled with 1 warning in 4321 ms\n");
+
+        let result = compress_for_outcome("npm run build", &out, 0);
+        for line in [
+            "WARNING in ./src/legacy.js 12:4-20",
+            "Module not found: Error: Can't resolve 'fs' in '/app/src'",
+            "npm warn config production Use `--omit=dev` instead.",
+        ] {
+            assert!(result.contains(line), "{line:?} lost:\n{result}");
+        }
+    }
+
+    /// `ruff check --exit-zero` keeps every finding, in the default format
+    /// (a code frame under each finding) and in the concise one (a line
+    /// each, none of which says "error" or "warning").
+    #[test]
+    fn ruff_check_keeps_every_finding() {
+        let finding = |i: usize| {
+            format!(
+                "src/mod{i}.py:{}:8: F401 [*] `os` imported but unused",
+                i + 1
+            )
+        };
+        for (count, frame) in [
+            (
+                25,
+                "\n  |\n1 | import os\n  |        ^^ F401\n  |\n  = help: Remove unused import: `os`\n",
+            ),
+            (
+                40,
+                "\n  |\n1 | import os\n  |        ^^ F401\n  |\n  = help: Remove unused import: `os`\n",
+            ),
+            (60, ""),
+        ] {
+            let mut out = String::new();
+            for i in 0..count {
+                out.push_str(&finding(i));
+                out.push_str(frame);
+                out.push('\n');
+            }
+            out.push_str(&format!(
+                "Found {count} errors.\n[*] {count} fixable with the `--fix` option.\n"
+            ));
+
+            let result = compress_for_outcome("ruff check --exit-zero .", &out, 0);
+            for i in 0..count {
+                assert!(
+                    result.contains(&finding(i)),
+                    "{count} findings: finding {i} lost:\n{result}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn dotnet_build_keeps_every_warning() {

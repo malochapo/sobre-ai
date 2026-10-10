@@ -1,5 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
-4 errors, 3 warnings in 3 files

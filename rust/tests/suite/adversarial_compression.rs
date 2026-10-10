@@ -3,6 +3,12 @@
 
 use sobre::core::patterns::compress_output;
 
+/// What `sobre_shell` shows for a run of `command` that printed `output`
+/// and exited with `exit_code`: the production path for shell output.
+fn shell_shows(command: &str, output: &str, exit_code: i32) -> String {
+    sobre::tools::sobre_shell::handle(command, output, exit_code, sobre::tools::CrpMode::Off)
+}
+
 #[test]
 fn adversarial_git_diff_preserves_code_content() {
     let diff = "diff --git a/src/auth.rs b/src/auth.rs\n\
@@ -99,7 +105,7 @@ fn adversarial_pytest_preserves_xfail_xpass() {
                   \n\
                   ================== 15 passed, 2 xfailed, 1 xpassed, 2 warnings in 3.5s ==================";
 
-    let compressed = compress_output("pytest", output).unwrap();
+    let compressed = shell_shows("pytest", output, 0);
     assert!(
         compressed.contains("xfailed") || compressed.contains("xfail"),
         "pytest must preserve xfailed counter: {compressed}"
@@ -366,8 +372,7 @@ fn ruff_preserves_file_line_col() {
     let output = "src/api.py:42:10: E501 Line too long (120 > 79)\n\
                   src/api.py:88:1: F401 'os' imported but unused\n\
                   Found 2 errors.";
-    let compressed = compress_output("ruff check", output);
-    let text = compressed.unwrap_or_else(|| output.to_string());
+    let text = shell_shows("ruff check --exit-zero", output, 0);
     assert!(
         text.contains("src/api.py:42:10"),
         "ruff must preserve file:line:col references: {text}"
@@ -505,7 +510,7 @@ fn adversarial_eslint_preserves_file_line_and_rules() {
 
 4 problems (3 errors, 1 warning)";
 
-    let compressed = compress_output("eslint .", output).unwrap();
+    let compressed = shell_shows("eslint .", output, 0);
     assert!(
         compressed.contains("no-unused-vars") || compressed.contains("unused"),
         "eslint must preserve rule names: {compressed}"
@@ -573,7 +578,7 @@ src/utils/auth.ts(42,20): error TS7006: Parameter 'req' implicitly has an 'any' 
 
 Found 4 errors in 2 files.";
 
-    let compressed = compress_output("tsc --noEmit", output).unwrap();
+    let compressed = shell_shows("tsc --noEmit", output, 0);
     assert!(
         compressed.contains("TS2304"),
         "tsc must preserve error code TS2304: {compressed}"
@@ -670,7 +675,7 @@ failures:
 
 test result: FAILED. 24 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s";
 
-    let compressed = compress_output("cargo test", output).unwrap();
+    let compressed = shell_shows("cargo test", output, 0);
     assert!(
         compressed.contains("1 failed") || compressed.contains("FAILED"),
         "cargo test must preserve failure count: {compressed}"

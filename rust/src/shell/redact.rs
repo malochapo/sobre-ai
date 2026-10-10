@@ -43,8 +43,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let filename = format!("{cmd_slug}_{}.log", &hash.as_str()[..8]);
     let path = tee_dir.join(&filename);
 
-    let masked = crate::core::redaction::redact_text(output);
-    let (redacted, _) = crate::core::secret_detection::scan_and_redact(&masked);
+    let (redacted, _) = crate::core::secret_detection::scan_and_redact(output);
     std::fs::write(&path, redacted).ok()?;
     #[cfg(unix)]
     {
@@ -158,6 +157,34 @@ mod tests {
         assert!(
             crate::proxy::ccr::resolve_tee(id).is_some(),
             "{id} must resolve"
+        );
+    }
+
+    /// The saved output has its secrets masked: a private key's body and an
+    /// API key, around the lines that are not secrets.
+    #[test]
+    fn saved_output_masks_a_private_key_and_an_api_key() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let key_body = "MIIEowIBAAKCAQEAx7Rk2vQ9pZ3bN8sT1mL4wYcH6jF0uE5dG";
+        let api_key = format!("sk-ant-{}", "Qx7".repeat(12));
+        let output = format!(
+            "deploying\n-----BEGIN {kind}PRIVATE KEY-----\n{key_body}\n-----END {kind}PRIVATE KEY-----\nANTHROPIC_API_KEY={api_key}\ndone\n",
+            kind = "RSA "
+        );
+        let path = save_tee("./deploy.sh", &output).expect("tee saved");
+        let saved = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(!saved.contains(key_body), "{saved}");
+        assert!(!saved.contains(&api_key), "{saved}");
+        assert!(
+            saved.contains("[REDACTED:Private key block]")
+                && saved.contains("[REDACTED:Anthropic key]"),
+            "{saved}"
+        );
+        assert!(
+            saved.starts_with("deploying\n") && saved.ends_with("done\n"),
+            "{saved}"
         );
     }
 

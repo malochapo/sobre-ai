@@ -142,7 +142,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     let mut still_running: Vec<String> = Vec::new();
     let (code, timed_out, cancelled) = loop {
         match child.try_wait() {
-            Ok(Some(status)) => break (status.code().unwrap_or(1), false, false),
+            Ok(Some(status)) => break (crate::shell::exit_code(status), false, false),
             Ok(None) => {
                 if cancel.is_some_and(|signal| signal.load(std::sync::atomic::Ordering::Acquire)) {
                     kill_timed_out_child(&mut child);
@@ -515,6 +515,14 @@ mod tests {
         );
         assert_eq!(code, 0, "printf failed: {output}");
         assert_eq!(output, "Привет", "Cyrillic bytes must survive roundtrip");
+    }
+
+    /// A command a signal ends reports `128 + signal`, as a shell does.
+    #[test]
+    #[cfg(unix)]
+    fn a_signal_reports_128_plus_the_signal() {
+        let (output, code) = execute_command_in("kill -TERM $$", ".");
+        assert_eq!(code, 128 + 15, "{output}");
     }
 
     #[test]

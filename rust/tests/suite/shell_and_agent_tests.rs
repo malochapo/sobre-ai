@@ -138,6 +138,27 @@ fn shell_exec_quoted_args() {
     );
 }
 
+/// A command a signal ends makes `sobre -c` exit `128 + signal`, as a shell
+/// reports it: when sobre compresses the output, and when a parent sobre
+/// already owns the command tree (`SOBRE_WRAPPED`) and it runs as written.
+#[cfg(unix)]
+#[test]
+fn shell_exec_reports_a_signal_as_128_plus_the_signal() {
+    for wrapped in [false, true] {
+        let mut cmd = Command::new(sobre_bin());
+        cmd.args(["-c", "kill -TERM $$"])
+            .env("SHELL", "/bin/sh")
+            .stdin(Stdio::null());
+        if wrapped {
+            cmd.env("SOBRE_WRAPPED", "1");
+        } else {
+            cmd.env_remove("SOBRE_WRAPPED");
+        }
+        let status = cmd.output().expect("failed to spawn sobre").status;
+        assert_eq!(status.code(), Some(128 + 15), "wrapped: {wrapped}");
+    }
+}
+
 #[test]
 fn agent_init_unknown_agent_fails() {
     let (_stdout, stderr, code) =

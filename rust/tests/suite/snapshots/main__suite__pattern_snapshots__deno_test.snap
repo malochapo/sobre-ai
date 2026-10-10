@@ -1,6 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
-deno test: 7 passed, 1 failed (120ms)
-  test delete ... FAILED (10ms)
