@@ -138,7 +138,15 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
 
     let settings_dir = crate::core::editor_registry::claude_state_dir(home);
     let settings_path = settings_dir.join("settings.json");
-    let existing = std::fs::read_to_string(&settings_path).unwrap_or_default();
+    let existing = match crate::config_io::read_for_edit(&settings_path) {
+        Ok(text) => text,
+        Err(e) => {
+            if !quiet {
+                println!("  Claude Code proxy env: {e}");
+            }
+            return;
+        }
+    };
     let mut doc: serde_json::Value = if existing.trim().is_empty() {
         serde_json::json!({})
     } else {

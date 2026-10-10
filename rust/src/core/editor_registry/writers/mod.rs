@@ -112,7 +112,7 @@ fn upsert_json_entry(
 /// table, key and comment as written.
 fn write_codex_config(path: &std::path::Path, binary: &str) -> Result<WriteAction, String> {
     let existed = path.exists();
-    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let content = crate::config_io::read_for_edit(path)?;
     let updated = upsert_codex_toml(&content, binary)
         .map_err(|e| format!("{} is not valid TOML ({e}); left unchanged", path.display()))?;
     if updated == content {

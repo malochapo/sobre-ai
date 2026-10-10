@@ -101,7 +101,9 @@ fn read(path: &Path) -> Option<Value> {
 /// Writes `doc` back over `path`, keeping the user's formatting. `install`
 /// keeps a backup of a file sobre edits for the first time; a removal does not.
 fn write(path: &Path, doc: &Value, install: bool) {
-    let original = std::fs::read_to_string(path).unwrap_or_default();
+    let Ok(original) = crate::config_io::read_for_edit(path) else {
+        return;
+    };
     let _ = if install {
         crate::config_io::write_json_edit(path, &original, doc)
     } else {
@@ -117,7 +119,15 @@ pub(crate) fn install_opencode_env(home: &Path, port: u16, quiet: bool) {
     if !path.parent().is_some_and(Path::exists) {
         return;
     }
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let existing = match crate::config_io::read_for_edit(&path) {
+        Ok(text) => text,
+        Err(e) => {
+            if !quiet {
+                println!("  OpenCode proxy env: {e}");
+            }
+            return;
+        }
+    };
     let mut doc = if existing.trim().is_empty() {
         json!({})
     } else {

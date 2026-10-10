@@ -100,6 +100,20 @@ pub fn write_json_cleanup(
     )
 }
 
+/// The text of a config file sobre is about to edit: empty when the file does
+/// not exist, an error when it exists but cannot be read (not UTF-8, no
+/// permission), so the caller leaves it alone instead of writing over it.
+pub fn read_for_edit(path: &Path) -> Result<String, String> {
+    match std::fs::read_to_string(path) {
+        Ok(text) => Ok(text),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(format!(
+            "{} cannot be read ({e}); left unchanged",
+            path.display()
+        )),
+    }
+}
+
 /// Edits the JSON(C) agent config at `path` in place. `edit` gets the root
 /// object (empty when the file is missing or blank); the result is written
 /// back with the user's comments, key order and formatting kept, through
@@ -111,16 +125,7 @@ pub fn edit_json(
     path: &Path,
     edit: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
 ) -> Result<(), String> {
-    let original = match std::fs::read_to_string(path) {
-        Ok(original) => original,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => {
-            return Err(format!(
-                "{} cannot be read ({e}); left unchanged",
-                path.display()
-            ));
-        }
-    };
+    let original = read_for_edit(path)?;
     let before = if original.trim().is_empty() {
         serde_json::Value::Object(serde_json::Map::new())
     } else {
@@ -586,6 +591,17 @@ enabled = true
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
         std::env::temp_dir().join(format!("sobre_{tag}_{}_{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn read_for_edit_is_empty_for_a_missing_file_and_refuses_an_unreadable_one() {
+        let tmp = unique_tmp("read_for_edit");
+        let _ = std::fs::create_dir_all(&tmp);
+        assert_eq!(read_for_edit(&tmp.join("missing.toml")).unwrap(), "");
+        let path = tmp.join("config.toml");
+        std::fs::write(&path, b"model = \"caf\xe9\"\n").unwrap();
+        assert!(read_for_edit(&path).is_err());
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
