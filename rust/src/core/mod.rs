@@ -76,8 +76,6 @@ pub mod embeddings;
 pub mod hybrid_search;
 #[cfg(feature = "dense")]
 pub mod search_reranking;
-#[cfg(feature = "dense")]
-pub mod splade_retrieval;
 pub mod spreading_activation;
 
 // ---------------------------------------------------------------------------

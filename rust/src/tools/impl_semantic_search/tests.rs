@@ -197,10 +197,7 @@ mod dense_toggle_tests {
         let root = dir.path();
         let index = small_index();
         let filter = SearchFilter::default();
-        let cfg = HybridConfig {
-            splade_weight: 0.0,
-            ..HybridConfig::default()
-        };
+        let cfg = HybridConfig::default();
 
         let Ok(ranked) = hybrid_ranked("jwt token validation", root, &index, 5, &filter, &cfg)
         else {
