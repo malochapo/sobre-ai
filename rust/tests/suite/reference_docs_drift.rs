@@ -11,6 +11,11 @@ use sobre::core::reference_docs;
 fn generated_reference_docs_are_committed_and_current() {
     let dir = reference_docs::generated_dir();
     for (name, expected) in reference_docs::generated_docs() {
+        // The tool appendix documents the build without local embeddings, and
+        // says so: the dense build's schema adds `sobre_search`'s `mode`.
+        if cfg!(feature = "dense") && name == "mcp-tools.md" {
+            continue;
+        }
         let path = dir.join(name);
         let on_disk = std::fs::read_to_string(&path).unwrap_or_else(|e| {
             panic!(
