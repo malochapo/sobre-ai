@@ -330,21 +330,22 @@ mod tests {
         let file = project.path().join("a.txt");
         std::fs::write(&file, "one\n").unwrap();
         let path = file.to_string_lossy();
+        // serde_json escapes the path's backslashes on Windows.
+        let patch = |old: &str, new: &str| {
+            serde_json::json!({"path": path, "op": "replace_unique", "old_text": old, "new_text": new})
+                .to_string()
+        };
         let failed = run_call(&call_args(
             "sobre_patch",
             Some(&root),
-            Some(&format!(
-                r#"{{"path": "{path}", "op": "replace_unique", "old_text": "absent", "new_text": "x"}}"#
-            )),
+            Some(&patch("absent", "x")),
         ))
         .expect("the call itself works");
         assert!(failed.is_error, "{}", failed.text);
         let fine = run_call(&call_args(
             "sobre_patch",
             Some(&root),
-            Some(&format!(
-                r#"{{"path": "{path}", "op": "replace_unique", "old_text": "one", "new_text": "two"}}"#
-            )),
+            Some(&patch("one", "two")),
         ))
         .expect("the call itself works");
         assert!(!fine.is_error, "{}", fine.text);

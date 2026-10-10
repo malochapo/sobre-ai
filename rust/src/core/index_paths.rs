@@ -44,10 +44,19 @@ pub fn graph_relative_key(path: &str, root: &str) -> String {
     let path_path = Path::new(&path_norm);
 
     if let Ok(rel) = path_path.strip_prefix(root_path) {
-        let rel = rel.to_string_lossy().to_string();
-        return rel.trim_start_matches(['/', '\\']).to_string();
+        return slash_key(&rel.to_string_lossy());
     }
+    slash_key(path)
+}
 
-    path.trim_start_matches(['/', '\\'])
-        .replace('/', std::path::MAIN_SEPARATOR_STR)
+/// The graph keys files with `/` on every platform: a canonical path comes
+/// back with `/` on Windows too (`pathutil::strip_verbatim_str`), and the
+/// index stores the part below the root of that path.
+fn slash_key(path: &str) -> String {
+    let path = if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    };
+    path.trim_start_matches(['/', '\\']).to_string()
 }
