@@ -171,7 +171,7 @@ entries were the only change. A file `sobre` creates gets an empty
 | Copilot CLI | `~/.copilot/mcp-config.json` | `~/.copilot/hooks/hooks.json`: compress shell output, session observer | `~/.copilot/skills/sobre/` |
 | Cursor | `~/.cursor/mcp.json` | `~/.cursor/hooks.json`: wrap shell commands, session observer | `~/.cursor/skills/sobre/` |
 | Gemini CLI | `~/.gemini/settings.json` | the same file: wrap shell commands, session observer | — |
-| OpenCode | `~/.config/opencode/opencode.json` (`%APPDATA%\opencode\` on Windows) | the plugin `~/.config/opencode/plugins/sobre.js`: compress shell output | `~/.config/opencode/skills/sobre/` |
+| OpenCode | `~/.config/opencode/opencode.json` (also on Windows) | the plugin `~/.config/opencode/plugins/sobre.js`: compress shell output | `~/.config/opencode/skills/sobre/` |
 | VS Code | `mcp.json` in VS Code's user settings directory | the Copilot CLI hooks file | `~/.copilot/skills/sobre/` |
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` | `~/.codeium/windsurf/hooks.json`: session observer | — |
 | Zed | `~/.config/zed/settings.json` (under `$XDG_CONFIG_HOME` on Linux when set, `%APPDATA%\Zed\` on Windows) | — | — |
@@ -203,10 +203,13 @@ writes no approval setting into its configuration.
 ```bash
 sobre doctor                  # the install, the agents, the data directories
 sobre doctor integrations     # each agent's MCP entry, hooks and skill
-sobre doctor --fix            # rewire the agents, prune stale caches
+sobre doctor --fix            # repair the agents sobre is connected to, prune stale caches
 ```
 
-`doctor --fix` repairs what sobre wrote in your user configuration. It never
+`doctor --fix` repairs what sobre wrote in your user configuration, for the
+agents sobre is already connected to (`init` connects new ones), and lists
+what it changed. It never deletes knowledge: a store whose project is not on
+disk is listed, and you delete it by hand if the project is gone. It never
 edits files in a repository: when a project's own MCP file (`.vscode/mcp.json`,
 `.cursor/mcp.json`, `.github/mcp.json`, `.zed/settings.json`) also registers
 `sobre`, `doctor` names the file, and you remove the entry if you do not want

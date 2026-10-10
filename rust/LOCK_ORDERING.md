@@ -146,7 +146,9 @@ blocking pool where the handler runs:
    returned without caching.
 
 After the per-file and cache locks are released, the session lock is taken for writing (10s
-timeout) to record the read.
+timeout) to record the read. The bounce tracker (L38) is advanced before the cache lock is taken
+and the read recorded after it is released; the batch read (`registered/batch_read.rs`) still
+takes L38 under the cache write lock, which is safe because L38 is a leaf lock.
 
 ```
 L17 outer (FILE_LOCKS map)        — held briefly to clone Arc, then dropped

@@ -140,7 +140,7 @@ Codex, Windsurf and Zed get neither:
   - File reads (`cat`, `head`, `tail`) are left alone.
 - **Labelled pre-run rewrite** (`hook cursor`, `hook gemini`). A command is
   wrapped as `sobre -c '<command>'` only when all of these hold:
-  - it is a single command, with no chain, pipe, redirect or substitution;
+  - it is a single command, with no chain, pipe, redirect, substitution or background job (`&`);
   - it is not a file read;
   - it is a command `rewrite_registry.rs` lists;
   - none of the host's own command rules tells the two forms apart (`hook_handlers/host_rules.rs`).
@@ -153,7 +153,7 @@ Two more hooks help the read cache:
 
 ### `sobre -c`
 
-`shell/exec.rs` checks these in order:
+`sobre -c` checks these in order (`cli/dispatch`, then `shell/exec.rs`):
 - A nested `sobre -c` is collapsed into one.
 - `SOBRE_WRAPPED` is set (a command `sobre` itself started) and nothing was
   collapsed: the command runs uncompressed.
@@ -165,7 +165,10 @@ Two more hooks help the read cache:
 Otherwise `shell/pipeline.rs` captures the output and compresses it with the
 first matching pattern (`core/patterns/`). When it shortened the output, it
 prints `[sobre: output compressed, A → B tokens; full output: <path>]` on
-stderr, with the path of the full output when it kept it.
+stderr, with the path of the full output when it kept it. Linter output
+(ESLint, Biome, Stylelint, yamllint, oxlint, which exit 0 on warnings) is kept
+verbatim, only capped in size. A command a signal ended exits with 128 plus
+the signal number, as in a shell.
 
 ### The proxy
 
@@ -178,7 +181,8 @@ stderr, with the path of the full output when it kept it.
   also accept a provider key.
 
 **Forwarding** (`proxy/forward/`):
-- decompresses the body, compresses tool results, and forwards allow-listed headers to the upstream;
+- decompresses the body, compresses tool results, and passes every header through both ways except the hop-by-hop ones, `host`, `content-length` and the request's `accept-encoding`;
+- sends each request once: retries are the client's, and an unreachable upstream gets a 502 with a JSON error naming it;
 - never adds a credential;
 - records the provider's reported usage in the ledger.
 
@@ -257,7 +261,6 @@ project hash: a short hash of the canonical project root
 | `shadow/<h>/git/` | `sobre_checkpoint` snapshots, a git repository apart from yours | until uninstall |
 | `detected_model.json`, `active_transcript.json`, `last_compaction.json` | what `hook observe` recorded | overwritten |
 | `diagnostics.json` | recent compiler and linter errors | 15 minutes, 200 entries |
-| `doctor/latest.json` | the last `doctor --fix` report | overwritten |
 | `session_token` | the proxy token (0600) | until uninstall |
 | `logs/crash.log` | panics (0600) | rotated at 1 MB |
 | `onnxruntime/<version>/` | ONNX Runtime from `embeddings provision` | until uninstall |
