@@ -34,7 +34,11 @@ is being replaced, the answer is no.
   If a value can come from two places, it comes from one place.
 - **No environment variables that change behaviour.** Variables may exist for
   paths and secrets — `SOBRE_CONFIG_DIR`, `SOBRE_DATA_DIR`,
-  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does.
+  `SOBRE_PROXY_TOKEN`, …. Never for what the tool does. The markers sobre sets
+  on the processes it starts itself are not settings either: `SOBRE_WRAPPED`,
+  so that a nested `sobre -c` does not compress the same output twice, and on
+  macOS `SOBRE_SEATBELT`, so that a process re-run under the sandbox profile
+  does not re-run itself again. Nothing tells the user to set them.
 - **No profiles**, no presets, no modes.
 - **No settings outside the file.** No per-project files, no settings kept in
   session state, nothing a previous run persisted that later acts as a value.
@@ -50,6 +54,9 @@ The file currently has 11 keys, leaving four slots: `search_roots`, `ignore`,
 `compression_level`, `debug_log`, `embedding_model`, and the `[proxy]` table's
 `enabled`, `port` and `upstreams`. Every key has one value even when
 the file is silent: `compression_level` defaults to 0.3, never to "unset".
+One key holds an answer rather than a setting: `proxy.enabled` is unset until
+`init` asks whether to use the proxy (or `proxy enable`, `proxy disable` or
+`config set` sets it), and unset means what `false` means: the proxy is off.
 `init` sets nothing of its own: besides which agents to connect, its flags
 only preview (`--check`), skip its questions (`--repair`) or report in JSON
 (`--json`). Its two questions write `proxy.enabled` and, in a build with
@@ -102,8 +109,8 @@ someone has to run.
 
 This invariant is what buys us the right to delete code without asking whether
 it might be monetisable later, or whether some organisation might want it. It is
-load-bearing, and it is the sharpest tool we have against re-growing into what
-we forked away from.
+load-bearing, and it is the sharpest tool we have against growing into a
+hosted, multi-user product.
 
 ## 5. The agent host is in control
 
@@ -114,11 +121,11 @@ nor bypassed by `sobre`.**
 Agent hosts — Claude Code, Copilot, Cursor, Codex, Gemini CLI — ship their own
 control: permission rules, approval prompts, auto modes, classifiers. They are
 better placed to decide than a context tool sitting beside them, and a second
-gate can only disagree with the first. The tool `sobre` forks from shipped such a
-gate: a curated allow list of shell commands, a path jail, refusals of
-secret-looking files, a throttle on repeated calls, and approval settings written
-into the host's configuration. Each one either duplicated the host's decision or
-overrode it. `sobre` keeps none of them.
+gate can only disagree with the first. Such a gate takes many forms: a curated
+allow list of shell commands, a path jail, refusals of secret-looking files, a
+throttle on repeated calls, approval settings written into the host's
+configuration. Each one either duplicates the host's decision or overrides it.
+`sobre` has none of them.
 
 What follows from this:
 
@@ -182,15 +189,14 @@ exist so that shipping often and shipping safely are not in tension.
   exceptions for "trivial" fixes; trivial fixes are how regressions ship.
 - Branch protection on `main` and `develop`: no direct pushes, review required.
 - **Two maintainers with equal rights, from day one.** A project whose bus
-  factor is 1 has already reproduced the problem it was forking away from.
+  factor is 1 stops the day its one maintainer does.
 - No marketing material or private notes in the repository, and no generated
   artefacts except the reference pages in `docs/reference/generated/`, which
   CI regenerates and compares with the code. The repo contains source, tests,
   docs and CI. Nothing else.
 - **Commit messages and comments describe what `sobre` does and why.** They do
-  not narrate what the upstream project got wrong. The fork is justified by
-  what it is. Technical observations about inherited code belong in the
-  maintainers' private notes, not in a permanent public record that sits
+  not narrate the code's history or what earlier authors got wrong: that
+  belongs outside the repository, not in a permanent public record that sits
   directly above the commits of the people it discusses.
 
 ---

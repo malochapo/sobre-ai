@@ -25,18 +25,16 @@ cargo check --all-targets --features dense # with local embeddings
 
 CI checks both builds. The one local gate that mirrors it is
 `scripts/preflight.sh` (fmt, clippy on both builds, rustdoc, generated docs,
-file size); `scripts/preflight.sh full` adds the whole test suite and the
-library tests of the build with embeddings. CI also checks dependency licences
+file size); `scripts/preflight.sh full` adds the whole test suite, in both
+builds. CI also checks dependency licences
 and advisories with cargo-deny (`rust/deny.toml`), which the script does not:
 run `cargo deny check` from `rust/` for that. The git
 hooks are opt-in: `make setup-hooks` points git at `.githooks/`, whose
 pre-commit checks formatting and whose pre-push runs `scripts/preflight.sh`
 (`SKIP_PREFLIGHT=1 git push` skips it).
 
-On a pull request, CI runs Lint and the test suite on Linux. macOS and Windows
-run on push to `main` and on demand (Actions → CI → Run workflow): their
-minutes bill at 10x and 2x on a private repository. Run them by hand before
-merging anything platform-specific (paths, shells, file locking).
+On a pull request, CI runs Lint and the test suite on Linux, macOS and
+Windows.
 
 `--all-targets` matters: plain `cargo check` skips `#[cfg(test)]` blocks in the
 library, so a broken test module compiles clean without it.

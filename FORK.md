@@ -9,10 +9,11 @@ modified unless the git history shows otherwise.
 
 ## Provenance
 
-- Fork point: lean-ctx commit `4e65c53d43aa9e2f8b7d33727897f8939192c5bc`
-  (version 3.9.12).
-- The upstream git history is kept in full in this repository. Every commit by
-  Yves Gugger and the upstream contributors is intact and attributed, and
+- Fork point: lean-ctx version 3.9.12, commit
+  `4e65c53d43aa9e2f8b7d33727897f8939192c5bc` of the
+  [lean-ctx repository](https://github.com/yvgude/lean-ctx).
+- The upstream history is kept in this repository: the lean-ctx commits up to
+  the fork point, attributed to their authors, come before sobre's own, so
   `git log` shows what changed since the fork point, when and by whom.
 - `sobre` is developed independently: upstream changes are not merged into it.
 

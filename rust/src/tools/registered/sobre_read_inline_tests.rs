@@ -257,7 +257,7 @@ fn offset_limit_overrides_explicit_map_to_lines() {
 
 /// Schema/handler consistency: the handler reads
 /// start_line/offset/limit, so the advertised schema must document them —
-/// otherwise agents (and the generated docs/manifest) can't discover the
+/// otherwise agents (and the generated tool reference) can't discover the
 /// aliases and the divergence that caused this bug returns.
 #[test]
 fn schema_advertises_line_window_aliases() {
