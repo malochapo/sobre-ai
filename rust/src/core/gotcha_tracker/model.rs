@@ -2,10 +2,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub(crate) const MAX_GOTCHAS: usize = 100;
-pub(super) const MAX_SESSION_LOGS: usize = 20;
-pub(super) const MAX_PENDING: usize = 10;
-pub(super) const PENDING_TIMEOUT_SECS: i64 = 900; // 15 minutes
 pub(super) const DECAY_ARCHIVE_THRESHOLD: f32 = 0.15;
+/// Confidence a gotcha starts with when the agent records it.
+pub(super) const REPORTED_CONFIDENCE: f32 = 0.9;
+/// Confidence lost per week since a gotcha was last recorded, before the
+/// occurrence factor.
+pub(super) const DECAY_PER_WEEK: f32 = 0.02;
 
 // ---------------------------------------------------------------------------
 // Core types
@@ -75,38 +77,16 @@ impl GotchaSeverity {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum GotchaSource {
-    AutoDetected { command: String, exit_code: i32 },
-    AgentReported { session_id: String },
-    CrossSessionCorrelated { sessions: Vec<String> },
-}
-
-impl GotchaSource {
-    pub fn decay_rate(&self) -> f32 {
-        match self {
-            Self::AgentReported { .. } => 0.02,
-            Self::CrossSessionCorrelated { .. } => 0.03,
-            Self::AutoDetected { .. } => 0.05,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Gotcha {
     pub id: String,
     pub category: GotchaCategory,
     pub severity: GotchaSeverity,
     pub trigger: String,
     pub resolution: String,
-    pub file_patterns: Vec<String>,
     pub occurrences: u32,
-    pub session_ids: Vec<String>,
     pub first_seen: DateTime<Utc>,
     pub last_seen: DateTime<Utc>,
     pub confidence: f32,
-    pub source: GotchaSource,
-    pub prevented_count: u32,
-    pub tags: Vec<String>,
     /// When decay was last taken off `confidence`, so a store loaded and
     /// saved again is not decayed twice for the same time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -119,102 +99,30 @@ impl Gotcha {
         severity: GotchaSeverity,
         trigger: &str,
         resolution: &str,
-        source: GotchaSource,
-        session_id: &str,
     ) -> Self {
         let now = Utc::now();
-        let confidence = match &source {
-            GotchaSource::AgentReported { .. } => 0.9,
-            GotchaSource::CrossSessionCorrelated { .. } => 0.85,
-            GotchaSource::AutoDetected { .. } => 0.6,
-        };
         Self {
             id: gotcha_id(trigger, &category),
             category,
             severity,
             trigger: trigger.to_string(),
             resolution: resolution.to_string(),
-            file_patterns: Vec::new(),
             occurrences: 1,
-            session_ids: vec![session_id.to_string()],
             first_seen: now,
             last_seen: now,
-            confidence,
-            source,
-            prevented_count: 0,
-            tags: Vec::new(),
+            confidence: REPORTED_CONFIDENCE,
             decayed_at: None,
         }
     }
 
     pub fn merge_with(&mut self, other: &Gotcha) {
         self.occurrences += other.occurrences;
-        for sid in &other.session_ids {
-            if !self.session_ids.contains(sid) {
-                self.session_ids.push(sid.clone());
-            }
-        }
-        for fp in &other.file_patterns {
-            if !self.file_patterns.contains(fp) {
-                self.file_patterns.push(fp.clone());
-            }
-        }
         if other.last_seen > self.last_seen {
             self.last_seen = other.last_seen;
             self.resolution.clone_from(&other.resolution);
         }
         self.confidence = self.confidence.max(other.confidence);
     }
-}
-
-// ---------------------------------------------------------------------------
-// Pending errors (in-memory, not persisted)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PendingError {
-    pub error_signature: String,
-    pub category: GotchaCategory,
-    pub severity: GotchaSeverity,
-    pub command: String,
-    pub exit_code: i32,
-    pub files_at_error: Vec<String>,
-    pub timestamp: DateTime<Utc>,
-    pub raw_snippet: String,
-    pub session_id: String,
-}
-
-impl PendingError {
-    pub fn is_expired(&self) -> bool {
-        (Utc::now() - self.timestamp).num_seconds() > PENDING_TIMEOUT_SECS
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Session error log (for cross-session correlation)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionErrorLog {
-    pub session_id: String,
-    pub timestamp: DateTime<Utc>,
-    pub errors: Vec<ErrorEntry>,
-    pub fixes: Vec<FixEntry>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorEntry {
-    pub signature: String,
-    pub command: String,
-    pub timestamp: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FixEntry {
-    pub error_signature: String,
-    pub resolution: String,
-    pub files_changed: Vec<String>,
-    pub timestamp: DateTime<Utc>,
 }
 
 // ---------------------------------------------------------------------------
@@ -225,14 +133,7 @@ pub struct FixEntry {
 pub struct GotchaStore {
     pub project_hash: String,
     pub gotchas: Vec<Gotcha>,
-    pub error_log: Vec<SessionErrorLog>,
     pub updated_at: DateTime<Utc>,
-
-    // Persisted: a fail→fix spanning two `sobre -c` invocations is two
-    // separate processes, so the later one loads the pending error and
-    // correlates the fix. Bounded by MAX_PENDING + a 15-min TTL (pruned on
-    // load and on every detect/resolve), so the file stays tiny.
-    pub pending_errors: Vec<PendingError>,
 }
 
 impl GotchaStore {
@@ -240,9 +141,7 @@ impl GotchaStore {
         Self {
             project_hash: project_hash.to_string(),
             gotchas: Vec::new(),
-            error_log: Vec::new(),
             updated_at: Utc::now(),
-            pending_errors: Vec::new(),
         }
     }
 }

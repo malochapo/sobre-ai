@@ -125,8 +125,7 @@ impl McpTool for SobreKnowledgeTool {
 
             let mut msg = String::new();
             let saved = crate::core::gotcha_tracker::GotchaStore::update(&project_root, |store| {
-                msg = match store.report_gotcha(&trigger, &resolution, cat, &severity, &session_id)
-                {
+                msg = match store.report_gotcha(&trigger, &resolution, cat, &severity) {
                     Some(gotcha) => {
                         let conf = (gotcha.confidence * 100.0) as u32;
                         let label = gotcha.category.short_label();
