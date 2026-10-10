@@ -38,7 +38,7 @@ This Code of Conduct applies within all community spaces, and also applies when 
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement: the maintainers of the `malochapo/sobre-ai` repository on GitHub. All complaints will be reviewed and investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported to the community leaders responsible for enforcement: the maintainers of the `malochapo/sobre-ai` repository on GitHub. To report privately, use GitHub's private vulnerability reporting on this repository (the **Security** tab, then **Report a vulnerability**) and say that the report is about conduct: it is the project's only private channel. All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 
