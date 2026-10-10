@@ -1,6 +1,9 @@
 use crate::core::patterns::compact_lines;
 use std::collections::HashMap;
 
+/// The AWS CLI's output, by command. A query (`describe-…`, `list-…`,
+/// `get-…` and the other verbs `is_cloud_cli_query` lists) never reaches
+/// here: the output policy keeps it verbatim.
 pub fn compress(cmd: &str, output: &str) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {
@@ -10,23 +13,8 @@ pub fn compress(cmd: &str, output: &str) -> Option<String> {
     if cmd.contains("s3 ls") || cmd.contains("s3 cp") || cmd.contains("s3 sync") {
         return Some(compress_s3(cmd, trimmed));
     }
-    if cmd.contains("ec2 describe-instances") {
-        return Some(compress_ec2_instances(trimmed));
-    }
-    if cmd.contains("lambda list-functions") {
-        return Some(compress_lambda_list(trimmed));
-    }
-    if cmd.contains("cloudformation describe-stacks") || cmd.contains("cfn ") {
-        return Some(compress_cfn(trimmed));
-    }
-    if cmd.contains("sts get-caller-identity") {
-        return Some(trimmed.to_string());
-    }
     if cmd.contains("logs") {
         return Some(compress_logs(trimmed));
-    }
-    if cmd.contains("ecs list") || cmd.contains("ecs describe") {
-        return Some(compress_ecs(trimmed));
     }
 
     Some(compact_json_or_text(trimmed, 15))
@@ -79,87 +67,6 @@ fn compress_s3(cmd: &str, output: &str) -> String {
     result
 }
 
-fn compress_ec2_instances(output: &str) -> String {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output) {
-        let reservations = val.get("Reservations").and_then(|r| r.as_array());
-        if let Some(res) = reservations {
-            let mut instances = Vec::new();
-            for r in res {
-                if let Some(insts) = r.get("Instances").and_then(|i| i.as_array()) {
-                    for inst in insts {
-                        let id = inst
-                            .get("InstanceId")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("?");
-                        let state = inst
-                            .get("State")
-                            .and_then(|s| s.get("Name"))
-                            .and_then(|n| n.as_str())
-                            .unwrap_or("?");
-                        let itype = inst
-                            .get("InstanceType")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("?");
-                        let name = inst
-                            .get("Tags")
-                            .and_then(|t| t.as_array())
-                            .and_then(|tags| {
-                                tags.iter()
-                                    .find(|t| t.get("Key").and_then(|k| k.as_str()) == Some("Name"))
-                            })
-                            .and_then(|t| t.get("Value").and_then(|v| v.as_str()))
-                            .unwrap_or("-");
-                        instances.push(format!("  {id} {state} {itype} \"{name}\""));
-                    }
-                }
-            }
-            return format!("{} instances:\n{}", instances.len(), instances.join("\n"));
-        }
-    }
-    compact_lines(output, 15)
-}
-
-fn compress_lambda_list(output: &str) -> String {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output)
-        && let Some(fns) = val.get("Functions").and_then(|f| f.as_array())
-    {
-        let items: Vec<String> = fns
-            .iter()
-            .map(|f| {
-                let name = f
-                    .get("FunctionName")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("?");
-                let runtime = f.get("Runtime").and_then(|v| v.as_str()).unwrap_or("?");
-                let mem = f
-                    .get("MemorySize")
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0);
-                format!("  {name} ({runtime}, {mem}MB)")
-            })
-            .collect();
-        return format!("{} functions:\n{}", items.len(), items.join("\n"));
-    }
-    compact_lines(output, 15)
-}
-
-fn compress_cfn(output: &str) -> String {
-    if let Ok(val) = serde_json::from_str::<serde_json::Value>(output)
-        && let Some(stacks) = val.get("Stacks").and_then(|s| s.as_array())
-    {
-        let items: Vec<String> = stacks
-            .iter()
-            .map(|s| {
-                let name = s.get("StackName").and_then(|v| v.as_str()).unwrap_or("?");
-                let status = s.get("StackStatus").and_then(|v| v.as_str()).unwrap_or("?");
-                format!("  {name}: {status}")
-            })
-            .collect();
-        return format!("{} stacks:\n{}", items.len(), items.join("\n"));
-    }
-    compact_lines(output, 10)
-}
-
 fn compress_logs(output: &str) -> String {
     let lines: Vec<&str> = output.lines().collect();
     if lines.len() <= 20 {
@@ -195,10 +102,6 @@ fn compress_logs(output: &str) -> String {
         top.len(),
         top.join("\n")
     )
-}
-
-fn compress_ecs(output: &str) -> String {
-    compact_json_or_text(output, 15)
 }
 
 fn compact_json_or_text(text: &str, max: usize) -> String {
