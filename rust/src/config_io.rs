@@ -105,12 +105,22 @@ pub fn write_json_cleanup(
 /// back with the user's comments, key order and formatting kept, through
 /// [`write_atomic_with_backup`]. Nothing is written when `edit` changed
 /// nothing, and a missing file is not created for an empty object. A file
-/// that does not parse, or whose root is not an object, is left alone.
+/// that cannot be read or parsed, or whose root is not an object, is left
+/// alone.
 pub fn edit_json(
     path: &Path,
     edit: impl FnOnce(&mut serde_json::Map<String, serde_json::Value>),
 ) -> Result<(), String> {
-    let original = std::fs::read_to_string(path).unwrap_or_default();
+    let original = match std::fs::read_to_string(path) {
+        Ok(original) => original,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => {
+            return Err(format!(
+                "{} cannot be read ({e}); left unchanged",
+                path.display()
+            ));
+        }
+    };
     let before = if original.trim().is_empty() {
         serde_json::Value::Object(serde_json::Map::new())
     } else {
@@ -576,6 +586,23 @@ enabled = true
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_nanos());
         std::env::temp_dir().join(format!("sobre_{tag}_{}_{nanos}", std::process::id()))
+    }
+
+    #[test]
+    fn edit_json_leaves_a_file_it_cannot_read_alone() {
+        let tmp = unique_tmp("json_unreadable");
+        let _ = std::fs::create_dir_all(&tmp);
+        let path = tmp.join("settings.json");
+        let latin1 = b"{\"theme\": \"caf\xe9\"}\n";
+        std::fs::write(&path, latin1).unwrap();
+
+        let result = edit_json(&path, |root| {
+            root.insert("sobre".into(), serde_json::json!({}));
+        });
+
+        assert!(result.is_err(), "must refuse a file it cannot read");
+        assert_eq!(std::fs::read(&path).unwrap(), latin1);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

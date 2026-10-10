@@ -133,9 +133,7 @@ fn show() -> String {
 /// file yields defaults, and an unparseable one is surfaced as an error so the
 /// caller can refuse to clobber it.
 ///
-/// Writing `Config::default()` instead would reset every customized value:
-/// `Config::save()` overwrites any key present in both the incoming document
-/// and the file (see `config_io::merge_table`).
+/// Writing `Config::default()` instead would reset every customized value.
 fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String> {
     match existing_raw.map(str::trim).filter(|raw| !raw.is_empty()) {
         Some(raw) => toml::from_str::<config::Config>(raw).map_err(|e| e.to_string()),
@@ -146,17 +144,28 @@ fn config_for_init(existing_raw: Option<&str>) -> Result<config::Config, String>
 /// Implements `config init`: (re)writes the global config as a fully
 /// annotated reference document, seeded with the user's existing values.
 ///
-/// Unlike `save()` (which keeps the file minimal), this emits every key with its
-/// documentation. The body is a verbatim serialization of the resolved config,
-/// so no customized value is ever lost; an unparseable existing file is refused
-/// upstream by [`config_for_init`] rather than clobbered.
+/// Unlike `Config::update_global` (which keeps the file minimal), this emits
+/// every key with its documentation. The body is a verbatim serialization of
+/// the resolved config, so no customized value is ever lost; an existing file
+/// that cannot be read or parsed is refused rather than clobbered.
 fn init_config() {
     let Some(path) = config::Config::path() else {
         crate::errln!("Error: cannot determine the config path");
         std::process::exit(1);
     };
 
-    let existing_raw = std::fs::read_to_string(&path).ok();
+    let existing_raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => Some(raw),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            crate::errln!(
+                "Error: refusing to overwrite {}: it cannot be read ({e}).\n  \
+                 Fix it by hand, then retry.",
+                path.display()
+            );
+            std::process::exit(1);
+        }
+    };
 
     let cfg = match config_for_init(existing_raw.as_deref()) {
         Ok(cfg) => cfg,
@@ -221,9 +230,9 @@ fn cmd_config_path() {
 mod tests {
     use super::*;
 
-    // Reproduces `Config::save()`'s on-disk merge without touching the real
-    // config path: serialize `cfg`, then merge it onto `existing` exactly as
-    // save() does, and return the value that `shell_timeout_secs` ends up with.
+    // Reproduces the on-disk merge of `Config::update_global` without touching
+    // the real config path: serialize `cfg`, then merge it onto `existing` the
+    // same way, and return the value that `shell_timeout_secs` ends up with.
     fn merged_shell_timeout(cfg: &config::Config, existing: &str) -> Option<u64> {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.toml");
