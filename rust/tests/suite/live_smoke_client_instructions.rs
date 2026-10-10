@@ -214,7 +214,7 @@ fn every_client_gets_the_same_instructions_and_no_rules_file() {
     for client in ["cursor", "claude-code", "codex"] {
         let (instructions, tools) = mcp_handshake(bin, &env, client);
         assert!(
-            instructions.contains("Prefer them when they fit; native tools keep working"),
+            instructions.starts_with(sobre::instructions::GUIDE),
             "{client} must get the guide.\n{instructions}"
         );
         assert_full_surface(&tools, client);
