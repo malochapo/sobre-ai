@@ -13,7 +13,7 @@
 //!    file type crosses the risky threshold resolve to `full` until the rate
 //!    recovers (hysteresis, see below).
 //!
-//! Risk formula (documented in `docs/contracts/quality-loop-v1.md`):
+//! Risk formula:
 //! a (ext, mode) pair becomes risky when `fails >= 2 && fails / (fails +
 //! successes) >= 0.25`, and stops being risky only when the rate drops below
 //! `0.15` — two thresholds so one lucky edit doesn't flap the decision.

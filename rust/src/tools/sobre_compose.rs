@@ -11,11 +11,9 @@
 //!   3. exact match locations (index-backed `sobre_search`),
 //!   4. the body of the most relevant symbol, inline.
 
-use std::collections::HashMap;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use crate::core::graph_provider;
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 
@@ -29,116 +27,6 @@ const SEMANTIC_BUDGET: Duration = Duration::from_secs(4);
 /// Token budget for the inlined symbol bodies. Submodular selection fills it
 /// with the most coverage-effective, non-redundant set of symbols.
 const SYMBOL_BUDGET_TOKENS: usize = 600;
-
-/// Wall-time budget for the associative (graph spreading-activation) stage.
-/// Opening/building the graph index is `O(corpus)` on a cold repo, so — like
-/// semantic ranking — we bound it and skip the (purely additive) section on
-/// overrun while the detached worker warms the index.
-const GRAPH_BUDGET: Duration = Duration::from_millis(1500);
-
-/// Per-hop activation decay and hop count for spreading activation. Small decay
-/// keeps activation local (structurally near the seeds); 3 hops covers
-/// import→callee→sibling chains without diffusing across the whole graph.
-const SPREAD_DECAY: f64 = 0.6;
-const SPREAD_HOPS: usize = 3;
-/// How many associative neighbours to surface.
-const SPREAD_TOP_K: usize = 8;
-
-/// Build the associative-relevance block: spreading activation seeded at the
-/// files the task keywords resolve to, propagated over the union of the static
-/// import/call graph and the *learned* Hebbian co-access graph. Returns an empty
-/// string when no graph/seeds are available. Runs entirely in the worker thread
-/// so [`associative_block_budgeted`] can bound it.
-fn build_associative_block(project_root: &str, keywords: &[String]) -> String {
-    let Some(open) = graph_provider::open_or_build(project_root) else {
-        return String::new();
-    };
-    let gp = &open;
-
-    // Seeds: distinct files the keywords resolve to via symbol lookup.
-    let mut seed_files: Vec<String> = Vec::new();
-    for kw in keywords {
-        for sym in gp.find_symbols(kw, None, None) {
-            if !seed_files.contains(&sym.file) {
-                seed_files.push(sym.file);
-            }
-        }
-    }
-    if seed_files.is_empty() {
-        return String::new();
-    }
-
-    // Hebbian update: files relevant to the same task "fire together", so record
-    // their co-access (strengthens future associative recall). Persisted.
-    crate::core::cooccurrence::record_access(project_root, &seed_files);
-
-    // Adjacency = static structural edges ∪ learned co-access edges. Edges are
-    // made bidirectional so activation spreads both up and down the graph.
-    let mut adjacency: HashMap<String, Vec<(String, f64)>> = HashMap::new();
-    let mut add_edge = |a: &str, b: &str, w: f64| {
-        adjacency
-            .entry(a.to_string())
-            .or_default()
-            .push((b.to_string(), w));
-        adjacency
-            .entry(b.to_string())
-            .or_default()
-            .push((a.to_string(), w));
-    };
-    for e in gp.edges() {
-        add_edge(&e.from, &e.to, if e.weight > 0.0 { e.weight } else { 1.0 });
-    }
-    let coaccess = crate::core::cooccurrence::load(project_root);
-    for sf in &seed_files {
-        for (nbr, w) in coaccess.related(sf, 16) {
-            add_edge(sf, &nbr, w);
-        }
-    }
-
-    let seeds: HashMap<String, f64> = seed_files.iter().map(|f| (f.clone(), 1.0)).collect();
-    let ranked = crate::core::spreading_activation::related_ranked(
-        &seeds,
-        &adjacency,
-        SPREAD_DECAY,
-        SPREAD_HOPS,
-        SPREAD_TOP_K,
-    );
-    if ranked.is_empty() {
-        return String::new();
-    }
-
-    let mut s = String::from("\n## Related (associative: import/call graph + learned co-access)\n");
-    for (file, activation) in ranked {
-        // Forward-slash normalize so Windows backslash paths are never escape-
-        // mangled by client render layers.
-        let file = crate::core::protocol::display_path(&file);
-        s.push_str(&format!("- {file} (activation {activation:.2})\n"));
-    }
-    s
-}
-
-/// Run [`build_associative_block`] under [`graph_budget`]. The Hebbian record is
-/// a side effect of the worker, so it persists even when we time out and drop
-/// the (optional) section.
-fn associative_block_budgeted(project_root: &str, keywords: &[String]) -> String {
-    if keywords.is_empty() {
-        return String::new();
-    }
-    let (tx, rx) = mpsc::channel::<String>();
-    let root = project_root.to_string();
-    let kws = keywords.to_vec();
-    std::thread::spawn(move || {
-        let block = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            build_associative_block(&root, &kws)
-        }))
-        .unwrap_or_else(|_| {
-            tracing::warn!("[sobre_compose: associative block panicked; omitting section]");
-            String::new()
-        });
-        let _ = tx.send(block);
-    });
-    rx.recv_timeout(GRAPH_BUDGET).unwrap_or_default()
-}
 
 /// Words that carry no retrieval signal — dropped from keyword extraction.
 const STOPWORDS: &[&str] = &[
@@ -456,12 +344,7 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
         }
     }
 
-    // 4. Associative neighbours via spreading activation over the import/call
-    //    graph unified with the learned Hebbian co-access graph (budgeted,
-    //    additive — surfaces structurally-close files lexical search misses).
-    out.push_str(&associative_block_budgeted(project_root, &keywords));
-
-    // 5. Pitfalls recorded with `sobre_knowledge action=gotcha`, or learned
+    // 4. Pitfalls recorded with `sobre_knowledge action=gotcha`, or learned
     //    from a failed command and its fix, that match the task.
     let pitfalls = crate::core::prospective_memory::reminders_for_task(project_root, task);
     if !pitfalls.is_empty() {
@@ -599,7 +482,6 @@ mod tests {
             "run the migrations one by one",
             "convention",
             "warning",
-            "s1",
         );
         store.save(&root).unwrap();
 

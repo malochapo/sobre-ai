@@ -1,4 +1,4 @@
-//! Golden test for the quality loop (docs/contracts/quality-loop-v1.md): an
+//! Golden test for the quality loop (`core/edit_quality.rs`): an
 //! edit failure after a compressed read must escalate the next auto read of
 //! that file to `full`, and repeated failures must make the (ext × mode) pair
 //! risky so *other* files of the same type stop being compressed with the

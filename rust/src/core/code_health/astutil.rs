@@ -1,8 +1,5 @@
-//! Shared AST helpers for the code-health engine.
-//!
-//! Function enumeration and identifier extraction live here so every health
-//! metric (cognitive complexity, naming) scores the *same* set of
-//! function-like nodes. Tree-sitter only; the public engine functions
+//! AST helpers for cognitive complexity: which nodes are functions, their
+//! names and bodies. Tree-sitter only; the public functions of the module
 //! degrade to `None` when the feature is disabled.
 
 #[cfg(feature = "tree-sitter")]

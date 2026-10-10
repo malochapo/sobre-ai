@@ -50,7 +50,6 @@ mod reference_docs_drift;
 mod refetch_signals;
 #[cfg(feature = "dense")]
 mod reranking_scenarios;
-mod retrieval_eval;
 mod ro_config_sandbox;
 mod scientific_verification;
 mod secret_scan_artifacts;

@@ -247,7 +247,10 @@ fit, and its native tools keep working. The 15 tools
 
 Each server process starts an empty session: a saved session comes back only
 when the agent asks (`sobre_session action=load`), and neither the session nor
-the knowledge store changes how `sobre_read` picks a mode.
+the knowledge store changes how `sobre_read` picks a mode. One thing does: a
+file a compiler or linter reported an error in, through `sobre -c` or
+`sobre_shell`, in the last 15 minutes is read in full until that tool next
+succeeds.
 
 Each build has one fixed list of tools and parameters: the build with
 embeddings adds a single parameter, `sobre_search`'s `mode`. The reference

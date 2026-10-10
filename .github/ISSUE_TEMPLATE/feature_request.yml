@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest a change to what sobre does
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [INVARIANTS.md](https://github.com/malochapo/sobre-ai/blob/main/INVARIANTS.md) first.
+        The tool surface and the config file are capped: a new MCP tool or config key must
+        replace an existing one. A feature that needs a server, an account or a second user
+        is out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: How should it work?
+    validations:
+      required: true
+  - type: textarea
+    id: replaces
+    attributes:
+      label: What it replaces
+      description: The MCP tool or config key it replaces, or why it needs neither.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

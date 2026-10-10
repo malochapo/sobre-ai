@@ -21,20 +21,14 @@
 //! Nested function bodies are scored independently. The traversal uses the heap-stack walk pattern
 //! to stay safe on pathologically deep trees.
 
-use serde::Serialize;
-
 /// Cognitive complexity of a single function-like definition.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionCognitive {
     pub name: String,
     /// 1-based start line of the function.
     pub line: usize,
-    /// 1-based end line of the function (for span/token estimates).
-    pub end_line: usize,
     pub cognitive: u32,
 }
-
-impl FunctionCognitive {}
 
 /// Compute cognitive complexity per function for `source` of the given file
 /// `extension`. Returns `None` when tree-sitter is disabled, the extension is
@@ -58,11 +52,9 @@ fn cognitive_impl(source: &str, extension: &str) -> Option<Vec<FunctionCognitive
         let body = super::astutil::logical_body_root(fn_node);
         let cognitive = cognitive_for_body(body, src, extension);
         let line = fn_node.start_position().row.saturating_add(1);
-        let end_line = fn_node.end_position().row.saturating_add(1);
         out.push(FunctionCognitive {
             name: name.to_string(),
             line,
-            end_line,
             cognitive,
         });
     })?;

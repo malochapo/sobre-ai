@@ -26,10 +26,9 @@ pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
 
     for g in &store.gotchas {
         let gotcha_terms = tokenize(&format!(
-            "{} {} {} {}",
+            "{} {} {}",
             g.trigger,
             g.resolution,
-            g.tags.join(" "),
             g.category.short_label()
         ));
         let matches = task_terms.intersection(&gotcha_terms).count();
@@ -37,9 +36,7 @@ pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
             continue;
         }
         let rel = matches as f32 / task_terms.len() as f32;
-        let sev = g.severity.multiplier();
-        let rec = (g.prevented_count as f32).ln_1p().min(3.0) / 3.0; // 0..1
-        let score = rel * g.confidence * sev * (1.0 + rec * 0.2);
+        let score = rel * g.confidence * g.severity.multiplier();
 
         let mut line = format!(
             "gotcha: {} → {}",
@@ -99,7 +96,7 @@ fn truncate_chars(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::gotcha_tracker::{Gotcha, GotchaCategory, GotchaSeverity, GotchaSource};
+    use crate::core::gotcha_tracker::{Gotcha, GotchaCategory, GotchaSeverity};
     use chrono::Utc;
 
     #[test]
@@ -120,18 +117,10 @@ mod tests {
                 severity: GotchaSeverity::Warning,
                 trigger: format!("cargo build error E050{i}"),
                 resolution: "split borrows".to_string(),
-                file_patterns: vec![],
                 occurrences: 2,
-                session_ids: vec!["s1".to_string()],
                 first_seen: Utc::now(),
                 last_seen: Utc::now(),
                 confidence: 0.8,
-                source: GotchaSource::AutoDetected {
-                    command: "cargo build".to_string(),
-                    exit_code: 1,
-                },
-                prevented_count: 0,
-                tags: vec!["rust".to_string()],
                 decayed_at: None,
             });
         }
@@ -155,7 +144,6 @@ mod tests {
             "clear it first",
             "convention",
             "warning",
-            "s1",
         );
         store.save(root).unwrap();
 

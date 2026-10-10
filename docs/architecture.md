@@ -255,7 +255,7 @@ project hash: a short hash of the canonical project root
 | `sessions/<id>.json` | saved sessions | 7 days: older ones are deleted when a server starts |
 | `knowledge/<h>/knowledge.json`, `gotchas.json`, `embeddings.json` | facts and consolidation history, pitfalls, fact embeddings | 200 facts, 100 history entries; unused facts archived after 90 days |
 | `memory/archive/…` | archived facts and history | the newest 16 per store and project; `recall` brings back archived facts it finds nothing else for |
-| `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst`, `health.json` | the code graph | rebuilt when stale; removed when a server starts 48 hours after its last build, or by `doctor --fix` when the project is gone |
+| `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst` | the code graph | rebuilt when stale; removed when a server starts 48 hours after its last build, or by `doctor --fix` when the project is gone |
 | `vectors/<h>/bm25_index.bin.zst`, `embeddings.bin`, `project_root.txt` | BM25 and dense indexes | rebuilt when stale; removed by `doctor --fix` when the project is gone; BM25 is not saved above 512 MB |
 | `read_cache/stub_index.json` | which file versions a conversation has already received (no content) | 1024 entries |
 | `shadow/<h>/git/` | `sobre_checkpoint` snapshots, a git repository apart from yours | until uninstall |
@@ -272,7 +272,6 @@ project hash: a short hash of the canonical project root
 |---|---|---|
 | `tee/` | full outputs behind compressed ones (0600) | 24 hours |
 | `hooks/dedup/`, `hooks/read/` | hook state shared between hook processes | 1 minute; 24 hours or the next compaction |
-| `cooccurrence/<h>.json` | files read together, for ranking | bounded, decaying |
 | `agent_runtime_env.json` | the agent's `CODEX_*`/`CLAUDE_*`/`OPENCODE_*`/`GEMINI_*` variables, never credentials (0600) | ignored after 2 hours |
 | `proxy.log`, `proxy.port` | a detached proxy's output and port | appended; overwritten |
 | `proxy_wiring.json` | what the proxy wiring wrote into agent configs, and what it replaced | until disabled |
@@ -421,7 +420,7 @@ Godot scenes in the graph.
 | [config-keys.md](reference/generated/config-keys.md) | every config key | `core/config/schema/` |
 | [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/args.rs` |
 | [env-vars.md](reference/generated/env-vars.md) | every environment variable | `core/env_vars.rs` |
-| [contracts/](contracts/) | formats and guarantees: usage ledger, graph output, knowledge policy, memory boundary, gotchas, edit-quality loop | the contract files |
+| [contracts/](contracts/) | formats and guarantees: the usage ledger, graph output, the memory boundary | the contract files |
 | [LOCK_ORDERING.md](../rust/LOCK_ORDERING.md) | every lock and its order | checked by a test |
 
 ## 13. Changing it

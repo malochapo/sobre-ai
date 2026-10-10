@@ -10,13 +10,11 @@ pub const GRAPH_REPRODUCIBILITY_V1_SCHEMA_VERSION: u32 = 1;
 ///   stays in place).
 /// * `Stable` — additive evolution allowed (new optional fields, new sections);
 ///   breaking changes require a version bump (a new `-vN.md` file).
-/// * `Experimental` — may change or disappear without notice.
 #[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContractStatus {
     Frozen,
     Stable,
-    Experimental,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -25,7 +23,6 @@ impl ContractStatus {
         match self {
             ContractStatus::Frozen => "frozen",
             ContractStatus::Stable => "stable",
-            ContractStatus::Experimental => "experimental",
         }
     }
 }
@@ -47,7 +44,7 @@ pub struct ContractDoc {
 /// never change.
 #[cfg(any(test, feature = "test-support"))]
 pub fn contract_docs() -> Vec<ContractDoc> {
-    use ContractStatus::{Experimental, Frozen, Stable};
+    use ContractStatus::{Frozen, Stable};
     let doc = |id, doc_file, version, status| ContractDoc {
         id,
         doc_file,
@@ -59,20 +56,8 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("usage-ledger", "usage-ledger-v1.md", 1, Frozen),
         // ── Stable: additive evolution allowed ──────────────────────────────
         doc(
-            "gotchas-reminders",
-            "gotchas-reminders-contract-v1.md",
-            1,
-            Stable,
-        ),
-        doc(
             "graph-reproducibility",
             "graph-reproducibility-contract-v1.md",
-            1,
-            Stable,
-        ),
-        doc(
-            "knowledge-policy",
-            "knowledge-policy-contract-v1.md",
             1,
             Stable,
         ),
@@ -82,9 +67,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Stable,
         ),
-        // ── Experimental: may change without notice ─────────────────────────
-        // Quality loop: edit-failure feedback into mode selection.
-        doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
     ]
 }
 
