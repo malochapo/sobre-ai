@@ -342,8 +342,6 @@ impl SobreReadTool {
         let saved = replaced_tokens.saturating_sub(output_tokens);
 
         // Session updates (bounded lock — 10s timeout, read already succeeded)
-        let mut traversal_working_set: Vec<String> = Vec::new();
-        let project_root_snapshot;
         {
             let rt = tokio::runtime::Handle::current();
             let session_guard = rt.block_on(tokio::time::timeout(
@@ -352,10 +350,6 @@ impl SobreReadTool {
             ));
             if let Ok(mut session) = session_guard {
                 session.touch_file(path, file_ref.as_deref(), &resolved_mode, original);
-                // Capture the recent working set (under the lock) so the
-                // background thread can record a traversal/co-access edge.
-                traversal_working_set =
-                    crate::core::tool_lifecycle::recent_working_set(&session, path);
                 let file_summary = extract_file_summary(&output, path);
                 if !file_summary.is_empty() {
                     session.set_file_summary(path, &file_summary);
@@ -368,40 +362,11 @@ impl SobreReadTool {
                 {
                     session.project_root = Some(root);
                 }
-                project_root_snapshot = session
-                    .project_root
-                    .clone()
-                    .unwrap_or_else(|| ".".to_string());
             } else {
                 tracing::warn!(
                     "session write-lock timeout (10s) in sobre_read post-update for {path}"
                 );
-                project_root_snapshot = ctx.project_root.clone();
             }
-        }
-
-        // The co-access edge is a side effect that never influences this
-        // response; keep its disk I/O off the hot path.
-        {
-            let path_bg = path.to_string();
-            let project_root_bg = project_root_snapshot.clone();
-            std::thread::spawn(move || {
-                // A panic here must not poison locks or leave a zombie thread;
-                // it never affects the already-returned read response.
-                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                    // Traversal/co-access edge: this read fired together with the
-                    // recent working set captured under the session lock.
-                    if let Some(root) =
-                        crate::core::tool_lifecycle::usable_root(Some(project_root_bg.as_str()))
-                    {
-                        crate::core::cooccurrence::record_focus_access(
-                            root,
-                            &path_bg,
-                            &traversal_working_set,
-                        );
-                    }
-                }));
-            });
         }
 
         let mut warnings = Vec::new();

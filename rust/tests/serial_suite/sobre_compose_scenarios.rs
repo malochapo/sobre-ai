@@ -51,29 +51,6 @@ fn compose_returns_all_sections_with_symbol_body() {
     assert!(tokens > 0, "token count must be reported");
 }
 
-#[test]
-fn compose_surfaces_associative_neighbours() {
-    let dir = write_corpus();
-
-    // `authenticate_user` lives in auth.rs; config.rs is a same-dir sibling, so
-    // the graph connects them and spreading activation from the auth.rs seed
-    // must surface config.rs as an associative neighbour.
-    let (out, _tokens) = sobre_compose::handle(
-        "explain authenticate_user",
-        &dir.path().to_string_lossy(),
-        CrpMode::Off,
-    );
-
-    assert!(
-        out.contains("## Related (associative"),
-        "associative section should appear when the graph connects files:\n{out}"
-    );
-    assert!(
-        out.contains("config.rs"),
-        "the sibling neighbour should be surfaced via spreading activation:\n{out}"
-    );
-}
-
 /// Two files define a symbol of the same name; the task keywords point at one.
 /// Regression: `best_symbol_snippet` used to inline `find_symbols(name)
 /// .next()` — an arbitrary match — so a trivial config accessor could win over

@@ -1,6 +1,47 @@
 use std::collections::{HashMap, HashSet};
 
-use super::neural::attention_learned::LearnedAttention;
+/// How much attention a model pays to a line by its relative position in the
+/// file, as `(position, weight)` breakpoints. Measured on TinyLlama 1.1B over
+/// 106 Rust files: not a U-curve (Liu et al.) but an L-curve — massive
+/// attention at position 0.00, rapid decay, no recovery at the end.
+/// Normalized to [0, 1] from raw values where position 0.0 had 20x the
+/// attention of mid-file.
+const POSITION_WEIGHTS: &[(f64, f64)] = &[
+    (0.00, 1.00),
+    (0.05, 0.055),
+    (0.10, 0.055),
+    (0.15, 0.050),
+    (0.20, 0.050),
+    (0.25, 0.055),
+    (0.30, 0.045),
+    (0.35, 0.040),
+    (0.40, 0.040),
+    (0.45, 0.040),
+    (0.50, 0.035),
+    (0.55, 0.030),
+    (0.60, 0.035),
+    (0.65, 0.025),
+    (0.70, 0.020),
+    (0.75, 0.020),
+    (0.80, 0.020),
+    (0.85, 0.015),
+    (0.90, 0.010),
+    (0.95, 0.000),
+    (1.00, 0.000),
+];
+
+/// Weight of a line at normalized `position` (clamped to [0.0, 1.0]),
+/// interpolated linearly between the [`POSITION_WEIGHTS`] breakpoints.
+fn position_weight(position: f64) -> f64 {
+    let pos = position.clamp(0.0, 1.0);
+    POSITION_WEIGHTS
+        .windows(2)
+        .find(|w| pos <= w[1].0)
+        .map_or(0.0, |w| {
+            let ((x0, y0), (x1, y1)) = (w[0], w[1]);
+            y0 + (pos - x0) / (x1 - x0) * (y1 - y0)
+        })
+}
 
 /// Extract likely task-relevant file paths and keywords from a task description.
 pub fn parse_task_hints(task_description: &str) -> (Vec<String>, Vec<String>) {
@@ -199,7 +240,6 @@ pub fn information_bottleneck_filter_typed(
 
     let n = lines.len();
     let kw_lower: Vec<String> = task_keywords.iter().map(|k| k.to_lowercase()).collect();
-    let attention = LearnedAttention::with_defaults();
 
     let mut global_token_freq: HashMap<&str, usize> = HashMap::new();
     for line in &lines {
@@ -289,7 +329,7 @@ pub fn information_bottleneck_filter_typed(
             let information = (token_diversity * 0.4 + (avg_idf.min(3.0) / 3.0) * 0.6).min(1.0);
 
             let pos = i as f64 / n.max(1) as f64;
-            let attn_weight = attention.weight(pos);
+            let attn_weight = position_weight(pos);
 
             let score = (relevance * 0.6 + 0.05)
                 * (information * 0.25 + 0.05)
@@ -508,6 +548,39 @@ fn is_closing_brace(line: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn position_weights_form_an_l_curve() {
+        let begin = position_weight(0.0);
+        let middle = position_weight(0.5);
+        let end = position_weight(1.0);
+
+        assert!(begin > middle, "begin ({begin}) should > middle ({middle})");
+        assert!(begin > 0.9, "begin should be > 0.9, got {begin}");
+        // L-curve: end is LOW, not high like a U-curve
+        assert!(end < 0.01, "end should be near 0 (L-curve), got {end}");
+        assert!(middle < 0.05, "middle should be low, got {middle}");
+    }
+
+    #[test]
+    fn position_weights_are_smooth_after_the_initial_drop() {
+        // The drop from pos 0.0 (1.0) to pos 0.05 (0.055) is expected; after
+        // it the curve has no large jumps.
+        let mut prev = position_weight(0.05);
+        for i in 2..=20 {
+            let pos = f64::from(i) / 20.0;
+            let curr = position_weight(pos);
+            let diff = (curr - prev).abs();
+            assert!(diff < 0.02, "Jump too large at pos {pos}: {diff}");
+            prev = curr;
+        }
+    }
+
+    #[test]
+    fn position_weight_clamps_out_of_range_positions() {
+        assert_eq!(position_weight(-0.5), position_weight(0.0));
+        assert_eq!(position_weight(1.5), position_weight(1.0));
+    }
 
     #[test]
     fn parse_task_finds_files_and_keywords() {

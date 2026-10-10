@@ -38,9 +38,6 @@ pub struct HybridConfig {
     pub dense_weight: f64,
     pub bm25_candidates: usize,
     pub dense_candidates: usize,
-    /// Weight of the query-expansion signal (`splade_retrieval`). 0.0 turns
-    /// it off.
-    pub splade_weight: f64,
 }
 
 #[cfg(any(test, feature = "dense"))]
@@ -51,7 +48,6 @@ impl Default for HybridConfig {
             dense_weight: DEFAULT_DENSE_WEIGHT,
             bm25_candidates: 75,
             dense_candidates: 75,
-            splade_weight: 0.5,
         }
     }
 }

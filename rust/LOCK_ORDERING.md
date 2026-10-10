@@ -25,7 +25,6 @@ accessor function.
 | L38 | `GLOBAL_TRACKER` | `core/bounce_tracker.rs` | `OnceLock<Mutex<BounceTracker>>` | Tracks repeated tool-call bounces |
 | L41 | `KNOWLEDGE_LOCKS` | `core/knowledge/persist.rs` (fn-local) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-project knowledge.json read-modify-write serialization (same outer/inner pattern as L1/L2) |
 | L42 | `LAST_PARSE_ERROR` | `core/config/loader.rs` | `Mutex<Option<String>>` | Most recent global `config.toml` parse error (surfaced by doctor/diagnostics); never held together with L4 |
-| L50 | `LINE_EMBED_CACHE` | `core/entropy.rs` (fn-local) | `Mutex<Option<HashMap<u64, Vec<f32>>>>` | Per-line embedding cache (line-hash → vector) for the semantic redundancy filter; capacity-bounded, never blocks on model loads |
 | L57 | `SEEN` | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Vec<(String, Instant)>>>` | Recent sightings of distinct conversation ids feeding the multi-conversation detector; capacity-pruned, independent leaf lock |
 | L58 | `STORE` (conversation) | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Option<Cached>>>` | Cached current conversation id with its refresh instant; independent leaf lock, never held together with L57 |
 | L62 | `TARGETS` | `core/eviction_orchestrator.rs` | `LazyLock<Mutex<EvictionRegistry>>` | Registry of live `EvictionOrchestrator` weak refs: `register()`/`on_memory_pressure()` lock it only to clone/upgrade the target list, then drop it before calling `on_pressure()` on each target; never held while any other lock is acquired |
