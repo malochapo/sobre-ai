@@ -1,11 +1,10 @@
-//! Modern, timeout-protected macOS launchd (`launchctl`) control.
+//! Timeout-protected macOS launchd (`launchctl`) control.
 //!
 //! Uses the `bootstrap` / `bootout` / `enable` / `kickstart` subcommands in the
-//! per-user `gui/<uid>` domain instead of the legacy `load` / `unload`. On
-//! macOS 13+ the legacy verbs intermittently fail with `Input/output error`
-//! and can leave a job *half-loaded*; combined with `KeepAlive` that produces a
-//! launchd crash-loop which wedges every client waiting on the service (and
-//! previously forced users to reboot after a binary update).
+//! per-user `gui/<uid>` domain, not `load` / `unload`: on macOS 13+ those
+//! intermittently fail with `Input/output error` and can leave a job
+//! *half-loaded*; combined with `KeepAlive` that produces a launchd crash-loop
+//! which wedges every client waiting on the service until a reboot.
 //!
 //! Every invocation is wrapped in a hard timeout via
 //! [`crate::ipc::process::run_with_timeout`], so a stuck `launchctl` can never

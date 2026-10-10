@@ -395,7 +395,11 @@ mod tests {
         assert!(diff(&project, Some("HEAD"), Some(&option)).is_err());
         assert!(restore(&project, &option, Some("a.txt")).is_err());
         assert!(!written.exists(), "git must not have run with the option");
-        assert_eq!(log(&project, 10).expect("log").len(), 1, "nothing snapshotted");
+        assert_eq!(
+            log(&project, 10).expect("log").len(),
+            1,
+            "nothing snapshotted"
+        );
 
         crate::test_env::remove_var("SOBRE_DATA_DIR");
         let _ = std::fs::remove_dir_all(&data);

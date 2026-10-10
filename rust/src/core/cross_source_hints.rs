@@ -1,11 +1,8 @@
-//! Cross-source hints — lateral connections between cortical columns.
+//! Cross-source hints: what outside the code a file is linked to.
 //!
-//! When `sobre_read` delivers a file, this module appends hints about related
-//! data from other sources (issues, PRs, DB schemas, wiki pages) discovered
-//! via the graph index's cross-source edges.
-//!
-//! Scientific basis: Lateral connections in V1 cortex (Stettler et al., 2002)
-//! enable feature integration across cortical columns.
+//! When `sobre_read` delivers a file, this module appends the external URIs
+//! (`scheme://…`) the property graph's cross-source edges link it to. The
+//! code-health fabric writes those edges (`health://` hotspots).
 
 use crate::core::graph_index::IndexEdge;
 

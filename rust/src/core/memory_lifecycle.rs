@@ -677,10 +677,11 @@ mod tests {
     }
 
     #[test]
-    fn prune_unretrieved_is_off_by_default() {
-        // Default config (None) must not touch a high-confidence stale fact —
-        // existing tuning stays byte-for-byte.
+    fn prune_unretrieved_spares_a_fact_younger_than_the_default_90_days() {
+        // The default prunes a never-retrieved fact after 90 days, so a
+        // confident 60-day-old one is kept.
         let config = LifecycleConfig::default();
+        assert_eq!(config.prune_unretrieved_after_days, Some(90));
         let mut facts = vec![make_old_fact("arch", "x", "still confident", 0.9, 60)];
         let (count, _) = compact(&mut facts, &config);
         assert_eq!(count, 0);

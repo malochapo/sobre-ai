@@ -117,7 +117,7 @@ impl CompressionLevel {
     /// and the 1–2 band leaves the current degrade untouched.
     ///
     /// Pure and total so the thresholds are unit-testable without the dispatch
-    /// path — the regression guard for the brittle source-grep test this replaced.
+    /// path.
     pub fn degrade_action(correction_count: u32, retrieve_count: u32) -> SessionDegrade {
         let pressure = correction_count.max(retrieve_count);
         if pressure >= 5 {

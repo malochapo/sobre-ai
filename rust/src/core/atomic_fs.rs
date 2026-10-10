@@ -41,12 +41,9 @@ pub(crate) fn try_atomic_write(
         .ok_or_else(|| invalid_input("invalid path (no filename)"))?
         .to_string_lossy();
 
-    // Sweep this directory for temps orphaned by a previous crash
-    // between temp-file creation and rename — the only place these were
-    // ever cleaned up before was the rename error path, so a hard crash
-    // left them behind for good with no separate startup pass to catch
-    // them. Piggybacking here means every atomic write into this directory
-    // gets a chance to reap whatever an earlier crashed write left behind.
+    // Sweep this directory for temps orphaned by a crash between temp-file
+    // creation and rename. Nothing else removes them, so every atomic write
+    // into a directory reaps what an earlier crashed write left there.
     cleanup_orphaned_temps(parent, &filename);
 
     let pid = std::process::id();

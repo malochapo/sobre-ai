@@ -80,10 +80,9 @@ mod compression_level_tests {
 mod root_key_tests {
     use super::super::*;
 
-    /// Regression: a stray root scalar once landed under [secret_detection]
-    /// because whole-struct serialization placed it after a table. Any
-    /// `Option<String>` root key is exposed to that bug; `tool_profile` and
-    /// then `profile` carried the guard and are gone, so `hook_binary` does.
+    /// Whole-struct serialization must place every root scalar above the first
+    /// table, or it lands inside that table. Any `Option<String>` root key is
+    /// exposed; `hook_binary` is the one tested.
     #[test]
     fn option_root_scalar_serializes_above_the_first_table() {
         let original = Config {

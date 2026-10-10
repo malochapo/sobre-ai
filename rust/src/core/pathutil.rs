@@ -862,8 +862,8 @@ mod tests {
 
     #[test]
     fn broad_root_rejects_copilot_and_friends() {
-        // The previously-missing agent/IDE dirs must now be rejected so
-        // they are never adopted as the project root (the Copilot CLI case).
+        // Agent and IDE config dirs are never adopted as the project root
+        // (the Copilot CLI case).
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.copilot")));
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.cursor")));
         assert!(is_broad_or_unsafe_root(Path::new("/home/user/.windsurf")));

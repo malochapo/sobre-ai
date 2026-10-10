@@ -82,19 +82,20 @@ pub fn apply_artifacts_to_stores(
     let policy = crate::core::memory_policy::MemoryPolicy::default();
     let category = &prune.fact_category;
     let session_id = format!("fabric:{category}");
-    let saved = crate::core::knowledge::ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        knowledge.facts.retain(|f| &f.category != category);
-        for fact in &artifacts.facts {
-            knowledge.remember(
-                &fact.category,
-                &fact.key,
-                &fact.value,
-                &session_id,
-                fact.confidence,
-                &policy,
-            );
-        }
-    });
+    let saved =
+        crate::core::knowledge::ProjectKnowledge::mutate_locked(project_root, |knowledge| {
+            knowledge.facts.retain(|f| &f.category != category);
+            for fact in &artifacts.facts {
+                knowledge.remember(
+                    &fact.category,
+                    &fact.key,
+                    &fact.value,
+                    &session_id,
+                    fact.confidence,
+                    &policy,
+                );
+            }
+        });
     if let Err(e) = saved {
         tracing::warn!("[consolidation] knowledge not saved: {e}");
     }

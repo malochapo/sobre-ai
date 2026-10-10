@@ -152,17 +152,14 @@ mod tests {
         Some(cur)
     }
 
-    /// The reverse of [`known_keys_cover_every_config_struct_field`], and the
-    /// direction that actually bit.
+    /// The reverse of [`known_keys_cover_every_config_struct_field`].
     ///
     /// A `sections_*.rs` entry that hardcodes its default — `json!(false)`,
     /// `json!([])` — instead of reading `cfg.<field>` keeps compiling after the
     /// struct field is deleted. The key then stays in `config init`, in
     /// `doctor`'s unknown-key check and in the published
     /// `docs/reference/generated/config-keys.md` while nothing reads it: a
-    /// setting the user can write that silently does nothing. `shell_allowlist`,
-    /// `shell_allowlist_extra` and `update_check_disabled` each survived their
-    /// field exactly that way.
+    /// setting the user can write that silently does nothing.
     ///
     /// The compiler cannot see it — a hardcoded `json!` value has no link to the
     /// struct — so it takes a test.
@@ -248,10 +245,9 @@ mod tests {
     /// An `Option<_>` scalar field defaults to `None`, so serde omits it from
     /// `Config::default()` and it never appears in `config_derived_keys`: such a
     /// field is settable via `config set` **only** if it was hand-added to a
-    /// `sections_*.rs` schema. Forgetting that is the `Unknown config key: <x>`
-    /// regression a user hit. Guard the whole
-    /// class so a new `Option` knob can't silently become un-settable again — if you add an `Option` scalar to
-    /// `Config`, register it in `sections_*.rs` and list it here.
+    /// `sections_*.rs` schema; forgetting that makes `config set` answer
+    /// `Unknown config key: <x>`. If you add an `Option` scalar to `Config`,
+    /// register it in `sections_*.rs` and list it here.
     #[test]
     fn option_scalar_keys_are_cli_settable() {
         let schema = ConfigSchema::generate();
