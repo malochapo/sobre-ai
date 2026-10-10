@@ -139,7 +139,8 @@ pub fn compress_output(command: &str, output: &str) -> Option<String> {
 
 /// True for version-control commands whose output is authoritative under their
 /// own compressor and must not be reinterpreted by the generic log/test
-/// fallbacks (commit history is not application log output).
+/// fallbacks (commit history is not application log output). `hg` has no
+/// compressor here, so its output stays as it is.
 pub(crate) fn has_vcs_owner(command: &str) -> bool {
     let c = command.trim_start().to_ascii_lowercase();
     c.starts_with("git ")
@@ -352,7 +353,7 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| ninja::compress(c, output),
     ),
     (
-        |c| c.starts_with("ansible") || c.starts_with("ansible-playbook"),
+        |c| c.starts_with("ansible"),
         |c, output| ansible::compress(c, output),
     ),
     (
