@@ -358,7 +358,10 @@ mod tests {
         let ours = regex::Regex::new(r#""(SOBRE_[A-Z0-9_]+)""#).unwrap();
         let mut missing = Vec::new();
         for entry in walkdir(&src) {
-            let text = std::fs::read_to_string(&entry).unwrap_or_default();
+            // A Windows checkout may turn the line endings into CRLF.
+            let text = std::fs::read_to_string(&entry)
+                .unwrap_or_default()
+                .replace("\r\n", "\n");
             // Only the code: a test module's names are fixtures.
             let code = text.split("#[cfg(test)]\nmod ").next().unwrap_or(&text);
             for cap in read.captures_iter(code).chain(ours.captures_iter(code)) {

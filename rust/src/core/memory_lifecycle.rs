@@ -719,21 +719,24 @@ mod tests {
 
     #[test]
     fn full_lifecycle_run() {
-        let config = LifecycleConfig {
-            max_facts: 5,
-            ..Default::default()
-        };
+        // Compaction archives the stale facts to disk.
+        with_temp_data_dir(|| {
+            let config = LifecycleConfig {
+                max_facts: 5,
+                ..Default::default()
+            };
 
-        let mut facts = vec![
-            make_fact("arch", "db", "PostgreSQL", 0.9),
-            make_fact("arch", "cache", "Redis", 0.8),
-            make_old_fact("arch", "old1", "thing1", 0.2, 50),
-            make_old_fact("arch", "old2", "thing2", 0.15, 60),
-            make_fact("ops", "deploy", "docker compose", 0.7),
-        ];
+            let mut facts = vec![
+                make_fact("arch", "db", "PostgreSQL", 0.9),
+                make_fact("arch", "cache", "Redis", 0.8),
+                make_old_fact("arch", "old1", "thing1", 0.2, 50),
+                make_old_fact("arch", "old2", "thing2", 0.15, 60),
+                make_fact("ops", "deploy", "docker compose", 0.7),
+            ];
 
-        let report = run_lifecycle(&mut facts, "scope", &config).expect("lifecycle succeeds");
-        assert!(report.remaining_facts <= config.max_facts);
-        assert!(report.decayed_count > 0 || report.compacted_count > 0);
+            let report = run_lifecycle(&mut facts, "scope", &config).expect("lifecycle succeeds");
+            assert!(report.remaining_facts <= config.max_facts);
+            assert!(report.decayed_count > 0 || report.compacted_count > 0);
+        });
     }
 }

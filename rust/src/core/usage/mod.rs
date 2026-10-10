@@ -173,8 +173,12 @@ fn append(ev: &Event) {
     };
     let mut line = ev.to_json_line();
     line.push('\n');
+    // `read` too: on Windows, locking needs a handle with read or write
+    // access, and an append-only handle has neither, so the lock failed and
+    // nothing was recorded.
     let Ok(mut file) = std::fs::OpenOptions::new()
         .create(true)
+        .read(true)
         .append(true)
         .open(&path)
     else {
