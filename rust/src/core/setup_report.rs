@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -46,8 +44,4 @@ pub struct SetupItem {
     pub path: Option<String>,
     #[serde(default)]
     pub note: Option<String>,
-}
-
-pub fn doctor_report_path() -> Result<PathBuf, String> {
-    Ok(crate::core::data_dir::sobre_data_dir()?.join("doctor/latest.json"))
 }

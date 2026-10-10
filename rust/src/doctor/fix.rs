@@ -1,13 +1,13 @@
 use chrono::Utc;
 
-use super::{DIM, RST, compact_score, display_user_path, print_compact_status};
+use super::{compact_score, display_user_path, print_compact_status};
 
 pub(super) struct DoctorFixOptions {
     pub json: bool,
 }
 
 pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
-    let report = build_and_persist_fix_report(opts.json)?;
+    let report = build_fix_report(opts.json)?;
     if opts.json {
         let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
         crate::outln!("{json_text}");
@@ -15,9 +15,6 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
         print_repairs(&report);
         let (passed, total) = compact_score();
         print_compact_status(passed, total);
-        if let Ok(path) = crate::core::setup_report::doctor_report_path() {
-            crate::outln!("  {DIM}report saved:{RST} {}", display_user_path(&path));
-        }
     }
     Ok(i32::from(!report.success))
 }
@@ -25,7 +22,7 @@ pub(super) fn run_fix(opts: &DoctorFixOptions) -> Result<i32, String> {
 /// Repairs without printing anything: what `doctor integrations --fix
 /// --json` runs before its own report.
 pub(super) fn run_fix_silently() {
-    let _ = build_and_persist_fix_report(true);
+    let _ = build_fix_report(true);
 }
 
 /// What `--fix` changed, one line each; what needed nothing is left out.
@@ -63,12 +60,8 @@ fn print_repairs(report: &crate::core::setup_report::SetupReport) {
     }
 }
 
-fn build_and_persist_fix_report(
-    quiet: bool,
-) -> Result<crate::core::setup_report::SetupReport, String> {
-    use crate::core::setup_report::{
-        PlatformInfo, SetupItem, SetupReport, SetupStepReport, doctor_report_path,
-    };
+fn build_fix_report(quiet: bool) -> Result<crate::core::setup_report::SetupReport, String> {
+    use crate::core::setup_report::{PlatformInfo, SetupItem, SetupReport, SetupStepReport};
 
     let _quiet_guard = quiet.then(crate::core::runtime_flags::scoped_quiet);
     let started_at = Utc::now();
@@ -241,10 +234,6 @@ fn build_and_persist_fix_report(
         warnings: Vec::new(),
         errors: Vec::new(),
     };
-
-    let path = doctor_report_path()?;
-    let json_text = serde_json::to_string_pretty(&report).map_err(|e| e.to_string())?;
-    crate::config_io::write_atomic(&path, &json_text)?;
 
     Ok(report)
 }
