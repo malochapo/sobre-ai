@@ -7,7 +7,7 @@
 //!
 //! This is a pure replace of the *code graph*: nodes, edges and the file
 //! catalog are cleared first, then rebuilt from the index, so re-running it is
-//! idempotent. Provider `cross_source_edges` are deliberately preserved.
+//! idempotent.
 
 use super::{
     CodeGraph, Edge, EdgeKind, FileCatalogEntry, GRAPH_ENGINE_VERSION, Node, NodeKind,
@@ -79,8 +79,7 @@ fn json_str(s: &str) -> String {
 
 /// Mirror `index` into `graph`: file nodes + file catalog, symbol nodes (with
 /// line spans + kind/export metadata), and structural edges. Clears the code
-/// graph first (preserving provider cross-source edges) so the result is a
-/// faithful 1:1 representation of the index.
+/// graph first so the result is a faithful 1:1 representation of the index.
 ///
 /// All writes run inside a single transaction — without it, SQLite fsyncs per
 /// statement, which on a real repo (thousands of symbols) is pathologically
@@ -252,23 +251,6 @@ mod tests {
         assert_eq!(pg.symbol_count().unwrap(), 2, "both symbols mirrored");
         assert!(pg.node_count().unwrap() >= 3 + 2, "file + symbol nodes");
         assert!(pg.edge_count().unwrap() >= 2, "import edges mirrored");
-    }
-
-    #[test]
-    fn mirror_preserves_cross_source_edges() {
-        let pg = CodeGraph::open_in_memory().unwrap();
-        pg.upsert_cross_source_edge("src/a.rs", "github:issue/42", "mentioned_in", 1.0)
-            .unwrap();
-        assert_eq!(pg.cross_source_edge_count().unwrap(), 1);
-
-        populate_from_project_index(&pg, &fixture_index()).unwrap();
-
-        assert_eq!(
-            pg.cross_source_edge_count().unwrap(),
-            1,
-            "provider cross-source edges survive a code-graph rebuild"
-        );
-        assert_eq!(pg.file_catalog_count().unwrap(), 3, "code graph rebuilt");
     }
 
     #[test]

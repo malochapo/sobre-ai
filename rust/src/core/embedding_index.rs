@@ -441,13 +441,6 @@ fn kind_tag(kind: &super::bm25_index::ChunkKind) -> u8 {
         ChunkKind::Class => 5,
         ChunkKind::Method => 6,
         ChunkKind::Other => 7,
-        ChunkKind::Issue => 8,
-        ChunkKind::PullRequest => 9,
-        ChunkKind::WikiPage => 10,
-        ChunkKind::DbSchema => 11,
-        ChunkKind::ApiEndpoint => 12,
-        ChunkKind::Ticket => 13,
-        ChunkKind::ExternalOther => 14,
     }
 }
 

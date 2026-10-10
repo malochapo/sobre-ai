@@ -66,8 +66,8 @@ fn filter_pred(filter: &SearchFilter) -> impl Fn(&str) -> bool + '_ {
     |p: &str| filter.matches(p)
 }
 
-/// Hybrid ranking: BM25 + dense embeddings fused by RRF, then SPLADE and
-/// complexity boosts. Every hybrid
+/// Hybrid ranking: BM25 + dense embeddings fused by RRF, then the SPLADE
+/// boost. Every hybrid
 /// search (one root, workspace, `find_related`, the eval harness) goes through
 /// here.
 ///
@@ -112,7 +112,6 @@ pub(crate) fn hybrid_ranked(
         let splade = crate::core::splade_retrieval::hybrid_retrieve(query, index, candidate_k);
         boost_with_splade(&mut results, &splade, cfg.splade_weight);
     }
-    boost_with_complexity(&mut results, root.to_str().unwrap_or(""), 0.3);
     results.truncate(top_k);
     Ok(Ranked {
         results,

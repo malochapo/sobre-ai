@@ -599,7 +599,6 @@ mod tests {
             "run the migrations one by one",
             "convention",
             "warning",
-            "s1",
         );
         store.save(&root).unwrap();
 

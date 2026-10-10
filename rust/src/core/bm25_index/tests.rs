@@ -59,24 +59,6 @@ fn format_search_results_normalizes_windows_separators() {
 }
 
 #[test]
-fn format_search_results_leaves_external_uris_untouched() {
-    // Provider results (e.g. github://) are not OS paths and must not be
-    // rewritten.
-    let r = SearchResult {
-        chunk_idx: 0,
-        score: 1.0,
-        file_path: "github://owner/repo/issues/42".to_string(),
-        symbol_name: "issue".to_string(),
-        kind: ChunkKind::Module,
-        start_line: 0,
-        end_line: 0,
-        snippet: "y".to_string(),
-    };
-    let out = format_search_results(std::slice::from_ref(&r), true);
-    assert!(out.contains("github://owner/repo/issues/42"));
-}
-
-#[test]
 fn camel_case_splitting() {
     let tokens = split_camel_case_tokens(&["calculateTotal".to_string()]);
     assert!(tokens.contains(&"calculateTotal".to_string()));
@@ -894,66 +876,6 @@ fn parallel_build_search_parity() {
     }
 }
 
-#[test]
-fn remove_chunks_with_prefix_evicts_only_matching() {
-    use crate::core::content_chunk::ContentChunk;
-
-    let mut index = BM25Index::from_chunks_for_test(vec![CodeChunk {
-        file_path: "src/lib.rs".into(),
-        symbol_name: "main".into(),
-        kind: ChunkKind::Function,
-        start_line: 1,
-        end_line: 2,
-        content: "fn main() {}".into(),
-        tokens: Vec::new(),
-        token_count: 0,
-    }]);
-    index.ingest_content_chunks(vec![
-        ContentChunk::from_provider(
-            "health",
-            "complexity",
-            "src/a.rs#big",
-            "big",
-            ChunkKind::Other,
-            "complex function body".into(),
-            vec![],
-            None,
-        ),
-        ContentChunk::from_provider(
-            "github",
-            "issues",
-            "42",
-            "bug",
-            ChunkKind::Issue,
-            "issue text".into(),
-            vec![],
-            None,
-        ),
-    ]);
-    assert_eq!(index.chunks.len(), 3);
-
-    let removed = index.remove_chunks_with_prefix("health://");
-    assert_eq!(removed, 1, "only the health chunk is evicted");
-    assert_eq!(index.chunks.len(), 2);
-    assert!(
-        index
-            .chunks
-            .iter()
-            .all(|c| !c.file_path.starts_with("health://")),
-        "no health chunks remain"
-    );
-    // Code chunk and the unrelated provider chunk survive.
-    assert!(index.chunks.iter().any(|c| c.file_path == "src/lib.rs"));
-    assert!(
-        index
-            .chunks
-            .iter()
-            .any(|c| c.file_path.starts_with("github://"))
-    );
-    // A no-match prefix is a no-op.
-    assert_eq!(index.remove_chunks_with_prefix("nope://"), 0);
-}
-
 /// A plain-language question finds the snake_case function it describes.
 #[test]
 fn plain_language_query_finds_snake_case_function() {
@@ -1048,44 +970,4 @@ fn incremental_rebuild_keeps_unchanged_chunks_fully_indexed() {
         "the unchanged file keeps its whole body in the index"
     );
     assert_same_index(&BM25Index::build_from_directory(root), &rebuilt);
-}
-
-/// Removing chunks renumbers the postings of the chunks that stay: no posting
-/// points past the end or at the wrong chunk, before or after new chunks come.
-#[test]
-fn remove_chunks_with_prefix_renumbers_postings() {
-    use crate::core::content_chunk::ContentChunk;
-
-    let provider = |source: &str, id: &str, text: &str| {
-        ContentChunk::from_provider(
-            source,
-            "items",
-            id,
-            id,
-            ChunkKind::Other,
-            text.into(),
-            vec![],
-            None,
-        )
-    };
-    let mut index =
-        BM25Index::from_chunks_for_test(vec![plain_chunk("src/lib.rs", "main", "fn main() {}")]);
-    index.ingest_content_chunks(vec![
-        provider("health", "a", "complex function body"),
-        provider("github", "b", "issue text"),
-    ]);
-
-    assert_eq!(index.remove_chunks_with_prefix("health://"), 1);
-    assert!(index.search("complex", 5).is_empty());
-    assert!(!index.doc_freqs.contains_key("complex"));
-    let issue = index.search("issue", 5);
-    assert_eq!(issue.len(), 1);
-    assert!(issue[0].file_path.starts_with("github://"), "{issue:?}");
-
-    index.ingest_content_chunks(vec![provider("health", "c", "fresh hotspot")]);
-    let issue = index.search("issue", 5);
-    assert_eq!(issue.len(), 1);
-    assert!(issue[0].file_path.starts_with("github://"), "{issue:?}");
-    assert!(index.search("complex", 5).is_empty());
-    assert_eq!(index.doc_freqs["issue"], 1);
 }

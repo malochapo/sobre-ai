@@ -66,19 +66,6 @@ pub(super) fn initialize(conn: &Connection) -> anyhow::Result<()> {
             exports     TEXT NOT NULL DEFAULT '[]',
             summary     TEXT NOT NULL DEFAULT ''
         );
-
-        CREATE TABLE IF NOT EXISTS cross_source_edges (
-            from_path TEXT NOT NULL,
-            to_path   TEXT NOT NULL,
-            kind      TEXT NOT NULL,
-            weight    REAL NOT NULL DEFAULT 1.0,
-            PRIMARY KEY (from_path, to_path, kind)
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_cross_source_from
-            ON cross_source_edges(from_path);
-        CREATE INDEX IF NOT EXISTS idx_cross_source_to
-            ON cross_source_edges(to_path);
         ",
     )?;
     Ok(())
@@ -104,7 +91,6 @@ mod tests {
         assert!(tables.contains(&"nodes".to_string()));
         assert!(tables.contains(&"edges".to_string()));
         assert!(tables.contains(&"file_catalog".to_string()));
-        assert!(tables.contains(&"cross_source_edges".to_string()));
         assert!(tables.contains(&"paths".to_string()));
     }
 }

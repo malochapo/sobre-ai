@@ -2,7 +2,6 @@
 //! (imports, modules, type uses, co-change, siblings) as the `graph_index`
 //! scan extracts them (`sync`), and the queries over them (`queries`).
 
-mod cross_source;
 mod edge;
 pub mod file_catalog;
 mod meta;
@@ -176,40 +175,8 @@ impl CodeGraph {
         edge::count(&self.conn)
     }
 
-    /// Persist a cross-source edge (code file ↔ external source URI) into the
-    /// dedicated `cross_source_edges` table. Keeps the higher weight on conflict
-    /// so repeated provider ingests don't downgrade an established link.
-    pub fn upsert_cross_source_edge(
-        &self,
-        from: &str,
-        to: &str,
-        kind: &str,
-        weight: f32,
-    ) -> anyhow::Result<()> {
-        cross_source::upsert(&self.conn, from, to, kind, weight)
-    }
-
-    /// All cross-source edges as `IndexEdge`s, ready for `cross_source_hints`.
-    pub fn all_cross_source_edges(&self) -> Vec<crate::core::graph_index::IndexEdge> {
-        cross_source::all(&self.conn).unwrap_or_default()
-    }
-
-    #[cfg(test)]
-    pub fn cross_source_edge_count(&self) -> anyhow::Result<usize> {
-        cross_source::count(&self.conn)
-    }
-
-    /// Delete every cross-source edge of a given `kind`. Used by the code-health
-    /// fabric to replace its `health_hotspot` edges on each pass so resolved
-    /// hotspots never persist as stale hints. Returns the number removed.
-    pub fn delete_cross_source_edges_by_kind(&self, kind: &str) -> anyhow::Result<usize> {
-        cross_source::delete_by_kind(&self.conn, kind)
-    }
-
-    /// Clear only the code graph (nodes, edges, file catalog), preserving
-    /// provider `cross_source_edges`. Used by the graph_index→PG mirror
-    /// so rebuilding the code graph never drops lateral provider hints, which
-    /// live in their own table and are repopulated on a separate ingest cycle.
+    /// Clear the code graph (nodes, edges, file catalog, paths) before the
+    /// graph_index→PG mirror rebuilds it.
     pub fn clear_code_graph(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
             "DELETE FROM edges; DELETE FROM nodes; DELETE FROM file_catalog; DELETE FROM paths;",

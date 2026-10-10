@@ -92,7 +92,6 @@ pub(super) fn exec_buffered(command: &str, shell: &str, shell_flag: &str) -> i32
     let input_tokens = count_tokens(&full_output);
 
     crate::core::diagnostics_store::record_from_shell(command, &full_output, exit_code);
-    crate::core::gotcha_tracker::record_shell_outcome(command, &full_output, exit_code);
 
     let (compressed, output_tokens) =
         super::compress::compress_and_measure(command, &stdout, &stderr, exit_code);

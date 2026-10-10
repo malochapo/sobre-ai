@@ -1,5 +1,5 @@
 //! Workspace search across roots + RRF fusion, graph-signal ranks, and the
-//! SPLADE and complexity boosts of the hybrid pipeline.
+//! SPLADE boost of the hybrid pipeline.
 
 use std::path::Path;
 
@@ -202,33 +202,6 @@ pub(crate) fn boost_with_splade(
         }
     }
 
-    results.sort_by(|a, b| {
-        b.rrf_score
-            .partial_cmp(&a.rrf_score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-}
-
-/// Boost results by code-health complexity signal.
-///
-/// Symbols with higher cognitive complexity (handle, dispatch, orchestration
-/// functions) are more likely edit targets than small leaf helpers sharing
-/// vocabulary with the query.
-#[cfg(feature = "dense")]
-pub(crate) fn boost_with_complexity(results: &mut [HybridResult], project_root: &str, weight: f64) {
-    if weight <= 0.0 || results.is_empty() {
-        return;
-    }
-    for r in results.iter_mut() {
-        if r.symbol_name.is_empty() {
-            continue;
-        }
-        if let Some(cc) = crate::core::code_health::fabric::hotspot_cc(project_root, &r.symbol_name)
-        {
-            let boost = weight * (1.0 + cc as f64).ln() / 100.0;
-            r.rrf_score += boost;
-        }
-    }
     results.sort_by(|a, b| {
         b.rrf_score
             .partial_cmp(&a.rrf_score)
