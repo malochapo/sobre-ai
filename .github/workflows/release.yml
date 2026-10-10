@@ -97,7 +97,12 @@ jobs:
           echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
       - name: Write THIRD-PARTY-LICENSES.txt
         working-directory: rust
-        run: cargo about generate --locked --all-features about.hbs -o ../THIRD-PARTY-LICENSES.txt
+        shell: bash
+        run: |
+          cargo about generate --locked --all-features about.hbs -o ../THIRD-PARTY-LICENSES.txt 2>&1 | tee about.log
+          # A clarification whose checksum no longer matches is dropped with a
+          # warning only, and its licence text would be missing from the archives.
+          if grep -q "failed to validate" about.log; then exit 1; fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: third-party-licenses
@@ -197,6 +202,6 @@ jobs:
           PRERELEASE: ${{ needs.version.outputs.prerelease }}
         run: |
           sha256sum sobre-* > SHA256SUMS
-          flags=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --generate-notes --notes-file docs/release-notes.md)
+          flags=(--repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TAG" --notes-file docs/release-notes.md)
           [[ "$PRERELEASE" == "true" ]] && flags+=(--prerelease)
           gh release create "$TAG" "${flags[@]}" sobre-* SHA256SUMS
