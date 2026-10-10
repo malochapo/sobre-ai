@@ -16,8 +16,6 @@ use std::time::Duration;
 
 use super::model_registry::{EmbeddingModel, POOLING_FILE, PROMPTS_FILE, SEQ_LEN_FILE};
 
-const USER_AGENT: &str = concat!("sobre/", env!("CARGO_PKG_VERSION"));
-
 /// Lockfile name storing `{ filename: sha256-hex }` per model directory.
 const LOCKFILE: &str = "model.lock.json";
 
@@ -176,7 +174,7 @@ fn download_file(
     );
     let response = agent
         .get(url)
-        .header("User-Agent", USER_AGENT)
+        .header("User-Agent", format!("sobre/{}", crate::VERSION))
         .call()
         .map_err(|e| anyhow::anyhow!("Failed to download {url}: {e}"))?;
 

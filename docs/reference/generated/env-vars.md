@@ -87,3 +87,9 @@ Source of truth: `rust/src/core/env_vars.rs`; a test fails when the code reads a
 | `SOBRE_PERF_GATE` | Set to 1: runs the BM25 performance gate |
 | `SOBRE_UPDATE_FROZEN_HASHES` | Rewrites docs/contracts/frozen-hashes.json (see CONTRIBUTING) |
 
+## Build time
+
+| Variable | Meaning |
+|---|---|
+| `SOBRE_RELEASE_VERSION` | The version a release build reports (`--version`, `doctor`, the MCP server info): the release workflow sets it to the tag's version, for example `0.1.0-rc.2`. Without it, sobre reports the crate version |
+

@@ -142,10 +142,7 @@ pub fn provision(force: bool) -> Result<PathBuf, String> {
     );
     let response = agent
         .get(archive.url)
-        .header(
-            "User-Agent",
-            &format!("sobre/{}", env!("CARGO_PKG_VERSION")),
-        )
+        .header("User-Agent", &format!("sobre/{}", crate::VERSION))
         .call()
         .map_err(|e| format!("ONNX Runtime fetch failed: {e}"))?;
     let mut bytes = Vec::new();
