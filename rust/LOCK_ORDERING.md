@@ -37,7 +37,6 @@ accessor function.
 | L88 | `CACHE` (content) | `core/content_cache.rs` | `OnceLock<Mutex<Cache>>` | Bounded file-content cache shared by the search-index build and `sobre_search`, validated by `(mtime, size)`; independent leaf lock |
 | L89 | `STORE` (diagnostics) | `core/diagnostics_store.rs` | `OnceLock<Mutex<DiagnosticsStore>>` | Active compiler/linter diagnostics (TTL- and size-bounded) used as a context-priority signal; independent leaf lock |
 | L90 | `STORE` (edit quality) | `core/edit_quality.rs` | `OnceLock<Mutex<EditQualityStore>>` | Per-(extension × read mode) edit success/failure stats for the quality loop; independent leaf lock |
-| L92 | `ACTIVE` | `core/gotcha_tracker/runtime.rs` | `OnceLock<Mutex<Option<Active>>>` | Active per-project gotcha store, kept in memory so pending errors survive across shell calls; independent leaf lock |
 | L93 | `MAP` | `core/index_progress.rs` (fn-local) | `OnceLock<Mutex<ProgressMap>>` | Index build progress snapshots per `(root, component)`; independent leaf lock |
 | L94 | `G` | `core/read_stub_index.rs` (fn-local) | `OnceLock<RwLock<ReadStubIndex>>` | Persistent, conversation-scoped index of fully delivered file reads (bookkeeping only, never content) used to serve the `[unchanged]` stub across restarts; independent leaf lock |
 
