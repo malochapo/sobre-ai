@@ -425,6 +425,11 @@ source build: the new binary replaces the old one at the same path. Then
 restart your agents, and with the proxy on, run `sobre proxy restart`. If the
 binary's path changed, run `sobre doctor --fix` from the new one.
 
+The 0.1.0 release candidates promise no compatibility with one another: a newer
+one may not read the config or the data an older one wrote. If an upgrade
+breaks something, start over: `sobre uninstall`, then install and run
+`sobre init` again.
+
 ## Uninstall
 
 ```bash
