@@ -374,7 +374,7 @@ sobre uninstall [--keep-config] [--keep-binary]
 | `--keep-config` | Keep config.toml, for a later reinstall |
 | `--keep-binary` | Leave the sobre binary in place |
 
-Removes the proxy (autostart unit, process, the URLs it put in agent configs); sobre's MCP entry, hooks, skill and plugin from every agent (a file that held nothing else is deleted); all sobre data; and the binary the agents run, unless cargo installed it (cargo uninstall sobre) or it is a build in a cargo target directory. On Windows a running binary cannot be deleted: delete it once uninstall has exited. Every change is listed as it is made. Running agents keep their sobre server until they restart. Any other argument is an error: nothing is removed.
+Removes the proxy (autostart unit, process, the URLs it put in agent configs); sobre's MCP entry, hooks, skill and plugin from every agent (a file that held nothing else is deleted); all sobre data; and the binary the agents run, unless it sits under ~/.cargo (cargo uninstall sobre) or is a build in a cargo target directory. On Windows a running binary cannot be deleted: delete it once uninstall has exited. Every change is listed as it is made. Running agents keep their sobre server until they restart. Any other argument is an error: nothing is removed.
 
 ## `sobre help`
 

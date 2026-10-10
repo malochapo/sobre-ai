@@ -254,7 +254,7 @@ mod resolve_path_tests {
         let server = SobreServer::new_with_startup(None, Some(repo_b.as_path()));
         crate::test_env::remove_var("SOBRE_DATA_DIR");
 
-        // Decision 4: the saved sessions stay on disk for `load`; the new
+        // The saved sessions stay on disk for `load`; the new
         // process starts empty, rooted where it was started.
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));

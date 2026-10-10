@@ -528,7 +528,7 @@ fn path_and_line_replace_the_whole_symbol_around_it() {
     );
 }
 
-/// Decision 5: with `path`, `name_path` resolves in that file only, so a name
+/// With `path`, `name_path` resolves in that file only, so a name
 /// defined in several files edits the one the caller named.
 #[test]
 fn name_path_with_path_edits_that_file() {

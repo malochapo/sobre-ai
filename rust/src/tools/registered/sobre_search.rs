@@ -626,7 +626,7 @@ mod tests {
         }
     }
 
-    /// Decision 7: an action the schema does not list is refused, synonyms
+    /// An action the schema does not list is refused, synonyms
     /// included.
     #[test]
     fn an_unlisted_action_is_refused() {

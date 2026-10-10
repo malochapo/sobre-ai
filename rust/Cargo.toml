@@ -186,9 +186,10 @@ libloading = { version = "0.8", optional = true }
 #
 # `load-dynamic` loads `libonnxruntime` at runtime (see `core::ort_environment`)
 # rather than linking it at build time. This is deliberate: ort's static
-# `download-binaries` has no `x86_64-pc-windows-gnu` artifact (our CI's Windows
-# target) and would statically bloat every test binary. Runtime loading keeps
-# builds portable; the shared library is provided by the platform package
+# `download-binaries` has no `x86_64-pc-windows-gnu` artifact (the target of the
+# local Windows cross-check) and would statically bloat every test binary.
+# Runtime loading keeps builds portable; the shared library is provided by the
+# platform package
 # (`onnxruntime` on Arch/Homebrew/Nix), `pip install onnxruntime`, or
 # `ORT_DYLIB_PATH`.
 ort = { version = "=2.0.0-rc.12", optional = true, default-features = false, features = [
@@ -266,7 +267,7 @@ unreadable_literal = "allow"
 # Rust 1.99: prefers assert_eq!(x, "") over assert!(x.is_empty()) in tests.
 assert_is_empty = "allow"
 
-# --- Documentation: covered by separate doc-coverage tooling ---
+# --- Documentation: not required on every public item ---
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 doc_markdown = "allow"

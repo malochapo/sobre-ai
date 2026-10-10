@@ -1,5 +1,5 @@
-//! Quality loop v1: compression-caused edit failures feed back into
-//! mode selection.
+//! Quality loop: compression-caused edit failures feed back into mode
+//! selection.
 //!
 //! `BounceTracker`/`path_mode_memory` close the loop for *re-read* bounces,
 //! but an edit that fails because the file was last read in a compressed mode
