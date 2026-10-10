@@ -42,7 +42,7 @@ fn format_search_results_normalizes_windows_separators() {
     let r = SearchResult {
         chunk_idx: 0,
         score: 1.0,
-        file_path: r"C:\Users\zir\AppData\Local\Temp\win-build-log.txt".to_string(),
+        file_path: r"C:\Users\dev\AppData\Local\Temp\win-build-log.txt".to_string(),
         symbol_name: "main".to_string(),
         kind: ChunkKind::Function,
         start_line: 1,
@@ -50,11 +50,11 @@ fn format_search_results_normalizes_windows_separators() {
         snippet: "x".to_string(),
     };
     let compact = format_search_results(std::slice::from_ref(&r), true);
-    assert!(compact.contains("C:/Users/zir/AppData/Local/Temp/win-build-log.txt"));
+    assert!(compact.contains("C:/Users/dev/AppData/Local/Temp/win-build-log.txt"));
     assert!(!compact.contains('\\'));
 
     let verbose = format_search_results(std::slice::from_ref(&r), false);
-    assert!(verbose.contains("C:/Users/zir/AppData/Local/Temp/win-build-log.txt"));
+    assert!(verbose.contains("C:/Users/dev/AppData/Local/Temp/win-build-log.txt"));
     assert!(!verbose.contains('\\'));
 }
 
