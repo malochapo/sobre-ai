@@ -103,13 +103,7 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
         });
 
         match result {
-            Ok(text) => Ok(ToolOutput {
-                text,
-                original_tokens: 0,
-                saved_tokens: 0,
-                shell_outcome: None,
-                content_blocks: None,
-            }),
+            Ok(text) => Ok(ToolOutput::simple(text)),
             Err(e) => Err(ErrorData::invalid_params(
                 format!("sobre_checkpoint failed: {e}"),
                 None,

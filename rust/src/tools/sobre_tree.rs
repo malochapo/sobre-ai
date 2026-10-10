@@ -148,9 +148,7 @@ mod tests {
     use super::*;
 
     /// Builds a deterministic source-tree fixture so the assertions do not
-    /// depend on the live repository size or platform path separators (the live
-    /// repo coupling previously made this test tip over its token threshold on
-    /// Windows as the codebase grew).
+    /// depend on the live repository size or platform path separators.
     fn make_fixture() -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();

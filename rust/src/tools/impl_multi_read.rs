@@ -3,11 +3,8 @@ use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
 use crate::tools::sobre_read;
 
-const DEFAULT_MAX_MULTI_READ_BYTES: usize = 512 * 1024;
-
-fn max_multi_read_bytes() -> usize {
-    DEFAULT_MAX_MULTI_READ_BYTES
-}
+/// Bytes a batch read returns before the remaining files are left out.
+const MAX_MULTI_READ_BYTES: usize = 512 * 1024;
 
 pub fn handle_with_task_fresh(
     cache: &mut SessionCache,
@@ -22,7 +19,7 @@ pub fn handle_with_task_fresh(
         return "Read 0 files | 0 tokens saved".to_string();
     }
 
-    let max_bytes = max_multi_read_bytes();
+    let max_bytes = MAX_MULTI_READ_BYTES;
     let mut sections: Vec<String> = Vec::with_capacity(n);
     let mut total_saved: usize = 0;
     let mut total_original: usize = 0;

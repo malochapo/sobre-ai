@@ -2,7 +2,7 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_int};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_usize};
 use crate::tool_defs::tool_def;
 
 pub struct SobreTreeTool;
@@ -43,7 +43,7 @@ impl McpTool for SobreTreeTool {
     ) -> Result<ToolOutput, ErrorData> {
         let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
             .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
-        let depth = (get_int(args, "depth").unwrap_or(3) as usize).min(10);
+        let depth = get_usize(args, "depth").unwrap_or(3).min(10);
         let show_hidden = get_bool(args, "show_hidden").unwrap_or(false);
         let respect_gitignore = get_bool(args, "respect_gitignore").unwrap_or(true);
 
@@ -81,12 +81,10 @@ impl McpTool for SobreTreeTool {
             total_sent += crate::core::tokens::count_tokens(&result);
         }
 
-        let final_out = combined.clone();
         let saved = total_original.saturating_sub(total_sent);
 
         Ok(ToolOutput {
-            text: final_out,
-            original_tokens: total_original,
+            text: combined,
             saved_tokens: saved,
             shell_outcome: None,
             content_blocks: None,
@@ -118,11 +116,9 @@ fn handle_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = original.saturating_sub(sent);
-    let final_out = result.clone();
 
     Ok(ToolOutput {
-        text: final_out,
-        original_tokens: original,
+        text: result,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,

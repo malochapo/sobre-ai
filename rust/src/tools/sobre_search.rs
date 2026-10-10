@@ -1086,9 +1086,9 @@ mod tests {
     #[cfg(unix)]
     fn search_skips_named_pipe_without_hanging() {
         use std::sync::mpsc;
-        // A named pipe (FIFO) in the search universe used to block
-        // `read_to_string` forever, hanging the whole call with no output. It
-        // must be skipped, the real file still matched, and the call must return.
+        // A named pipe (FIFO) in the search universe would block
+        // `read_to_string` forever. It must be skipped, the real file still
+        // matched, and the call must return.
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("real.txt"), "needle_here = 1\n").unwrap();
         let fifo = dir.path().join("pipe.fifo");

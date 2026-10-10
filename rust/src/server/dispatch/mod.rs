@@ -274,28 +274,14 @@ impl SobreServer {
     /// watchdog would wrongly abort a legitimate long-running command. Every
     /// other tool is bounded so a hang can never swallow the JSON-RPC response.
     fn handler_watchdog(name: &str) -> Option<Duration> {
-        if super::is_shell_tool_name(name) {
-            return None;
-        }
-        watchdog_from_secs(read_watchdog_secs())
+        (!super::is_shell_tool_name(name)).then_some(TOOL_WATCHDOG)
     }
 }
 
-/// The watchdog budget in seconds. Kept separate from the policy so the pure
-/// `secs -> Option<Duration>` mapping stays trivially testable.
-fn read_watchdog_secs() -> u64 {
-    DEFAULT_TOOL_TIMEOUT_SECS
-}
-
-/// Map a watchdog budget in seconds to a duration; `0` disables the watchdog.
-fn watchdog_from_secs(secs: u64) -> Option<Duration> {
-    (secs > 0).then(|| Duration::from_secs(secs))
-}
-
-/// Default per-tool watchdog budget. Long enough that no legitimate
+/// Per-tool watchdog budget. Long enough that no legitimate
 /// read/search/graph call ever hits it, short enough that a hang degrades to a
 /// clean error instead of a dropped request.
-const DEFAULT_TOOL_TIMEOUT_SECS: u64 = 120;
+const TOOL_WATCHDOG: Duration = Duration::from_secs(120);
 
 /// The arguments a tool's schema declares as a filesystem path, resolved
 /// against the session's roots before the handler runs.
@@ -365,18 +351,10 @@ mod tests {
     }
 
     #[test]
-    fn watchdog_from_secs_zero_disables() {
-        assert!(watchdog_from_secs(0).is_none());
-    }
-
-    #[test]
-    fn watchdog_from_secs_positive_maps_to_duration() {
-        assert_eq!(watchdog_from_secs(5).unwrap().as_secs(), 5);
+    fn every_other_tool_is_watchdog_bounded() {
         assert_eq!(
-            watchdog_from_secs(DEFAULT_TOOL_TIMEOUT_SECS)
-                .unwrap()
-                .as_secs(),
-            120
+            SobreServer::handler_watchdog("sobre_read"),
+            Some(TOOL_WATCHDOG)
         );
     }
 

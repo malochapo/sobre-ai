@@ -38,7 +38,6 @@ impl ShellOutcome {
 /// Result returned by an McpTool handler.
 pub struct ToolOutput {
     pub text: String,
-    pub original_tokens: usize,
     pub saved_tokens: usize,
     /// Set by shell-executing tools so dispatch can populate `isError` +
     /// `structuredContent` on the MCP result. `None` for tools
@@ -53,7 +52,6 @@ impl ToolOutput {
     pub fn simple(text: String) -> Self {
         Self {
             text,
-            original_tokens: 0,
             saved_tokens: 0,
             shell_outcome: None,
             content_blocks: None,
@@ -65,7 +63,6 @@ impl ToolOutput {
     pub fn image(blocks: Vec<ContentBlock>) -> Self {
         Self {
             text: String::new(),
-            original_tokens: 0,
             saved_tokens: 0,
             shell_outcome: None,
             content_blocks: Some(blocks),
@@ -174,7 +171,7 @@ pub struct ToolContext {
 impl Default for ToolContext {
     /// Minimal context: `project_root` empty, all shared-state handles `None`.
     /// Single source for the one-shot CLI ctx (`cli::call_cmd::oneshot_ctx`) and
-    /// the `empty_ctx` test helper — adding a field no longer breaks either.
+    /// the `empty_ctx` test helper, so adding a field breaks neither.
     fn default() -> Self {
         Self {
             project_root: String::new(),
@@ -257,9 +254,9 @@ pub fn get_int(args: &Map<String, Value>, key: &str) -> Option<i64> {
 
 /// Read a non-negative integer argument as `usize`.
 ///
-/// Returns `None` for missing or negative values. This avoids the
-/// `negative_i64 as usize` wrap to `usize::MAX`, which previously let an agent
-/// trigger unbounded allocations (e.g. `top_k`, `limit`, `max_results`) → OOM.
+/// Returns `None` for missing or negative values, never the
+/// `negative_i64 as usize` wrap to `usize::MAX` that would let an agent
+/// trigger unbounded allocations (`top_k`, `limit`, `max_results`).
 /// Callers should still apply a sensible upper cap on the result.
 pub fn get_usize(args: &Map<String, Value>, key: &str) -> Option<usize> {
     get_int(args, key).and_then(|n| usize::try_from(n).ok())

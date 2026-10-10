@@ -21,7 +21,7 @@ const MAX_INSTRUCTION_CHARS: usize = 2048;
 pub const GUIDE: &str = "\
 sobre: local context tools. Prefer them when they fit; native tools keep working.
 • Orient: sobre_compose first (no task = project overview; with task = ranked files + source).
-• Read: sobre_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). Unchanged re-reads cost ~13 tokens.
+• Read: sobre_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). An unchanged re-read returns a one-line stub.
 • Find: sobre_search (regex | action=symbol | action=semantic), sobre_glob (files), sobre_tree, sobre_outline (symbols).
 • Impact: sobre_graph (action=callers|callees|trace for calls; impact|changes|path for files).
 • Edit: sobre_read(mode=anchored) → sobre_patch (line+hash anchors; op=create for new files). Native Edit also works.
