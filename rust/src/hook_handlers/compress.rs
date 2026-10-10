@@ -2,13 +2,20 @@
 //!
 //! The command itself is never touched: the host decided it may run and ran
 //! it, exactly as the agent wrote it. Only the copy of the output the model
-//! sees is replaced, and only when the compressor dedicated to the command
-//! (git, a test runner, a build, a package manager, …) saves tokens. Output
-//! nothing owns stays as it is: no generic fallback runs here. So does any
-//! line that prints file content in one of its commands (`sed -n`, `cat`,
-//! `grep -A`, …), since the agent may edit against what it reads. Every
-//! replaced output ends with a `[sobre: …]` line that says so and where the
-//! full output was kept.
+//! sees is replaced, and only when it saves tokens:
+//!
+//! - by the compressor dedicated to the command (git, a test runner, a build,
+//!   a package manager, …), unless a command of the line prints file content
+//!   (`sed -n`, `cat`, `grep -A`, …), since the agent may edit against what it
+//!   reads;
+//! - otherwise by folding what has a known shape whatever printed it, as far
+//!   as `compression_level` allows (`shell::compress::fold`): runs of one log
+//!   statement, then repeated paths in search results, then long output that
+//!   is not file content. Source text is never reshaped.
+//!
+//! `compression_level` below 0.2 turns the hook off. Every replaced output
+//! ends with a `[sobre: …]` line that says so and where the full output was
+//! kept.
 //!
 //! One handler, three payload shapes:
 //!
@@ -27,6 +34,7 @@
 use serde_json::{Value, json};
 
 use super::{HOOK_STDIN_TIMEOUT, is_shell_tool, payload, read_stdin_with_timeout};
+use crate::core::config::{CompressionLevel, Config};
 use crate::core::tokens::count_tokens;
 
 pub fn handle_compress() {
@@ -123,15 +131,22 @@ fn copilot_reply(cmd: &str, result: &Value, type_key: &str, text_key: &str) -> O
     )
 }
 
-/// Compress one stream of a successful command through the compressor that
-/// owns it ([`owned_command`]). `None` when nothing owns it or there is
-/// nothing to gain.
+/// Compress one stream of a successful command: through the compressor that
+/// owns it ([`owned_command`]), else by folding what has a known shape, as
+/// far as `compression_level` allows. `None` when there is nothing to gain.
 fn compress_text(cmd: &str, text: &str) -> Option<(String, usize, usize)> {
     if text.trim().is_empty() {
         return None;
     }
-    let owned = owned_command(cmd)?;
-    let compressed = crate::shell::compress::engine::compress_owned(&owned, text)?;
+    let level = CompressionLevel::effective(&Config::load());
+    if level == CompressionLevel::Off {
+        return None;
+    }
+    // A heredoc script may print files too: treat it as reading them.
+    let reads_files = cmd.contains("<<") || crate::rewrite_registry::is_file_read_command(cmd);
+    let compressed = owned_command(cmd)
+        .and_then(|owned| crate::shell::compress::engine::compress_owned(&owned, text))
+        .or_else(|| crate::shell::compress::fold::fold(text, level, reads_files))?;
     let before = count_tokens(text);
     let after = count_tokens(&compressed);
     if after >= before {
@@ -409,19 +424,25 @@ mod tests {
         }
     }
 
-    /// Output no dedicated compressor owns stays as it is: the generic
-    /// fallbacks (line dedup, keep the first and last lines) never run here.
+    /// Output no dedicated compressor owns is only folded by shape: a run of
+    /// one log statement keeps its first and last lines; anything else stays
+    /// as it is, and the generic fallbacks of `sobre -c` never run here.
     #[test]
-    fn output_without_a_dedicated_compressor_is_left_alone() {
+    fn output_without_a_dedicated_compressor_is_only_folded_by_shape() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let log = (0..300)
             .map(|i| {
                 format!(
-                    "2026-01-01 10:00:{:02} INFO worker: processed batch {}\n",
+                    "2026-01-01 10:{:02}:{:02} INFO worker: processed batch {}\n",
+                    i / 60,
                     i % 60,
                     i % 7
                 )
             })
+            .collect::<Vec<_>>()
+            .concat();
+        let prose = (0..300)
+            .map(|i| format!("report line {i}: totals for region {} look normal\n", i % 7))
             .collect::<Vec<_>>()
             .concat();
         for cmd in [
@@ -429,7 +450,31 @@ mod tests {
             "python manage.py migrate",
             "make-report",
         ] {
-            assert_eq!(compute_compress(&claude_payload(cmd, &log)), None, "{cmd}");
+            let reply: Value =
+                serde_json::from_str(&compute_compress(&claude_payload(cmd, &log)).unwrap())
+                    .unwrap();
+            let stdout = reply["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
+                .as_str()
+                .unwrap();
+            assert!(
+                stdout.starts_with("2026-01-01 10:00:00 INFO worker: processed batch 0\n"),
+                "{cmd}: {stdout}"
+            );
+            assert!(
+                stdout.contains("[sobre: 298 similar log lines folded]"),
+                "{cmd}: {stdout}"
+            );
+            assert!(
+                stdout.contains(
+                    "2026-01-01 10:04:59 INFO worker: processed batch 5\n[sobre: output compressed"
+                ),
+                "{cmd}: {stdout}"
+            );
+            assert_eq!(
+                compute_compress(&claude_payload(cmd, &prose)),
+                None,
+                "{cmd}"
+            );
         }
         // Two commands that both print: no single owner for the whole output.
         assert_eq!(

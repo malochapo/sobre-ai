@@ -137,19 +137,26 @@ Codex, Windsurf and Zed get neither:
   wrote it. Afterwards, the output the model sees is replaced by a compressed
   copy ending in `[sobre: output compressed, A → B tokens; full output: <path>]`.
   - Hosts: Claude Code (`PostToolUse`), Copilot CLI (`postToolUse`) and OpenCode (plugin).
-  - Only the compressor dedicated to the command runs (`compress_owned` in
+  - The compressor dedicated to the command runs (`compress_owned` in
     `shell/compress/engine.rs`): a per-command pattern, a test runner's
-    summary, a build's progress folding. Output nothing owns is left alone;
-    the generic stages `sobre -c` ends with (terse, line dedup, head/tail
-    truncation) never run here.
+    summary, a build's progress folding. The generic stages `sobre -c` ends
+    with (terse, line dedup, head/tail truncation) never run here.
+  - Output nothing owns, a chain of several commands included, is folded by
+    its shape as far as `compression_level` allows (`shell/compress/fold.rs`):
+    four or more lines of one log statement keep their first and last line
+    (every level), consecutive search results of one file print its path once
+    (0.4 and up), and output over 150 lines keeps its first 60 and last 30
+    when no command of the line read a file (0.8 and up). No rule rewrites a
+    line of source. Below 0.2 the hook compresses nothing.
   - The owner is the one command of the line that prints, once setup
     commands (`cd`, `export`, `source`, …) are set aside, optionally piped
     through `head`, `tail` or `tee`. Two printing commands or a heredoc
-    script leave the output alone.
-  - File content is left alone: a line where any command prints a file
-    (`cat`, `head`, `sed -n`, `awk`, `nl`, `grep -A`/`-B`/`-C`,
-    `git show <rev>:<path>`, `git blame`, …; `rewrite_registry.rs`), and
-    diffs, blame and search results.
+    script have no owner: only folding applies.
+  - No command's compressor runs, and nothing is cut, on a line where any
+    command prints a file (`cat`, `head`, `sed -n`, `awk`, `nl`,
+    `grep -A`/`-B`/`-C`, `git show <rev>:<path>`, `git blame`, …;
+    `rewrite_registry.rs`), nor on diffs, blame and search results. Only
+    log runs and search paths fold there.
   - A replacement saves at least 100 tokens, more than its label costs.
 - **Labelled pre-run rewrite** (`hook cursor`, `hook gemini`). A command is
   wrapped as `sobre -c '<command>'` only when all of these hold:

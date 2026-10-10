@@ -1,5 +1,6 @@
 mod classification;
 pub(crate) mod engine;
+pub(crate) mod fold;
 mod passthrough;
 #[cfg(test)]
 mod tests;
