@@ -11,16 +11,11 @@ pub mod clang;
 pub mod cmake;
 pub mod composer;
 pub mod cosign;
-pub mod curl;
 pub mod dbt;
 pub mod deno;
 pub mod deploy;
 pub mod docker;
 pub mod dotnet;
-pub mod env_filter;
-pub mod eslint;
-pub mod fd;
-pub mod find;
 pub mod flutter;
 pub mod flyway;
 pub mod gem;
@@ -37,7 +32,6 @@ pub mod just;
 pub mod kubectl;
 pub mod linkerd;
 pub mod log_dedup;
-pub mod ls;
 pub mod make;
 pub mod maven;
 pub mod mise;
@@ -71,8 +65,6 @@ pub mod systemd;
 pub mod terraform;
 pub mod test;
 pub mod trivy;
-pub mod typescript;
-pub mod wget;
 pub mod zig;
 
 use crate::core::tokens::count_tokens;
@@ -272,15 +264,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| ruff::compress(c, output),
     ),
     (
-        |c| {
-            c.starts_with("eslint")
-                || c.starts_with("npx eslint")
-                || c.starts_with("biome ")
-                || c.starts_with("stylelint")
-        },
-        |c, output| eslint::compress(c, output),
-    ),
-    (
         |c| c.starts_with("prettier") || c.starts_with("npx prettier"),
         |_c, output| prettier::compress(output),
     ),
@@ -309,10 +292,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| next_build::compress(c, output),
     ),
     (
-        |c| c == "tsc" || c.starts_with("tsc "),
-        |_c, output| typescript::compress(output),
-    ),
-    (
         |c| {
             c.starts_with("rubocop")
                 || c.starts_with("bundle ")
@@ -323,30 +302,6 @@ const PATTERNS: &[(PatternMatcher, PatternHandler)] = &[
         |c, output| ruby::compress(c, output),
     ),
     (|c| is_grep_family(c), |_c, output| grep::compress(output)),
-    (
-        |c| c.starts_with("find "),
-        |_c, output| find::compress(output),
-    ),
-    (
-        |c| c.starts_with("fd ") || c.starts_with("fdfind "),
-        |_c, output| fd::compress(output),
-    ),
-    (
-        |c| c.starts_with("ls ") || c == "ls",
-        |_c, output| ls::compress(output),
-    ),
-    (
-        |c| c.starts_with("curl "),
-        |c, output| curl::compress_with_cmd(c, output),
-    ),
-    (
-        |c| c.starts_with("wget "),
-        |_c, output| wget::compress(output),
-    ),
-    (
-        |c| c == "env" || c.starts_with("env ") || c.starts_with("printenv"),
-        |_c, output| env_filter::compress(output),
-    ),
     (
         |c| c.starts_with("dotnet "),
         |c, output| dotnet::compress(c, output),
@@ -792,30 +747,6 @@ mod tests {
         let lint_output = "src/main.py:10: error: Missing return\nsrc/main.py:20: error: Unused var\nFound 2 errors";
         assert!(try_specific_pattern("pyright src/", lint_output).is_some());
         assert!(try_specific_pattern("basedpyright src/", lint_output).is_some());
-    }
-
-    /// A search for the word `typescript` is a search, not a `tsc` run.
-    #[test]
-    fn a_search_mentioning_typescript_goes_to_the_grep_compressor() {
-        let output = (0..60)
-            .map(|i| format!("src/file{}.ts:{i}:import ts from \"typescript\";", i % 3))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(grep::compress(&output).is_some());
-        for cmd in ["rg -n typescript src/", "grep -rn typescript src/"] {
-            assert_eq!(
-                try_specific_pattern(cmd, &output),
-                grep::compress(&output),
-                "{cmd}"
-            );
-        }
-    }
-
-    #[test]
-    fn routes_fd_commands() {
-        let output = "src/main.rs\nsrc/lib.rs\nsrc/util/helpers.rs\nsrc/util/math.rs\ntests/integration.rs\n";
-        assert!(try_specific_pattern("fd --extension rs", output).is_some());
-        assert!(try_specific_pattern("fdfind .rs", output).is_some());
     }
 
     #[test]

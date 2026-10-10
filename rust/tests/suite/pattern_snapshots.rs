@@ -385,27 +385,8 @@ fn pattern_kubectl_get_pods() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// typescript / prettier
+// prettier
 // ═══════════════════════════════════════════════════════════════════════
-
-#[test]
-fn pattern_typescript() {
-    assert_pattern(
-        "typescript",
-        "tsc --noEmit",
-        "src/App.tsx(12,5): error TS2322: Type 'string' is not assignable to type 'number'.\n\
-         src/App.tsx(25,10): error TS2345: Argument of type 'null' is not assignable to parameter of type 'User'.\n\
-         src/utils.ts(3,1): error TS7006: Parameter 'x' implicitly has an 'any' type.\n\
-         src/api.ts(15,3): error TS2304: Cannot find name 'Response'.\n\
-         src/types.ts(8,5): error TS2739: Type '{}' is missing the following properties from type 'Config': host, port\n\n\
-         Found 5 errors in 4 files.\n\n\
-         Errors  Files\n\
-              2  src/App.tsx\n\
-              1  src/utils.ts\n\
-              1  src/api.ts\n\
-              1  src/types.ts\n",
-    );
-}
 
 #[test]
 fn pattern_prettier() {
