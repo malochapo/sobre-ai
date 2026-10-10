@@ -158,7 +158,6 @@ pub mod hasher;
 #[cfg(feature = "dense")]
 pub mod hnsw;
 pub mod home;
-pub mod homeostasis;
 pub mod pricing;
 
 pub mod edit_quality;

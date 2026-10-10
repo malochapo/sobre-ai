@@ -541,30 +541,6 @@ impl SessionCache {
         count
     }
 
-    /// Evicts entries via RRF scoring until total tokens are at or below `target_tokens`.
-    pub fn evict_to_budget(&mut self, target_tokens: usize) {
-        let current = self.total_cached_tokens();
-        if current <= target_tokens {
-            return;
-        }
-        let now = Instant::now();
-        let all: Vec<(&String, &CacheEntry)> = self.entries.iter().collect();
-        let mut scores = eviction_scores_rrf(&all, now);
-        scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-
-        let mut freed = 0usize;
-        let target_free = current.saturating_sub(target_tokens);
-        for (path, _score) in &scores {
-            if freed >= target_free {
-                break;
-            }
-            if let Some(entry) = self.entries.remove(path) {
-                freed += entry.original_tokens;
-                self.file_refs.remove(path);
-            }
-        }
-    }
-
     const MAX_SHARED_BLOCKS: usize = 100;
 
     /// Trims shared blocks to a maximum count, keeping the most recent.
