@@ -2,11 +2,10 @@
 //!
 //! sobre compression is fully reversible, but agents only act on that if we
 //! *show* the escape hatch — otherwise they re-read compressed output
-//! line-by-line (the "too compressed" complaint). The `RECOVER` line of the MCP
-//! instructions ([`crate::instructions::GUIDE`]) teaches the vocabulary once;
-//! this module is the reactive half: it owns the canonical, **non-MCP-first**
-//! phrasing so every compressed `sobre_read` view renders identical, byte-stable
-//! wording.
+//! line-by-line (the "too compressed" complaint). The way back is shown where
+//! it is needed, on the compressed output itself, not in the MCP instructions:
+//! this module owns the canonical, **non-MCP-first** phrasing so every
+//! compressed `sobre_read` view renders identical, byte-stable wording.
 //!
 //! Determinism: the footer is a pure function of its input path, never
 //! of per-call session state. It is therefore "deduped by

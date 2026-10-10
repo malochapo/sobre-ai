@@ -14,19 +14,17 @@ static SESSION_DEGRADE_LEVEL: AtomicU8 = AtomicU8::new(0);
 #[serde(rename_all = "lowercase")]
 pub enum CompressionLevel {
     Off,
-    /// Default: plain-English "concise" guidance (bullets, no filler). Readable
-    /// by humans inspecting their rules files, and still token-saving. The
-    /// denser, symbolic styles (`Standard`/`Max`, which enable CRP and the
-    /// `→ ∵ ∴` vocabulary) are opt-in "power modes" — set `compression_level`
-    /// in config. This only shapes the model's prose; tool-output compression
-    /// is governed separately and is unaffected.
+    /// Default: the prose of tool and shell output is condensed, tool
+    /// descriptions stay whole. The denser levels (`Standard`, `Max`, `Raw`)
+    /// condense harder, shorten the tool descriptions and enable CRP; set
+    /// `compression_level` in config. No level changes the MCP instructions
+    /// or asks the model to write differently.
     #[default]
     Lite,
     Standard,
     Max,
-    /// Ultra-dense bullet-point-only mode — zero prose, diff-style facts,
-    /// strictest token budget (<=50 tokens per non-code response). Maps to
-    /// CrpMode::Tdd with tighter output constraints.
+    /// The top band of `compression_level`: everything sobre condenses, it
+    /// condenses as `Max` does.
     Raw,
 }
 

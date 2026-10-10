@@ -34,7 +34,7 @@ impl McpTool for SobreReadTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "sobre_read",
-            "Read source files. mode recommended — choose by intent (see `mode` below); defaults to auto when omitted.\n\
+            "Read source files; `mode` picks the view by intent (auto when omitted).\n\
              To UNDERSTAND code run sobre_compose FIRST; sobre_read after it identified files.\n\
              anchored → edit by reference via sobre_patch (no exact-recall).",
             json!({

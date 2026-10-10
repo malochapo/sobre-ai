@@ -33,8 +33,7 @@ impl McpTool for SobreCheckpointTool {
             "Local shadow git history of the agent's changes — separate from the user's .git.\n\
 WORKFLOW: snapshot before+after changes to capture exactly what was modified.\n\
 Actions: snapshot (record current state), log (list checkpoints with SHAs),\n\
-diff from=... to=... (compare checkpoints), restore ref=... (revert files).\n\
-ANTIPATTERN: Never touches the user's repository — completely isolated shadow history.",
+diff from=... to=... (compare checkpoints), restore ref=... (revert files).",
             json!({
                 "type": "object",
                 "properties": {

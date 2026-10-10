@@ -297,12 +297,11 @@ documents each.
 
 `compression_level` runs from 0 to 1 and defaults to 0.3. Below 0.2 it is off;
 above, it condenses the prose in tool and shell output (each condensed output
-says so), shortens the tool descriptions from 0.4, and adds an `OUTPUT STYLE`
-line to the MCP instructions that asks the agent to write its own replies more
-tersely, from "concise" to "raw-dense". When the agent keeps re-reading or
-re-running to get back what was cut (three such calls in two minutes), `sobre`
-lowers compression, says so, and goes back to the configured level once two
-minutes pass without one.
+says so) and shortens the tool descriptions from 0.4. It never changes the MCP
+instructions or asks the agent to write its own replies differently. When the
+agent keeps re-reading or re-running to get back what was cut (three such calls
+in two minutes), `sobre` lowers compression, says so, and goes back to the
+configured level once two minutes pass without one.
 
 ## Local embeddings
 
