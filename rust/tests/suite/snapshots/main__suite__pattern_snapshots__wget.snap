@@ -1,7 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
---2024-01-15 10:23:45--  https://example.com/data.tar.gz
-Saving to: 'data.tar.gz'
-2024-01-15 10:23:47 (5.23 MB/s) - 'data.tar.gz' saved [10485760/10485760]

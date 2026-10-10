@@ -207,6 +207,33 @@ fn small_output_stays_verbatim() {
     );
 }
 
+/// The guard the pattern snapshot tests use follows the gates in front of
+/// the pattern table: test runners, findings-only linters, the output
+/// policy and chains never reach it.
+#[test]
+fn reaches_pattern_table_follows_the_gates() {
+    use super::engine::reaches_pattern_table;
+    for cmd in [
+        "cargo build",
+        "git status",
+        "grep -rn TODO src/",
+        "ruff check .",
+    ] {
+        assert!(reaches_pattern_table(cmd), "{cmd}");
+    }
+    for cmd in [
+        "cargo test",
+        "pytest -q",
+        "eslint src/",
+        "curl https://api.example.com",
+        "npx prisma migrate dev",
+        "git commit -m x",
+        "git status && git log",
+    ] {
+        assert!(!reaches_pattern_table(cmd), "{cmd}");
+    }
+}
+
 /// A successful build's warnings reach the agent: every distinct one, with
 /// its location.
 #[cfg(test)]

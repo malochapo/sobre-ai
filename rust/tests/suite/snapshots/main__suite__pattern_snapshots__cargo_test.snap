@@ -1,7 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
-ok: 15 pass, 0 fail, 0 skip
-ran: auth::tests::login_ok, auth::tests::login_fail, auth::tests::refresh_token, db::tests::connect, db::tests::migrate ...+10 more
-(2.34s)

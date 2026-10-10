@@ -1,6 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
-bun test: 0 passed, 1 failed (Ran 6 tests across 2 files [52.00ms])
-  ✗ DELETE /users/:id returns 204 [1.23ms]

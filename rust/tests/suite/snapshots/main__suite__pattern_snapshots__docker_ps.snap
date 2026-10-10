@@ -1,8 +1,0 @@
----
-source: tests/pattern_snapshots.rs
-expression: compressed
----
-web (nginx:latest): Up 3 days
-cache (redis:7): Up 7 days
-db (postgres:16): Up 14 days
-queue (rabbitmq:3): Up 30 days

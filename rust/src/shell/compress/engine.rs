@@ -314,13 +314,17 @@ const FINDINGS_ONLY_LINTERS: &[&str] = &[
     "oxlint",
 ];
 
-fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
+fn is_findings_only_linter(command: &str) -> bool {
     let cmd = command.trim().to_ascii_lowercase();
+    FINDINGS_ONLY_LINTERS.iter().any(|l| cmd.starts_with(l))
+}
 
-    if FINDINGS_ONLY_LINTERS.iter().any(|l| cmd.starts_with(l)) {
+fn is_error_output_from_build_tool(command: &str, output: &str) -> bool {
+    if is_findings_only_linter(command) {
         return true;
     }
 
+    let cmd = command.trim().to_ascii_lowercase();
     let is_build_tool = cmd.starts_with("cargo check")
         || cmd.starts_with("cargo build")
         || cmd.starts_with("cargo clippy")
@@ -701,6 +705,21 @@ pub(crate) fn is_chained_command(command: &str) -> bool {
 #[cfg(any(test, feature = "test-support"))]
 pub fn compress_if_beneficial_pub(command: &str, output: &str) -> String {
     compress_if_beneficial(command, output)
+}
+
+/// Whether shell compression hands a successful run of `command` to the
+/// per-command pattern table: the command is not a
+/// findings-only linter or a test runner, the output policy does not protect
+/// it (built-in rules only), and it is not a chain. What depends on the
+/// output (a build tool's errors, the size floors) is not checked. The
+/// pattern snapshot tests assert it, so a snapshot never pins a compressor
+/// production does not run for its command.
+#[cfg(any(test, feature = "test-support"))]
+pub fn reaches_pattern_table(command: &str) -> bool {
+    !is_findings_only_linter(command)
+        && !is_test_runner_command(command)
+        && !crate::shell::output_policy::classify(command, &[]).is_protected()
+        && !is_chained_command(command)
 }
 
 /// Preserve build/test output verbatim, applying only the safety-line-preserving
