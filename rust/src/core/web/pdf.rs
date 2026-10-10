@@ -8,7 +8,7 @@
 /// Extract and normalize the text content of a PDF byte buffer.
 pub fn extract_text(bytes: &[u8]) -> Result<String, String> {
     if !looks_like_pdf(bytes) {
-        return Err("response is not a PDF (missing %PDF header)".to_string());
+        return Err("not a PDF (missing %PDF header)".to_string());
     }
 
     let outcome = std::panic::catch_unwind(|| pdf_extract::extract_text_from_mem(bytes));
@@ -27,7 +27,7 @@ pub fn extract_text(bytes: &[u8]) -> Result<String, String> {
 }
 
 /// PDFs start with `%PDF-` (optionally after a small BOM/whitespace preamble).
-pub fn looks_like_pdf(bytes: &[u8]) -> bool {
+fn looks_like_pdf(bytes: &[u8]) -> bool {
     let head = &bytes[..bytes.len().min(1024)];
     head.windows(5).any(|w| w == b"%PDF-")
 }
