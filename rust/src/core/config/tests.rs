@@ -81,7 +81,7 @@ mod persist_global_tests {
         assert!(cfg.debug_log);
     }
 
-    // Subticket 4 contract: refuse to touch an unparseable config; never clobber.
+    // An unparseable config is refused and never clobbered.
     #[test]
     fn update_global_at_refuses_unparseable_and_leaves_file_untouched() {
         let (_dir, path) = tmp_config();
@@ -98,6 +98,17 @@ mod persist_global_tests {
             corrupt,
             "the corrupt file must be left exactly as-is"
         );
+    }
+
+    #[test]
+    fn update_global_at_refuses_an_unreadable_file_and_leaves_it_untouched() {
+        let (_dir, path) = tmp_config();
+        let latin1 = b"# caf\xe9\ncompression_level = 0.5\n";
+        std::fs::write(&path, latin1).unwrap();
+
+        let result = Config::update_global_at(&path, |c| c.proxy.enabled = Some(true));
+        assert!(result.is_err(), "must refuse to modify a file it cannot read");
+        assert_eq!(std::fs::read(&path).unwrap(), latin1);
     }
 
     #[test]

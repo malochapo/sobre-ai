@@ -236,7 +236,14 @@ pub fn write_toml_preserving_minimal(
                 )
             })?
         }
-        // No existing file: write a fresh minimal document (drop defaults).
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            return Err(format!(
+                "refusing to overwrite the config at {}: it cannot be read ({e})",
+                path.display()
+            ));
+        }
+        // No existing file, or an empty one: write a fresh minimal document
+        // (drop defaults).
         _ => merge_toml_inner("", new_content, Some(default_content))
             .unwrap_or_else(|_| new_content.to_string()),
     };
