@@ -303,7 +303,19 @@ fn a_failed_save_is_an_error() {
     );
     assert!(out.starts_with("ERROR"), "{out}");
     assert!(!out.contains("Remembered"), "{out}");
+}
+
+/// Removing from a project with no knowledge finds nothing and writes nothing.
+#[test]
+fn remove_without_knowledge_writes_nothing() {
+    let _dir = crate::core::data_dir::isolated_data_dir();
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
 
     let out = handle_remove(&root, Some("deploy"), Some("region"));
-    assert!(out.starts_with("ERROR"), "{out}");
+    assert!(out.starts_with("No fact found"), "{out}");
+    assert!(
+        ProjectKnowledge::load(&root).is_none(),
+        "a store was created"
+    );
 }

@@ -80,6 +80,10 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
     let Some(k) = key else {
         return "Error: key is required for remove".to_string();
     };
+    // A project with no knowledge has nothing to remove: write nothing.
+    if ProjectKnowledge::load(project_root).is_none() {
+        return format!("No fact found: [{cat}] {k}");
+    }
     let policy = crate::core::memory_policy::MemoryPolicy::default();
     // Read-modify-write under the cross-process lock. The embedding
     // index is a separate store, so it is synced afterwards from the committed
