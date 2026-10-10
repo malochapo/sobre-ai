@@ -23,7 +23,7 @@ each one shows up in the code:
 | 3. One `tools/list` per build | the list never depends on the client, the config or the session; the dense build adds one parameter |
 | 4. Local and personal | no account, telemetry or remote store; the network is reached only by the proxy and by `embeddings provision` |
 | 5. The agent host decides | no allow or deny list, no path jail, no approval written into a host; every change to an output is labelled |
-| 6. Use what exists | maintained crates for the protocol, parsing, HTTP and file formats; the code that predates the rule is listed in [issue #2](https://github.com/malochapo/sobre-ai/issues/2) |
+| 6. Use what exists | maintained crates for the protocol, parsing, HTTP and file formats; the code that predates the rule is listed in [issue #69](https://github.com/malochapo/sobre-ai/issues/69) |
 
 ## 2. Component map
 
