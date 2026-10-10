@@ -96,10 +96,10 @@ mod tests {
             .lines()
             .find_map(|l| l.strip_prefix("description: "))
             .expect("description line");
-        // Agents pick a skill from its description alone; keep it specific
-        // and under the 1024-character limit skills loaders enforce.
+        // Agents pick a skill from its description alone, and Claude Code
+        // lists it in every session's prompt: specific, and short.
         assert!(
-            desc.len() > 100 && desc.len() <= 1024,
+            desc.len() > 100 && desc.len() <= 200,
             "{} chars",
             desc.len()
         );

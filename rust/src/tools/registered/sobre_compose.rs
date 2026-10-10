@@ -26,13 +26,10 @@ impl McpTool for SobreComposeTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "sobre_compose",
-            "PRIMARY TOOL — call FIRST for understanding code (before editing/debugging/'how does X work').\n\
+            "Call first to understand code (before editing, debugging, 'how does X work').\n\
              Omit task at session start: returns the project overview — structure, hotspots, last task, recent decisions, facts from previous sessions.\n\
              With a task: returns ranked files with relevant symbol source inline grouped by file, and the recorded pitfalls it matches.\n\
-             Combines BM25 lexical+semantic retrieval+submodular optimization.\n\
-             ANTIPATTERN: Do NOT chain search→read→symbol — one compose replaces the whole chain.\n\
-             ANTIPATTERN: Do NOT Read files whose source compose already returned — it IS the source.\n\
-             WORKFLOW: Fire parallel sobre_read or sobre_compose for different areas.",
+             One call replaces a search→read→symbol chain; do not re-read files whose source it returned.",
             json!({
                 "type": "object",
                 "properties": {

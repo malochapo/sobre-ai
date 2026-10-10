@@ -5,16 +5,9 @@
 //! what sobre saves on real work.
 
 use sobre::core::compressor::{aggressive_compress, lightweight_cleanup, safeguard_ratio};
-use sobre::core::config::CompressionLevel;
 use sobre::core::entropy::entropy_compress_adaptive;
 use sobre::core::signatures::extract_signatures;
 use sobre::core::tokens::count_tokens;
-
-/// The instructions with no output style, so budgets do not move with the
-/// developer's own `compression_level`.
-fn instructions_at_off() -> String {
-    sobre::instructions::render(CompressionLevel::Off)
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -51,31 +44,18 @@ fn measure_text(original: &str, compressed: &str) -> (usize, usize, f64) {
 
 #[test]
 fn bench_system_instructions_token_count() {
-    let instructions = instructions_at_off();
+    let instructions = sobre::instructions::build_instructions();
     let tokens = count_tokens(&instructions);
     eprintln!(
         "\n  SYSTEM INSTRUCTIONS: {tokens} tokens ({} chars)",
         instructions.len()
     );
+    // Every session pays for them before its first call: a pointer to the
+    // tools and the skill, not a manual.
     assert!(
-        tokens < 2300,
-        "Base instructions should be <2300 tokens, got {tokens}"
+        tokens < 100,
+        "Instructions should be <100 tokens, got {tokens}"
     );
-    // Claude Code truncates server instructions at 2048 characters; the text
-    // every client gets must arrive whole there.
-    for level in [
-        CompressionLevel::Off,
-        CompressionLevel::Lite,
-        CompressionLevel::Standard,
-        CompressionLevel::Max,
-        CompressionLevel::Raw,
-    ] {
-        let chars = sobre::instructions::render(level).len();
-        assert!(
-            chars <= 2048,
-            "{level:?} instructions are {chars} chars, over Claude Code's 2048"
-        );
-    }
 }
 
 #[test]
@@ -119,7 +99,7 @@ fn bench_tool_descriptions_token_count() {
 
 #[test]
 fn bench_total_input_overhead() {
-    let instructions = instructions_at_off();
+    let instructions = sobre::instructions::build_instructions();
     let descs = sobre::server::tool_descriptions_for_test();
     let schemas = sobre::server::tool_schemas_json_for_test();
 
@@ -513,12 +493,23 @@ fn guard_tool_descriptions_not_empty() {
     );
 }
 
+/// The instructions name the entry tool and point at the skill, which names
+/// the rest: together they still reach every essential tool.
 #[test]
 fn guard_essential_instructions_present() {
-    let instr = instructions_at_off();
-
-    let required = vec![
+    let instr = sobre::instructions::build_instructions();
+    for keyword in [
         "native tools keep working",
+        "sobre_compose",
+        "the `sobre` skill",
+    ] {
+        assert!(
+            instr.contains(keyword),
+            "System instructions must contain '{keyword}'"
+        );
+    }
+
+    let required = [
         "sobre_expand",
         "sobre_patch",
         "sobre_read",
@@ -528,15 +519,14 @@ fn guard_essential_instructions_present() {
         "sobre_compose",
         "sobre_session",
     ];
-
-    for keyword in &required {
+    for tool in &required {
         assert!(
-            instr.contains(keyword),
-            "System instructions must contain '{keyword}'"
+            sobre::setup::skill::SKILL_MD.contains(tool),
+            "the sobre skill must name '{tool}'"
         );
     }
     eprintln!(
-        "\n  [guard] All {} essential instruction keywords present ✓",
+        "\n  [guard] All {} essential tools reachable from the instructions ✓",
         required.len()
     );
 }

@@ -22,12 +22,11 @@ impl McpTool for SobreOutlineTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "sobre_outline",
-            "WORKFLOW: call BEFORE sobre_read to map code structure (a syntax-aware table of contents).\n\
-            Accepts a FILE or a DIRECTORY (folder surface — per-file symbols). Symbols come from\n\
-            tree-sitter (27 languages, real line spans); a conservative regex fallback covers the rest.\n\
+            "The symbols of a file, or of each file in a directory, with their line spans: a table \
+            of contents to read before sobre_read.\n\
             kind=fn|method|struct|class|interface|trait|enum|impl|type|const|all filters by kind; match=<substr> filters by name\n\
-            (case-insensitive); format=json emits deterministic JSON labelling the backend per file.\n\
-            ANTIPATTERN: NOT for file content (use sobre_read) or deep understanding (use sobre_compose).",
+            (case-insensitive); format=json emits JSON.\n\
+            Not for file content (use sobre_read) or understanding code (use sobre_compose).",
             json!({
                 "type": "object",
                 "properties": {

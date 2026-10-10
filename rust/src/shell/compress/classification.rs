@@ -294,7 +294,7 @@ fn is_file_viewer(command: &str) -> bool {
 /// "-i" (`my-input.txt`, `data-import.csv`) must not match, or the dump falls
 /// back into the terse pipeline: the exact corruption this classification
 /// prevents.
-fn has_in_place_flag(command: &str) -> bool {
+pub(crate) fn has_in_place_flag(command: &str) -> bool {
     command.split_whitespace().any(|tok| {
         if let Some(long) = tok.strip_prefix("--") {
             return long.starts_with("in-place");

@@ -189,7 +189,7 @@ commands:
 
 | Agent | Shell output compression |
 |---|---|
-| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy. The command itself is never changed. |
+| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy, only when a compressor made for that command owns it (git, test runners, builds, package managers, …). File content, diffs and search results stay whole, whichever command of the line printed them. The command itself is never changed. |
 | VS Code | The same, in Copilot (Agent Host) sessions, which run the Copilot CLI hooks. The Local agent runs them too but cannot replace a tool's output, so it gets none. |
 | Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `sobre -c`, only when none of the host's own command rules tells the two forms apart. |
 | Codex, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool. |
@@ -297,12 +297,11 @@ documents each.
 
 `compression_level` runs from 0 to 1 and defaults to 0.3. Below 0.2 it is off;
 above, it condenses the prose in tool and shell output (each condensed output
-says so), shortens the tool descriptions from 0.4, and adds an `OUTPUT STYLE`
-line to the MCP instructions that asks the agent to write its own replies more
-tersely, from "concise" to "raw-dense". When the agent keeps re-reading or
-re-running to get back what was cut (three such calls in two minutes), `sobre`
-lowers compression, says so, and goes back to the configured level once two
-minutes pass without one.
+says so) and shortens the tool descriptions from 0.4. It never changes the MCP
+instructions or asks the agent to write its own replies differently. When the
+agent keeps re-reading or re-running to get back what was cut (three such calls
+in two minutes), `sobre` lowers compression, says so, and goes back to the
+configured level once two minutes pass without one.
 
 ## Local embeddings
 

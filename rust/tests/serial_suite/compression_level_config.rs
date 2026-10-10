@@ -1,5 +1,5 @@
 //! `compression_level`: how the file value parses, which band it selects, and
-//! the output style the MCP instructions then ask of the model.
+//! that no band changes the MCP instructions.
 
 use sobre::core::config::{CompressionLevel, Config};
 use sobre::instructions;
@@ -44,50 +44,26 @@ fn set_compression(value: f64) -> ConfigGuard {
     with_config(&format!("compression_level = {value}\n"))
 }
 
-// ── The output style the instructions ask for ──
+// ── The instructions do not depend on the level ──
 
+/// The instructions are one text for every configuration (invariant 3):
+/// `compression_level` condenses tool output and descriptions, and never
+/// asks the model to write its own replies differently.
 #[test]
-fn compression_level_lite_injects_concise() {
-    let _g = set_compression(0.3);
-    let text = instructions::build_instructions();
-    assert!(
-        text.contains("OUTPUT STYLE: concise"),
-        "compression lite should inject concise prompt"
-    );
-}
-
-#[test]
-fn compression_level_standard_injects_dense() {
-    let _g = set_compression(0.5);
-    let text = instructions::build_instructions();
-    assert!(
-        text.contains("OUTPUT STYLE: dense"),
-        "compression standard should inject dense prompt"
-    );
-    assert!(
-        text.contains("fn, cfg, impl"),
-        "compression standard should mention abbreviations"
-    );
-}
-
-#[test]
-fn compression_level_max_injects_expert_terse() {
-    let _g = set_compression(0.7);
-    let text = instructions::build_instructions();
-    assert!(
-        text.contains("OUTPUT STYLE: expert-terse"),
-        "compression max should inject expert-terse prompt"
-    );
-}
-
-#[test]
-fn compression_level_off_no_output_style() {
-    let _g = set_compression(0.0);
-    let text = instructions::build_instructions();
-    assert!(
-        !text.contains("OUTPUT STYLE"),
-        "compression off should not inject any OUTPUT STYLE block"
-    );
+fn no_compression_level_changes_the_instructions() {
+    let baseline = {
+        let _g = set_compression(0.3);
+        instructions::build_instructions()
+    };
+    for value in [0.0, 0.5, 0.65, 0.7, 1.0] {
+        let _g = set_compression(value);
+        let text = instructions::build_instructions();
+        assert_eq!(text, baseline, "compression_level = {value}");
+        assert!(
+            !text.contains("OUTPUT STYLE"),
+            "compression_level = {value}"
+        );
+    }
 }
 
 // ── Config deserialization ──
@@ -133,14 +109,4 @@ fn compression_level_bands() {
     ] {
         assert_eq!(CompressionLevel::from_value(value), level, "{value}");
     }
-}
-
-#[test]
-fn compression_level_number_selects_prose_band() {
-    let _g = with_config("compression_level = 0.65\n");
-    let text = instructions::build_instructions();
-    assert!(
-        text.contains("OUTPUT STYLE: expert-terse"),
-        "0.65 falls in the max band"
-    );
 }

@@ -2,7 +2,11 @@
 //!
 //! The command itself is never touched: the host decided it may run and ran
 //! it, exactly as the agent wrote it. Only the copy of the output the model
-//! sees is replaced, and only when compression actually saves tokens. Every
+//! sees is replaced, and only when the compressor dedicated to the command
+//! (git, a test runner, a build, a package manager, …) saves tokens. Output
+//! nothing owns stays as it is: no generic fallback runs here. So does any
+//! line that prints file content in one of its commands (`sed -n`, `cat`,
+//! `grep -A`, …), since the agent may edit against what it reads. Every
 //! replaced output ends with a `[sobre: …]` line that says so and where the
 //! full output was kept.
 //!
@@ -119,14 +123,15 @@ fn copilot_reply(cmd: &str, result: &Value, type_key: &str, text_key: &str) -> O
     )
 }
 
-/// Compress one stream of a successful command. `None` when there is nothing
-/// to gain, or for file reads (`cat`/`head`/`tail`), whose content the agent
-/// may edit against and must see verbatim.
+/// Compress one stream of a successful command through the compressor that
+/// owns it ([`owned_command`]). `None` when nothing owns it or there is
+/// nothing to gain.
 fn compress_text(cmd: &str, text: &str) -> Option<(String, usize, usize)> {
-    if text.trim().is_empty() || crate::rewrite_registry::is_file_read_command(cmd) {
+    if text.trim().is_empty() {
         return None;
     }
-    let compressed = crate::shell::compress::engine::compress_for_outcome(cmd, text, 0);
+    let owned = owned_command(cmd)?;
+    let compressed = crate::shell::compress::engine::compress_owned(&owned, text)?;
     let before = count_tokens(text);
     let after = count_tokens(&compressed);
     if after >= before {
@@ -140,6 +145,43 @@ fn compress_text(cmd: &str, text: &str) -> Option<(String, usize, usize)> {
         after,
     );
     Some((compressed, before, after))
+}
+
+/// The part of `cmd` whose output one dedicated compressor may own: the line
+/// without its setup commands (`cd`, `export`, `set`, `source`, …), when
+/// what is left is one command, optionally piped through `head`, `tail` or
+/// `tee`. `None` when a command of the line prints a file
+/// ([`crate::rewrite_registry::is_file_read_command`]), for a heredoc script,
+/// and when more than one command prints: their output is no one tool's.
+fn owned_command(cmd: &str) -> Option<String> {
+    if cmd.contains("<<") || crate::rewrite_registry::is_file_read_command(cmd) {
+        return None;
+    }
+    let commands = crate::compound_lexer::commands(cmd);
+    let mut printing = commands.iter().filter(|c| c.piped || !is_setup(c.text));
+    let producer = printing.next().filter(|c| !c.piped)?;
+    let mut owned = producer.text.to_string();
+    for filter in printing {
+        if !filter.piped || !matches!(program(filter.text), "head" | "tail" | "tee") {
+            return None;
+        }
+        owned.push_str(" | ");
+        owned.push_str(filter.text);
+    }
+    Some(owned)
+}
+
+/// A command that prepares the shell and prints nothing.
+fn is_setup(command: &str) -> bool {
+    matches!(
+        program(command),
+        "cd" | "export" | "set" | "unset" | "source" | "." | "true" | ":" | "exit"
+    )
+}
+
+fn program(command: &str) -> &str {
+    let first = command.split_whitespace().next().unwrap_or("");
+    first.rsplit('/').next().unwrap_or(first)
 }
 
 fn with_label(out: &str, cmd: &str, original: &str, before: usize, after: usize) -> String {
@@ -304,6 +346,163 @@ mod tests {
             "toolResult": { "resultType": "failure", "textResultForLlm": long_output() }
         });
         assert_eq!(compute_compress(&failed.to_string()), None);
+    }
+
+    /// A Claude Code `PostToolUse` payload for a successful Bash call.
+    fn claude_payload(command: &str, stdout: &str) -> String {
+        json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": { "command": command },
+            "tool_response": { "stdout": stdout, "stderr": "", "interrupted": false, "isImage": false }
+        })
+        .to_string()
+    }
+
+    /// Python source long enough for every generic fallback to fire on it:
+    /// indented, with repeated lines, well over the 200-token floor.
+    fn python_source() -> String {
+        (0..80)
+            .map(|i| {
+                format!(
+                    "def handler_{i}(request, filters):\n    if not filters:\n        return None\n    result = apply(request, filters)\n    return result\n\n"
+                )
+            })
+            .collect::<Vec<_>>()
+            .concat()
+    }
+
+    /// The commands of the pilot whose output was source code, and others
+    /// that print a file: each is left exactly as the host returned it,
+    /// whatever segment of the line prints the file.
+    #[test]
+    fn source_printed_by_any_command_of_the_line_is_left_alone() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let source = python_source();
+        for cmd in [
+            "sed -n '100,160p' src/x.py",
+            "grep -n -A20 'def f' src/x.py",
+            "cat a.py | head -50",
+            "python -c \"print(open('x.py').read())\"",
+            "python3 -c 'import pathlib; print(pathlib.Path(\"x.py\").read_text())'",
+            "cd /repo && sed -n 625,705p tests/test_stats.py; grep -n 'snooze' src/x.py",
+            "cd src/dispatch; sed -n 195,250p filters.py",
+            "cd /repo; sed -n 68,130p views.py; sed -n 1,80p flows.py; cat redaction.py; grep -A8 'def redact' redaction.py",
+            "cd /repo && sed -n 775,870p service.py; git log --oneline -5",
+            "cd /repo && git log -3 && cat src/x.py",
+            "python3 - <<'EOF'\nimport re\nprint(open('t.py').read())\nEOF\nsed -n 830,870p tests/test_x.py",
+            "python3 scripts/show.py src/x.py",
+            "nl -ba src/x.py | sed -n 1,80p",
+            "awk 'NR>=10 && NR<=60' src/x.py",
+            "head -100 src/x.py && tail -20 src/y.py",
+            "rg -n -C3 'def handler' src",
+            "grep -rn 'def handler' src/",
+            "git show HEAD:src/x.py",
+            "git diff src/x.py",
+            "git blame src/x.py",
+        ] {
+            assert_eq!(
+                compute_compress(&claude_payload(cmd, &source)),
+                None,
+                "{cmd}"
+            );
+        }
+    }
+
+    /// Output no dedicated compressor owns stays as it is: the generic
+    /// fallbacks (line dedup, keep the first and last lines) never run here.
+    #[test]
+    fn output_without_a_dedicated_compressor_is_left_alone() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let log = (0..300)
+            .map(|i| {
+                format!(
+                    "2026-01-01 10:00:{:02} INFO worker: processed batch {}\n",
+                    i % 60,
+                    i % 7
+                )
+            })
+            .collect::<Vec<_>>()
+            .concat();
+        for cmd in [
+            "./scripts/report.sh",
+            "python manage.py migrate",
+            "make-report",
+        ] {
+            assert_eq!(compute_compress(&claude_payload(cmd, &log)), None, "{cmd}");
+        }
+        // Two commands that both print: no single owner for the whole output.
+        assert_eq!(
+            compute_compress(&claude_payload("git status && git log", &long_output())),
+            None
+        );
+    }
+
+    /// What a dedicated compressor owns still compresses, labelled, also
+    /// behind a `cd` or with a `| tail` filter.
+    #[test]
+    fn git_log_and_pytest_output_still_compress() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let pytest: String = [
+            "============================= test session starts ==============================\n"
+                .to_string(),
+            "platform linux -- Python 3.12.3, pytest-8.3.2, pluggy-1.5.0\n".to_string(),
+            "rootdir: /repo\ncollected 150 items\n\n".to_string(),
+        ]
+        .into_iter()
+        .chain((0..150).map(|i| {
+            format!(
+                "tests/test_api.py::test_case_{i} PASSED{:>30}\n",
+                format!("[{:>3}%]", (i + 1) * 100 / 150)
+            )
+        }))
+        .chain(std::iter::once(
+            "\n============================= 150 passed in 2.31s ==============================\n"
+                .to_string(),
+        ))
+        .collect();
+        for (cmd, out) in [
+            ("git log", long_output()),
+            ("cd /repo && git log", long_output()),
+            ("pytest -v", pytest.clone()),
+            ("cd /repo && python -m pytest -v 2>&1 | tail -200", pytest),
+        ] {
+            let reply = compute_compress(&claude_payload(cmd, &out))
+                .unwrap_or_else(|| panic!("{cmd} should compress"));
+            let v: Value = serde_json::from_str(&reply).unwrap();
+            let stdout = v["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
+                .as_str()
+                .unwrap();
+            assert!(
+                stdout.contains("[sobre: output compressed"),
+                "{cmd}: {stdout}"
+            );
+            assert!(stdout.len() < out.len(), "{cmd}");
+        }
+    }
+
+    #[test]
+    fn the_owned_command_is_the_one_printing_pipeline_without_setup() {
+        assert_eq!(owned_command("git log").as_deref(), Some("git log"));
+        assert_eq!(
+            owned_command("cd /repo && git log -5").as_deref(),
+            Some("git log -5")
+        );
+        assert_eq!(
+            owned_command("set -e; source .venv/bin/activate && pytest -q 2>&1 | tail -30")
+                .as_deref(),
+            Some("pytest -q 2>&1 | tail -30")
+        );
+        for cmd in [
+            "git status && git log",
+            "git log | sort",
+            "cd src",
+            "echo === && pytest",
+            "python3 - <<'EOF'\nprint(1)\nEOF",
+            "cd /repo && sed -n 1,5p x.py",
+        ] {
+            assert_eq!(owned_command(cmd), None, "{cmd}");
+        }
     }
 
     #[test]

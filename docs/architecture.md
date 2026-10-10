@@ -137,7 +137,20 @@ Codex, Windsurf and Zed get neither:
   wrote it. Afterwards, the output the model sees is replaced by a compressed
   copy ending in `[sobre: output compressed, A → B tokens; full output: <path>]`.
   - Hosts: Claude Code (`PostToolUse`), Copilot CLI (`postToolUse`) and OpenCode (plugin).
-  - File reads (`cat`, `head`, `tail`) are left alone.
+  - Only the compressor dedicated to the command runs (`compress_owned` in
+    `shell/compress/engine.rs`): a per-command pattern, a test runner's
+    summary, a build's progress folding. Output nothing owns is left alone;
+    the generic stages `sobre -c` ends with (terse, line dedup, head/tail
+    truncation) never run here.
+  - The owner is the one command of the line that prints, once setup
+    commands (`cd`, `export`, `source`, …) are set aside, optionally piped
+    through `head`, `tail` or `tee`. Two printing commands or a heredoc
+    script leave the output alone.
+  - File content is left alone: a line where any command prints a file
+    (`cat`, `head`, `sed -n`, `awk`, `nl`, `grep -A`/`-B`/`-C`,
+    `git show <rev>:<path>`, `git blame`, …; `rewrite_registry.rs`), and
+    diffs, blame and search results.
+  - A replacement saves at least 100 tokens, more than its label costs.
 - **Labelled pre-run rewrite** (`hook cursor`, `hook gemini`). A command is
   wrapped as `sobre -c '<command>'` only when all of these hold:
   - it is a single command, with no chain, pipe, redirect, substitution or background job (`&`);

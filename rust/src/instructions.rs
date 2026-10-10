@@ -2,87 +2,33 @@
 //! use it.
 //!
 //! sobre writes no rules into the agent's own files (CLAUDE.md, AGENTS.md,
-//! `.cursor/rules`, …). Every client gets this same text on `initialize`, and
-//! the only setting that changes it is `compression_level`: it picks the output
-//! style appended below. The detailed guide is the `sobre`
-//! skill, which agents that support skills load on demand.
+//! `.cursor/rules`, …). Every client gets this same text on `initialize`,
+//! whatever the configuration. Hosts put it in front of every session, so it
+//! only says what the tools are and where the guide is: each tool describes
+//! itself, every compressed output names its own way back to the full
+//! content, and the detailed guide is the `sobre` skill, which agents that
+//! support skills load on demand.
 //!
 //! The text must stay true on every host: hooks compress native shell output
 //! where the host supports them, and native tools are never denied, so nothing
 //! here may claim they are.
 
-use crate::core::config::CompressionLevel;
-
-/// Claude Code truncates a server's instructions at 2048 characters; the
-/// longest style (`Raw`) must fit under it.
-const MAX_INSTRUCTION_CHARS: usize = 2048;
-
-/// What every client is told, whatever its level.
+/// What every client is told.
 pub const GUIDE: &str = "\
-sobre: local context tools. Prefer them when they fit; native tools keep working.
-• Orient: sobre_compose first (no task = project overview; with task = ranked files + source).
-• Read: sobre_read(path, mode=auto|signatures|map|full|lines:N-M|anchored). An unchanged re-read returns a one-line stub.
-• Find: sobre_search (regex | action=symbol | action=semantic), sobre_glob (files), sobre_tree, sobre_outline (symbols).
-• Impact: sobre_graph (action=callers|callees|trace for calls; impact|changes|path for files).
-• Edit: sobre_read(mode=anchored) → sobre_patch (line+hash anchors; op=create for new files). Native Edit also works.
-• Shell: sobre_shell compresses output; long jobs → run_in_background=true.
-• Memory: sobre_session (task, findings, decisions), sobre_knowledge (facts across sessions); undo: sobre_checkpoint.
-RECOVER: compressed output is not exact evidence. Footer id → sobre_expand(id); file → sobre_read(mode=full) or read the shown path; shell → sobre_shell(raw=true) or `sobre raw \"<command>\"`. Never rebuild exact content line-by-line.
-Full guide: the `sobre` skill, if your agent has skills.
-OUTPUT: never echo tool output, no narration comments, show only changed code.";
+sobre: local tools to read, search, edit and run commands with less output; native tools keep working. \
+sobre_compose gives a project overview, or ranked files with their source for a task. \
+Full guide: the `sobre` skill, if your agent has skills.";
 
-/// Output-style prompt for a compression level (empty for `Off`).
-pub fn compression_text(level: CompressionLevel) -> &'static str {
-    match level {
-        CompressionLevel::Off => "",
-        CompressionLevel::Lite => {
-            "OUTPUT STYLE: concise — bullets over paragraphs, no filler or hedging, \
-             1-sentence explanations then code/action, never repeat the user."
-        }
-        CompressionLevel::Standard => {
-            "OUTPUT STYLE: dense — one atomic fact per line; abbreviate fn, cfg, impl, deps, \
-             req, res, ctx, err, ret; diff lines (+/-/~) only; → causes, ∴ therefore; \
-             no narration; ≤200 tokens unless code."
-        }
-        CompressionLevel::Max => {
-            "OUTPUT STYLE: expert-terse — telegraph format, drop articles; symbols → ∵ ∴ ⊕ ⊖ Δ ≈ ≠ ∈ ∅ ✓ ✗; \
-             code blocks untouched; lines ≤80 chars; zero narration; ≤100 tokens per non-code reply."
-        }
-        CompressionLevel::Raw => {
-            "OUTPUT STYLE: raw-dense — bullets only, no prose, intro or outro; +added -removed \
-             ~changed !breaking; one fact per line ≤60 chars; symbols as expert-terse; code \
-             untouched; ≤50 tokens per non-code reply; show results, never explain them."
-        }
-    }
-}
-
-/// The instructions for the configured `compression_level`. A session's
-/// temporary lowering of compression changes tool output only, never this
-/// text (invariant 3: one tools/list, one set of instructions).
+/// The instructions, the same for every client and every configuration
+/// (invariant 3: one tools/list, one set of instructions). Only the shell
+/// name is added on Windows, where commands may run under PowerShell.
 #[must_use]
 pub fn build_instructions() -> String {
-    render(CompressionLevel::effective_configured(
-        &crate::core::config::Config::load(),
-    ))
-}
-
-/// The instructions for an explicit level.
-#[must_use]
-pub fn render(level: CompressionLevel) -> String {
-    let mut parts = vec![GUIDE.to_string()];
     let shell = shell_hint();
-    if !shell.is_empty() {
-        parts.push(shell);
-    }
-    let style = compression_text(level);
-    if !style.is_empty() {
-        parts.push(style.to_string());
-    }
-    let out = parts.join("\n");
-    if out.len() <= MAX_INSTRUCTION_CHARS {
-        out
+    if shell.is_empty() {
+        GUIDE.to_string()
     } else {
-        out[..out.floor_char_boundary(MAX_INSTRUCTION_CHARS)].to_string()
+        format!("{GUIDE}\n{shell}")
     }
 }
 
@@ -104,46 +50,25 @@ fn shell_hint() -> String {
 mod tests {
     use super::*;
 
-    const LEVELS: [CompressionLevel; 5] = [
-        CompressionLevel::Off,
-        CompressionLevel::Lite,
-        CompressionLevel::Standard,
-        CompressionLevel::Max,
-        CompressionLevel::Raw,
-    ];
+    /// Hosts send the instructions at the start of every session, before the
+    /// agent asked for anything: they stay a pointer, not a manual.
     #[test]
-    fn every_level_fits_claude_codes_limit_untruncated() {
-        for level in LEVELS {
-            let out = render(level);
-            let full = GUIDE.len() + compression_text(level).len();
-            assert!(
-                full + 64 <= MAX_INSTRUCTION_CHARS,
-                "{level:?}: {full} chars leaves no room under {MAX_INSTRUCTION_CHARS}"
-            );
-            assert!(out.contains(compression_text(level)));
-        }
+    fn the_instructions_stay_short() {
+        let text = build_instructions();
+        assert!(GUIDE.len() <= 300, "{} chars", GUIDE.len());
+        assert!(text.len() <= 360, "{} chars", text.len());
+        assert!(text.starts_with(GUIDE));
     }
 
+    /// No line asks the agent to change how it writes, and nothing sends it
+    /// back to content it already has: every compressed output names its own
+    /// way back.
     #[test]
-    fn only_the_level_changes_the_text() {
-        let off = render(CompressionLevel::Off);
-        assert_eq!(off, GUIDE.to_string() + &shell_hint_line());
-        let lite = render(CompressionLevel::Lite);
-        assert!(lite.starts_with(GUIDE) && lite.contains("OUTPUT STYLE: concise"));
-        // One writing-style line, no second prompt that repeats or contradicts it.
-        for level in LEVELS {
-            let text = render(level);
-            assert!(!text.contains("CRP:"), "{level:?}");
-            assert!(
-                !text.to_lowercase().contains("trust tool outputs"),
-                "{level:?}"
-            );
+    fn no_output_style_and_no_recovery_drill() {
+        let lower = build_instructions().to_lowercase();
+        for forbidden in ["output style", "output:", "recover", "re-read", "narration"] {
+            assert!(!lower.contains(forbidden), "instructions say {forbidden:?}");
         }
-    }
-
-    fn shell_hint_line() -> String {
-        let h = shell_hint();
-        if h.is_empty() { h } else { format!("\n{h}") }
     }
 
     #[test]
@@ -152,7 +77,7 @@ mod tests {
             .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
             .filter(|w| w.starts_with("sobre_") && w.len() > 6)
             .collect();
-        assert!(named.len() >= 13, "guide names {named:?}");
+        assert!(!named.is_empty(), "the guide names no tool");
         for tool in named {
             assert!(
                 crate::server::registry::is_registered(tool),
@@ -176,21 +101,6 @@ mod tests {
             assert!(!lower.contains(forbidden), "guide says {forbidden:?}");
         }
         assert!(lower.contains("native tools keep working"));
-    }
-
-    #[test]
-    fn teaches_every_way_back_to_exact_content() {
-        // The recovery paths agents cannot discover on their own once output is
-        // compressed: the expand id, a full read, and raw shell output — the
-        // last one on the CLI too, since hooks compress native shell output.
-        for path in [
-            "sobre_expand(id)",
-            "sobre_read(mode=full)",
-            "sobre_shell(raw=true)",
-            "sobre raw \"<command>\"",
-            "not exact evidence",
-        ] {
-            assert!(GUIDE.contains(path), "guide must name {path}");
-        }
+        assert!(GUIDE.contains("the `sobre` skill"));
     }
 }
