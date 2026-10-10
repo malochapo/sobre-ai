@@ -89,7 +89,7 @@ sobre doctor [--fix] [--json]
 
 | Argument | Meaning |
 |---|---|
-| `--fix` | Repair what can be repaired, and say what was done |
+| `--fix` | Repair the agents that have sobre, drop stale indexes, and say what was done |
 | `--json` | Machine-readable output |
 
 Exits 1 when a check fails. More checks: sobre doctor integrations, doctor overhead, doctor lint-context.

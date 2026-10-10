@@ -70,6 +70,80 @@ pub fn agent_key(name: &str) -> Option<&'static str> {
     })
 }
 
+/// The agents that already carry something of sobre's, as `agent_key`s:
+/// its MCP entry, its hooks, its skill or its plugin. What `doctor --fix`
+/// repairs; connecting another agent is `init`'s job.
+///
+/// Copilot CLI and VS Code share their hooks and skill directory, so for
+/// them only the MCP entry tells which one was connected.
+pub fn agents_with_sobre(home: &Path) -> Vec<String> {
+    crate::core::editor_registry::build_targets(home)
+        .into_iter()
+        .filter(|target| {
+            has_mcp_entry(target) || own_footprint(&target.agent_key, home).is_some_and(|p| p)
+        })
+        .map(|target| target.agent_key)
+        .collect()
+}
+
+/// Whether `target`'s MCP config holds a `sobre` server.
+fn has_mcp_entry(target: &EditorTarget) -> bool {
+    use crate::core::editor_registry::ConfigType;
+    let Ok(content) = std::fs::read_to_string(&target.config_path) else {
+        return false;
+    };
+    if target.config_type == ConfigType::Codex {
+        return content
+            .parse::<toml::Table>()
+            .ok()
+            .and_then(|t| t.get("mcp_servers")?.as_table()?.get("sobre").cloned())
+            .is_some();
+    }
+    let container = match target.config_type {
+        ConfigType::Zed => "context_servers",
+        ConfigType::VsCodeMcp => "servers",
+        ConfigType::OpenCode => "mcp",
+        _ => "mcpServers",
+    };
+    crate::core::jsonc::parse_jsonc(&content)
+        .ok()
+        .and_then(|v| v.get(container)?.get("sobre").cloned())
+        .is_some()
+}
+
+/// Whether the hooks, skill or plugin only `agent` gets from `init` are
+/// there; `None` for an agent that has none of its own.
+fn own_footprint(agent: &str, home: &Path) -> Option<bool> {
+    let codex_dir = crate::core::home::resolve_codex_dir().unwrap_or_else(|| home.join(".codex"));
+    let hooks = match agent {
+        "claude" => crate::core::editor_registry::claude_state_dir(home).join("settings.json"),
+        "cursor" => home.join(".cursor/hooks.json"),
+        "codex" => codex_dir.join("hooks.json"),
+        "windsurf" => home.join(".codeium/windsurf/hooks.json"),
+        "gemini" => home.join(".gemini/settings.json"),
+        "opencode" => return Some(home.join(".config/opencode/plugins/sobre.js").exists()),
+        _ => return None,
+    };
+    let skill = skill::skill_path(agent, home).is_some_and(|p| p.exists());
+    Some(skill || holds_sobre_hook(&hooks))
+}
+
+/// Whether the JSON(C) file at `path` holds a string that runs sobre's hook.
+fn holds_sobre_hook(path: &Path) -> bool {
+    fn walk(v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::String(s) => crate::hooks::is_sobre_hook_command(s),
+            serde_json::Value::Array(items) => items.iter().any(walk),
+            serde_json::Value::Object(map) => map.values().any(walk),
+            _ => false,
+        }
+    }
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|c| crate::core::jsonc::parse_jsonc(&c).ok())
+        .is_some_and(|v| walk(&v))
+}
+
 /// Connects agents: the named ones (installed or not), or else every one that
 /// is installed. Each gets its MCP entry, its hooks and its skill. With
 /// `dry_run` nothing is written and the outcomes say what would be.
@@ -286,4 +360,51 @@ fn proxy_step(home: &Path) -> SetupStepReport {
         });
     }
     step
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `doctor --fix` repairs the agents that carry something of sobre's, and
+    /// leaves an installed agent sobre was never connected to alone.
+    #[test]
+    fn agents_with_sobre_are_the_ones_it_was_connected_to() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let write = |rel: &str, content: &str| {
+            let path = home.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, content).unwrap();
+        };
+        let _home = EnvVarGuard::set("HOME", home.to_str().unwrap());
+        let _claude = EnvVarGuard::set("CLAUDE_CONFIG_DIR", home.join(".claude").to_str().unwrap());
+        let _codex = EnvVarGuard::set("CODEX_HOME", home.join(".codex").to_str().unwrap());
+        let _xdg = EnvVarGuard::set("XDG_CONFIG_HOME", home.join(".config").to_str().unwrap());
+
+        // Installed, never connected.
+        write(
+            ".cursor/mcp.json",
+            r#"{"mcpServers": {"other": {"command": "x"}}}"#,
+        );
+        // An MCP entry.
+        write(
+            ".claude/.claude.json",
+            r#"{"mcpServers": {"sobre": {"command": "sobre"}}}"#,
+        );
+        write(
+            ".codex/config.toml",
+            "[mcp_servers.sobre]\ncommand = \"sobre\"\n",
+        );
+        // Hooks only: the MCP entry was lost.
+        write(
+            ".gemini/settings.json",
+            r#"{"hooks": {"BeforeTool": [{"hooks": [{"command": "/x/sobre hook gemini"}]}]}}"#,
+        );
+
+        let mut found = agents_with_sobre(home);
+        found.sort();
+        assert_eq!(found, ["claude", "codex", "gemini"]);
+    }
 }

@@ -91,11 +91,12 @@ fn has_provider_api_key_accepts_non_sk_bearer() {
     // prefix. OpenCode (@ai-sdk/openai) forwards them as `Bearer <key>`; they
     // must authenticate on a loopback provider route. The upstream validates
     // the real key — the proxy never injects one.
+    // Fake keys, short enough that no secret scanner masks them.
     for key in [
-        "Bearer [REDACTED:Bearer token]", // OpenRouter
-        "Bearer [REDACTED:Bearer token]", // (still works)
-        "Bearer [REDACTED:Bearer token]", // gateway/service token
-        "Bearer [REDACTED:Bearer token]", // opaque
+        "Bearer or-v1-fake",  // OpenRouter-style
+        "bearer azure-fake",  // lower-case scheme
+        "Bearer gw.svc.fake", // gateway/service token
+        "opaque-fake-key",    // no scheme at all
     ] {
         let req = build_request(&[("authorization", key)], "/v1/responses");
         assert!(

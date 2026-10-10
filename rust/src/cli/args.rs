@@ -224,7 +224,8 @@ fn agent(name: &str) -> Result<&'static str, String> {
 pub(crate) struct DoctorArgs {
     #[command(subcommand)]
     pub(crate) check: Option<DoctorCheck>,
-    /// Repair what can be repaired, and say what was done
+    /// Repair the agents that have sobre, drop stale indexes, and say what
+    /// was done
     #[arg(long)]
     pub(crate) fix: bool,
     /// Machine-readable output

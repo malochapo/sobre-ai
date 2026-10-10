@@ -3,14 +3,18 @@
 use axum::{
     body::Body,
     http::{StatusCode, request::Parts},
-    response::Response,
+    response::{IntoResponse, Response},
 };
 
-use super::headers::{is_forwarded_response_header, should_forward_request_header};
+use super::headers::{
+    connection_names, is_forwarded_response_header, should_forward_request_header,
+};
 use crate::proxy::ProxyState;
-use crate::proxy::codec::{is_retryable_status, retry_backoff};
 use crate::proxy::usage::{Provider, Scanner, WireContext, tee_stream};
 
+/// Sends the request upstream once: the client's SDK retries as it sees fit,
+/// honouring the upstream's `retry-after`. When no answer comes, the error
+/// becomes the client's answer through [`unreachable_response`].
 pub(crate) async fn send_upstream(
     state: &ProxyState,
     parts: &Parts,
@@ -18,48 +22,49 @@ pub(crate) async fn send_upstream(
     body: Vec<u8>,
     provider_label: &str,
     preserve_content_encoding: bool,
-) -> Result<reqwest::Response, StatusCode> {
-    let send_once = |body: Vec<u8>| {
-        let mut req = state.client.request(parts.method.clone(), url);
-        for (key, value) in &parts.headers {
-            let k = key.as_str().to_lowercase();
-            if should_forward_request_header(&k, preserve_content_encoding) {
-                req = req.header(key.clone(), value.clone());
-            }
-        }
-        req.body(body).send()
-    };
-
-    // First attempt. The request body is fully buffered, and no response byte
-    // has reached the client yet — retrying here is always safe for the
-    // client connection; the status filter keeps it safe semantically.
-    let first = send_once(body.clone()).await;
-    let retry_reason = match &first {
-        Ok(resp) if is_retryable_status(resp.status()) => {
-            format!("status {}", resp.status().as_u16())
-        }
-        Err(e) if e.is_connect() || e.is_timeout() => format!("connect error: {e}"),
-        Ok(resp) => {
-            let _ = resp; // healthy (or non-retryable) response — pass through
-            return first.map_err(|_| StatusCode::BAD_GATEWAY);
-        }
-        Err(e) => {
-            tracing::error!("sobre proxy: {provider_label} upstream error: {e}");
-            return Err(StatusCode::BAD_GATEWAY);
-        }
-    };
-
-    tracing::warn!("sobre proxy: {provider_label} upstream {retry_reason} — retrying once");
-    retry_backoff().await;
-    match send_once(body).await {
-        Ok(resp) => Ok(resp),
-        Err(e) => {
-            // Second failure: surface the ORIGINAL outcome when it was an HTTP
-            // response (its status/headers are more honest than our 502).
-            tracing::error!("sobre proxy: {provider_label} retry failed: {e}");
-            first.map_err(|_| StatusCode::BAD_GATEWAY)
+) -> Result<reqwest::Response, reqwest::Error> {
+    let hop_by_hop = connection_names(&parts.headers);
+    let mut req = state.client.request(parts.method.clone(), url);
+    for (key, value) in &parts.headers {
+        if should_forward_request_header(key.as_str(), preserve_content_encoding, &hop_by_hop) {
+            req = req.header(key.clone(), value.clone());
         }
     }
+    req.body(body)
+        .send()
+        .await
+        .inspect_err(|e| tracing::error!("sobre proxy: {provider_label} upstream error: {e}"))
+}
+
+/// The 502 for a request no answer came back to, in the error shape both
+/// providers' clients read (`error.type`, `error.message`), so the agent
+/// can tell the failure is the proxy's and not the provider's.
+pub(crate) fn unreachable_response(url: &str, error: &reqwest::Error) -> Response {
+    let host = reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| url.to_string());
+    // The innermost cause says what happened ("Connection refused"); the
+    // outer ones only repeat the URL.
+    let mut cause: &dyn std::error::Error = error;
+    while let Some(source) = cause.source() {
+        cause = source;
+    }
+    let what = if error.is_connect() {
+        format!("upstream {host} unreachable")
+    } else if error.is_timeout() {
+        format!("upstream {host} did not answer in time")
+    } else {
+        format!("request to upstream {host} failed")
+    };
+    let body = serde_json::json!({
+        "type": "error",
+        "error": {
+            "type": "proxy_error",
+            "message": format!("sobre proxy: {what}: {cause}"),
+        },
+    });
+    (StatusCode::BAD_GATEWAY, axum::Json(body)).into_response()
 }
 
 pub(crate) async fn build_response(
@@ -69,12 +74,12 @@ pub(crate) async fn build_response(
 ) -> Result<Response, StatusCode> {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let resp_headers = response.headers().clone();
+    let hop_by_hop = connection_names(&resp_headers);
     let mut scanner = Scanner::new(provider).with_wire_context(Some(Box::new(wire)));
 
     let mut resp = Response::builder().status(status);
     for (k, v) in &resp_headers {
-        let ks = k.as_str().to_lowercase();
-        if is_forwarded_response_header(&ks) {
+        if is_forwarded_response_header(k.as_str(), &hop_by_hop) {
             resp = resp.header(k, v);
         }
     }

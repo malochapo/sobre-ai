@@ -16,6 +16,8 @@ pub(crate) mod forward;
 pub(crate) mod history_prune;
 pub(crate) mod openai;
 pub(crate) mod openai_responses;
+#[cfg(test)]
+mod passthrough_tests;
 pub(crate) mod tool_kind;
 pub(crate) mod tool_output;
 #[cfg(test)]
