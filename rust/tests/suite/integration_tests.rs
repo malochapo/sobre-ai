@@ -83,6 +83,7 @@ fn short_output_passes_through_unchanged() {
 // when it is allowed to. The payload must not contain a passthrough keyword
 // (notably the literal "sobre", which makes the whole command Passthrough), or
 // it would never be compressed and the tests would prove nothing.
+#[cfg(unix)]
 fn long_output_command() -> &'static str {
     "i=0; while [ $i -lt 60 ]; do echo \"row $i alpha beta gamma delta payload\"; i=$((i+1)); done"
 }

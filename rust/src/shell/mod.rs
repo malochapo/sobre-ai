@@ -14,7 +14,9 @@ pub use exec::{ExecMode, exec};
 pub(crate) use exec::{STDERR_LABEL, combine_streams};
 /// Quoting for a given shell flag, for the integration tests' Windows cases.
 #[cfg(any(test, feature = "test-support"))]
-pub use platform::join_command_for;
+pub fn join_command_for(args: &[String], shell_flag: &str) -> String {
+    platform::join_command_for(args, shell_flag)
+}
 pub use platform::{
     decode_output, is_non_interactive, join_command, resolve_carriage_returns, shell_and_flag,
     shell_name,
