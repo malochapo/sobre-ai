@@ -1,10 +1,6 @@
-//! Composable post-processing stages for `SobreServer::call_tool_guarded`.
-//!
-//! `call_tool_guarded` historically inlined a ~1000-line pre/post-dispatch
-//! pipeline. The self-contained, side-effect-isolated *stages* live here as
-//! small, individually unit-testable functions so the guarded path stays a thin
-//! orchestrator. Each function mirrors exactly one concern of the original
-//! pipeline; behaviour is unchanged.
+//! Post-processing stages for `SobreServer::call_tool_guarded`: the terse
+//! condensing of a tool's text and the final token count. Each is a small
+//! function with no side effect, so the guarded path stays an orchestrator.
 
 use crate::core::config::{CompressionLevel, Config};
 

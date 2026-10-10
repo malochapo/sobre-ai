@@ -2,9 +2,7 @@ use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
-use crate::server::tool_trait::{
-    McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, get_usize,
-};
+use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_bool, get_str, get_usize};
 use crate::tool_defs::tool_def;
 
 pub struct SobreSearchTool;
@@ -168,7 +166,7 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let resolved = crate::server::multi_path::resolve_tool_paths(args, ctx)
         .map_err(|e| ErrorData::invalid_params(format!("ERROR: {e}"), None))?;
     let include = get_str(args, "include");
-    let max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
+    let max = get_usize(args, "max_results").unwrap_or(20).min(500);
     // Opt-in N:hh line anchors on each hit for direct sobre_patch edits.
     let anchored = get_bool(args, "anchored").unwrap_or(false);
     // Negative filters — `exclude` (path glob, complement of `include`)
@@ -242,20 +240,17 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
     // Savings use *observed* tokens: the modeled 2.5x native-grep baseline
     // never inflates user-facing numbers.
-    let final_out = combined.clone();
     let saved = total_observed.saturating_sub(total_sent);
 
     Ok(ToolOutput {
-        text: final_out,
-        original_tokens: total_observed,
+        text: combined,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,
     })
 }
 
-/// Resolve the `path` arg, falling back to the project root —
-/// the same precedence the former standalone semantic-search tool used.
+/// Resolve the `path` arg, falling back to the project root.
 fn resolve_path_or_root(ctx: &ToolContext) -> Result<String, ErrorData> {
     if let Some(p) = ctx.resolved_path("path") {
         Ok(p.to_string())
@@ -267,7 +262,7 @@ fn resolve_path_or_root(ctx: &ToolContext) -> Result<String, ErrorData> {
 }
 
 /// Prime the per-call BM25 cache so semantic engines reuse the warmed index
-/// instead of reloading it from disk (perf parity with the former tool).
+/// instead of reloading it from disk.
 fn prime_bm25_cache(ctx: &ToolContext) {
     if let Some(ref cache) = ctx.bm25_cache {
         crate::tools::impl_semantic_search::set_thread_cache(cache.clone());
@@ -344,7 +339,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
         let sent = crate::core::tokens::count_tokens(&result);
         return Ok(ToolOutput {
             text: result,
-            original_tokens: original,
             saved_tokens: original.saturating_sub(sent),
             shell_outcome: None,
             content_blocks: None,
@@ -363,7 +357,6 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
     let sent = crate::core::tokens::count_tokens(&result);
     Ok(ToolOutput {
         text: result,
-        original_tokens: original,
         saved_tokens: original.saturating_sub(sent),
         shell_outcome: None,
         content_blocks: None,
@@ -389,7 +382,7 @@ fn handle_find_related(
     let path = resolve_path_or_root(ctx)?;
     let top_k = get_usize(args, "top_k").unwrap_or(10).min(1000);
     let fp = get_str(args, "file_path").unwrap_or_default();
-    let line = get_int(args, "line").unwrap_or(1) as usize;
+    let line = get_usize(args, "line").unwrap_or(1);
     if fp.is_empty() {
         return Err(ErrorData::invalid_params(
             "find_related requires file_path and line",
@@ -411,17 +404,10 @@ fn handle_find_related(
     Ok(semantic_output(&result))
 }
 
-/// Shared `ToolOutput` shape for the semantic-engine branches (token accounting
-/// is handled inside the core fns, mirroring the former standalone tool). The
-/// chunk snippets they quote have their secrets masked as `sobre_read` does.
+/// Shared `ToolOutput` shape for the semantic-engine branches. The chunk
+/// snippets they quote have their secrets masked as `sobre_read` does.
 fn semantic_output(text: &str) -> ToolOutput {
-    ToolOutput {
-        text: crate::core::redaction::redact_text(text),
-        original_tokens: 0,
-        saved_tokens: 0,
-        shell_outcome: None,
-        content_blocks: None,
-    }
+    ToolOutput::simple(crate::core::redaction::redact_text(text))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -476,11 +462,9 @@ fn search_single(
 
     let sent = crate::core::tokens::count_tokens(&result);
     let saved = observed.saturating_sub(sent);
-    let final_out = result.clone();
 
     Ok(ToolOutput {
-        text: final_out,
-        original_tokens: observed,
+        text: result,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,
@@ -517,7 +501,7 @@ fn handle_batch_queries(
     let top_include = get_str(args, "include");
     let top_exclude = get_str(args, "exclude");
     let top_exclude_pattern = get_str(args, "exclude_pattern");
-    let global_max = (get_int(args, "max_results").unwrap_or(20) as usize).min(500);
+    let global_max = get_usize(args, "max_results").unwrap_or(20).min(500);
     let per_query_max = (global_max / queries.len()).max(5);
     let per_search_max = (per_query_max / roots.len()).max(5);
 
@@ -594,12 +578,10 @@ fn handle_batch_queries(
         combined = "No matches found for any query.".to_string();
     }
 
-    let final_out = combined.clone();
     let saved = total_observed.saturating_sub(total_sent);
 
     Ok(ToolOutput {
-        text: final_out,
-        original_tokens: total_observed,
+        text: combined,
         saved_tokens: saved,
         shell_outcome: None,
         content_blocks: None,

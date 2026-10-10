@@ -31,10 +31,6 @@ pub struct ReadOutput {
     /// Approximate output token count from mode processing.
     /// The dispatch layer recounts the final assembled string for accurate savings.
     pub output_tokens: usize,
-    /// Structurally determined cache-hit flag. Set by the code that
-    /// serves the read (stub, delta, cached mode), not sniffed from rendered
-    /// output. Replaces the fragile `content.contains("[unchanged")` checks.
-    pub is_cache_hit: bool,
 }
 
 /// SSOT via [`ReadMode`]: the `map`/`signatures` summaries whose rendered
@@ -287,7 +283,6 @@ fn try_disk_anchored_window(
         content: out,
         resolved_mode: mode.to_string(),
         output_tokens: sent,
-        is_cache_hit: false,
     })
 }
 
@@ -322,7 +317,6 @@ fn disk_lines_window(path: &str, range: &str, short: &str) -> Option<ReadOutput>
         content: out,
         resolved_mode: format!("lines:{range}"),
         output_tokens: sent,
-        is_cache_hit: false,
     })
 }
 
@@ -370,6 +364,7 @@ fn open_with_retry(path: &str) -> Result<std::fs::File, std::io::Error> {
 }
 
 /// Reads a file through the cache and applies the requested compression mode.
+#[cfg(any(test, feature = "test-support"))]
 pub fn handle(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
     handle_with_options(cache, path, mode, false, crp_mode, None)
 }
@@ -496,7 +491,9 @@ fn handle_with_options_resolved_preread(
             )
         }
     };
-    settle(cache, path, result)
+    let out = settle(cache, path, result);
+    record_read(path, &out, cache.get(path).map_or(0, |e| e.original_tokens));
+    out
 }
 
 /// What a read still has to render once the cache lock is released: a view
@@ -589,13 +586,13 @@ pub(crate) fn finish(
         content: out,
         resolved_mode: resolved_mode.to_string(),
         output_tokens: sent,
-        is_cache_hit: false,
     }
 }
 
 /// What every read records once its output is known: the mode last served,
-/// whether the full content is what the agent now holds, the shared-block
-/// dedup of lossy summaries, and the read in the bounce tracker.
+/// whether the full content is what the agent now holds, and the
+/// shared-block dedup of lossy summaries. The caller records the read with
+/// [`record_read`].
 pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutput) -> ReadOutput {
     if let Some(entry) = cache.get_mut(path) {
         entry.last_mode.clone_from(&result.resolved_mode);
@@ -622,17 +619,15 @@ pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutpu
         }
     }
 
-    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
-        let original_tokens = cache.get(path).map_or(0, |e| e.original_tokens);
-        bt.record_read(
-            path,
-            &result.resolved_mode,
-            result.output_tokens,
-            original_tokens,
-        );
-    }
-
     result
+}
+
+/// Records a served read in the bounce tracker. Called with no session
+/// lock held where the caller can release it first (LOCK_ORDERING.md).
+pub(crate) fn record_read(path: &str, out: &ReadOutput, original_tokens: usize) {
+    if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
+        bt.record_read(path, &out.resolved_mode, out.output_tokens, original_tokens);
+    }
 }
 
 /// Attempt to serve a `mode="full"` cache hit (`[unchanged …]`) using only a
@@ -644,7 +639,7 @@ pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutpu
 ///
 /// This is the read-locked fast path: it needs no `&mut SessionCache`, so the
 /// dominant "re-read an unchanged file" case proceeds under a shared lock and
-/// parallel reads of distinct files no longer serialize on a global write lock.
+/// parallel reads of distinct files do not serialize on a global write lock.
 pub fn try_stub_hit_readonly(cache: &SessionCache, path: &str) -> Option<ReadOutput> {
     // Resolve the caller *fresh* (TTL-bypassed): the stub gate's concurrency
     // detection must see a just-appeared second chat with zero lag, else a stub
@@ -680,8 +675,7 @@ pub(crate) fn try_stub_hit_readonly_scoped(
         // Conversation scoping: only stub when THIS conversation received
         // the content. A different (or unknown) conversation re-delivers in full
         // rather than emit a misleading stub. `current == None` (hooks absent)
-        // preserves legacy process-scoped behavior, so single-chat hit rates are
-        // unchanged.
+        // scopes the stub to this process.
         if !crate::core::conversation::conversation_allows_stub(
             current_conversation,
             delivered_conv.as_deref(),
@@ -695,8 +689,8 @@ pub(crate) fn try_stub_hit_readonly_scoped(
     // Cold fallback: no live entry (e.g. after an MCP restart or idle
     // clear). Serve the stub from the persisted index iff the file is unchanged
     // AND the *same known* conversation is asking — a stricter gate than the warm
-    // path, because a cold stub crosses a process boundary (no "no context →
-    // legacy" escape; see `conversation_allows_cold_stub`).
+    // path, because a cold stub crosses a process boundary (an unknown
+    // conversation never gets one; see `conversation_allows_cold_stub`).
     let rec = crate::core::read_stub_index::lookup(path)?;
     if crate::core::cache::is_cache_entry_stale_verified(path, rec.stored_mtime(), &rec.hash) {
         return None;
@@ -739,7 +733,6 @@ fn render_unchanged_stub(file_ref: &str, path: &str, line_count: usize) -> ReadO
         content: out,
         resolved_mode: "full".into(),
         output_tokens: sent,
-        is_cache_hit: true,
     }
 }
 
@@ -765,7 +758,7 @@ pub struct DeltaExplicitDecision {
 ///   `diff`, plus an advisory note. The diff carries exactly the new
 ///   information in a fraction of the tokens.
 /// - **Unchanged** and the request is `lines:` of an already-fully-delivered
-///   file → `full`, so the read collapses to the ~15-token `[unchanged]` stub
+///   file → `full`, so the read collapses to the one-line `[unchanged]` stub
 ///   instead of re-extracting a window the model has seen.
 /// - Otherwise the caller's `mode` is returned untouched.
 ///
@@ -821,7 +814,7 @@ pub fn resolve_explicit_delta_mode(
     }
     // Unchanged on disk: a `lines:` window of a file this conversation holds
     // in full re-emits text the model holds — collapse to the full-mode stub
-    // (~15 tokens). A plain `full` re-read already hits that stub downstream.
+    // (one line). A plain `full` re-read already hits that stub downstream.
     if mode.starts_with("lines:") {
         return DeltaExplicitDecision {
             mode: "full".to_string(),
@@ -876,7 +869,6 @@ fn prepare_inner(
                 content: warning.to_string(),
                 resolved_mode: "diff".into(),
                 output_tokens: count_tokens(warning),
-                is_cache_hit: false,
             });
         }
         cache.invalidate(path);
@@ -897,7 +889,6 @@ fn prepare_inner(
             content: out,
             resolved_mode: "diff".into(),
             output_tokens: sent,
-            is_cache_hit: false,
         });
     }
 
@@ -924,10 +915,8 @@ fn prepare_inner(
         // Resolve the read mode first — and *cache-aware* for `auto`. Handing the
         // live cache to the resolver is what lets an `auto` re-read of an
         // unchanged, already-fully-delivered file short-circuit to
-        // ("full", "cache_hit") and collapse to the cheap ~13-token `[unchanged]`
-        // stub, exactly like an explicit `full` re-read. The previous call passed
-        // no cache, so that branch was dead code and every `auto` re-read
-        // re-delivered the whole file ("re-reads aren't cached"). Resolving
+        // ("full", "cache_hit") and collapse to the one-line `[unchanged]`
+        // stub, exactly like an explicit `full` re-read. Resolving
         // up-front also lets us hit the compressed-output cache BEFORE
         // decompressing the full body (avoids ~2-5ms zstd on hits). The
         // aggressiveness knob still routes `auto` through the density path.
@@ -943,14 +932,16 @@ fn prepare_inner(
             if let Some(out) = try_stub_hit_readonly(cache, path) {
                 return Ok(out);
             }
-            let (out, _) = handle_full_with_auto_delta(cache, path, &file_ref, &short, ext, task);
-            let out = crate::core::redaction::redact_text(&out);
+            let (out, resolved_mode) =
+                match handle_full_with_auto_delta(cache, path, &short, ext, task) {
+                    Ok((out, _)) => (crate::core::redaction::redact_text(&out), "full"),
+                    Err(e) => (e, "error"),
+                };
             let sent = count_tokens(&out);
             return Ok(ReadOutput {
                 content: out,
-                resolved_mode: "full".into(),
+                resolved_mode: resolved_mode.into(),
                 output_tokens: sent,
-                is_cache_hit: false,
             });
         }
 
@@ -971,7 +962,6 @@ fn prepare_inner(
                     content: out,
                     resolved_mode,
                     output_tokens: sent,
-                    is_cache_hit: true,
                 });
             }
         }
@@ -988,8 +978,7 @@ fn prepare_inner(
 
     // Two-Phase Read: when pre-read content was provided (disk I/O
     // already happened outside the cache lock), use it directly. Otherwise
-    // fall back to reading from disk (legacy path, still used by fast-path
-    // inline calls where the write lock was immediately available).
+    // read from disk here.
     let content = if let Some(pr) = preread {
         pr
     } else {
@@ -1002,20 +991,12 @@ fn prepare_inner(
                     content: msg,
                     resolved_mode: "error".into(),
                     output_tokens: tokens,
-                    is_cache_hit: false,
                 });
             }
         }
     };
 
     let store_result = cache.store(path, &content);
-
-    // Skip expensive hint computation for line-range reads and first reads.
-    // Hints are only useful from the 2nd read onwards when the file is contextually relevant.
-    // sobre removed the TF-IDF semantic cache: the post-dispatch `[related: …]`
-    // hint in `autonomy::enrich_after_read` already answers "what else should I
-    // look at" from the code graph — and names only files that are *not* in the
-    // session cache yet, which token overlap cannot do.
 
     if mode == "full" {
         cache.mark_full_delivered(path);
@@ -1035,7 +1016,6 @@ fn prepare_inner(
             content: output,
             resolved_mode: "full".into(),
             output_tokens: sent,
-            is_cache_hit: false,
         });
     }
 
@@ -1079,7 +1059,12 @@ pub(crate) fn cap_to_raw(
     raw_tokens: usize,
     mode: &str,
 ) -> String {
-    if raw_tokens > 0 && framed_tokens > raw_tokens {
+    // A view that already is the whole file under a one-line notice costs
+    // what the replacement would, and its notice says why.
+    let already_whole = framed
+        .strip_suffix(raw_content)
+        .is_some_and(|head| !head.trim_end_matches('\n').contains('\n'));
+    if raw_tokens > 0 && framed_tokens > raw_tokens && !(mode != "full" && already_whole) {
         if mode == "full" {
             raw_content.to_string()
         } else {
@@ -1114,31 +1099,21 @@ pub(crate) fn resolve_auto_mode(
 const AUTO_DELTA_THRESHOLD: f64 = 0.6;
 
 /// Re-reads from disk; if content changed and delta is compact, sends auto-delta.
+/// A file that can no longer be read is an error (`ERROR: …`) and leaves the
+/// cache: its cached copy is not the file any more.
 fn handle_full_with_auto_delta(
     cache: &mut SessionCache,
     path: &str,
-    file_ref: &str,
     short: &str,
     ext: &str,
     task: Option<&str>,
-) -> (String, usize) {
-    let Ok(disk_content) = read_file_lossy(path) else {
-        cache.record_cache_hit(path);
-        if let Some(existing) = cache.get(path) {
-            if let Some(cached) = existing.content() {
-                return format_full_output(short, ext, &cached, existing.line_count, task);
-            }
-            let out = format!(
-                "[using cached version — file read failed]\n{file_ref}={short} cached {}t {}L",
-                existing.read_count(),
-                existing.line_count
-            );
-            let sent = count_tokens(&out);
-            return (out, sent);
+) -> Result<(String, usize), String> {
+    let disk_content = match read_file_lossy(path) {
+        Ok(c) => c,
+        Err(e) => {
+            cache.invalidate(path);
+            return Err(format!("ERROR: {short}: {e}"));
         }
-        let out = format!("[file read failed and no cached version available] {short}");
-        let sent = count_tokens(&out);
-        return (out, sent);
     };
 
     let old_content = cache
@@ -1159,7 +1134,13 @@ fn handle_full_with_auto_delta(
         // carried over from the cache entry, so it answers "some conversation got
         // this", which is the question the gate exists to stop trusting.
         cache.mark_full_delivered(path);
-        return format_full_output(short, ext, &disk_content, store_result.line_count, task);
+        return Ok(format_full_output(
+            short,
+            ext,
+            &disk_content,
+            store_result.line_count,
+            task,
+        ));
     }
 
     let diff = compressor::diff_content(&old_content, &disk_content);
@@ -1175,10 +1156,16 @@ fn handle_full_with_auto_delta(
             "{head} [auto-delta] ∆{}L\n{diff}",
             disk_content.lines().count()
         );
-        return (out, diff_tokens);
+        return Ok((out, diff_tokens));
     }
 
-    format_full_output(short, ext, &disk_content, store_result.line_count, task)
+    Ok(format_full_output(
+        short,
+        ext,
+        &disk_content,
+        store_result.line_count,
+        task,
+    ))
 }
 
 fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String, usize) {

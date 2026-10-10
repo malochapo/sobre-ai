@@ -1,11 +1,10 @@
 //! `replace_symbol` op: replace a whole symbol body by name (or path+line),
-//! delegating to the LSP/IDE-aware `sobre_refactor::replace_symbol_body`.
+//! delegating to `sobre_refactor`'s `replace_symbol_body`.
 //!
-//! sobre_patch's line-anchored ops are great for surgical line edits but a model
-//! that wants to rewrite an entire function shouldn't have to enumerate every
-//! line. `replace_symbol` gives that single, ergonomic surface while reusing
-//! sobre_refactor's battle-tested symbol resolution, BLAKE3 CONFLICT guard and
-//! atomic write — so there is exactly one symbol-edit implementation.
+//! sobre_patch's line-anchored ops are for surgical line edits; a model that
+//! rewrites an entire function should not have to enumerate every line.
+//! `replace_symbol` reuses sobre_refactor's symbol resolution, BLAKE3 CONFLICT
+//! guard and atomic write, so there is exactly one symbol-edit implementation.
 //!
 //! It is intentionally **not** an [`super::anchors::AnchorOp`]: it goes through a
 //! different (symbol-resolution) write path, so inside `ops[]` it runs as its

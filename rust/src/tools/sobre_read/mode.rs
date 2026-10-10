@@ -13,11 +13,10 @@
 //! * [`ReadMode::from_str`] parses (and *validates*) the canonical strings.
 //! * [`Display`](std::fmt::Display) round-trips **byte-identically** to those
 //!   same strings, so the type can be threaded through the typed decision points
-//!   without touching the string-mode MCP boundary or `render.rs` (back-compat).
+//!   while the MCP boundary and `render.rs` keep string modes.
 //! * the classification methods ([`ReadMode::is_compressed_cacheable`],
-//!   [`ReadMode::allows_raw_cap`], [`ReadMode::is_lossy_summary`]) replace the scattered `matches!(mode,
-//!   …)` predicates, and the test module locks each one to the legacy predicate
-//!   it replaces so behaviour can never silently change.
+//!   [`ReadMode::allows_raw_cap`], [`ReadMode::is_lossy_summary`]) answer
+//!   every question about a mode, and the test module pins each one.
 
 use std::fmt;
 use std::str::FromStr;
@@ -82,7 +81,7 @@ pub(crate) enum ReadMode {
     Task,
     /// One-line pointer/quote — `"reference"`.
     Reference,
-    /// Learned/auto mode selection — `"auto"`.
+    /// sobre picks the mode — `"auto"`.
     Auto,
     /// Git delta vs the cached copy — `"diff"`.
     Diff,
@@ -431,8 +430,8 @@ mod tests {
 
     #[test]
     fn comma_multi_select_parses() {
-        // The exact payload, plus the form the tool description
-        // documents (`lines:5,10-20`) — both used to be Malformed.
+        // A multi-range payload, plus the form the tool description
+        // documents (`lines:5,10-20`).
         assert_eq!(
             "lines:620-622,1214-1218".parse::<ReadMode>().unwrap(),
             ReadMode::LinesMulti("620-622,1214-1218".to_string())

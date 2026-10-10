@@ -389,8 +389,8 @@ mod gdscript_p0_tests {
         let (_tmp, root) = godot_fixture();
         let _ = handle_build(&root);
         let out = handle_symbol(Some("_ready"), &root);
-        // Four `_ready` defs → a disambiguation list (or a snippet), never the
-        // the old "Invalid symbol spec" / "not found" errors.
+        // Four `_ready` defs → a disambiguation list (or a snippet), never an
+        // "Invalid symbol spec" or "not found" error.
         assert!(out.contains("_ready"), "bare symbol should resolve: {out}");
         assert!(!out.contains("Invalid symbol spec"), "got: {out}");
         assert!(!out.to_lowercase().contains("not found"), "got: {out}");

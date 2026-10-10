@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 use tokio::sync::RwLock;
 
@@ -33,10 +32,7 @@ pub type SharedCache = Arc<RwLock<SessionCache>>;
 pub struct SobreServer {
     pub cache: SharedCache,
     pub session: Arc<RwLock<SessionState>>,
-    pub call_count: Arc<AtomicUsize>,
-    pub cache_ttl_secs: u64,
     pub last_call: Arc<RwLock<Instant>>,
-    pub client_name: Arc<RwLock<String>>,
     pub autonomy: Arc<super::autonomy::AutonomyState>,
     pub refetch_signals: Arc<RwLock<crate::core::refetch_signals::RefetchSignals>>,
     pub registry: Arc<crate::server::registry::ToolRegistry>,

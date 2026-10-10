@@ -1,13 +1,8 @@
 /// Precise, pinned reads (`diff`, `lines:N-M`, `anchored`/`anchored:N-M`)
-/// must pass through every mode-override path untouched — bounce-prevention,
-/// pressure-downgrade, and the graph/knowledge heuristics below must never
-/// silently reinterpret one of these to e.g. `full`, which would discard the
-/// exact window/anchors/delta the caller asked for. Classifies off the typed
-/// `ReadMode` (single source of truth, see `tools::sobre_read::mode`) rather than
-/// a hand-maintained string-prefix list, so a future precise mode has to be
-/// added to `ReadMode::is_precise_pinned_read` explicitly instead of silently
-/// falling through an allowlist. An unparseable mode is conservatively treated
-/// as *not* pinned, matching prior behaviour for anything outside this set.
+/// pass bounce-prevention untouched: turning one into `full` would discard
+/// the exact window, anchors or delta the caller asked for. Classified by the
+/// typed `ReadMode` (`ReadMode::is_precise_pinned_read`); an unparseable mode
+/// is not pinned.
 fn is_precise_pinned_mode(requested_mode: &str) -> bool {
     requested_mode
         .parse::<crate::tools::sobre_read::ReadMode>()
@@ -34,7 +29,7 @@ pub fn pre_dispatch_read(path: &str, requested_mode: &str) -> PreDispatchResult 
         return no_change;
     }
 
-    // Explicit mode=full must not be downgraded by pressure or other heuristics.
+    // An explicit mode=full is already what bounce-prevention would pick.
     if requested_mode == "full" {
         return no_change;
     }
@@ -64,8 +59,8 @@ mod tests {
     #[test]
     fn pre_dispatch_passthrough_for_anchored_window() {
         // A windowed anchored:N-M read must keep its hash anchors —
-        // bounce-prevention, pressure-downgrade, etc. must not clobber it to
-        // "full" and silently drop the window.
+        // bounce-prevention must not clobber it to "full" and silently drop
+        // the window.
         {
             let mut bt = crate::core::bounce_tracker::global()
                 .lock()
@@ -98,11 +93,8 @@ mod tests {
     #[test]
     fn pre_dispatch_passthrough_for_lines_multi_select() {
         // `lines:A-B,C-D` is a precise pinned window exactly like
-        // `lines:A-B`, but it parsed as Malformed, so `is_precise_pinned_mode`
-        // reported "not pinned" and bounce-prevention rewrote an 8-line request
-        // into a full-file read. Exercises the edit-forced branch, which is what
-        // the field report actually hit (a sobre_patch anchored edit immediately
-        // before the read).
+        // `lines:A-B`. Exercises the edit-forced branch: a sobre_patch edit
+        // just before the read must not turn the window into a full read.
         {
             let mut bt = crate::core::bounce_tracker::global()
                 .lock()
@@ -166,22 +158,8 @@ mod tests {
     }
 
     #[test]
-    fn pressure_does_not_downgrade_explicit_full() {
+    fn explicit_full_is_never_overridden() {
         let result = pre_dispatch_read("c.rs", "full");
-        assert!(
-            result.overridden_mode.is_none(),
-            "explicit mode=full must never be downgraded by pressure"
-        );
-    }
-
-    #[test]
-    fn pressure_does_not_downgrade_when_enforce_off() {
-        // Default profile has degradation.enforce = false, so pressure
-        // should NOT downgrade any mode.
-        let result = pre_dispatch_read("c.rs", "map");
-        assert!(
-            result.overridden_mode.is_none(),
-            "pressure must not downgrade when degradation.enforce is off"
-        );
+        assert!(result.overridden_mode.is_none());
     }
 }
