@@ -85,7 +85,6 @@ pub mod session;
 // ---------------------------------------------------------------------------
 // Domain: Neural / ML
 // ---------------------------------------------------------------------------
-pub mod neural;
 // ORT runtime glue links against the `ort` crate, which is only pulled in by the
 // `dense` feature. On platforms ORT does not support (e.g.
 // FreeBSD) it is disabled, so the modules must be gated
