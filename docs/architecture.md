@@ -146,8 +146,9 @@ Codex, Windsurf and Zed get neither:
     four or more lines of one log statement keep their first and last line
     (every level), consecutive search results of one file print its path once
     (0.4 and up), and output over 150 lines keeps its first 60 and last 30
-    when no command of the line read a file (0.8 and up). No rule rewrites a
-    line of source. Below 0.2 the hook compresses nothing.
+    when no command of the line may print source: a file, a diff, blame,
+    search results or a listing (0.8 and up). No rule rewrites a line of
+    source. Below 0.2 the hook compresses nothing.
   - The owner is the one command of the line that prints, once setup
     commands (`cd`, `export`, `source`, …) are set aside, optionally piped
     through `head`, `tail` or `tee`. Two printing commands or a heredoc

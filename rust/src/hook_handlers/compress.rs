@@ -142,11 +142,10 @@ fn compress_text(cmd: &str, text: &str) -> Option<(String, usize, usize)> {
     if level == CompressionLevel::Off {
         return None;
     }
-    // A heredoc script may print files too: treat it as reading them.
-    let reads_files = cmd.contains("<<") || crate::rewrite_registry::is_file_read_command(cmd);
+    let prints_source = prints_source(cmd);
     let compressed = owned_command(cmd)
         .and_then(|owned| crate::shell::compress::engine::compress_owned(&owned, text))
-        .or_else(|| crate::shell::compress::fold::fold(text, level, reads_files))?;
+        .or_else(|| crate::shell::compress::fold::fold(text, level, prints_source))?;
     let before = count_tokens(text);
     let after = count_tokens(&compressed);
     if after >= before {
@@ -184,6 +183,17 @@ fn owned_command(cmd: &str) -> Option<String> {
         owned.push_str(filter.text);
     }
     Some(owned)
+}
+
+/// Whether a command of the line may print source: file content (`sed -n`,
+/// `cat`, `grep -A`, …), a diff, blame or search results, or a heredoc script,
+/// which may print files too. Such output is never cut short.
+fn prints_source(cmd: &str) -> bool {
+    cmd.contains("<<")
+        || crate::rewrite_registry::is_file_read_command(cmd)
+        || crate::compound_lexer::commands(cmd)
+            .iter()
+            .any(|c| crate::shell::compress::has_structural_output(c.text))
 }
 
 /// A command that prepares the shell and prints nothing.
@@ -330,6 +340,27 @@ mod tests {
         let out = compute_compress(&input).expect("compresses");
         let v: Value = serde_json::from_str(&out).unwrap();
         assert!(v["output"].as_str().unwrap().contains("[sobre:"));
+    }
+
+    /// Diffs, search results, listings, file content and scripts may print
+    /// source: output that is never cut short. A script's own output may be.
+    #[test]
+    fn a_line_prints_source_when_any_command_may() {
+        for cmd in [
+            "git show a348bbd2 -- src/x.py; echo ===; git show 7a9fe810 -- src/y.py",
+            "cd src && grep -rn 'window' .",
+            "git diff HEAD~1",
+            "sed -n 1,80p x.py",
+            "ls -R src",
+            "find . -name '*.py'",
+            "wc -l *.log; tail -n 400 app.log",
+            "python - <<'EOF'\nprint(open('x.py').read())\nEOF",
+        ] {
+            assert!(prints_source(cmd), "{cmd}");
+        }
+        for cmd in ["./scripts/report.sh", "python manage.py migrate --plan"] {
+            assert!(!prints_source(cmd), "{cmd}");
+        }
     }
 
     #[test]

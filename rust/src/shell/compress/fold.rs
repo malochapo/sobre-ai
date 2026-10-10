@@ -13,8 +13,8 @@
 //!   `path:line:text` lines of one file print the path once, above them, as
 //!   `rg --heading` does. No text is lost.
 //! - **Long output**, at `Raw` (0.8 and up). An output of more than 150 lines
-//!   keeps its first 60 and its last 30, unless a command of the line read a
-//!   file: file content always stays whole.
+//!   keeps its first 60 and its last 30, unless a command of the line may
+//!   print source: file content, a diff, blame or search results stay whole.
 //!
 //! No rule changes the text of a line that is not a log line. Search headings
 //! move a path, and long output drops lines whole, saying how many. Every
@@ -37,8 +37,8 @@ const LONG_OUTPUT_TAIL: usize = 30;
 const MIN_SAVING_TOKENS: usize = 100;
 
 /// `text` folded for `level`, or `None` when no rule saves enough.
-/// `reads_files`: a command of the line printed a file, so long output stays whole.
-pub(crate) fn fold(text: &str, level: CompressionLevel, reads_files: bool) -> Option<String> {
+/// `prints_source`: a command of the line may print source, so long output stays whole.
+pub(crate) fn fold(text: &str, level: CompressionLevel, prints_source: bool) -> Option<String> {
     if level == CompressionLevel::Off {
         return None;
     }
@@ -47,7 +47,7 @@ pub(crate) fn fold(text: &str, level: CompressionLevel, reads_files: bool) -> Op
     if level >= CompressionLevel::Standard {
         lines = search_headings(&lines);
     }
-    if level >= CompressionLevel::Raw && !reads_files {
+    if level >= CompressionLevel::Raw && !prints_source {
         lines = cut_long_output(lines);
     }
     let folded = lines.join("\n");
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn long_output_is_cut_only_at_raw_and_never_for_file_content() {
+    fn long_output_is_cut_only_at_raw_and_never_for_source() {
         let listing: String = (0..400)
             .map(|i| format!("./src/dispatch/module_{i}/__init__.py\n"))
             .collect::<Vec<_>>()

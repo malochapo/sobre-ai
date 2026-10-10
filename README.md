@@ -299,8 +299,9 @@ documents each.
 above, it condenses the prose in tool and shell output (each condensed output
 says so) and shortens the tool descriptions from 0.4. In the post-run hook,
 output no dedicated compressor owns is folded by its shape: runs of one log
-statement at every level, a search result's repeated path from 0.4, and long
-output that is not file content from 0.8. Source text is never reshaped. It never changes the MCP
+statement at every level, a search result's repeated path from 0.4, and, from
+0.8, long output that cannot hold source (no file content, diff, blame, search
+result or listing). Source text is never reshaped. It never changes the MCP
 instructions or asks the agent to write its own replies differently. When the
 agent keeps re-reading or re-running to get back what was cut (three such calls
 in two minutes), `sobre` lowers compression, says so, and goes back to the
