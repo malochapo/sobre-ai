@@ -105,7 +105,7 @@ fn adversarial_pytest_preserves_xfail_xpass() {
                   \n\
                   ================== 15 passed, 2 xfailed, 1 xpassed, 2 warnings in 3.5s ==================";
 
-    let compressed = compress_output("pytest", output).unwrap();
+    let compressed = shell_shows("pytest", output, 0);
     assert!(
         compressed.contains("xfailed") || compressed.contains("xfail"),
         "pytest must preserve xfailed counter: {compressed}"
@@ -676,7 +676,7 @@ failures:
 
 test result: FAILED. 24 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s";
 
-    let compressed = compress_output("cargo test", output).unwrap();
+    let compressed = shell_shows("cargo test", output, 0);
     assert!(
         compressed.contains("1 failed") || compressed.contains("FAILED"),
         "cargo test must preserve failure count: {compressed}"
