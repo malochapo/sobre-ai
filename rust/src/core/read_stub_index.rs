@@ -250,6 +250,16 @@ pub fn record(rec: StubRecord) {
     }
 }
 
+/// Drops `path`'s record: its content can no longer be assumed to be in the
+/// conversation's context. Written to disk at the next save point, like
+/// [`record`].
+pub fn forget(path: &str) {
+    let key = crate::core::pathutil::normalize_tool_path(path);
+    if let Ok(mut g) = global().write() {
+        g.records.remove(&key);
+    }
+}
+
 /// Look up a record for the cold stub fallback (returns a clone).
 pub fn lookup(path: &str) -> Option<StubRecord> {
     if !enabled() {

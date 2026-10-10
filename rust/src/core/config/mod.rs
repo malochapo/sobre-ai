@@ -137,17 +137,21 @@ impl Config {
     where
         F: FnOnce(&mut Self),
     {
-        let mut cfg = match std::fs::read_to_string(path) {
-            Ok(raw) if !raw.trim().is_empty() => toml::from_str::<Self>(&raw).map_err(|e| {
-                super::error::SobreError::Config(
-                    format!(
-                        "refusing to modify an unparseable config.toml ({e}); fix it \
-                     by hand, then retry"
-                    )
-                    .into(),
+        let refuse = |why: String| {
+            super::error::SobreError::Config(
+                format!(
+                    "refusing to modify {}: {why}; fix it by hand, then retry",
+                    path.display()
                 )
-            })?,
-            _ => Self::default(),
+                .into(),
+            )
+        };
+        let mut cfg = match std::fs::read_to_string(path) {
+            Ok(raw) if !raw.trim().is_empty() => toml::from_str::<Self>(&raw)
+                .map_err(|e| refuse(format!("it does not parse ({e})")))?,
+            Ok(_) => Self::default(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Self::default(),
+            Err(e) => return Err(refuse(format!("it cannot be read ({e})"))),
         };
         f(&mut cfg);
         cfg.save_to(path)?;

@@ -283,8 +283,10 @@ pub(crate) fn handle_recall(
     mode: Option<&str>,
     as_of: Option<&str>,
 ) -> String {
-    let Some(mut knowledge) = ProjectKnowledge::load(project_root) else {
-        return "No knowledge stored for this project yet.".to_string();
+    let mut knowledge = match ProjectKnowledge::try_load(project_root) {
+        Ok(Some(knowledge)) => knowledge,
+        Ok(None) => return "No knowledge stored for this project yet.".to_string(),
+        Err(e) => return format!("ERROR: {e}"),
     };
     let policy = crate::core::memory_policy::MemoryPolicy::default();
 

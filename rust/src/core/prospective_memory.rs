@@ -1,5 +1,10 @@
+use std::collections::BTreeSet;
+
 use crate::core::gotcha_tracker::GotchaStore;
 
+/// The project's gotchas that share a word with `task`, best first, as
+/// `[remember]` lines. Words are compared whole; stop words and words shorter
+/// than three characters never match.
 pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
     let task_terms = tokenize(task);
     if task_terms.is_empty() {
@@ -20,17 +25,14 @@ pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
     let mut scored: Vec<Scored> = Vec::new();
 
     for g in &store.gotchas {
-        let searchable = format!(
+        let gotcha_terms = tokenize(&format!(
             "{} {} {} {}",
-            g.trigger.to_lowercase(),
-            g.resolution.to_lowercase(),
-            g.tags.join(" ").to_lowercase(),
-            g.category.short_label().to_lowercase()
-        );
-        let matches = task_terms
-            .iter()
-            .filter(|t| searchable.contains(*t))
-            .count();
+            g.trigger,
+            g.resolution,
+            g.tags.join(" "),
+            g.category.short_label()
+        ));
+        let matches = task_terms.intersection(&gotcha_terms).count();
         if matches == 0 {
             continue;
         }
@@ -62,25 +64,12 @@ pub fn reminders_for_task(project_root: &str, task: &str) -> Vec<String> {
         .collect()
 }
 
-fn tokenize(s: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for ch in s.chars() {
-        if ch.is_ascii_alphanumeric() {
-            cur.push(ch.to_ascii_lowercase());
-        } else if !cur.is_empty() {
-            if cur.len() >= 3 {
-                out.push(cur.clone());
-            }
-            cur.clear();
-        }
-    }
-    if !cur.is_empty() && cur.len() >= 3 {
-        out.push(cur);
-    }
-    out.sort();
-    out.dedup();
-    out
+fn tokenize(s: &str) -> BTreeSet<String> {
+    s.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|w| w.len() >= 3)
+        .map(str::to_ascii_lowercase)
+        .filter(|w| !crate::core::task_relevance::STOP_WORDS.contains(&w.as_str()))
+        .collect()
 }
 
 fn sanitize_one_line(s: &str) -> String {
@@ -154,5 +143,26 @@ mod tests {
         assert!(reminders.len() <= crate::core::budgets::PROSPECTIVE_REMINDERS_LIMIT);
 
         crate::test_env::remove_var("SOBRE_DATA_DIR");
+    }
+
+    #[test]
+    fn only_whole_words_that_are_not_stop_words_match() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let root = "/tmp/sobre-prospective-whole-words";
+        let mut store = GotchaStore::load(root);
+        store.report_gotcha(
+            "attestation fails when the other cache is stale",
+            "clear it first",
+            "convention",
+            "warning",
+            "s1",
+        );
+        store.save(root).unwrap();
+
+        // "the" is a stop word, "test" is only inside "attestation", "her"
+        // only inside "other".
+        assert!(reminders_for_task(root, "test the docs for her").is_empty());
+        let hits = reminders_for_task(root, "the cache is wrong");
+        assert_eq!(hits.len(), 1, "{hits:?}");
     }
 }

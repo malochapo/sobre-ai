@@ -43,7 +43,7 @@ pub(crate) fn consolidate_project_knowledge_with(
     let (_knowledge, report) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
         run_consolidation_locked(knowledge, session, &policy)
     })
-    .map_err(|e| format!("Consolidation done but save failed: {e}"))?;
+    .map_err(|e| format!("ERROR: consolidation not saved: {e}"))?;
     report
 }
 

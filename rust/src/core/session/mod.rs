@@ -60,7 +60,7 @@ mod tests {
     /// `shell_cwd`. Relative or nonexistent paths are ignored.
     #[test]
     fn note_explicit_cwd_persists_absolute_dirs_only() {
-        let tmp = std::env::temp_dir().join(format!("lc_707_cwd_{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("sobre_cwd_{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
 
         let mut session = SessionState::new();

@@ -11,7 +11,6 @@
 //! `sobre_read`'s auto-mode. Entries expire after `TTL_SECS`; a succeeding run
 //! of the same tool clears its diagnostics.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
 
@@ -175,19 +174,6 @@ pub fn record_from_shell(command: &str, output: &str, exit_code: i32) {
 /// Does any tracked file currently carry a compile error?
 pub fn has_error(path: &str) -> bool {
     global().lock().is_ok_and(|s| s.has_error(path))
-}
-
-/// Snapshot for ranking/triage consumers: `(path, severity)` pairs.
-pub fn snapshot() -> Vec<(String, Severity)> {
-    global()
-        .lock()
-        .map(|s| {
-            s.diagnostics
-                .iter()
-                .map(|d| (d.path.clone(), d.severity))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn parse_output(tool: &str, output: &str) -> Vec<Diagnostic> {
@@ -358,37 +344,6 @@ fn parse_eslint(output: &str) -> Vec<Diagnostic> {
         });
     }
     out
-}
-
-/// Apply diagnostic boosts to a relevance ranking and re-sort.
-pub fn apply_boost(scores: &mut [crate::core::task_relevance::RelevanceScore]) {
-    let snap = snapshot();
-    if snap.is_empty() {
-        return;
-    }
-    let mut by_path: HashMap<&str, Severity> = HashMap::new();
-    for (p, s) in &snap {
-        let entry = by_path.entry(p.as_str()).or_insert(*s);
-        if *s == Severity::Error {
-            *entry = Severity::Error;
-        }
-    }
-    for score in scores.iter_mut() {
-        let hit = by_path
-            .iter()
-            .find(|(p, _)| score.path.ends_with(*p) || p.ends_with(&score.path))
-            .map(|(_, s)| *s);
-        match hit {
-            Some(Severity::Error) => score.score = (score.score + 0.35).min(1.0),
-            Some(Severity::Warning) => score.score = (score.score + 0.10).min(1.0),
-            None => {}
-        }
-    }
-    scores.sort_by(|a, b| {
-        b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
 }
 
 #[cfg(test)]

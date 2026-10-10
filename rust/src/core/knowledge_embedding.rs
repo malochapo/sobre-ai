@@ -32,7 +32,7 @@ pub const SEMANTIC_DUP_THRESHOLD: f32 = 0.86;
 pub struct FactEmbedding {
     pub category: String,
     pub key: String,
-    /// int8-quantized vector (turbovec-derived) — 4× smaller on disk than f32.
+    /// The vector quantized to int8: 4× smaller on disk than f32.
     pub quant: QuantizedVector,
 }
 
@@ -404,7 +404,7 @@ pub fn missing_current_facts<'a>(
 
 /// Lazy vector backfill: embeds up to `cap` current facts that are missing
 /// from the side-car index. Facts land without vectors on two paths — the
-/// consolidation/ETL writers never embed at all, and a non-blocking `remember`
+/// consolidation writers never embed at all, and a non-blocking `remember`
 /// skips its side-car while the engine is still warming up. Without a healer
 /// those facts would stay invisible to `mode=semantic` recall. Called from
 /// `remember` and `recall` under the per-project lock once the engine is warm,
@@ -460,8 +460,6 @@ pub fn find_semantic_duplicates(
     threshold: f32,
     limit: usize,
 ) -> Vec<crate::core::knowledge::SimilarFact> {
-    // Cheap static-model embed (microseconds); kept separate from the storage
-    // embed in `embed_and_store` so its well-tested side-car path is untouched.
     let text = format!("{new_category} {new_key}: {new_value}");
     let Ok(query) = engine.embed(&text) else {
         return Vec::new();
@@ -568,12 +566,12 @@ mod tests {
 
     #[test]
     fn concurrent_remember_keeps_all_embeddings() {
-        // The embedding-index read-modify-write must be serialized under
-        // the per-project lock and compacted against fresh on-disk knowledge.
-        // The old lock-free + stale-snapshot path let parallel writers clobber
-        // each other's vectors and prune just-stored ones. This mirrors
-        // `handle_remember`'s locked path (raw vectors, so no embedding engine
-        // is needed) and asserts every concurrently-stored embedding survives.
+        // The embedding-index read-modify-write is serialized under the
+        // per-project lock and compacted against fresh on-disk knowledge, so
+        // parallel writers never clobber each other's vectors or prune
+        // just-stored ones. This mirrors `handle_remember`'s locked path (raw
+        // vectors, so no embedding engine is needed) and asserts every
+        // concurrently-stored embedding survives.
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().expect("tempdir");
         crate::test_env::set_var("SOBRE_DATA_DIR", tmp.path().to_string_lossy().to_string());
@@ -595,8 +593,8 @@ mod tests {
                     kn.remember(cat, &key, "v", "s", 0.9, &policy);
                 })
                 .expect("commit fact");
-                // 2) Embedding side-car under the SAME lock + fresh-knowledge
-                //    compaction — exactly the fixed handle_remember path.
+                // 2) Embedding side-car under the same lock, compacted
+                //    against fresh knowledge, as handle_remember does.
                 ProjectKnowledge::with_project_lock(&root, || {
                     let mut idx = KnowledgeEmbeddingIndex::load(&knowledge.project_hash)
                         .unwrap_or_else(|| KnowledgeEmbeddingIndex::new(&knowledge.project_hash));

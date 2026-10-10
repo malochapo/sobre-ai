@@ -9,11 +9,10 @@ mod config_load_cache_tests {
     use super::super::*;
     use crate::core::data_dir::isolated_data_dir;
 
-    /// Regression: `Config::load` must reflect a content change even when
-    /// the file mtime is unchanged. A mtime-only cache (the old behaviour) kept a
-    /// long-lived MCP server on a stale `search_roots` while a fresh `doctor`
-    /// process — with an empty cache — saw the new value. The cache is now keyed
-    /// on a content hash, so this scenario stays live.
+    /// `Config::load` reflects a content change even when the file mtime is
+    /// unchanged: the cache is keyed on a content hash, so a long-lived MCP
+    /// server never keeps a stale `search_roots` that a fresh `doctor` process
+    /// would not see.
     #[test]
     fn load_honors_content_change_with_preserved_mtime() {
         let _iso = isolated_data_dir();
@@ -41,8 +40,7 @@ mod config_load_cache_tests {
 
 #[cfg(test)]
 mod persist_global_tests {
-    //! Regression tests: persisting config must never reset customized
-    //! values.
+    //! Persisting config never resets customized values.
     use super::super::*;
 
     fn tmp_config() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -81,7 +79,7 @@ mod persist_global_tests {
         assert!(cfg.debug_log);
     }
 
-    // Subticket 4 contract: refuse to touch an unparseable config; never clobber.
+    // An unparseable config is refused and never clobbered.
     #[test]
     fn update_global_at_refuses_unparseable_and_leaves_file_untouched() {
         let (_dir, path) = tmp_config();
@@ -98,6 +96,20 @@ mod persist_global_tests {
             corrupt,
             "the corrupt file must be left exactly as-is"
         );
+    }
+
+    #[test]
+    fn update_global_at_refuses_an_unreadable_file_and_leaves_it_untouched() {
+        let (_dir, path) = tmp_config();
+        let latin1 = b"# caf\xe9\ncompression_level = 0.5\n";
+        std::fs::write(&path, latin1).unwrap();
+
+        let result = Config::update_global_at(&path, |c| c.proxy.enabled = Some(true));
+        assert!(
+            result.is_err(),
+            "must refuse to modify a file it cannot read"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), latin1);
     }
 
     #[test]

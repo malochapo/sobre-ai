@@ -56,8 +56,7 @@ fn acquire_file_lock(dir: &Path) -> Option<std::fs::File> {
 /// Atomically writes `json` to `path` by writing to a unique temp file in the
 /// same directory and renaming it into place. `rename` is atomic on every
 /// supported platform (and replaces the target on Windows), so readers and
-/// concurrent writers never observe a half-written file — preventing the
-/// trailing-garbage JSON corruption.
+/// concurrent writers never observe a half-written file.
 fn write_json_atomic(dir: &Path, path: &Path, json: &str) -> Result<(), String> {
     let unique = format!(
         "knowledge.json.tmp.{}.{}",
@@ -100,11 +99,9 @@ impl ProjectKnowledge {
     /// mutex *and* the cross-process advisory file lock — without loading or
     /// saving the knowledge JSON itself. [`mutate_locked`](Self::mutate_locked)
     /// is built on this, and side-car stores that must stay consistent with the
-    /// facts (today: the embedding index) call it directly so their
-    /// read-modify-write is serialized against parallel
-    /// `remember`/`remove`/`reindex`. That side-car write used to run lock-free,
-    /// so concurrent callers clobbered each other's embeddings and pruned
-    /// just-stored vectors, degrading semantic recall.
+    /// facts (the embedding index, the gotcha store) call it directly so their
+    /// read-modify-write is serialized against parallel writers: without it,
+    /// concurrent callers would clobber each other's entries.
     pub(crate) fn with_project_lock<T>(project_root: &str, f: impl FnOnce() -> T) -> T {
         let hash = hash_project_root(project_root);
         let lock = knowledge_lock(&hash);
@@ -134,43 +131,59 @@ impl ProjectKnowledge {
     /// processes (parallel CLI invocations, CLI + MCP server).
     /// Returns the persisted knowledge plus the closure's return
     /// value so the caller can build a response from the committed state.
+    /// A store that exists but cannot be read is an error: `f` does not run
+    /// and the file is left as it is.
     pub fn mutate_locked<T>(
         project_root: &str,
         f: impl FnOnce(&mut Self) -> T,
     ) -> Result<(Self, T), String> {
         Self::with_project_lock(project_root, || {
-            let mut knowledge = Self::load_or_create(project_root);
+            let mut knowledge =
+                Self::try_load(project_root)?.unwrap_or_else(|| Self::new(project_root));
             let out = f(&mut knowledge);
             knowledge.save()?;
             Ok((knowledge, out))
         })
     }
 
-    pub fn load(project_root: &str) -> Option<Self> {
-        let hash = hash_project_root(project_root);
-        let dir = knowledge_dir(&hash).ok()?;
-        let path = dir.join("knowledge.json");
-
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            let size = content.len();
-            if size > 1_000_000 {
-                tracing::warn!(
-                    "knowledge.json is large ({:.1} MB) — recall may be slow. \
-                     Consider running sobre_knowledge(action=\"consolidate\") to compact it.",
-                    size as f64 / 1_048_576.0,
-                );
-            }
-            if let Ok(k) = serde_json::from_str::<Self>(&content) {
-                return Some(k);
-            }
+    /// Reads the project's store: `Ok(None)` when there is none yet, `Err`
+    /// (naming the file) when it exists but cannot be read or parsed.
+    pub fn try_load(project_root: &str) -> Result<Option<Self>, String> {
+        let path = knowledge_dir(&hash_project_root(project_root))?.join("knowledge.json");
+        let content = match std::fs::read_to_string(&path) {
+            Ok(content) => content,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(unreadable(&path, &e)),
+        };
+        let size = content.len();
+        if size > 1_000_000 {
+            tracing::warn!(
+                "knowledge.json is large ({:.1} MB) — recall may be slow. \
+                 Consider running sobre_knowledge(action=\"consolidate\") to compact it.",
+                size as f64 / 1_048_576.0,
+            );
         }
-
-        None
+        serde_json::from_str(&content)
+            .map(Some)
+            .map_err(|e| unreadable(&path, &e))
     }
 
-    pub fn load_or_create(project_root: &str) -> Self {
-        Self::load(project_root).unwrap_or_else(|| Self::new(project_root))
+    /// [`try_load`](Self::try_load) for read-only callers: an unreadable
+    /// store is logged and reads as absent.
+    pub fn load(project_root: &str) -> Option<Self> {
+        Self::try_load(project_root).unwrap_or_else(|e| {
+            tracing::warn!("{e}");
+            None
+        })
     }
+}
+
+fn unreadable(path: &Path, e: &dyn std::fmt::Display) -> String {
+    format!(
+        "the knowledge store {} cannot be read ({e}); it was left as it is and nothing \
+         was saved: repair the file or move it away",
+        path.display()
+    )
 }
 
 #[cfg(test)]
@@ -216,6 +229,34 @@ mod tests {
             reacquired,
             "lock must be acquirable within 500ms of release"
         );
+    }
+
+    #[test]
+    fn an_unreadable_store_is_never_overwritten() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = "/tmp/sobre-persist-corrupt-store";
+        let dir = knowledge_dir(&hash_project_root(root)).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("knowledge.json");
+        let garbage = "{\"facts\": [ truncated";
+        std::fs::write(&path, garbage).unwrap();
+
+        let err = ProjectKnowledge::mutate_locked(root, |_| ())
+            .expect_err("a store that does not parse must not be written");
+        assert!(err.contains(&path.display().to_string()), "{err}");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), garbage);
+        assert!(ProjectKnowledge::try_load(root).is_err());
+        assert!(ProjectKnowledge::load(root).is_none());
+    }
+
+    #[test]
+    fn a_missing_store_starts_empty() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = "/tmp/sobre-persist-missing-store";
+        assert!(ProjectKnowledge::try_load(root).unwrap().is_none());
+        let (k, ()) = ProjectKnowledge::mutate_locked(root, |_| ()).unwrap();
+        assert!(k.facts.is_empty());
+        assert!(ProjectKnowledge::try_load(root).unwrap().is_some());
     }
 
     #[test]

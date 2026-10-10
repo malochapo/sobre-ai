@@ -13,55 +13,6 @@ pub enum TaskType {
     Review,
 }
 
-impl TaskType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Generate => "generate",
-            Self::FixBug => "fix_bug",
-            Self::Refactor => "refactor",
-            Self::Explore => "explore",
-            Self::Test => "test",
-            Self::Debug => "debug",
-            Self::Config => "config",
-            Self::Deploy => "deploy",
-            Self::Review => "review",
-        }
-    }
-
-    pub fn output_format(&self) -> OutputFormat {
-        match self {
-            Self::Generate | Self::Test | Self::Config => OutputFormat::CodeOnly,
-            Self::FixBug | Self::Refactor => OutputFormat::DiffOnly,
-            Self::Explore | Self::Review => OutputFormat::ExplainConcise,
-            Self::Debug => OutputFormat::Trace,
-            Self::Deploy => OutputFormat::StepList,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum OutputFormat {
-    CodeOnly,
-    DiffOnly,
-    ExplainConcise,
-    Trace,
-    StepList,
-}
-
-impl OutputFormat {
-    pub fn instruction(&self) -> &'static str {
-        match self {
-            Self::CodeOnly => {
-                "OUTPUT-HINT: Prefer code blocks. Minimize prose unless user asks for explanation."
-            }
-            Self::DiffOnly => "OUTPUT-HINT: Prefer showing only changed lines as +/- diffs.",
-            Self::ExplainConcise => "OUTPUT-HINT: Brief summary, then code/data if relevant.",
-            Self::Trace => "OUTPUT-HINT: Show cause→effect chain with code references.",
-            Self::StepList => "OUTPUT-HINT: Numbered action list, one step at a time.",
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct TaskClassification {
     pub task_type: TaskType,
@@ -622,9 +573,8 @@ mod tests {
     }
 
     #[test]
-    fn german_refactor_gets_diff_output() {
+    fn german_tidy_up_is_a_refactor() {
         let intent = StructuredIntent::from_query("räum die funktion auf");
         assert_eq!(intent.task_type, TaskType::Refactor);
-        assert_eq!(intent.task_type.output_format(), OutputFormat::DiffOnly);
     }
 }
