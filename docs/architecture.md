@@ -421,7 +421,7 @@ Godot scenes in the graph.
 | [config-keys.md](reference/generated/config-keys.md) | every config key | `core/config/schema/` |
 | [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/args.rs` |
 | [env-vars.md](reference/generated/env-vars.md) | every environment variable | `core/env_vars.rs` |
-| [contracts/](contracts/) | formats and guarantees: usage ledger, graph output, knowledge policy, memory boundary, gotchas, edit-quality loop | the contract files |
+| [contracts/](contracts/) | formats and guarantees: the usage ledger, graph output, the memory boundary | the contract files |
 | [LOCK_ORDERING.md](../rust/LOCK_ORDERING.md) | every lock and its order | checked by a test |
 
 ## 13. Changing it
