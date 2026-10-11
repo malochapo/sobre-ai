@@ -9,9 +9,10 @@
 //!   (`sed -n`, `cat`, `grep -A`, …), since the agent may edit against what it
 //!   reads;
 //! - otherwise by folding what has a known shape whatever printed it, as far
-//!   as `compression_level` allows (`shell::compress::fold`): runs of one log
-//!   statement, then repeated paths in search results, then long output that
-//!   is not file content. Source text is never reshaped.
+//!   as `compression_level` allows (`shell::compress::fold`): the repeated
+//!   lines of one log statement, never a warning or an error, then repeated
+//!   paths in search results, then long output that is not file content.
+//!   Source text is never reshaped.
 //!
 //! `compression_level` below 0.2 turns the hook off. Every replaced output
 //! ends with a `[sobre: …]` line that says so and where the full output was
