@@ -5,13 +5,10 @@ Each platform has up to two builds:
 - `sobre-<target>`: everything except local embeddings. `sobre_search` ranks with BM25.
 - `sobre-dense-<target>`: adds local embeddings (dense and hybrid search, `embedding_model`). It loads ONNX Runtime at run time: run `sobre embeddings provision` once to download Microsoft's CPU runtime and the model, or set `ORT_DYLIB_PATH`. The Linux builds need glibc 2.28 or later. Intel macOS has no dense build: Microsoft ships no ONNX Runtime 1.24 for it.
 
-## Changes since v0.1.0-rc.1
+## Changes since v0.1.0-rc.2
 
-- **`sobre init` connects the hooks only.** The MCP server and the `sobre` skill are now opt-in: `init` asks in a terminal, and `sobre init --mcp` connects them in scripts. An agent that already has sobre's MCP entry keeps it. On real agent runs the MCP tools were never called, while they and the skill added about 400 tokens to every request. Zed has no hooks, so it needs `--mcp`. `sobre doctor` no longer reports a missing MCP entry as a problem.
-- **`compression_level` drives the post-run hook.** Below 0.2 it compresses nothing. From 0.2, four or more consecutive lines of one log statement keep their first and last line, with a count of the rest. From 0.4, consecutive `grep -n` results of one file print its path once. From 0.8, output over 150 lines keeps its first 60 and last 30 lines, unless the command may print source, a diff, blame, search results or a listing. This works on lines that chain several commands too. A compressed output names the file that holds it in full.
-- **The hook compresses only what it should.** It runs a command's own compressor only when sobre has one for that command (git, test runners, builds), and never compresses output a command read from a file.
-- **A smaller prefix.** The MCP server's instructions, the skill's description and four tool descriptions are shorter: connected, they add 396 tokens to a session's first request instead of 922.
-- `sobre --version`, `doctor` and the MCP server report the release's own version.
+- **Semantic search uses the local embeddings by default.** In the build with embeddings, `sobre_search` with `action="semantic"` and no `mode` now ranks by hybrid (BM25 and embeddings) once the model is installed, and by BM25 otherwise. rc.2 ranked by BM25 unless the agent asked for `mode`, so installing the model changed nothing.
+- **The dense index stays current for a whole session.** On large projects, after the first dense or hybrid search, the next one reported "dense index not built" and fell back to BM25. A memory trim of the cached BM25 index made the embeddings look stale. The trim is gone.
+- **A failed model download says why.** `sobre embeddings provision` named the model as lacking files when a download failed; it now says which file could not be downloaded and prints the error, a network error for example.
 
 What sobre costs and saves on real agent runs is measured in [sobre-bench](https://github.com/malochapo/sobre-bench).
-
