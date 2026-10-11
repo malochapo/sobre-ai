@@ -117,13 +117,6 @@ pub struct BM25Index {
     /// Term → number of chunks that hold it.
     pub doc_freqs: HashMap<String, usize>,
     pub files: HashMap<String, IndexedFileState>,
-    /// True once `shrink_resident_content_to_snippet` has trimmed each chunk's
-    /// `content` further. Resident-only RAM-saving state: never persisted
-    /// (`skip`), so the on-disk index keeps the longer content and a reload
-    /// always starts as `false`. Guards the embedding pass against re-embedding
-    /// trimmed bodies (see `ensure_embeddings`).
-    #[serde(default, skip)]
-    pub content_truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,7 +189,6 @@ impl BM25Index {
             doc_count: 0,
             doc_freqs: HashMap::new(),
             files: HashMap::new(),
-            content_truncated: false,
         }
     }
 
@@ -221,44 +213,6 @@ impl BM25Index {
         let files_size: usize = self.files.keys().map(|k| k.len() + 24).sum();
         let freqs_size: usize = self.doc_freqs.keys().map(|k| k.len() + 16).sum();
         chunks_size + inverted_size + files_size + freqs_size
-    }
-
-    /// Shrinks each resident chunk's `content` to its first `keep_lines` lines,
-    /// reclaiming RAM once the embedding pass has consumed the longer bodies.
-    /// The search path only ever reads `content.lines().take(5)` for snippets,
-    /// so the trimmed copy is complete for BM25/dense/hybrid result rendering.
-    ///
-    /// Chunks already hold at most 10 lines (see `build::SNIPPET_LINES`); this
-    /// tightens that further. Sets `content_truncated` so a later
-    /// `ensure_embeddings` against this same resident index skips re-embedding
-    /// (which would otherwise feed trimmed bodies to the embedder).
-    ///
-    /// Idempotent and only ever shrinks: chunks shorter than `keep_lines` are
-    /// left untouched.
-    #[cfg(any(test, feature = "dense"))]
-    pub fn shrink_resident_content_to_snippet(&mut self, keep_lines: usize) {
-        let before = self.memory_usage_bytes();
-        for chunk in &mut self.chunks {
-            // Cheap line-count gate: only allocate a new string when the body is
-            // actually longer than the snippet window.
-            if chunk.content.lines().nth(keep_lines).is_some() {
-                let trimmed: String = chunk
-                    .content
-                    .lines()
-                    .take(keep_lines)
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                chunk.content = trimmed;
-                // Reclaim the spare capacity left by the larger original body.
-                chunk.content.shrink_to_fit();
-            }
-        }
-        self.content_truncated = true;
-        let after = self.memory_usage_bytes();
-        tracing::debug!(
-            "[bm25] shrank resident content to {keep_lines} lines/chunk, freed ~{:.1}MB",
-            before.saturating_sub(after) as f64 / 1_048_576.0
-        );
     }
 
     /// Builds an index from explicit chunks (unit tests; avoids filesystem walking).

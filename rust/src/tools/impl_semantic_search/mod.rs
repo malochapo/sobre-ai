@@ -122,38 +122,9 @@ pub(crate) fn handle(
                 let cfg = crate::core::hybrid_search::HybridConfig::default();
                 hybrid_ranked(query, root, &index, top_k, &filter, &cfg)
             };
-            let out = match ranked {
+            match ranked {
                 Ok(r) => render_ranked(mode, query, &index, top_k, compact, &r),
                 Err(e) => format!("ERR: {e}"),
-            };
-            shrink_resident_after_embedding(root, index);
-            out
-        }
-    }
-}
-
-/// Reclaim the RAM held by full chunk bodies in the resident BM25 cache once the
-/// dense/hybrid embedding pass has consumed and persisted them. Drops this
-/// handler's `Arc` clone first so the cache becomes the sole owner and the trim
-/// is zero-copy (see `bm25_cache::shrink_resident_to_snippet`).
-///
-/// `keep_lines = 5` matches the snippet window used everywhere results are
-/// rendered (`bm25_index::search`, `dense_backend`, `hybrid_search`). Only fires
-/// when embeddings are actually built (feature-gated); a BM25-only fallback build
-/// must keep full bodies for a later real embedding pass.
-#[cfg(feature = "dense")]
-fn shrink_resident_after_embedding(root: &Path, index: std::sync::Arc<BM25Index>) {
-    {
-        // Release our clone so the cache is the sole Arc owner; otherwise the
-        // in-place trim is skipped and retried on the next search.
-        drop(index);
-        if let Some(cache) = get_thread_cache() {
-            let freed = crate::core::bm25_cache::shrink_resident_to_snippet(&cache, root, 5);
-            if freed > 0 {
-                tracing::info!(
-                    "[bm25_cache] reclaimed ~{:.1}MB of resident chunk bodies post-embedding",
-                    freed as f64 / 1_048_576.0
-                );
             }
         }
     }
