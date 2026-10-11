@@ -74,15 +74,19 @@ Each call starts an empty session, as a new server does. Exits 1 when the
 tool reports an error, 2 on a usage error.")]
     Call(CallArgs),
 
-    /// Connect agents to sobre: MCP entry, hooks, skill
+    /// Connect agents to sobre: hooks, and on request the MCP server and skill
     #[command(after_help = "\
-Without an agent: every installed agent gets its MCP entry, hooks and skill,
-and init asks once about the proxy and, in a build with embeddings, about
-downloading the model. With agents (claude, codex, copilot, cursor, gemini,
-opencode, vscode, windsurf, zed): only those, installed or not, with no
-question. Never edits shell rc files. Edits keep comments and key order; a
-file sobre edits for the first time is copied to <file>.sobre.bak. Exits 1
-when an agent could not be connected. Undo it all: sobre uninstall.")]
+Without an agent: every installed agent. With agents (claude, codex, copilot,
+cursor, gemini, opencode, vscode, windsurf, zed): only those, installed or
+not. Each gets its hooks. The MCP server and the skill add about 400 tokens
+to every request: init connects them with --mcp or on a yes to its question
+(asked in a terminal while an agent lacks them), and refreshes them where an
+agent has them. Zed has no hooks, so without them it gets nothing. Without an
+agent named, init also asks once about the proxy and, in a build with
+embeddings, about downloading the model. Never edits shell rc files. Edits
+keep comments and key order; a file sobre edits for the first time is copied
+to <file>.sobre.bak. Exits 1 when an agent could not be connected. Undo it
+all: sobre uninstall.")]
     Init(InitArgs),
 
     /// Check the install: binary, config, agents, hooks, proxy, data
@@ -185,6 +189,9 @@ pub(crate) struct InitArgs {
     /// The agents to connect
     #[arg(value_name = "agent", value_parser = agent)]
     pub(crate) agents: Vec<&'static str>,
+    /// Also connect the MCP server and the skill
+    #[arg(long)]
+    pub(crate) mcp: bool,
     /// List the files init would create or change, and write nothing
     #[arg(long)]
     pub(crate) check: bool,
@@ -537,6 +544,13 @@ mod tests {
             panic!("init did not parse");
         };
         assert_eq!(init.named(), ["claude", "codex"]);
+        assert!(!init.mcp, "the MCP server is connected only on request");
+        assert!(matches!(
+            parse(&["init", "zed", "--mcp"]),
+            Ok(Cli {
+                command: Some(Command::Init(InitArgs { mcp: true, .. })),
+            })
+        ));
         assert!(parse(&["init", "--agent"]).is_err());
         assert_eq!(
             parse(&["init", "notanagent"]).err(),

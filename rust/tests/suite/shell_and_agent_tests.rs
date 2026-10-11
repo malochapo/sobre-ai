@@ -255,7 +255,7 @@ fn hook_cursor_wraps_known_commands_without_a_permission_decision() {
 }
 
 #[test]
-fn agent_init_codex_installs_hooks_and_skill() {
+fn agent_init_codex_mcp_installs_hooks_and_skill() {
     let tmpdir = tempfile::tempdir().expect("create tempdir");
     let home = tmpdir.path();
     let codex_dir = home.join(".codex");
@@ -270,7 +270,7 @@ fn agent_init_codex_installs_hooks_and_skill() {
         ("USERPROFILE", home_str.as_str()),
     ];
 
-    let (_stdout, stderr, code) = run_with_env(&["init", "--agent", "codex"], &envs, None);
+    let (_stdout, stderr, code) = run_with_env(&["init", "--agent", "codex", "--mcp"], &envs, None);
     assert_eq!(code, 0, "codex init should succeed: {stderr}");
 
     for name in ["AGENTS.md", "SOBRE.md"] {
@@ -281,7 +281,7 @@ fn agent_init_codex_installs_hooks_and_skill() {
     }
     assert!(
         codex_dir.join("skills/sobre/SKILL.md").exists(),
-        "init installs the sobre skill for Codex"
+        "init --mcp installs the sobre skill for Codex"
     );
 
     let hooks: serde_json::Value =

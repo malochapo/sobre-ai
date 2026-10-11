@@ -4,14 +4,12 @@
 use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RST, YELLOW};
 
-/// The skill check, when Claude Code is installed.
+/// The skill check, when Claude Code has sobre's MCP entry: the skill is
+/// connected with the MCP server, and not without it.
 pub(crate) fn claude_skill_outcome() -> Option<Outcome> {
     let home = dirs::home_dir()?;
-    let claude_detected = crate::core::editor_registry::claude_mcp_json_path(&home).exists()
-        || crate::core::editor_registry::claude_state_dir(&home).exists()
-        || claude_binary_exists();
-
-    if !claude_detected {
+    let config = std::fs::read_to_string(crate::core::editor_registry::claude_mcp_json_path(&home));
+    if !config.is_ok_and(|c| has_sobre_mcp_entry(&c)) {
         return None;
     }
 

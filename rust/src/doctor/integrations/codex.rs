@@ -6,11 +6,7 @@ use super::*;
 
 pub(crate) fn check_codex_toml(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
-        return NamedCheck {
-            name: "Codex MCP".to_string(),
-            ok: false,
-            detail: format!("missing ({})", path.display()),
-        };
+        return mcp_not_connected("Codex MCP");
     }
     let content = read_effective_codex_config(path);
     let parsed: Result<toml::Value, _> = toml::from_str(&content);
@@ -21,12 +17,13 @@ pub(crate) fn check_codex_toml(path: &std::path::Path, binary: &str) -> NamedChe
             detail: format!("invalid TOML ({})", path.display()),
         };
     };
-    let cmd = v
-        .get("mcp_servers")
-        .and_then(|t| t.get("sobre"))
-        .and_then(|t| t.get("command"))
-        .and_then(|c| c.as_str());
-    let ok = cmd.is_some_and(|c| cmd_matches_expected(c, binary));
+    let Some(entry) = v.get("mcp_servers").and_then(|t| t.get("sobre")) else {
+        return mcp_not_connected("Codex MCP");
+    };
+    let ok = entry
+        .get("command")
+        .and_then(|c| c.as_str())
+        .is_some_and(|c| cmd_matches_expected(c, binary));
     NamedCheck {
         name: "Codex MCP".to_string(),
         ok,
@@ -127,7 +124,7 @@ pub(crate) fn codex_desktop_note() -> NamedCheck {
     NamedCheck {
         name: "Codex compression".to_string(),
         ok: true,
-        detail: "sobre installs only observe hooks for Codex: shell output is compressed when the agent runs it through sobre_shell, on every surface (CLI/Desktop/Cloud)".to_string(),
+        detail: "sobre installs only observe hooks for Codex: shell output is compressed when the agent runs it through sobre_shell (MCP: sobre init codex --mcp), on every surface (CLI/Desktop/Cloud)".to_string(),
     }
 }
 
