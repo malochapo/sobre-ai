@@ -4,13 +4,19 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+/// The MCP check of an agent config without sobre's entry: the MCP server
+/// is opt-in, so that is no fault.
+pub(crate) fn mcp_not_connected(name: &str) -> NamedCheck {
+    NamedCheck {
+        name: name.to_string(),
+        ok: true,
+        detail: "not connected (opt-in: sobre init --mcp)".to_string(),
+    }
+}
+
 pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
-        return NamedCheck {
-            name: "MCP config".to_string(),
-            ok: false,
-            detail: format!("missing ({})", path.display()),
-        };
+        return mcp_not_connected("MCP config");
     }
     let content = std::fs::read_to_string(path).unwrap_or_default();
     let parsed = crate::core::jsonc::parse_jsonc(&content).ok();
@@ -26,11 +32,7 @@ pub(crate) fn check_mcp_json(path: &std::path::Path, binary: &str) -> NamedCheck
     let entry = v.get("mcpServers").and_then(|m| m.get("sobre")).cloned();
 
     let Some(e) = entry else {
-        return NamedCheck {
-            name: "MCP config".to_string(),
-            ok: false,
-            detail: format!("sobre missing ({})", path.display()),
-        };
+        return mcp_not_connected("MCP config");
     };
 
     let cmd_ok = e
@@ -151,7 +153,7 @@ pub(crate) fn skill_not_applicable_note() -> NamedCheck {
     NamedCheck {
         name: "Skill".to_string(),
         ok: true,
-        detail: "N/A — Windsurf has no skills; it gets the MCP instructions".to_string(),
+        detail: "N/A — Windsurf has no skills".to_string(),
     }
 }
 

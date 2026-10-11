@@ -139,6 +139,27 @@ fn nothing_installed_fails_and_suggests_setup() {
     );
 }
 
+/// No sobre MCP entry anywhere is the default, not a fault.
+#[test]
+#[serial_test::serial(claude_config_dir)]
+fn mcp_config_passes_without_an_entry() {
+    let home = crate::setup::TestHome::new();
+    let none = mcp_config_check(home.path());
+    assert!(none.ok, "{}", none.line);
+    assert!(none.line.contains("sobre init --mcp"), "{}", none.line);
+
+    home.write(
+        ".claude/.claude.json",
+        r#"{"mcpServers": {"sobre": {"command": "sobre"}}}"#,
+    );
+    let found = mcp_config_check(home.path());
+    assert!(
+        found.ok && found.line.contains("Claude Code"),
+        "{}",
+        found.line
+    );
+}
+
 #[test]
 fn unknown_config_keys_flags_typos_only() {
     let raw = "compresion_level = 0.5\nshell_timeout_secs = 30\n\n\

@@ -1,6 +1,7 @@
 //! `sobre init --repair` on a fresh machine with detected but unconfigured
-//! agents leaves `doctor` fully green: no check sends the user back to
-//! `sobre init` right after it ran.
+//! agents leaves `doctor` fully green, with the hooks alone and with the MCP
+//! server too: no check sends the user back to `sobre init` right after it
+//! ran.
 
 use std::process::Command;
 
@@ -49,37 +50,39 @@ fn init_repair_leaves_doctor_fully_green() {
         ("TERM".into(), "dumb".into()),
     ];
     std::fs::create_dir_all(home.join("cfg")).unwrap();
-    let init = Command::new(bin)
-        .args(["init", "--repair"])
-        .current_dir(&proj)
-        .env_clear()
-        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .output()
-        .expect("init spawn");
-    assert!(
-        init.status.success(),
-        "init --repair must exit 0; stderr:\n{}",
-        String::from_utf8_lossy(&init.stderr)
-    );
+    for init_args in [&["init", "--repair"][..], &["init", "--repair", "--mcp"]] {
+        let init = Command::new(bin)
+            .args(init_args)
+            .current_dir(&proj)
+            .env_clear()
+            .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .output()
+            .expect("init spawn");
+        assert!(
+            init.status.success(),
+            "{init_args:?} must exit 0; stderr:\n{}",
+            String::from_utf8_lossy(&init.stderr)
+        );
 
-    let doctor = Command::new(bin)
-        .arg("doctor")
-        .current_dir(&proj)
-        .env_clear()
-        .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .output()
-        .expect("doctor spawn");
-    let stdout = String::from_utf8_lossy(&doctor.stdout);
+        let doctor = Command::new(bin)
+            .arg("doctor")
+            .current_dir(&proj)
+            .env_clear()
+            .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+            .output()
+            .expect("doctor spawn");
+        let stdout = String::from_utf8_lossy(&doctor.stdout);
 
-    // No check may send the user back to init right after it ran.
-    assert!(
-        !stdout.contains("run: sobre init"),
-        "doctor must not point back to init right after it ran; doctor said:\n{stdout}"
-    );
+        // No check may send the user back to init right after it ran.
+        assert!(
+            !stdout.contains("run: sobre init"),
+            "doctor must not point back to init after {init_args:?}; doctor said:\n{stdout}"
+        );
 
-    // doctor is a health gate: exit 0 == every counted check green.
-    assert!(
-        doctor.status.success(),
-        "doctor must be fully green right after init --repair; output:\n{stdout}"
-    );
+        // doctor is a health gate: exit 0 == every counted check green.
+        assert!(
+            doctor.status.success(),
+            "doctor must be fully green right after {init_args:?}; output:\n{stdout}"
+        );
+    }
 }

@@ -221,8 +221,10 @@ file read a labelled stub; the original is kept as above. It re-reads
 ### `init` and `uninstall`
 
 **`init`** (`setup/`) runs three steps for each agent:
-1. writes the MCP entry (`core/editor_registry/`);
-2. installs the hooks and the skill (`hooks/`, `setup/skill.rs`);
+1. with `--mcp`, on a yes to its question, or where the agent already has
+   them: writes the MCP entry (`core/editor_registry/`) and the skill
+   (`setup/skill.rs`), which add about 400 tokens to every request;
+2. installs the hooks (`hooks/`);
 3. points the agent at the proxy when it is enabled (`proxy_setup/`).
 
 The first edit of an existing file copies it to `<file>.sobre.bak` (`config_io.rs`).
@@ -343,7 +345,7 @@ the data and state directories:
 | Semantic search | BM25 | BM25, dense or hybrid (`sobre_search`'s `mode`) |
 | `tools/list` | 15 tools | the same, plus `sobre_search`'s `mode` |
 | ONNX Runtime | — | loaded at run time: `ORT_DYLIB_PATH`, else the copy `embeddings provision` installed, else the system's |
-| `init` | asks about the proxy | also asks about downloading the model |
+| `init` | asks about the MCP server and the proxy | also asks about downloading the model |
 
 **Other features:**
 - `tree-sitter` (default): 27 grammars.

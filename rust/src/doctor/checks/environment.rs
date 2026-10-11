@@ -12,61 +12,34 @@ pub(crate) fn mcp_config_outcome() -> Outcome {
             line: format!("{BOLD}MCP config{RST}  {RED}could not resolve home directory{RST}"),
         };
     };
+    mcp_config_check(&home)
+}
 
-    let locations = mcp_config_locations(&home);
-    let location_names = sobre_mcp_location_names(&home);
-    let mut found: Vec<String> = Vec::new();
-    let mut exists_no_ref: Vec<String> = Vec::new();
-
-    for loc in &locations {
-        if std::fs::read_to_string(&loc.path).is_ok() {
-            if location_names.contains(loc.name) {
-                found.push(format!("{} {DIM}({}){RST}", loc.name, loc.display));
-            } else {
-                exists_no_ref.push(loc.name.to_string());
-            }
-        }
-    }
-
+/// Which agent configs hold sobre's MCP entry. None is fine: the hooks work
+/// without the MCP server, which `init` connects only on request.
+pub(crate) fn mcp_config_check(home: &std::path::Path) -> Outcome {
+    let location_names = sobre_mcp_location_names(home);
+    let mut found: Vec<String> = mcp_config_locations(home)
+        .into_iter()
+        .filter(|loc| location_names.contains(loc.name))
+        .map(|loc| format!("{} {DIM}({}){RST}", loc.name, loc.display))
+        .collect();
     found.sort();
     found.dedup();
-    exists_no_ref.sort();
-    exists_no_ref.dedup();
 
-    if !found.is_empty() {
+    if found.is_empty() {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}MCP server{RST}  {DIM}not connected (opt-in: sobre init --mcp){RST}"
+            ),
+        }
+    } else {
         Outcome {
             ok: true,
             line: format!(
                 "{BOLD}MCP config{RST}  {GREEN}sobre found in: {}{RST}",
                 found.join(", ")
-            ),
-        }
-    } else if !exists_no_ref.is_empty() {
-        let has_claude = exists_no_ref.iter().any(|n| n.starts_with("Claude Code"));
-        let cause = if has_claude {
-            format!(
-                "{DIM}(Claude Code may overwrite ~/.claude.json on startup — sobre entry missing from mcpServers){RST}"
-            )
-        } else {
-            String::new()
-        };
-        let hint = if has_claude {
-            format!("{DIM}(run: sobre doctor --fix OR sobre init --agent claude){RST}")
-        } else {
-            format!("{DIM}(run: sobre doctor --fix OR sobre init){RST}")
-        };
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP config{RST}  {YELLOW}config exists for {} but mcpServers does not contain sobre{RST}  {cause} {hint}",
-                exists_no_ref.join(", "),
-            ),
-        }
-    } else {
-        Outcome {
-            ok: false,
-            line: format!(
-                "{BOLD}MCP config{RST}  {YELLOW}no MCP config found{RST}  {DIM}(run: sobre init){RST}"
             ),
         }
     }

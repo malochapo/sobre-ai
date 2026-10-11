@@ -69,67 +69,7 @@ fn build_fix_report(quiet: bool) -> Result<crate::core::setup_report::SetupRepor
 
     let mut steps: Vec<SetupStepReport> = Vec::new();
 
-    // The connection `init` runs (MCP entry, hooks and skill), for the
-    // agents that already have sobre only: connecting another is `init`'s
-    // job.
-    let mut agents_step = SetupStepReport {
-        name: "agents".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings: Vec::new(),
-        errors: Vec::new(),
-    };
-    let connected = crate::setup::agents_with_sobre(&home);
-    let connected: Vec<&str> = connected.iter().map(String::as_str).collect();
-    let outcomes = if connected.is_empty() {
-        Vec::new()
-    } else {
-        crate::setup::connect_agents(&connected, false)
-    };
-    for outcome in outcomes {
-        if !outcome.detected {
-            continue;
-        }
-        let status = if !outcome.errors.is_empty() {
-            "error"
-        } else if outcome.files.is_empty() {
-            "already"
-        } else {
-            "repaired"
-        };
-        agents_step.ok &= outcome.errors.is_empty();
-        agents_step.items.push(SetupItem {
-            name: outcome.name.to_string(),
-            status: status.to_string(),
-            path: None,
-            note: (!outcome.files.is_empty()).then(|| {
-                outcome
-                    .files
-                    .iter()
-                    .map(|(p, _)| crate::setup::display_path(p, &home))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            }),
-        });
-        agents_step.warnings.extend(
-            outcome
-                .warnings
-                .iter()
-                .map(|w| format!("{}: {w}", outcome.name)),
-        );
-        agents_step.errors.extend(
-            outcome
-                .errors
-                .iter()
-                .map(|e| format!("{}: {e}", outcome.name)),
-        );
-    }
-    if agents_step.items.is_empty() {
-        agents_step
-            .warnings
-            .push("no agent has sobre yet; connect one with `sobre init`".to_string());
-    }
-    steps.push(agents_step);
+    steps.push(repair_agents(&home));
 
     for (name, prune_result) in [
         ("bm25_cache_prune", prune_bm25_caches()),
@@ -236,6 +176,72 @@ fn build_fix_report(quiet: bool) -> Result<crate::core::setup_report::SetupRepor
     };
 
     Ok(report)
+}
+
+/// The connection `init` runs, for the agents that already have sobre only:
+/// connecting another is `init`'s job. The hooks are refreshed, and the MCP
+/// entry and the skill where they already are: an MCP entry is never added.
+fn repair_agents(home: &std::path::Path) -> crate::core::setup_report::SetupStepReport {
+    use crate::core::setup_report::{SetupItem, SetupStepReport};
+
+    let mut agents_step = SetupStepReport {
+        name: "agents".to_string(),
+        ok: true,
+        items: Vec::new(),
+        warnings: Vec::new(),
+        errors: Vec::new(),
+    };
+    let connected = crate::setup::agents_with_sobre(home);
+    let connected: Vec<&str> = connected.iter().map(String::as_str).collect();
+    let outcomes = if connected.is_empty() {
+        Vec::new()
+    } else {
+        crate::setup::connect_agents(&connected, crate::setup::Mcp::KeepExisting, false)
+    };
+    for outcome in outcomes {
+        if !outcome.detected {
+            continue;
+        }
+        let status = if !outcome.errors.is_empty() {
+            "error"
+        } else if outcome.files.is_empty() {
+            "already"
+        } else {
+            "repaired"
+        };
+        agents_step.ok &= outcome.errors.is_empty();
+        agents_step.items.push(SetupItem {
+            name: outcome.name.to_string(),
+            status: status.to_string(),
+            path: None,
+            note: (!outcome.files.is_empty()).then(|| {
+                outcome
+                    .files
+                    .iter()
+                    .map(|(p, _)| crate::setup::display_path(p, home))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            }),
+        });
+        agents_step.warnings.extend(
+            outcome
+                .warnings
+                .iter()
+                .map(|w| format!("{}: {w}", outcome.name)),
+        );
+        agents_step.errors.extend(
+            outcome
+                .errors
+                .iter()
+                .map(|e| format!("{}: {e}", outcome.name)),
+        );
+    }
+    if agents_step.items.is_empty() {
+        agents_step
+            .warnings
+            .push("no agent has sobre yet; connect one with `sobre init`".to_string());
+    }
+    agents_step
 }
 
 /// Knowledge stores whose project root is not on disk, listed and never
@@ -376,7 +382,38 @@ fn dir_size(path: &std::path::Path) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{orphaned_knowledge_step, prune_bm25_caches, prune_graph_caches};
+    use super::{orphaned_knowledge_step, prune_bm25_caches, prune_graph_caches, repair_agents};
+
+    /// The hooks are refreshed everywhere, the MCP entry and the skill where
+    /// the entry is, and an MCP entry is added nowhere.
+    #[test]
+    #[serial_test::serial(claude_config_dir)]
+    fn repair_keeps_the_mcp_entry_where_it_is_and_adds_none() {
+        let home = crate::setup::TestHome::new();
+        home.write(
+            ".claude/.claude.json",
+            r#"{"mcpServers": {"sobre": {"command": "/old/sobre"}}}"#,
+        );
+        home.write(
+            ".cursor/mcp.json",
+            r#"{"mcpServers": {"other": {"command": "x"}}}"#,
+        );
+        home.write(
+            ".cursor/hooks.json",
+            r#"{"version": 1, "hooks": {"preToolUse": [{"matcher": "Shell", "command": "/old/sobre hook cursor"}]}}"#,
+        );
+
+        let step = repair_agents(home.path());
+        assert!(step.ok, "{:?}", step.errors);
+
+        let binary = crate::core::portable_binary::resolve_portable_binary();
+        assert_eq!(home.mcp_command(".claude/.claude.json"), Some(binary));
+        assert!(crate::setup::skill::is_current("claude", home.path()));
+        assert_eq!(home.mcp_command(".cursor/mcp.json"), None);
+        assert!(!home.path().join(".cursor/skills/sobre").exists());
+        let hooks = std::fs::read_to_string(home.path().join(".cursor/hooks.json")).unwrap();
+        assert!(!hooks.contains("/old/sobre"), "{hooks}");
+    }
 
     /// A knowledge store whose project is not on disk is reported and kept.
     #[test]

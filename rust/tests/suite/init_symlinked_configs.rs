@@ -1,6 +1,7 @@
-//! `init` writes through a symlinked agent config to its target and keeps the
-//! symlink: dotfiles users link `~/.claude.json`, `~/.codex/config.toml`, …
-//! into a repository they manage. Real symlinks, isolated `$HOME`.
+//! `init --mcp` writes through a symlinked agent config to its target and
+//! keeps the symlink: dotfiles users link `~/.claude.json`,
+//! `~/.codex/config.toml`, … into a repository they manage. Real symlinks,
+//! isolated `$HOME`.
 //!
 //! Unix-only: `$HOME`-override + POSIX symlinks. On Windows `dirs::home_dir()`
 //! ignores the env var and junction semantics differ.
@@ -52,7 +53,7 @@ fn run_init(sb: &Sandbox, agent: &str) -> std::process::Output {
         std::env::var("PATH").unwrap_or_default()
     );
     Command::new(env!("CARGO_BIN_EXE_sobre"))
-        .args(["init", "--agent", agent])
+        .args(["init", "--agent", agent, "--mcp"])
         .env("HOME", &sb.home)
         .env("SOBRE_DATA_DIR", &sb.data)
         .env("SOBRE_CONFIG_DIR", &sb.data)
@@ -79,7 +80,7 @@ fn claude_json_symlink_is_written_through() {
     let out = run_init(&sb, "claude");
     assert!(
         out.status.success(),
-        "init --agent claude exit; stderr:\n{}",
+        "init --agent claude --mcp exit; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
 
@@ -118,7 +119,7 @@ fn codex_config_symlink_is_written_through() {
     let out = run_init(&sb, "codex");
     assert!(
         out.status.success(),
-        "init --agent codex exit; stderr:\n{}",
+        "init --agent codex --mcp exit; stderr:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
 

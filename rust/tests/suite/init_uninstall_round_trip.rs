@@ -1,6 +1,6 @@
 //! `init` then `uninstall` gives the HOME back as it was: no file, directory
-//! or backup left behind, even after `init` ran twice and once more from a
-//! binary that moved. Runs the real binary in an isolated HOME, with no
+//! or backup left behind, even after `init --mcp`, then `init` (which keeps
+//! the MCP entries), and once more from a binary that moved. Runs the real binary in an isolated HOME, with no
 //! `claude` CLI on the PATH and no sobre or XDG variable from the caller.
 #![cfg(unix)]
 
@@ -79,7 +79,7 @@ fn init_twice_then_moved_binary_then_uninstall_leaves_home_as_it_was() {
     std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
     std::fs::copy(&installed, &moved).unwrap();
 
-    run(&installed, &home, &["init", "--repair"]);
+    run(&installed, &home, &["init", "--repair", "--mcp"]);
     run(&installed, &home, &["init", "--repair"]);
     run(&moved, &home, &["init", "--repair"]);
     run(&moved, &home, &["uninstall", "--keep-binary"]);
