@@ -33,7 +33,7 @@ pub(crate) fn provision(force: bool) -> Result<(), String> {
         println!("Installed: {}", path.display());
         println!("Fetching the embedding model from HuggingFace…");
         crate::core::embeddings::EmbeddingEngine::ensure_downloaded()
-            .map_err(|e| format!("model download failed: {e}"))?;
+            .map_err(|e| format!("model download failed: {e:#}"))?;
         println!("Model installed.");
         println!(
             "Embeddings now work — semantic search picks this runtime up automatically \
