@@ -83,8 +83,6 @@ src/
 
 skill/SKILL.md          the `sobre` skill, embedded in the binary
 tests/                  integration suites
-benches/                latency of the output compressor, the token counter and
-                        sobre_search (time, not savings)
 ```
 
 How the parts fit at run time is in
