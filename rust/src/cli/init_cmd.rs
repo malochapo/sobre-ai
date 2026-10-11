@@ -4,11 +4,15 @@ use crate::cli::args::InitArgs;
 
 /// `sobre init`: connect sobre to this machine's agents.
 ///
-/// Without a named agent and in a terminal, it asks about the proxy (it sees
-/// every request, so turning it on is a real decision) until the answer is on
-/// record, and, in a build with embeddings, about downloading the model while
-/// it is missing. Everything else takes its default and is changed afterwards
-/// through `sobre config`.
+/// Every agent gets the hooks. The MCP server and the skill add about 400
+/// tokens to every request, so they are connected with `--mcp`, on a yes to
+/// the question asked in a terminal while an agent lacks them, and refreshed
+/// where an agent already has sobre's MCP entry. Without a named agent and in
+/// a terminal, it also asks about the proxy (it sees every request, so turning
+/// it on is a real decision) until the answer is on record, and, in a build
+/// with embeddings, about downloading the model while it is missing.
+/// Everything else takes its default and is changed afterwards through
+/// `sobre config`.
 pub(crate) fn cmd_init(args: &InitArgs) {
     // An unknown agent (a typo) exits 2 when the line is parsed: running on
     // would connect every agent.
@@ -18,7 +22,13 @@ pub(crate) fn cmd_init(args: &InitArgs) {
 
     // `--repair` and `--json` are the machine entry points: no prompt, and a
     // non-zero exit when anything failed. `--check` writes nothing.
-    if !check && !repair && !json && named.is_empty() {
+    let ask = !check && !repair && !json;
+    let mcp = if args.mcp || (ask && ask_about_mcp(&named)) {
+        crate::setup::Mcp::Connect
+    } else {
+        crate::setup::Mcp::KeepExisting
+    };
+    if ask && named.is_empty() {
         ask_about_proxy();
         ask_about_embeddings();
     }
@@ -33,7 +43,7 @@ pub(crate) fn cmd_init(args: &InitArgs) {
             }
         );
     }
-    let report = crate::setup::run_init(&named, check);
+    let report = crate::setup::run_init(&named, mcp, check);
     if json {
         crate::outln!(
             "{}",
@@ -43,6 +53,33 @@ pub(crate) fn cmd_init(args: &InitArgs) {
     if !report.success {
         std::process::exit(1);
     }
+}
+
+/// The MCP question: whether to connect the MCP server and the skill besides
+/// the hooks. Asked in a terminal while an agent about to be connected lacks
+/// sobre's MCP entry; the answer is not recorded, and an agent that has the
+/// entry keeps it.
+fn ask_about_mcp(named: &[&str]) -> bool {
+    use std::io::Write;
+
+    if crate::shell::is_non_interactive() || !crate::setup::any_lacks_mcp(named) {
+        return false;
+    }
+
+    crate::outln!();
+    crate::outln!("  sobre's MCP tools (sobre_read, sobre_search, …) and its skill add");
+    crate::outln!("  about 400 tokens to every request. The hooks work without them.");
+    crate::outln!();
+    print!("  Connect them too? [y/N] ");
+    let _ = std::io::stdout().flush();
+
+    let mut input = String::new();
+    let _ = std::io::stdin().read_line(&mut input);
+    let yes = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
+    if !yes {
+        crate::outln!("  Skipped. Add them later with `sobre init --mcp`.");
+    }
+    yes
 }
 
 /// The proxy question. Skipped once the choice is on record, and without a

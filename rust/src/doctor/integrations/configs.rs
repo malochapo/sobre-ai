@@ -5,11 +5,7 @@ use super::*;
 
 pub(crate) fn check_zed_settings(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
-        return NamedCheck {
-            name: "Zed config".to_string(),
-            ok: false,
-            detail: format!("missing ({})", path.display()),
-        };
+        return mcp_not_connected("Zed config");
     }
     let content = std::fs::read_to_string(path).unwrap_or_default();
     let parsed = crate::core::jsonc::parse_jsonc(&content).ok();
@@ -25,11 +21,7 @@ pub(crate) fn check_zed_settings(path: &std::path::Path, binary: &str) -> NamedC
         .and_then(|m| m.get("sobre"))
         .cloned();
     let Some(e) = entry else {
-        return NamedCheck {
-            name: "Zed config".to_string(),
-            ok: false,
-            detail: format!("sobre missing ({})", path.display()),
-        };
+        return mcp_not_connected("Zed config");
     };
 
     let cmd_ok = e
@@ -50,11 +42,7 @@ pub(crate) fn check_zed_settings(path: &std::path::Path, binary: &str) -> NamedC
 
 pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
-        return NamedCheck {
-            name: "VS Code MCP".to_string(),
-            ok: false,
-            detail: format!("missing ({})", path.display()),
-        };
+        return mcp_not_connected("VS Code MCP");
     }
     let content = std::fs::read_to_string(path).unwrap_or_default();
     let parsed = crate::core::jsonc::parse_jsonc(&content).ok();
@@ -66,11 +54,7 @@ pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str) -> NamedChe
         };
     };
     let Some(e) = v.get("servers").and_then(|m| m.get("sobre")) else {
-        return NamedCheck {
-            name: "VS Code MCP".to_string(),
-            ok: false,
-            detail: format!("sobre missing ({})", path.display()),
-        };
+        return mcp_not_connected("VS Code MCP");
     };
 
     let ty_ok = e.get("type").and_then(|t| t.as_str()) == Some("stdio");
@@ -93,11 +77,7 @@ pub(crate) fn check_vscode_mcp(path: &std::path::Path, binary: &str) -> NamedChe
 
 pub(crate) fn check_copilot_cli_mcp(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
-        return NamedCheck {
-            name: "Copilot CLI MCP".to_string(),
-            ok: false,
-            detail: format!("missing ({})", path.display()),
-        };
+        return mcp_not_connected("Copilot CLI MCP");
     }
     let content = std::fs::read_to_string(path).unwrap_or_default();
     let parsed = crate::core::jsonc::parse_jsonc(&content).ok();
@@ -109,11 +89,7 @@ pub(crate) fn check_copilot_cli_mcp(path: &std::path::Path, binary: &str) -> Nam
         };
     };
     let Some(e) = v.get("mcpServers").and_then(|m| m.get("sobre")) else {
-        return NamedCheck {
-            name: "Copilot CLI MCP".to_string(),
-            ok: false,
-            detail: format!("sobre missing in mcpServers ({})", path.display()),
-        };
+        return mcp_not_connected("Copilot CLI MCP");
     };
 
     let cmd_ok = e
@@ -135,11 +111,7 @@ pub(crate) fn check_copilot_cli_mcp(path: &std::path::Path, binary: &str) -> Nam
 
 pub(crate) fn check_opencode_config(path: &std::path::Path, binary: &str) -> NamedCheck {
     if !path.exists() {
-        return NamedCheck {
-            name: "OpenCode MCP".to_string(),
-            ok: false,
-            detail: format!("missing ({})", path.display()),
-        };
+        return mcp_not_connected("OpenCode MCP");
     }
     let content = std::fs::read_to_string(path).unwrap_or_default();
     let parsed = crate::core::jsonc::parse_jsonc(&content).ok();
@@ -151,11 +123,7 @@ pub(crate) fn check_opencode_config(path: &std::path::Path, binary: &str) -> Nam
         };
     };
     let Some(e) = v.get("mcp").and_then(|m| m.get("sobre")) else {
-        return NamedCheck {
-            name: "OpenCode MCP".to_string(),
-            ok: false,
-            detail: format!("sobre missing ({})", path.display()),
-        };
+        return mcp_not_connected("OpenCode MCP");
     };
 
     let cmd = e

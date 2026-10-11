@@ -78,7 +78,7 @@ pub(super) fn sobre_version_from_path() -> Outcome {
         .clone()
         .unwrap_or_else(|| std::env::current_exe().unwrap_or_else(|_| "sobre".into()));
 
-    let v = env!("CARGO_PKG_VERSION");
+    let v = crate::VERSION;
     let note = match std::env::current_exe() {
         Ok(exe) if exe == bin => format!("{DIM}(this binary){RST}"),
         Ok(_) | Err(_) => format!("{DIM}(resolved: {}){RST}", bin.display()),

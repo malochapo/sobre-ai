@@ -1,6 +1,6 @@
 ---
 name: sobre
-description: How to work through sobre's sobre_* MCP tools — orienting in a codebase, reading files at the right granularity, searching, editing by anchors, running shell commands with compressed output, getting exact content back, and keeping memory across sessions. Use when the sobre_* tools are available and you are exploring, reading, searching, editing or running commands in a repository.
+description: How to use the sobre_* MCP tools to orient, read at the right granularity, search, edit by anchors, run commands and get exact content back.
 ---
 
 # sobre

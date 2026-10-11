@@ -1,5 +1,6 @@
 mod classification;
 pub(crate) mod engine;
+pub(crate) mod fold;
 mod passthrough;
 #[cfg(test)]
 mod tests;
@@ -12,6 +13,7 @@ pub use engine::{compress_if_beneficial_pub, reaches_pattern_table};
 pub(super) use classification::is_excluded_command;
 pub(super) use engine::compress_and_measure;
 
+pub(crate) use classification::has_in_place_flag;
 pub use classification::has_structural_output;
 pub use classification::is_verbatim_output;
 

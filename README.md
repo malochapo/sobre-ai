@@ -141,23 +141,35 @@ lists the code that does not yet meet the sixth rule.
 sobre init               # every agent it detects
 sobre init claude        # one agent: claude, codex, copilot, cursor, gemini,
                          # opencode, vscode, windsurf or zed
+sobre init --mcp         # the MCP server and the skill too
 sobre init --check       # what init would change; writes nothing
 ```
 
-Run with no agent named, in a terminal, `init` asks up to two questions:
+`init` connects the hooks. sobre's MCP tools and its skill add about 400
+tokens to every request, and the hooks work without them, so `init` connects
+them only with `--mcp` or when you say yes; an agent that already has sobre's
+MCP entry keeps it, refreshed. Zed has no hooks: without `--mcp`, `init`
+writes nothing for it.
 
-- whether to turn on the local [proxy](#proxy), until you have answered once;
-- in a build with embeddings, while they are missing, whether to download ONNX
-  Runtime and the embedding model now (about 120 MB).
+In a terminal, `init` asks:
 
-Then restart the agent, or reload its MCP servers, so it starts `sobre`.
+- while an agent it connects lacks sobre's MCP entry, whether to connect the
+  MCP server and the skill too (unless you passed `--mcp`);
+- with no agent named, whether to turn on the local [proxy](#proxy), until you
+  have answered once;
+- with no agent named, in a build with embeddings, while they are missing,
+  whether to download ONNX Runtime and the embedding model now (about 120 MB).
+
+Then restart the agent so it loads the hooks, and starts `sobre` when the MCP
+server is connected.
 
 ### What `init` writes
 
 Everything goes into user-level configuration, never into a repository. `init`
 writes nothing into your shell rc files or your own instruction files
-(`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, …): the agent learns how to use the
-tools from the MCP server instructions, and from the skill when it opens it.
+(`CLAUDE.md`, `AGENTS.md`, `.cursor/rules`, …): with the MCP server connected,
+the agent learns how to use the tools from the MCP server instructions, and
+from the skill when it opens it.
 
 The first time `sobre` edits an existing file, it copies it to
 `<file>.sobre.bak` next to it; `uninstall` puts that copy back when `sobre`'s
@@ -165,7 +177,7 @@ entries were the only change. A file `sobre` creates gets an empty
 `<file>.sobre.bak`, so `uninstall` knows it can delete the file when nothing but
 `sobre`'s entries is left in it.
 
-| Agent | MCP server entry | Hooks | Skill |
+| Agent | MCP server entry (`--mcp`) | Hooks | Skill (`--mcp`) |
 |---|---|---|---|
 | Claude Code | `~/.claude.json` | `~/.claude/settings.json`: compress shell output, stub unchanged re-reads, session observer | `~/.claude/skills/sobre/` |
 | Codex | `~/.codex/config.toml`, or the active profile's `<name>.config.toml` | `~/.codex/hooks.json`: session observer; sets `[features] hooks = true` unless you set it | `~/.codex/skills/sobre/` |
@@ -189,10 +201,10 @@ commands:
 
 | Agent | Shell output compression |
 |---|---|
-| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy. The command itself is never changed. |
+| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy, only when a compressor made for that command owns it (git, test runners, builds, package managers, …). File content, diffs and search results stay whole, whichever command of the line printed them. The command itself is never changed. |
 | VS Code | The same, in Copilot (Agent Host) sessions, which run the Copilot CLI hooks. The Local agent runs them too but cannot replace a tool's output, so it gets none. |
 | Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `sobre -c`, only when none of the host's own command rules tells the two forms apart. |
-| Codex, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool. |
+| Codex, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool (`sobre init --mcp`). |
 
 Compressed output always ends with a `[sobre: …]` line that says so and where
 the full output was kept. `sobre` never approves, denies or blocks anything:
@@ -209,15 +221,16 @@ sobre doctor --fix            # repair the agents sobre is connected to, prune s
 
 `doctor --fix` repairs what sobre wrote in your user configuration, for the
 agents sobre is already connected to (`init` connects new ones), and lists
-what it changed. It never deletes knowledge: a store whose project is not on
-disk is listed, and you delete it by hand if the project is gone. It never
-edits files in a repository: when a project's own MCP file (`.vscode/mcp.json`,
+what it changed. It adds the MCP server to no agent: `sobre init --mcp` does.
+It never deletes knowledge: a store whose project is not on disk is listed, and
+you delete it by hand if the project is gone. It never edits files in a
+repository: when a project's own MCP file (`.vscode/mcp.json`,
 `.cursor/mcp.json`, `.github/mcp.json`, `.zed/settings.json`) also registers
 `sobre`, `doctor` names the file, and you remove the entry if you do not want
 it there.
 
-In the agent, the MCP server list shows `sobre` with 15 tools (`/mcp` in Claude
-Code). From a shell, without an agent:
+With the MCP server connected, the agent's MCP server list shows `sobre` with
+15 tools (`/mcp` in Claude Code). From a shell, without an agent:
 
 ```bash
 sobre call sobre_compose --project-root "$PWD"   # the project overview the agent gets
@@ -227,8 +240,10 @@ sobre gain                                       # what has been saved so far
 
 ## Everyday use
 
-Keep working with your agent as before: it reaches for `sobre`'s tools when they
-fit, and its native tools keep working. The 15 tools
+Keep working with your agent as before: its native tools keep working, and the
+hooks act on them where the host allows ([Shell output](#shell-output)). With
+the MCP server connected (`sobre init --mcp`), the agent also reaches for
+`sobre`'s tools when they fit. The 15 tools
 ([reference](docs/reference/generated/mcp-tools.md)):
 
 | Tool | What it does |
@@ -297,12 +312,15 @@ documents each.
 
 `compression_level` runs from 0 to 1 and defaults to 0.3. Below 0.2 it is off;
 above, it condenses the prose in tool and shell output (each condensed output
-says so), shortens the tool descriptions from 0.4, and adds an `OUTPUT STYLE`
-line to the MCP instructions that asks the agent to write its own replies more
-tersely, from "concise" to "raw-dense". When the agent keeps re-reading or
-re-running to get back what was cut (three such calls in two minutes), `sobre`
-lowers compression, says so, and goes back to the configured level once two
-minutes pass without one.
+says so) and shortens the tool descriptions from 0.4. In the post-run hook,
+output no dedicated compressor owns is folded by its shape: runs of one log
+statement at every level, a search result's repeated path from 0.4, and, from
+0.8, long output that cannot hold source (no file content, diff, blame, search
+result or listing). Source text is never reshaped. It never changes the MCP
+instructions or asks the agent to write its own replies differently. When the
+agent keeps re-reading or re-running to get back what was cut (three such calls
+in two minutes), `sobre` lowers compression, says so, and goes back to the
+configured level once two minutes pass without one.
 
 ## Local embeddings
 

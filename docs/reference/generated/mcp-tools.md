@@ -12,7 +12,6 @@ Local shadow git history of the agent's changes — separate from the user's .gi
 WORKFLOW: snapshot before+after changes to capture exactly what was modified.
 Actions: snapshot (record current state), log (list checkpoints with SHAs),
 diff from=... to=... (compare checkpoints), restore ref=... (revert files).
-ANTIPATTERN: Never touches the user's repository — completely isolated shadow history.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -28,13 +27,10 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
 
 ## `sobre_compose`
 
-PRIMARY TOOL — call FIRST for understanding code (before editing/debugging/'how does X work').
+Call first to understand code (before editing, debugging, 'how does X work').
 Omit task at session start: returns the project overview — structure, hotspots, last task, recent decisions, facts from previous sessions.
 With a task: returns ranked files with relevant symbol source inline grouped by file, and the recorded pitfalls it matches.
-Combines BM25 lexical+semantic retrieval+submodular optimization.
-ANTIPATTERN: Do NOT chain search→read→symbol — one compose replaces the whole chain.
-ANTIPATTERN: Do NOT Read files whose source compose already returned — it IS the source.
-WORKFLOW: Fire parallel sobre_read or sobre_compose for different areas.
+One call replaces a search→read→symbol chain; do not re-read files whose source it returned.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -117,12 +113,10 @@ remember value= saves one (key derived when omitted; a new value for a key repla
 
 ## `sobre_outline`
 
-WORKFLOW: call BEFORE sobre_read to map code structure (a syntax-aware table of contents).
-Accepts a FILE or a DIRECTORY (folder surface — per-file symbols). Symbols come from
-tree-sitter (27 languages, real line spans); a conservative regex fallback covers the rest.
+The symbols of a file, or of each file in a directory, with their line spans: a table of contents to read before sobre_read.
 kind=fn|method|struct|class|interface|trait|enum|impl|type|const|all filters by kind; match=<substr> filters by name
-(case-insensitive); format=json emits deterministic JSON labelling the backend per file.
-ANTIPATTERN: NOT for file content (use sobre_read) or deep understanding (use sobre_compose).
+(case-insensitive); format=json emits JSON.
+Not for file content (use sobre_read) or understanding code (use sobre_compose).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -162,7 +156,7 @@ Safe file edit. Anchored ops use line+hash from sobre_read(mode="anchored"); CON
 
 ## `sobre_read`
 
-Read source files. mode recommended — choose by intent (see `mode` below); defaults to auto when omitted.
+Read source files; `mode` picks the view by intent (auto when omitted).
 To UNDERSTAND code run sobre_compose FIRST; sobre_read after it identified files.
 anchored → edit by reference via sobre_patch (no exact-recall).
 

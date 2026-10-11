@@ -15,6 +15,25 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[unsafe(export_name = "malloc_conf")]
 pub static malloc_conf: &[u8] = b"background_thread:true,dirty_decay_ms:1000,muzzy_decay_ms:1000\0";
 
+/// The version sobre reports: `--version`, `doctor`, the MCP server info, the
+/// crash log. A release build carries its tag's version (`0.1.0-rc.2`), which
+/// the release workflow passes in at build time; any other build reports the
+/// crate's version.
+pub const VERSION: &str = match option_env!("SOBRE_RELEASE_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
+#[cfg(test)]
+mod version_tests {
+    /// A release's version is the crate version, with an `-rc.N` suffix
+    /// before the final release.
+    #[test]
+    fn the_reported_version_starts_with_the_crate_version() {
+        assert!(super::VERSION.starts_with(env!("CARGO_PKG_VERSION")));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Engine — context compression, MCP tools, agent hooks
 // ---------------------------------------------------------------------------

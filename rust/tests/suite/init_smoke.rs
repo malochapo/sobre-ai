@@ -1,5 +1,6 @@
 //! `init` and `doctor` on an isolated HOME: the JSON reports, where the
-//! Claude Code entry lands, the skill, and the agent files left alone.
+//! Claude Code entry lands with `--mcp`, the skill, and the agent files left
+//! alone.
 
 use std::process::Command;
 
@@ -105,24 +106,27 @@ fn init_and_doctor_json_reports_and_wiring() {
     let new_path = format!("{}{sep}{}", bin_dir.to_string_lossy(), old_path);
     envs.push(("PATH", new_path.as_str()));
 
-    // init --check --json says it is a preview, and writes nothing.
-    let (code, out) = run_json(
-        bin,
-        &["init", "--check", "--json", "--agent", "claude"],
-        &envs,
-    );
-    assert_eq!(code, 0, "init --check exit code");
-    let preview: SetupReport = serde_json::from_str(&out).expect("init --check JSON parse");
-    assert!(preview.dry_run, "a preview is marked as one: {out}");
-    let claude = &preview.steps[0].items[0];
-    assert_eq!(claude.status, "would_connect", "{out}");
-    assert!(
-        claude
-            .note
-            .as_deref()
-            .is_some_and(|n| n.contains("would create ~/.claude.json")),
-        "{out}"
-    );
+    // init --check --json says it is a preview, and writes nothing. The MCP
+    // entry is in it only with --mcp.
+    for (mcp, listed) in [(false, false), (true, true)] {
+        let mut args = vec!["init", "--check", "--json", "--agent", "claude"];
+        if mcp {
+            args.push("--mcp");
+        }
+        let (code, out) = run_json(bin, &args, &envs);
+        assert_eq!(code, 0, "init --check exit code");
+        let preview: SetupReport = serde_json::from_str(&out).expect("init --check JSON parse");
+        assert!(preview.dry_run, "a preview is marked as one: {out}");
+        let claude = &preview.steps[0].items[0];
+        assert_eq!(claude.status, "would_connect", "{out}");
+        let note = claude.note.as_deref().unwrap_or_default();
+        assert!(note.contains("~/.claude/settings.json"), "{out}");
+        assert_eq!(
+            note.contains("would create ~/.claude.json"),
+            listed,
+            "{out}"
+        );
+    }
     assert!(
         !home.join(".claude.json").exists(),
         "init --check must write nothing"
@@ -147,15 +151,15 @@ fn init_and_doctor_json_reports_and_wiring() {
         );
     }
 
-    // init --agent claude writes the entry into `.claude.json` itself, with
-    // the Claude CLI on PATH too: one writer.
+    // init --agent claude --mcp writes the entry into `.claude.json` itself,
+    // with the Claude CLI on PATH too: one writer.
     let _ = std::fs::remove_file(home.join(".claude.json"));
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude"])
+        .args(["init", "--agent", "claude", "--mcp"])
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude");
-    assert!(out.status.success(), "init --agent claude exit");
+        .expect("init --agent claude --mcp");
+    assert!(out.status.success(), "init --agent claude --mcp exit");
     let saved = std::fs::read_to_string(home.join(".claude.json")).expect(".claude.json");
     let v: serde_json::Value = serde_json::from_str(&saved).expect("claude json parse");
     assert!(
@@ -241,11 +245,11 @@ fn claude_config_dir_fallback_writes_dot_claude_json() {
     envs.push(("PATH", new_path.as_str()));
 
     let out = Command::new(bin)
-        .args(["init", "--agent", "claude"])
+        .args(["init", "--agent", "claude", "--mcp"])
         .envs(envs.iter().copied())
         .output()
-        .expect("init --agent claude");
-    assert!(out.status.success(), "init --agent claude exit");
+        .expect("init --agent claude --mcp");
+    assert!(out.status.success(), "init --agent claude --mcp exit");
 
     let cfg_path = claude_cfg.join(".claude.json");
     let content = std::fs::read_to_string(&cfg_path).expect(".claude.json exists");
@@ -357,7 +361,7 @@ fn init_agent_leaves_agent_instruction_files_untouched() {
 /// control where files land. We can only verify file creation on Unix.
 #[test]
 #[cfg_attr(windows, ignore = "dirs::home_dir ignores a HOME override on Windows")]
-fn init_claude_installs_the_skill_and_no_rules_file() {
+fn init_claude_installs_the_skill_with_mcp_only_and_no_rules_file() {
     let bin = env!("CARGO_BIN_EXE_sobre");
 
     let tmp = tempfile::tempdir().unwrap();
@@ -381,6 +385,7 @@ fn init_claude_installs_the_skill_and_no_rules_file() {
         envs.push(("USERPROFILE", home_str.as_str()));
     }
 
+    let skill_path = home.join(".claude/skills/sobre/SKILL.md");
     let out = Command::new(bin)
         .args(["init", "--agent", "claude"])
         .current_dir(&project)
@@ -388,9 +393,20 @@ fn init_claude_installs_the_skill_and_no_rules_file() {
         .output()
         .expect("init --agent claude");
     assert!(out.status.success(), "init --agent claude exit");
+    assert!(
+        !skill_path.exists(),
+        "the skill documents the MCP tools: none without them"
+    );
 
-    let skill = std::fs::read_to_string(home.join(".claude/skills/sobre/SKILL.md"))
-        .expect("init installs the sobre skill");
+    let out = Command::new(bin)
+        .args(["init", "--agent", "claude", "--mcp"])
+        .current_dir(&project)
+        .envs(envs.iter().copied())
+        .output()
+        .expect("init --agent claude --mcp");
+    assert!(out.status.success(), "init --agent claude --mcp exit");
+
+    let skill = std::fs::read_to_string(&skill_path).expect("init --mcp installs the sobre skill");
     assert!(skill.starts_with("---\nname: sobre\n"), "skill frontmatter");
 
     assert!(

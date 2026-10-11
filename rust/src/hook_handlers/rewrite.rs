@@ -8,8 +8,9 @@
 //! applies tells the original and the wrapped command apart. A command is only
 //! wrapped whole, and only when it is a single command sobre knows how to
 //! compress: no chains, pipes, background jobs, redirections, substitutions
-//! or heredocs, and never a file read (`cat`/`head`/`tail`). The wrapped command's compressed
-//! output ends with a `[sobre: …]` line saying so.
+//! or heredocs, and never a file read (`cat`, `sed -n`, `grep -A`, …). The
+//! wrapped command's compressed output ends with a `[sobre: …]` line saying
+//! so.
 
 use std::path::{Path, PathBuf};
 
@@ -199,6 +200,8 @@ mod tests {
             "cat <<EOF\nx\nEOF",
             "cat src/main.rs",
             "head -n 5 a.txt",
+            "grep -n -A20 'def f' src/x.py",
+            "git show HEAD:src/main.rs",
             "rm -rf target",
             "sobre -c 'git status'",
             "",

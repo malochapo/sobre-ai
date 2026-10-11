@@ -15,6 +15,30 @@ fn codex_desktop_note_is_informational_and_never_fails() {
     );
 }
 
+/// An agent config without sobre's MCP entry passes: the MCP server is
+/// opt-in. A config that does not parse still fails.
+#[test]
+fn mcp_checks_pass_without_an_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let json = dir.path().join("mcp.json");
+    assert!(check_mcp_json(&json, "/bin/sobre").ok);
+    std::fs::write(&json, r#"{"mcpServers": {"other": {"command": "x"}}}"#).unwrap();
+    let check = check_mcp_json(&json, "/bin/sobre");
+    assert!(check.ok, "{}", check.detail);
+    assert!(
+        check.detail.contains("sobre init --mcp"),
+        "{}",
+        check.detail
+    );
+
+    let toml = dir.path().join("config.toml");
+    std::fs::write(&toml, "model = \"x\"\n").unwrap();
+    assert!(check_codex_toml(&toml, "/bin/sobre").ok);
+
+    std::fs::write(&json, "{\"mcpServers\": [").unwrap();
+    assert!(!check_mcp_json(&json, "/bin/sobre").ok);
+}
+
 #[test]
 fn hook_binary_refs_extracts_token_before_hook_keyword() {
     let content =

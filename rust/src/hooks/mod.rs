@@ -124,15 +124,13 @@ pub fn from_bash_to_native_path(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-/// Installs what sobre adds to an agent besides its MCP entry: the `sobre`
-/// skill where the agent loads skills, and the hooks where the host has them.
-/// The MCP entry itself is written by `editor_registry::write_config`.
-/// `Ok(Some(note))` when the install worked but something will keep the hooks
-/// from running.
+/// Installs sobre's hooks (OpenCode's plugin) where the agent's host has
+/// them. The MCP entry and the skill are not hooks: `setup` writes them when
+/// the MCP server is connected. `Ok(Some(note))` when the install worked but
+/// something will keep the hooks from running.
 pub fn install_agent_hook(agent: &str) -> Result<Option<String>, String> {
     let home = crate::core::home::resolve_home_dir()
         .ok_or_else(|| "cannot resolve the home directory".to_string())?;
-    crate::setup::skill::install(agent, &home)?;
     match agent {
         "claude" | "claude-code" => install_claude_hook_config(&home).map(|()| None),
         "cursor" => install_cursor_hook_config(&home).map(|()| None),
@@ -146,6 +144,12 @@ pub fn install_agent_hook(agent: &str) -> Result<Option<String>, String> {
             "unknown agent '{agent}' (supported: claude, codex, copilot, cursor, gemini, opencode, vscode, windsurf, zed)"
         )),
     }
+}
+
+/// False for an agent whose host has no hooks (Zed): sobre reaches it
+/// through the MCP server alone.
+pub fn has_hooks(agent: &str) -> bool {
+    agent != "zed"
 }
 
 #[cfg(test)]

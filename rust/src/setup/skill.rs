@@ -1,7 +1,8 @@
-//! The `sobre` agent skill: the detailed usage guide, loaded on demand by
-//! agents that support skills. The MCP instructions carry the short version
-//! to every client; this file is never auto-loaded, so it costs nothing until
-//! an agent opens it.
+//! The `sobre` agent skill: the detailed guide to the MCP tools, loaded on
+//! demand by agents that support skills. The MCP instructions carry the short
+//! version to every client; this file is never auto-loaded, so only its
+//! description is in the prompt until an agent opens it. `init` adds it only
+//! with the MCP entry.
 //!
 //! One file, written whole into `<agent skills dir>/sobre/SKILL.md` and owned
 //! entirely by sobre, so uninstall removes the directory.
@@ -96,10 +97,10 @@ mod tests {
             .lines()
             .find_map(|l| l.strip_prefix("description: "))
             .expect("description line");
-        // Agents pick a skill from its description alone; keep it specific
-        // and under the 1024-character limit skills loaders enforce.
+        // Agents pick a skill from its description alone, and Claude Code
+        // lists it in every session's prompt: specific, and short.
         assert!(
-            desc.len() > 100 && desc.len() <= 1024,
+            desc.len() > 100 && desc.len() <= 200,
             "{} chars",
             desc.len()
         );

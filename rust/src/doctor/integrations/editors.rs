@@ -118,9 +118,9 @@ pub(crate) fn integration_claude(home: &std::path::Path, binary: &str) -> Integr
     let settings_path = crate::core::editor_registry::claude_state_dir(home).join("settings.json");
     checks.push(check_claude_hooks(&settings_path, binary));
 
-    // The detailed guide is the `sobre` skill; the MCP instructions carry the
-    // short version to every client.
-    {
+    // The detailed guide to the MCP tools is the `sobre` skill, connected
+    // with them; the MCP instructions carry the short version.
+    if std::fs::read_to_string(&mcp_path).is_ok_and(|c| has_sobre_mcp_entry(&c)) {
         let current = crate::setup::skill::is_current("claude", home);
         let detail = match crate::setup::skill::skill_path("claude", home) {
             Some(p) if current => p.display().to_string(),

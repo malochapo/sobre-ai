@@ -343,7 +343,7 @@ pub fn run(json: bool) -> u32 {
     let needs_attention = total.saturating_sub(passed);
     if json {
         let report = serde_json::json!({
-            "version": env!("CARGO_PKG_VERSION"),
+            "version": crate::VERSION,
             "passed": passed,
             "total": total,
             "tools_advertised": advertised,
@@ -367,16 +367,21 @@ pub fn run(json: bool) -> u32 {
         crate::outln!("  {GREEN}Everything looks good.{RST}");
     }
     crate::outln!("  {DIM}LSP servers are optional enhancements (not counted in score){RST}");
-    crate::outln!("  {DIM}sobre {}{RST}", env!("CARGO_PKG_VERSION"));
+    crate::outln!("  {DIM}sobre {}{RST}", crate::VERSION);
 
     needs_attention
 }
 
 /// One line on the install: the running version and which detected agents
-/// have a sobre MCP entry.
+/// carry sobre (hooks, MCP entry, skill or plugin).
 fn summary_line() -> String {
-    let version = env!("CARGO_PKG_VERSION");
-    let detected: Vec<_> = dirs::home_dir()
+    let version = crate::VERSION;
+    let home = dirs::home_dir();
+    let with_sobre = home
+        .as_deref()
+        .map(crate::setup::agents_with_sobre)
+        .unwrap_or_default();
+    let detected: Vec<_> = home
         .map(|home| crate::core::editor_registry::build_targets(&home))
         .unwrap_or_default()
         .into_iter()
@@ -384,7 +389,7 @@ fn summary_line() -> String {
         .collect();
     let connected: Vec<&str> = detected
         .iter()
-        .filter(|t| std::fs::read_to_string(&t.config_path).is_ok_and(|s| s.contains("sobre")))
+        .filter(|t| with_sobre.contains(&t.agent_key))
         .map(|t| t.name)
         .collect();
     let names = if connected.is_empty() {

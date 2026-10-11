@@ -51,7 +51,7 @@ fn write_entry_to(dir: &Path, location: &str, thread: &str, payload: &str) -> Op
     let entry = format!(
         "=== panic at {} (sobre v{}) ===\nthread: {thread}\nlocation: {location}\npayload: {payload}\nbacktrace:\n{backtrace}\n\n",
         chrono::Utc::now().to_rfc3339(),
-        env!("CARGO_PKG_VERSION"),
+        crate::VERSION,
     );
 
     let mut opts = std::fs::OpenOptions::new();
@@ -154,7 +154,7 @@ mod tests {
         assert!(content.contains("location: src/foo.rs:42:7"));
         assert!(content.contains("payload: boom"));
         assert!(content.contains("backtrace:"));
-        assert!(content.contains(env!("CARGO_PKG_VERSION")));
+        assert!(content.contains(crate::VERSION));
     }
 
     #[test]

@@ -6,7 +6,8 @@ use chrono::Utc;
 use serde::Serialize;
 
 use super::{
-    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, resolve_sobre_binary, tildify_home,
+    BOLD, DIM, GREEN, RST, WHITE, YELLOW, claude_binary_exists, has_sobre_mcp_entry,
+    resolve_sobre_binary, tildify_home,
 };
 
 #[derive(Debug, Clone, Copy)]

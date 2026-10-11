@@ -63,7 +63,7 @@ ort-directml = ["dense", "ort/directml"]
 ort-coreml = ["dense", "ort/coreml"]
 jemalloc = ["dep:tikv-jemallocator", "dep:tikv-jemalloc-ctl"]
 dev-tools = []
-# Helpers only the integration tests and benches call. Enabled for them by
+# Helpers only the integration tests call. Enabled for them by
 # the self dev-dependency below; never part of a release build.
 test-support = []
 tree-sitter = [
@@ -335,7 +335,6 @@ tikv-jemallocator = { version = "0.7", optional = true }
 tikv-jemalloc-ctl = { version = "0.7", optional = true }
 
 [dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
 filetime = "0.2"
 insta = "1.48"
 jsonschema = { version = "0.46", default-features = false }
@@ -344,11 +343,3 @@ serial_test = "3.5"
 tempfile = "3.27"
 walkdir = "2.5"
 sobre = { path = ".", features = ["test-support"] }
-
-[[bench]]
-name = "compression"
-harness = false
-
-[[bench]]
-name = "efficiency"
-harness = false

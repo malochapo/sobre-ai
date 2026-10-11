@@ -289,7 +289,7 @@ mod tests {
         for line in [
             "sobre -c <command>...",
             "sobre call <tool> [--project-root <path>] [--json <json>] [--json-file <path>]",
-            "sobre init [<agent>...] [--check] [--repair] [--json] [--agent <agent>]",
+            "sobre init [<agent>...] [--mcp] [--check] [--repair] [--json] [--agent <agent>]",
             "sobre config set <key> <value> [--yes]",
             "sobre proxy start [--port <n>] [--detach]",
             "sobre hook <compress|cursor|gemini|read-dedup|observe>",

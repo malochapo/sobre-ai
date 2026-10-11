@@ -1,8 +1,8 @@
 //! Live client-wiring smoke.
 //!
 //! Boots the REAL binary end-to-end, in an isolated HOME:
-//!   1. `sobre init --agent <client>` installs the MCP registration and the
-//!      skill, and writes no rules into the agent's own files,
+//!   1. `sobre init --agent <client> --mcp` installs the MCP registration and
+//!      the skill, and writes no rules into the agent's own files,
 //!   2. `sobre mcp` is spoken to over actual stdio JSON-RPC,
 //!   3. every client gets the same `initialize` instructions — the one rules
 //!      channel — and the same `tools/list` surface.
@@ -46,12 +46,12 @@ fn base_cmd(bin: &str, env: &TestEnv) -> Command {
 
 fn run_init(bin: &str, env: &TestEnv, agent: &str) {
     let out = base_cmd(bin, env)
-        .args(["init", "--agent", agent])
+        .args(["init", "--agent", agent, "--mcp"])
         .output()
         .expect("init spawn");
     assert!(
         out.status.success(),
-        "init --agent {agent} failed:\nstdout={}\nstderr={}",
+        "init --agent {agent} --mcp failed:\nstdout={}\nstderr={}",
         String::from_utf8_lossy(&out.stdout),
         String::from_utf8_lossy(&out.stderr)
     );
@@ -214,7 +214,7 @@ fn every_client_gets_the_same_instructions_and_no_rules_file() {
     for client in ["cursor", "claude-code", "codex"] {
         let (instructions, tools) = mcp_handshake(bin, &env, client);
         assert!(
-            instructions.contains("Prefer them when they fit; native tools keep working"),
+            instructions.starts_with(sobre::instructions::GUIDE),
             "{client} must get the guide.\n{instructions}"
         );
         assert_full_surface(&tools, client);

@@ -16,7 +16,7 @@ want one of these:
   sobre doctor        Check that everything is wired up correctly
   sobre help          Common commands (or `help all` for everything)
 ",
-        version = env!("CARGO_PKG_VERSION"),
+        version = crate::VERSION,
     )
 }
 
@@ -64,7 +64,7 @@ MANAGE:
 MORE:
     sobre help all              Full command reference (every subcommand)
 ",
-        version = env!("CARGO_PKG_VERSION"),
+        version = crate::VERSION,
         banner = capability_banner(),
     )
 }
@@ -94,7 +94,7 @@ TROUBLESHOOTING:
     Preview init?        sobre init --check
     Remove sobre?        sobre uninstall --help   (what it removes)
 ",
-        version = env!("CARGO_PKG_VERSION"),
+        version = crate::VERSION,
         banner = capability_banner(),
         reference = crate::cli::reference::reference_text(),
     )
