@@ -95,8 +95,9 @@ pub fn ensure_model(model_dir: &Path, model: &EmbeddingModel) -> anyhow::Result<
                 return Err(last_err
                     .unwrap_or_else(|| anyhow::anyhow!("no source for {}", file.local_name))
                     .context(format!(
-                        "model '{name}' must ship {} and tokenizer.json",
-                        file.sources.join(" or ")
+                        "could not download {} of model '{name}' (tried {})",
+                        file.local_name,
+                        file.sources.join(", ")
                     )));
             }
             tracing::debug!("{} not in '{name}', using defaults", file.local_name);

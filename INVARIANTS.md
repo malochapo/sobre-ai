@@ -29,7 +29,8 @@ is being replaced, the answer is no.
 ## 2. One configuration file, one level, no cascade
 
 - **One** config file. One location. No per-repository install, and no
-  per-agent settings: `init <agent>` only picks which agents to connect.
+  per-agent settings: `init <agent>` only picks which agents to connect, and
+  `init --mcp` whether to connect their MCP server and skill besides the hooks.
 - **No layering.** No defaults → profile → file → env → flag resolution chain.
   If a value can come from two places, it comes from one place.
 - **No environment variables that change behaviour.** Variables may exist for
@@ -57,10 +58,12 @@ the file is silent: `compression_level` defaults to 0.3, never to "unset".
 One key holds an answer rather than a setting: `proxy.enabled` is unset until
 `init` asks whether to use the proxy (or `proxy enable`, `proxy disable` or
 `config set` sets it), and unset means what `false` means: the proxy is off.
-`init` sets nothing of its own: besides which agents to connect, its flags
-only preview (`--check`), skip its questions (`--repair`) or report in JSON
-(`--json`). Its two questions write `proxy.enabled` and, in a build with
-embeddings, download the model.
+`init` sets nothing of its own: besides which agents to connect and whether
+to connect their MCP server and skill (`--mcp`), its flags only preview
+(`--check`), skip its questions (`--repair`) or report in JSON (`--json`).
+Its questions write `proxy.enabled`, connect the MCP server and the skill, and,
+in a build with embeddings, download the model. The MCP answer is not recorded:
+an agent's MCP entry is the record, and `init` refreshes it where it is.
 The generated list is `docs/reference/generated/config-keys.md`.
 
 If a setting can be decided correctly by the tool, it is not a setting.

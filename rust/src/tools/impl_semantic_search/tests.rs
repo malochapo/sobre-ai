@@ -107,6 +107,58 @@ mod cold_start_guard_tests {
         assert!(compact.ends_with("sobre index build]"));
         assert!(compact.contains("22741"));
     }
+
+    /// A search leaves the resident BM25 index as the embeddings saw it:
+    /// the next search of the session finds every embedding current, instead
+    /// of counting changed chunks and saying the dense index is not built.
+    #[test]
+    fn a_search_leaves_the_embeddings_current_for_the_next_one() {
+        use crate::core::bm25_index::BM25Index;
+        use crate::core::embedding_index::EmbeddingIndex;
+
+        let _env = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("SOBRE_DATA_DIR", data.path());
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(dir.path());
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        // Bodies longer than the five lines a result snippet shows.
+        let source = (0..4)
+            .map(|i| {
+                format!(
+                    "pub fn step_{i}(x: u32) -> u32 {{\n    let a = x + {i};\n    \
+                     let b = a * 2;\n    let c = b + 1;\n    let d = c * 3;\n    \
+                     let e = d + a;\n    e\n}}\n\n"
+                )
+            })
+            .collect::<Vec<_>>()
+            .concat();
+        std::fs::write(root.join("steps.rs"), source).unwrap();
+
+        // The index and embeddings `sobre index build` leaves.
+        let built = BM25Index::build_from_directory(&root);
+        built.save(&root).unwrap();
+        let mut embeddings = EmbeddingIndex::new_with_model(4, "test-model");
+        let vectors: Vec<(usize, Vec<f32>)> =
+            (0..built.chunks.len()).map(|i| (i, vec![0.5; 4])).collect();
+        embeddings.update(&built.chunks, &vectors, &["steps.rs".to_string()], None);
+        assert_eq!(embeddings.pending_chunk_count(&built.chunks), 0);
+
+        set_thread_cache(std::sync::Arc::new(std::sync::Mutex::new(None)));
+        let root_str = root.to_string_lossy();
+        let first = handle("step", &root_str, 5, CrpMode::Off, Some("hybrid"), None);
+        let resident = match load_or_refresh_bm25(&root) {
+            Bm25LoadResult::Ready(idx) => idx,
+            Bm25LoadResult::Building => panic!("the index is on disk"),
+        };
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
+
+        assert_eq!(
+            embeddings.pending_chunk_count(&resident.chunks),
+            0,
+            "after: {first}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -221,13 +273,21 @@ mod dense_toggle_tests {
 
 mod search_mode_tests {
     use super::super::SearchMode;
+    #[cfg(feature = "dense")]
+    use crate::tools::CrpMode;
 
     #[test]
-    fn bm25_is_the_default_and_unknown_modes_are_rejected() {
-        assert_eq!(SearchMode::parse(None), Ok(SearchMode::Bm25));
+    fn modes_parse_and_unknown_ones_are_rejected() {
         assert_eq!(SearchMode::parse(Some(" BM25 ")), Ok(SearchMode::Bm25));
         let err = SearchMode::parse(Some("vector")).unwrap_err();
         assert!(err.contains("unknown mode"), "{err}");
+    }
+
+    /// No model, no hybrid: the isolated cache directory holds none.
+    #[test]
+    fn bm25_is_the_default_without_the_model() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        assert_eq!(SearchMode::parse(None), Ok(SearchMode::Bm25));
     }
 
     #[cfg(not(feature = "dense"))]
@@ -244,5 +304,39 @@ mod search_mode_tests {
     fn dense_modes_parse_with_embeddings() {
         assert_eq!(SearchMode::parse(Some("dense")), Ok(SearchMode::Dense));
         assert_eq!(SearchMode::parse(Some("hybrid")), Ok(SearchMode::Hybrid));
+    }
+
+    /// With no `mode`, a search runs hybrid once the model is installed and
+    /// loads, BM25 before, and its header names the engine that ran.
+    #[cfg(feature = "dense")]
+    #[test]
+    fn a_search_without_mode_names_the_engine_it_ran() {
+        use crate::core::embeddings::{EmbeddingEngine, shared_engine};
+
+        let _env = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("SOBRE_DATA_DIR", data.path());
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(dir.path());
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(
+            root.join("auth.rs"),
+            "pub fn validate_token(token: &str) -> bool {\n    !token.is_empty()\n}\n",
+        )
+        .unwrap();
+        crate::core::bm25_index::BM25Index::build_from_directory(&root)
+            .save(&root)
+            .unwrap();
+
+        let model_loads = EmbeddingEngine::is_available() && shared_engine().is_some();
+        let root_str = root.to_string_lossy();
+        let out = super::super::handle("token", &root_str, 5, CrpMode::Off, None, None);
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
+
+        let engine = if model_loads { "hybrid" } else { "BM25" };
+        assert!(
+            out.starts_with(&format!("Semantic search ({engine})")),
+            "{out}"
+        );
     }
 }

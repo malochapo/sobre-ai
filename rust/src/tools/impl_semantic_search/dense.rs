@@ -240,25 +240,6 @@ pub(crate) fn ensure_embeddings(
     engine: &EmbeddingEngine,
     embed_idx: &mut EmbeddingIndex,
 ) -> Result<AlignedEmbeddings, String> {
-    // A resident index whose bodies were shrunk to snippets (post-embedding RAM
-    // reclaim) must NEVER drive re-embedding: `files_needing_update` hashes
-    // `c.content`, so truncated bodies would falsely flag every file as changed
-    // and re-embed 5-line snippets over the full-body vectors persisted earlier
-    // this session. Embeddings for exactly these chunks were already built and
-    // saved before truncation, and alignment is keyed by (path, start, end) —
-    // not content — so we just re-align here. If a file genuinely changed, the
-    // BM25 cache fingerprint goes stale and a fresh full-content index (reloaded
-    // from disk) replaces this one, restoring the normal re-embed path.
-    if index.content_truncated {
-        let aligned = embed_idx.get_aligned_flat(&index.chunks).ok_or_else(|| {
-            "embedding alignment failed on truncated resident index; \
-                 refusing to re-embed snippet-only bodies"
-                .to_string()
-        })?;
-        let coverage = embed_idx.coverage(index.chunks.len());
-        return Ok((aligned, coverage));
-    }
-
     let mut changed_files = embed_idx.files_needing_update(&index.chunks);
     changed_files.sort();
     changed_files.dedup();

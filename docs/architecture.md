@@ -342,7 +342,7 @@ the data and state directories:
 
 | | Default build | Dense build (`--features dense`) |
 |---|---|---|
-| Semantic search | BM25 | BM25, dense or hybrid (`sobre_search`'s `mode`) |
+| Semantic search | BM25 | hybrid once the model is installed, else BM25 (`sobre_search`'s `mode` picks one) |
 | `tools/list` | 15 tools | the same, plus `sobre_search`'s `mode` |
 | ONNX Runtime | — | loaded at run time: `ORT_DYLIB_PATH`, else the copy `embeddings provision` installed, else the system's |
 | `init` | asks about the MCP server and the proxy | also asks about downloading the model |
