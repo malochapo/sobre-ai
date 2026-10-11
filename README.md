@@ -325,9 +325,10 @@ configured level once two minutes pass without one.
 ## Local embeddings
 
 The `sobre-dense-…` builds, and source builds with `--features dense`, can
-search by meaning: `sobre_search(action="semantic")` with `mode="dense"` or
-`mode="hybrid"`. They run a small embedding model on your machine with ONNX
-Runtime, loaded at run time.
+search by meaning: they run a small embedding model on your machine with ONNX
+Runtime, loaded at run time. Once the model is installed,
+`sobre_search(action="semantic")` ranks by `hybrid` (BM25 and embeddings)
+unless `mode` asks for `bm25` or `dense`.
 
 ```bash
 sobre embeddings provision   # Microsoft's ONNX Runtime (CPU) and the model

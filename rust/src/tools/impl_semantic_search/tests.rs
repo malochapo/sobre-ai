@@ -273,13 +273,21 @@ mod dense_toggle_tests {
 
 mod search_mode_tests {
     use super::super::SearchMode;
+    #[cfg(feature = "dense")]
+    use crate::tools::CrpMode;
 
     #[test]
-    fn bm25_is_the_default_and_unknown_modes_are_rejected() {
-        assert_eq!(SearchMode::parse(None), Ok(SearchMode::Bm25));
+    fn modes_parse_and_unknown_ones_are_rejected() {
         assert_eq!(SearchMode::parse(Some(" BM25 ")), Ok(SearchMode::Bm25));
         let err = SearchMode::parse(Some("vector")).unwrap_err();
         assert!(err.contains("unknown mode"), "{err}");
+    }
+
+    /// No model, no hybrid: the isolated cache directory holds none.
+    #[test]
+    fn bm25_is_the_default_without_the_model() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        assert_eq!(SearchMode::parse(None), Ok(SearchMode::Bm25));
     }
 
     #[cfg(not(feature = "dense"))]
@@ -296,5 +304,39 @@ mod search_mode_tests {
     fn dense_modes_parse_with_embeddings() {
         assert_eq!(SearchMode::parse(Some("dense")), Ok(SearchMode::Dense));
         assert_eq!(SearchMode::parse(Some("hybrid")), Ok(SearchMode::Hybrid));
+    }
+
+    /// With no `mode`, a search runs hybrid once the model is installed and
+    /// loads, BM25 before, and its header names the engine that ran.
+    #[cfg(feature = "dense")]
+    #[test]
+    fn a_search_without_mode_names_the_engine_it_ran() {
+        use crate::core::embeddings::{EmbeddingEngine, shared_engine};
+
+        let _env = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("SOBRE_DATA_DIR", data.path());
+        let dir = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(dir.path());
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(
+            root.join("auth.rs"),
+            "pub fn validate_token(token: &str) -> bool {\n    !token.is_empty()\n}\n",
+        )
+        .unwrap();
+        crate::core::bm25_index::BM25Index::build_from_directory(&root)
+            .save(&root)
+            .unwrap();
+
+        let model_loads = EmbeddingEngine::is_available() && shared_engine().is_some();
+        let root_str = root.to_string_lossy();
+        let out = super::super::handle("token", &root_str, 5, CrpMode::Off, None, None);
+        crate::test_env::remove_var("SOBRE_DATA_DIR");
+
+        let engine = if model_loads { "hybrid" } else { "BM25" };
+        assert!(
+            out.starts_with(&format!("Semantic search ({engine})")),
+            "{out}"
+        );
     }
 }

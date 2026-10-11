@@ -122,7 +122,7 @@ impl McpTool for SobreSearchTool {
             schema["properties"]["mode"] = json!({
                 "type": "string",
                 "enum": ["bm25", "dense", "hybrid"],
-                "description": "semantic ranking (default bm25)"
+                "description": "semantic ranking (default hybrid once the model is installed, else bm25)"
             });
         }
         tool_def(

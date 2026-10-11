@@ -18,10 +18,10 @@ pub(crate) enum SearchMode {
 }
 
 impl SearchMode {
-    /// `None` is BM25.
+    /// `None` is the best ranking this machine can run.
     pub(crate) fn parse(mode: Option<&str>) -> Result<Self, String> {
         let Some(mode) = mode.map(|m| m.trim().to_ascii_lowercase()) else {
-            return Ok(Self::Bm25);
+            return Ok(Self::best());
         };
         match mode.as_str() {
             "bm25" => Ok(Self::Bm25),
@@ -37,6 +37,18 @@ impl SearchMode {
             )),
             _ => Err(format!("unknown mode '{mode}'. Use bm25, dense or hybrid.")),
         }
+    }
+
+    /// Hybrid when this build has embeddings and the model is installed and
+    /// loads, BM25 otherwise: installing the model is enough to get it.
+    fn best() -> Self {
+        #[cfg(feature = "dense")]
+        if crate::core::embeddings::EmbeddingEngine::is_available()
+            && crate::core::embeddings::shared_engine().is_some()
+        {
+            return Self::Hybrid;
+        }
+        Self::Bm25
     }
 
     pub(crate) fn as_str(self) -> &'static str {

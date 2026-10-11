@@ -80,8 +80,9 @@ pub fn mcp_tools_markdown() -> String {
         "sobre registers **{} MCP tools**, the same list in every session \
          (invariant 3). This page shows the build without local embeddings; \
          the build with them adds one parameter, `sobre_search`'s `mode` \
-         (`bm25|dense|hybrid`). A handler reads no argument its schema does \
-         not declare (a test enforces it).\n\n",
+         (`bm25|dense|hybrid`; hybrid when omitted and the model is \
+         installed). A handler reads no argument its schema does not declare \
+         (a test enforces it).\n\n",
         tools.len()
     ));
 
