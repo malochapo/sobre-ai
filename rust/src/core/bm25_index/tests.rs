@@ -307,88 +307,11 @@ fn add_chunk_truncates_content_to_10_lines() {
     assert_eq!(small.content, "a\nb\nc", "short body left untouched");
 }
 
+/// A reload gives back the chunk bodies that were saved: the embeddings'
+/// file hashes, taken by `index build`, are compared with the bodies of the
+/// index a search loads.
 #[test]
-fn shrink_resident_trims_long_bodies_keeps_short_and_flags() {
-    let mut index = BM25Index::new();
-    let long_body = (0..20)
-        .map(|i| format!("line{i}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    index.add_chunk(CodeChunk {
-        file_path: "long.rs".into(),
-        symbol_name: "long".into(),
-        kind: ChunkKind::Function,
-        start_line: 1,
-        end_line: 20,
-        content: long_body,
-        tokens: tokenize("long body"),
-        token_count: 2,
-    });
-    index.add_chunk(CodeChunk {
-        file_path: "short.rs".into(),
-        symbol_name: "short".into(),
-        kind: ChunkKind::Function,
-        start_line: 1,
-        end_line: 2,
-        content: "fn short() {}".into(),
-        tokens: tokenize("short body"),
-        token_count: 2,
-    });
-    index.finalize();
-
-    let before = index.memory_usage_bytes();
-    assert!(!index.content_truncated);
-
-    index.shrink_resident_content_to_snippet(5);
-
-    assert!(index.content_truncated, "flag must be set after shrink");
-    let long_chunk = index
-        .chunks
-        .iter()
-        .find(|c| c.file_path == "long.rs")
-        .unwrap();
-    assert_eq!(
-        long_chunk.content.lines().count(),
-        5,
-        "long body trimmed to 5 lines"
-    );
-    assert!(long_chunk.content.starts_with("line0"));
-    assert!(
-        !long_chunk.content.contains("line5"),
-        "lines beyond the snippet window are dropped"
-    );
-
-    let short_chunk = index
-        .chunks
-        .iter()
-        .find(|c| c.file_path == "short.rs")
-        .unwrap();
-    assert_eq!(
-        short_chunk.content, "fn short() {}",
-        "short body left untouched"
-    );
-
-    assert!(
-        index.memory_usage_bytes() < before,
-        "shrink should reduce reported heap usage"
-    );
-
-    // Keyword search snippet still works off the retained lines.
-    let results = index.search("line0", 5);
-    assert!(!results.is_empty());
-
-    // Idempotent: second shrink is a no-op on already-short content.
-    index.shrink_resident_content_to_snippet(5);
-    let long_chunk = index
-        .chunks
-        .iter()
-        .find(|c| c.file_path == "long.rs")
-        .unwrap();
-    assert_eq!(long_chunk.content.lines().count(), 5);
-}
-
-#[test]
-fn shrink_resident_is_not_persisted_to_disk() {
+fn reload_keeps_the_saved_chunk_bodies() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let root = td.path();
@@ -398,33 +321,11 @@ fn shrink_resident_is_not_persisted_to_disk() {
     )
     .expect("write");
 
-    let mut index = BM25Index::build_from_directory(root);
-    let full_lines: usize = index
-        .chunks
-        .iter()
-        .map(|c| c.content.lines().count())
-        .max()
-        .unwrap();
-    assert!(full_lines > 5, "fixture body must exceed snippet window");
+    let index = BM25Index::build_from_directory(root);
+    index.save(root).expect("save");
 
-    // add_chunk already truncates to 10-line snippets; the 8-line fixture
-    // stays below that threshold so saved content equals the original body.
-    // shrink_resident further tightens to 5 lines (resident-only, not persisted).
-    index.save(root).expect("save full-content index");
-    index.shrink_resident_content_to_snippet(5);
-    assert!(index.content_truncated);
-
-    // Reloading from the already-persisted file restores the FULL body, and the
-    // resident-only `content_truncated` flag never survives serialization.
     let reloaded = BM25Index::load(root).expect("load");
-    assert!(!reloaded.content_truncated, "flag must not survive reload");
-    let max_lines: usize = reloaded
-        .chunks
-        .iter()
-        .map(|c| c.content.lines().count())
-        .max()
-        .unwrap();
-    assert_eq!(max_lines, full_lines, "reload restores full content");
+    assert_eq!(reloaded.chunks, index.chunks);
 }
 
 #[test]
