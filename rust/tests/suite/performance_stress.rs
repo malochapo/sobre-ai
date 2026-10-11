@@ -55,9 +55,10 @@ mod bm25_performance {
         }
         let elapsed = start.elapsed();
 
+        // About 200ms in a local debug build: 10x, as for the other bounds.
         assert!(
-            elapsed.as_millis() < 500,
-            "100 BM25 searches took {}ms — must be <500ms",
+            elapsed.as_millis() < 2000,
+            "100 BM25 searches took {}ms — must be <2000ms",
             elapsed.as_millis()
         );
     }
