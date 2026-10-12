@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-sobre registers **15 MCP tools**, the same list in every session (invariant 3). This page shows the build without local embeddings; the build with them adds one parameter, `sobre_search`'s `mode` (`bm25|dense|hybrid`; hybrid when omitted and the model is installed). A handler reads no argument its schema does not declare (a test enforces it).
+sobre registers **13 MCP tools**, the same list in every session (invariant 3). This page shows the build without local embeddings; the build with them adds one parameter, `sobre_search`'s `mode` (`bm25|dense|hybrid`; hybrid when omitted and the model is installed). A handler reads no argument its schema does not declare (a test enforces it).
 
 ## `sobre_checkpoint`
 
@@ -28,8 +28,8 @@ diff from=... to=... (compare checkpoints), restore ref=... (revert files).
 ## `sobre_compose`
 
 Call first to understand code (before editing, debugging, 'how does X work').
-Omit task at session start: returns the project overview — structure, hotspots, last task, recent decisions, facts from previous sessions.
-With a task: returns ranked files with relevant symbol source inline grouped by file, and the recorded pitfalls it matches.
+Omit task at session start: returns the project overview — structure, hotspots.
+With a task: returns ranked files with relevant symbol source inline grouped by file.
 One call replaces a search→read→symbol chain; do not re-read files whose source it returned.
 
 | Parameter | Type | Required | Description |
@@ -86,31 +86,6 @@ For understanding code use sobre_compose FIRST.
 - When `action` is `callers` or `callees`: requires `symbol`.
 - When `action` is `trace`: requires `symbol` and `to`.
 
-## `sobre_knowledge`
-
-Facts that outlive the session: decisions, conventions, pitfalls.
-remember value= saves one (key derived when omitted; a new value for a key replaces the old); recall query= finds them (bare: the recent ones); search query= also searches saved sessions; remove deletes one; status lists categories. consolidate imports this session's findings and decisions. gotcha trigger= resolution= records a pitfall, which sobre_compose shows for a matching task.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `action` | one of `remember`, `recall`, `search`, `status`, `remove`, `consolidate`, `gotcha` | yes |  |
-| `as_of` | string |  | recall: the facts valid at this date (YYYY-MM-DD) |
-| `category` | string |  | Groups facts (remember: default general; gotcha: default convention) |
-| `confidence` | number |  | remember: 0.0-1.0 (default 0.8) |
-| `dry_run` | boolean |  | consolidate: preview only |
-| `key` | string |  |  |
-| `mode` | string |  | recall: auto\|exact\|semantic\|hybrid |
-| `query` | string |  |  |
-| `resolution` | string |  | gotcha: the fix |
-| `severity` | string |  | gotcha: critical\|warning\|info |
-| `trigger` | string |  | gotcha: when it bites |
-| `value` | string |  |  |
-
-- When `action` is `remember`: requires `value`.
-- When `action` is `remove`: requires `category` and `key`.
-- When `action` is `search`: requires `query`.
-- When `action` is `gotcha`: requires `trigger` and `resolution`.
-
 ## `sobre_outline`
 
 The symbols of a file, or of each file in a directory, with their line spans: a table of contents to read before sobre_read.
@@ -162,10 +137,10 @@ anchored → edit by reference via sobre_patch (no exact-recall).
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `aggressiveness` | number |  | 0.0–1.0 density (entropy/task) |
+| `aggressiveness` | number |  | 0.0–1.0 density (entropy) |
 | `fresh` | boolean |  | Bypass cache |
 | `limit` | integer |  | Max lines |
-| `mode` | string |  | Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via sobre_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive\|entropy\|task=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:N is one line, lines:N- runs to the end, lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens |
+| `mode` | string |  | Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via sobre_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive\|entropy=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:N is one line, lines:N- runs to the end, lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens |
 | `offset` | integer |  | start_line alias |
 | `path` | string |  | File path |
 | `paths` | array of string |  | Batch read |
@@ -240,16 +215,6 @@ Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | r
 | `query` | string |  |  |
 | `top_k` | integer |  |  |
 | `workspace` | boolean |  | semantic: also search the configured search_roots |
-
-## `sobre_session`
-
-This session's task, findings and decisions, saved as they change. status shows them; load brings back a saved session, list names them; resume is a short block to continue from after the host compacts its context. Lasting facts: sobre_knowledge.
-
-| Parameter | Type | Required | Description |
-|---|---|---|---|
-| `action` | one of `status`, `task`, `finding`, `decision`, `load`, `list`, `resume` | yes | task\|finding\|decision record value |
-| `session_id` | string |  | load: omit for this project's latest |
-| `value` | string |  |  |
 
 ## `sobre_shell`
 

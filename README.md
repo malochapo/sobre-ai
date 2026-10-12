@@ -129,7 +129,7 @@ cargo install --path . --locked --root ~/.local --features dense
 6. **Use what exists.** What a maintained library already does, `sobre` uses
    rather than rewrites, copies or vendors.
 
-Today: 15 tools, one fixed surface per build; one config file with 11 keys and
+Today: 13 tools, one fixed surface per build; one config file with 11 keys and
 no per-project files, profiles or behaviour-changing environment variables; no
 network request you did not ask for; and no gate, approval or hidden transform
 of sobre's own. [Issue #69](https://github.com/malochapo/sobre-ai/issues/69)
@@ -222,15 +222,13 @@ sobre doctor --fix            # repair the agents sobre is connected to, prune s
 `doctor --fix` repairs what sobre wrote in your user configuration, for the
 agents sobre is already connected to (`init` connects new ones), and lists
 what it changed. It adds the MCP server to no agent: `sobre init --mcp` does.
-It never deletes knowledge: a store whose project is not on disk is listed, and
-you delete it by hand if the project is gone. It never edits files in a
-repository: when a project's own MCP file (`.vscode/mcp.json`,
-`.cursor/mcp.json`, `.github/mcp.json`, `.zed/settings.json`) also registers
-`sobre`, `doctor` names the file, and you remove the entry if you do not want
-it there.
+It never edits files in a repository: when a project's own MCP file
+(`.vscode/mcp.json`, `.cursor/mcp.json`, `.github/mcp.json`,
+`.zed/settings.json`) also registers `sobre`, `doctor` names the file, and you
+remove the entry if you do not want it there.
 
 With the MCP server connected, the agent's MCP server list shows `sobre` with
-15 tools (`/mcp` in Claude Code). From a shell, without an agent:
+13 tools (`/mcp` in Claude Code). From a shell, without an agent:
 
 ```bash
 sobre call sobre_compose --project-root "$PWD"   # the project overview the agent gets
@@ -243,7 +241,7 @@ sobre gain                                       # what has been saved so far
 Keep working with your agent as before: its native tools keep working, and the
 hooks act on them where the host allows ([Shell output](#shell-output)). With
 the MCP server connected (`sobre init --mcp`), the agent also reaches for
-`sobre`'s tools when they fit. The 15 tools
+`sobre`'s tools when they fit. The 13 tools
 ([reference](docs/reference/generated/mcp-tools.md)):
 
 | Tool | What it does |
@@ -259,14 +257,11 @@ the MCP server connected (`sobre init --mcp`), the agent also reaches for
 | `sobre_shell` | Shell commands with compressed output, in the background if long |
 | `sobre_expand` | The full original behind a compressed output |
 | `sobre_checkpoint` | Snapshots of the agent's changes, kept apart from your git history |
-| `sobre_session`, `sobre_knowledge` | The session's task and decisions; facts kept across sessions |
 
-Each server process starts an empty session: a saved session comes back only
-when the agent asks (`sobre_session action=load`), and neither the session nor
-the knowledge store changes how `sobre_read` picks a mode. One thing does: a
-file a compiler or linter reported an error in, through `sobre -c` or
-`sobre_shell`, in the last 15 minutes is read in full until that tool next
-succeeds.
+`sobre_read` picks a mode from the file and from this conversation's reads
+and edits, and from one thing more: a file a compiler or linter reported an
+error in, through `sobre -c` or `sobre_shell`, in the last 15 minutes is read
+in full until that tool next succeeds.
 
 Each build has one fixed list of tools and parameters: the build with
 embeddings adds a single parameter, `sobre_search`'s `mode`. The reference
@@ -430,7 +425,7 @@ The same layout on every platform, under your home directory:
 | Directory | Holds | Override |
 |---|---|---|
 | `~/.config/sobre` | `config.toml` | `SOBRE_CONFIG_DIR`, `XDG_CONFIG_HOME` |
-| `~/.local/share/sobre` | the usage ledger, sessions, knowledge, search and graph indexes, checkpoints, the proxy token, the crash log (`logs/crash.log`), the managed ONNX Runtime | `SOBRE_DATA_DIR`, `XDG_DATA_HOME` |
+| `~/.local/share/sobre` | the usage ledger, search and graph indexes, checkpoints, the proxy token, the crash log (`logs/crash.log`), the managed ONNX Runtime | `SOBRE_DATA_DIR`, `XDG_DATA_HOME` |
 | `~/.local/state/sobre` | the full outputs behind compressed ones (`tee/`, kept 24 hours), the hooks' shared state (`hooks/`), the debug log, the proxy's log, port and wiring record (`proxy_wiring.json`) | `SOBRE_STATE_DIR`, `XDG_STATE_HOME` |
 | `~/.cache/sobre` | embedding models | `SOBRE_CACHE_DIR`, `XDG_CACHE_HOME` |
 
@@ -465,8 +460,8 @@ sobre uninstall
   changed in it;
 - the proxy, its login service and the addresses it wrote into agent
   configurations;
-- the config, data, state and cache directories — usage history, sessions,
-  memory, indexes and models included;
+- the config, data, state and cache directories — usage history, indexes
+  and models included;
 - the binary, unless it sits in a build directory or under `~/.cargo` (run
   `cargo uninstall sobre` then).
 

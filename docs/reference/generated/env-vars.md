@@ -9,7 +9,7 @@ Source of truth: `rust/src/core/env_vars.rs`; a test fails when the code reads a
 | Variable | Meaning |
 |---|---|
 | `SOBRE_CONFIG_DIR` | Directory of config.toml (default `$XDG_CONFIG_HOME/sobre`, else `~/.config/sobre`) |
-| `SOBRE_DATA_DIR` | Usage ledger, sessions, knowledge, indexes, checkpoints, models (default `$XDG_DATA_HOME/sobre`, else `~/.local/share/sobre`) |
+| `SOBRE_DATA_DIR` | Usage ledger, indexes, checkpoints, models (default `$XDG_DATA_HOME/sobre`, else `~/.local/share/sobre`) |
 | `SOBRE_STATE_DIR` | Logs, ports, captured agent variables (default `$XDG_STATE_HOME/sobre`, else `~/.local/state/sobre`) |
 | `SOBRE_CACHE_DIR` | Rebuildable caches (default `$XDG_CACHE_HOME/sobre`, else `~/.cache/sobre`) |
 | `XDG_CONFIG_HOME` | Base of the config directory |
