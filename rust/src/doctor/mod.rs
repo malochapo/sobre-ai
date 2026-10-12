@@ -266,10 +266,6 @@ pub fn run(json: bool) -> u32 {
         }
     }
 
-    // Session state (project_root + shell_cwd)
-    let session_outcome = session_state_outcome();
-    board.check(&session_outcome);
-
     // Claude Code's sobre skill
     if let Some(ref skill) = claude_skill_outcome() {
         board.check(skill);
@@ -286,15 +282,10 @@ pub fn run(json: bool) -> u32 {
         board.check(check);
     }
 
-    // Capacity warnings (memory stores near limits)
-    let cap_warnings = capacity_warnings();
-    for cw in &cap_warnings {
-        board.check(cw);
+    // Graph index capacity for the active project
+    if let Some(ref check) = graph_capacity_outcome() {
+        board.check(check);
     }
-
-    // Orphaned knowledge stores (deleted projects — reclaimable bloat)
-    let orphan_outcome = orphaned_knowledge_outcome();
-    board.check(&orphan_outcome);
 
     // Proxy health
     let proxy_health = proxy_health_outcome();
@@ -484,72 +475,4 @@ pub(super) fn print_compact_status(passed: u32, total: u32) {
         format!("{YELLOW}{passed}/{total} passed{RST} — run {BOLD}sobre doctor{RST} for details")
     };
     crate::outln!("  {status}");
-}
-
-#[cfg(test)]
-mod tests {
-
-    // `checks::capacity_level`, the classification `capacity_warnings` applies
-    // to each store: at or below its cap is at most a WARN (healthy, eviction
-    // keeps it there); only a store *over* cap is CRIT.
-    #[test]
-    fn capacity_below_80_no_warning() {
-        assert!(super::checks::capacity_level("facts", 100, 200).is_none());
-        assert!(super::checks::capacity_level("facts", 159, 200).is_none());
-    }
-
-    #[test]
-    fn capacity_at_80_yellow_warning() {
-        let result = super::checks::capacity_level("facts", 160, 200);
-        assert!(result.is_some());
-        let (critical, msg) = result.unwrap();
-        assert!(!critical);
-        assert!(msg.contains("160/200"));
-        assert!(msg.contains("80%"));
-    }
-
-    #[test]
-    fn capacity_at_92_yellow_warning() {
-        let result = super::checks::capacity_level("facts", 185, 200);
-        assert!(result.is_some());
-        let (critical, msg) = result.unwrap();
-        assert!(!critical);
-        assert!(msg.contains("185/200"));
-        assert!(msg.contains("92%"));
-    }
-
-    #[test]
-    fn capacity_at_95_is_warning_not_critical() {
-        let result = super::checks::capacity_level("facts", 190, 200);
-        assert!(result.is_some());
-        let (critical, msg) = result.unwrap();
-        assert!(!critical, "95% is full-but-healthy, not over cap");
-        assert!(msg.contains("190/200"));
-        assert!(msg.contains("95%"));
-    }
-
-    #[test]
-    fn capacity_at_100_is_warning_not_critical() {
-        // A store exactly at its cap is healthy — eviction keeps it there.
-        let result = super::checks::capacity_level("facts", 200, 200);
-        assert!(result.is_some());
-        let (critical, _) = result.unwrap();
-        assert!(!critical);
-    }
-
-    #[test]
-    fn capacity_over_100_is_critical() {
-        // Over cap: eviction is not keeping up.
-        let result = super::checks::capacity_level("facts", 206, 200);
-        assert!(result.is_some());
-        let (critical, msg) = result.unwrap();
-        assert!(critical);
-        assert!(msg.contains("206/200"));
-        assert!(msg.contains("103%"));
-    }
-
-    #[test]
-    fn capacity_zero_limit_skipped() {
-        assert!(super::checks::capacity_level("facts", 50, 0).is_none());
-    }
 }

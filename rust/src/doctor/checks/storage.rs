@@ -1,8 +1,6 @@
-//! On-disk stores & memory: BM25/semantic indexes, archive FTS, RAM
-//! guardian, knowledge stores, capacity accounting.
+//! On-disk indexes: the BM25 cache, the semantic index and the graph
+//! index's capacity.
 
-#[allow(clippy::wildcard_imports)]
-use crate::doctor::common::*;
 use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
 
 pub(crate) fn bm25_cache_health_outcome() -> Outcome {
@@ -102,15 +100,15 @@ pub(crate) fn bm25_cache_health_outcome() -> Outcome {
         ),
     }
 }
-/// Runtime status of the semantic (BM25) index for the active project: whether
-/// it is idle/building/ready/failed, how long the last build took, and — crucially
-/// — *why* it might be stuck (e.g. "indexed but NOT persisted: too large").
+/// Runtime status of the semantic (BM25) index for the project around the
+/// current directory: whether it is idle/building/ready/failed, how long the
+/// last build took, and — crucially — *why* it might be stuck (e.g. "indexed
+/// but NOT persisted: too large").
 ///
 /// Users otherwise had no way to tell whether the semantic index
 /// was working, how fast it was, or why it kept "warming up" forever.
 pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
-    let session = crate::core::session::SessionState::load_latest()?;
-    let project_root = session.project_root?;
+    let project_root = current_project_root()?;
 
     let summary = crate::core::index_orchestrator::bm25_summary(&project_root);
     let disk = crate::core::index_orchestrator::disk_status(&project_root);
@@ -179,201 +177,44 @@ pub(crate) fn semantic_index_outcome() -> Option<Outcome> {
     };
     Some(outcome)
 }
-/// Reports knowledge stores whose `project_root` is not on disk: a removed
-/// worktree or a thrown-away project, or a project that moved or sits on an
-/// unmounted drive. Informational (never a hard failure); nothing deletes
-/// them but the user.
-pub(crate) fn orphaned_knowledge_outcome() -> Outcome {
-    let orphans = crate::core::knowledge::maintenance::find_orphaned_stores();
-    if orphans.is_empty() {
-        return Outcome {
-            ok: true,
-            line: format!("{BOLD}Knowledge stores{RST}  {GREEN}no orphaned stores{RST}"),
-        };
-    }
-    let bytes: u64 = orphans.iter().map(|o| o.size_bytes).sum();
-    Outcome {
-        ok: true,
-        line: format!(
-            "{BOLD}Knowledge stores{RST}  {YELLOW}{} for projects not on disk ({}){RST}  {DIM}(moved, deleted or unmounted; delete a store by hand if its project is gone){RST}",
-            orphans.len(),
-            human_bytes(bytes)
-        ),
-    }
-}
-/// Classify one memory store against its cap: `None` below 80% or with no
-/// cap, otherwise `(over_cap, "name: current/limit (pct%)")`. A store sitting
-/// *at* its cap is healthy: eviction (run_lifecycle) keeps it there by design.
-/// Only a store genuinely *over* cap is critical, which means eviction is not
-/// keeping up.
-pub(crate) fn capacity_level(name: &str, current: usize, limit: usize) -> Option<(bool, String)> {
-    if limit == 0 {
-        return None;
-    }
-    let pct = (current as f64 / limit as f64 * 100.0) as u32;
-    let warning = format!("{name}: {current}/{limit} ({pct}%)");
-    if pct > 100 {
-        Some((true, warning))
-    } else if pct >= 80 {
-        Some((false, warning))
-    } else {
-        None
-    }
+/// The project around the current directory, found as the other commands
+/// find it; `None` for a broad root (`/`, the home directory), which is no
+/// project.
+fn current_project_root() -> Option<String> {
+    let root = crate::cli::common::project_root(None);
+    (!crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(&root))).then_some(root)
 }
 
-pub(crate) fn capacity_warnings() -> Vec<Outcome> {
-    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
-        return vec![];
-    };
-
-    let policy = crate::core::memory_policy::MemoryPolicy::default();
-
-    let knowledge_dir = data_dir.join("knowledge");
-    let Ok(entries) = std::fs::read_dir(&knowledge_dir) else {
-        return vec![Outcome {
-            ok: true,
-            line: format!("{BOLD}Capacity{RST} {GREEN}no memory stores{RST}"),
-        }];
-    };
-
-    let mut results = Vec::new();
-
-    for entry in entries.flatten() {
-        let hash_dir = entry.path();
-        if !hash_dir.is_dir() {
-            continue;
-        }
-        let hash = hash_dir
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        let short_hash = &hash[..hash.len().min(8)];
-
-        let mut checks: Vec<(String, usize, usize)> = Vec::new();
-        let mut project_root = None;
-
-        if let Ok(content) = std::fs::read_to_string(hash_dir.join("knowledge.json"))
-            && let Ok(k) =
-                serde_json::from_str::<crate::core::knowledge::ProjectKnowledge>(&content)
-        {
-            project_root = Some(k.project_root.clone());
-            checks.push((
-                "facts".to_string(),
-                k.facts.len(),
-                policy.knowledge.max_facts,
-            ));
-            checks.push((
-                "history".to_string(),
-                k.history.len(),
-                policy.knowledge.max_history,
-            ));
-        }
-
-        if let Ok(content) = std::fs::read_to_string(hash_dir.join("embeddings.json"))
-            && let Ok(idx) = serde_json::from_str::<
-                crate::core::knowledge_embedding::KnowledgeEmbeddingIndex,
-            >(&content)
-        {
-            checks.push((
-                "embeddings".to_string(),
-                idx.entries.len(),
-                policy.embeddings.max_facts,
-            ));
-        }
-
-        if let Ok(content) = std::fs::read_to_string(hash_dir.join("gotchas.json"))
-            && let Ok(g) =
-                serde_json::from_str::<crate::core::gotcha_tracker::GotchaStore>(&content)
-        {
-            checks.push((
-                "gotchas".to_string(),
-                g.gotchas.len(),
-                crate::core::gotcha_tracker::MAX_GOTCHAS,
-            ));
-        }
-
-        let mut warnings: Vec<String> = Vec::new();
-        let mut critical = false;
-
-        for (name, current, limit) in &checks {
-            if let Some((over_cap, warning)) = capacity_level(name, *current, *limit) {
-                critical |= over_cap;
-                warnings.push(warning);
-            }
-        }
-
-        if !warnings.is_empty() {
-            let color = if critical { RED } else { YELLOW };
-            let label = if critical { "CRIT" } else { "WARN" };
-            results.push(Outcome {
-                ok: !critical,
-                line: format!(
-                    "{BOLD}Capacity [{short_hash}]{RST} {color}{label}: {}{RST}",
-                    warnings.join(", ")
-                ),
-            });
-            // Actionable guidance. A store *at* its cap is healthy by
-            // design — eviction keeps it there; only *over* cap means curation is
-            // falling behind. Point the operator at the right lever either way.
-            results.push(Outcome {
-                ok: true,
-                line: format!(
-                    "  {DIM}→ {}{RST}",
-                    capacity_hint(critical, project_root.as_deref())
-                ),
-            });
-        }
-    }
-
-    // Global checks (not per project hash)
-
-    // Graph index file count vs limit
+/// The current project's graph index against its file cap: critical from
+/// 95%, a warning from 80%. `None` without a project or a graph index.
+pub(crate) fn graph_capacity_outcome() -> Option<Outcome> {
     let graph_max_files = crate::core::config::GRAPH_INDEX_MAX_FILES;
-    if graph_max_files > 0
-        && let Some(session) = crate::core::session::SessionState::load_latest()
-        && let Some(ref project_root) = session.project_root
-    {
-        let disk_status = crate::core::index_orchestrator::disk_status(project_root);
-        if let Some(graph_files) = disk_status.graph_index.file_count {
-            let pct = (graph_files as f64 / graph_max_files as f64 * 100.0) as u32;
-            if pct >= 95 {
-                results.push(Outcome {
-                            ok: false,
-                            line: format!(
-                                "{BOLD}Capacity [graph]{RST} {RED}CRIT: files {graph_files}/{graph_max_files} ({pct}%){RST}"
-                            ),
-                        });
-            } else if pct >= 80 {
-                results.push(Outcome {
-                            ok: true,
-                            line: format!(
-                                "{BOLD}Capacity [graph]{RST} {YELLOW}WARN: files {graph_files}/{graph_max_files} ({pct}%){RST}"
-                            ),
-                        });
-            }
+    let project_root = current_project_root()?;
+    let graph_files = crate::core::index_orchestrator::disk_status(&project_root)
+        .graph_index
+        .file_count?;
+    let pct = (graph_files as f64 / graph_max_files as f64 * 100.0) as u32;
+    let outcome = if pct >= 95 {
+        Outcome {
+            ok: false,
+            line: format!(
+                "{BOLD}Capacity [graph]{RST} {RED}CRIT: files {graph_files}/{graph_max_files} ({pct}%){RST}"
+            ),
         }
-    }
-
-    if results.is_empty() {
-        results.push(Outcome {
+    } else if pct >= 80 {
+        Outcome {
             ok: true,
-            line: format!("{BOLD}Capacity{RST} {GREEN}all stores within limits{RST}"),
-        });
-    }
-
-    results
-}
-/// Actionable next-step for a memory capacity warning. Separated from the
-/// on-disk capacity scan so the messaging is unit-tested directly: a store *at*
-/// its cap is healthy (eviction holds it there), while *over* cap means curation
-/// is behind and the operator should compact it.
-pub(crate) fn capacity_hint(critical: bool, project_root: Option<&str>) -> String {
-    if !critical {
-        return "at/near cap is healthy by design — eviction holds the store at its cap (write-time dedup, 90-day prune)".to_string();
-    }
-    let root = project_root.unwrap_or("<project>");
-    format!(
-        "over cap — eviction is behind. Compact it now: sobre call sobre_knowledge --project-root '{root}' --json '{{\"action\":\"consolidate\"}}'"
-    )
+            line: format!(
+                "{BOLD}Capacity [graph]{RST} {YELLOW}WARN: files {graph_files}/{graph_max_files} ({pct}%){RST}"
+            ),
+        }
+    } else {
+        Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Capacity [graph]{RST} {GREEN}files {graph_files}/{graph_max_files} ({pct}%){RST}"
+            ),
+        }
+    };
+    Some(outcome)
 }
