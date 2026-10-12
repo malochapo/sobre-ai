@@ -20,7 +20,7 @@ Install sobre from a GitHub release.
 
 Usage: install.sh [--version <tag>] [--dense] [--dir <path>]
 
-  --version <tag>  the release to install, e.g. v0.1.0-rc.1 (default: the
+  --version <tag>  the release to install, e.g. v0.1.0-rc.3 (default: the
                    latest release, or the newest pre-release while there is
                    no release yet)
   --dense          the build with local embeddings (on Linux it needs glibc
@@ -131,7 +131,7 @@ main() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --version)
-                [ $# -ge 2 ] || die "--version needs a tag, e.g. v0.1.0-rc.1"
+                [ $# -ge 2 ] || die "--version needs a tag, e.g. v0.1.0-rc.3"
                 version=$2
                 shift 2
                 ;;

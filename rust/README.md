@@ -53,13 +53,13 @@ src/
 │                       line (clap)
 ├─ server/              MCP server: registry, dispatch, path resolution, roots,
 │                       output post-processing, background shell jobs
-├─ tools/               the 15 MCP tools (registered/ holds their schemas)
+├─ tools/               the 13 MCP tools (registered/ holds their schemas)
 ├─ tool_defs/           tool definitions and their read-only/destructive hints
 ├─ mcp_stdio.rs         the MCP stdio transport: rmcp's, with a 32 MiB line cap
 ├─ instructions.rs      the MCP server instructions — the one rules channel
 ├─ core/                the engine: config, paths, compression, read cache,
 │                       search and graph indexes, embeddings, session,
-│                       knowledge, usage ledger, reference generators
+│                       usage ledger, reference generators
 ├─ shell/               shell execution and output compression (the per-command
 │                       patterns are in core/patterns/)
 ├─ compound_lexer.rs    splits a shell line at its operators, for the pre-run hooks

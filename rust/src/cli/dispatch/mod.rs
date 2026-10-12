@@ -254,7 +254,7 @@ mod tests {
         let h = concise_help_text();
         assert!(h.contains("sobre init"), "must lead with init");
         assert!(h.contains("sobre help all"), "must point to full reference");
-        assert!(h.contains("sobre gain"), "must surface the savings report");
+        assert!(h.contains("sobre gain"), "must surface the usage report");
         // Concise means concise — keep it well under the full reference.
         assert!(
             h.lines().count() <= 40,

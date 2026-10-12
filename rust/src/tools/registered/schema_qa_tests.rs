@@ -6,7 +6,6 @@ use serde_json::{Value, json};
 
 use super::sobre_expand::SobreExpandTool;
 use super::sobre_graph::SobreGraphTool;
-use super::sobre_knowledge::SobreKnowledgeTool;
 use super::sobre_patch::SobrePatchTool;
 use super::sobre_search::SobreSearchTool;
 use crate::server::tool_trait::McpTool;
@@ -42,15 +41,7 @@ fn expand_and_graph_require_action_inputs() {
 }
 
 #[test]
-fn knowledge_search_and_execute_require_mode_specific_inputs() {
-    let knowledge = validator(&SobreKnowledgeTool);
-    assert!(knowledge.is_valid(&json!({"action":"remember","category":"decision","value":"v"})));
-    assert!(knowledge.is_valid(&json!({"action":"recall"})));
-    // `value` alone is the documented form; the value is what is required.
-    assert!(knowledge.is_valid(&json!({"action":"remember","value":"v"})));
-    assert!(!knowledge.is_valid(&json!({"action":"remember","category":"decision"})));
-    assert!(!knowledge.is_valid(&json!({"action":"gotcha","trigger":"t"})));
-
+fn search_requires_mode_specific_inputs() {
     let search = validator(&SobreSearchTool);
     assert!(search.is_valid(&json!({"pattern":"needle"})));
     assert!(search.is_valid(&json!({"action":"symbol","handle":"f.rs#f@L1"})));
@@ -188,7 +179,6 @@ fn every_argument_a_handler_reads_is_declared() {
             ],
         ),
         ("sobre_graph", &[include_str!("sobre_graph.rs")]),
-        ("sobre_knowledge", &[include_str!("sobre_knowledge.rs")]),
         ("sobre_outline", &[include_str!("sobre_outline.rs")]),
         (
             "sobre_patch",
@@ -216,7 +206,6 @@ fn every_argument_a_handler_reads_is_declared() {
                 include_str!("../../server/multi_path.rs"),
             ],
         ),
-        ("sobre_session", &[include_str!("sobre_session.rs")]),
         ("sobre_shell", &[include_str!("sobre_shell.rs")]),
         ("sobre_tree", &[include_str!("sobre_tree.rs")]),
     ];

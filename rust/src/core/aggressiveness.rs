@@ -2,7 +2,7 @@
 //!
 //! `sobre_read`'s `aggressiveness` argument expresses "how hard should I
 //! compress?" as one number instead of a read mode. The number is *mapped*
-//! onto the existing density / entropy / information-bottleneck stages — it
+//! onto the existing density / entropy stages — it
 //! never introduces a model, so the output stays a pure function of the
 //! inputs. Without the argument ([`effective`] returns `None`) each mode keeps
 //! its own default; `compression_level` in the config does not set it.
@@ -11,19 +11,16 @@
 /// function of `a`, so the same `a` always yields the same knobs (determinism).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AggressivenessProfile {
-    /// Fraction of tokens to keep (density target for `density:` / IB prose).
+    /// Fraction of tokens to keep (density target for `density:`).
     /// `a=0.0 → 1.00` (keep everything), `a=1.0 → 0.15` (keep ~15%).
     pub density_target: f64,
     /// BPE-entropy keep threshold for the `entropy` mode. Lines below this are
     /// dropped. `a=0.0 → 0.6` (keep almost all), `a=1.0 → 2.0` (drop low-info).
     pub bpe_entropy: f64,
-    /// Information-bottleneck keep ratio for `task`/IB modes.
-    /// `a=0.0 → 0.60`, `a=1.0 → 0.10`.
-    pub ib_budget_ratio: f64,
 }
 
 impl AggressivenessProfile {
-    /// Maps `a ∈ [0,1]` (clamped) onto the three tuning knobs. The constants
+    /// Maps `a ∈ [0,1]` (clamped) onto the two tuning knobs. The constants
     /// are hand-set and monotonic; no measurement calibrated them.
     #[must_use]
     pub fn from_level(a: f64) -> Self {
@@ -31,7 +28,6 @@ impl AggressivenessProfile {
         Self {
             density_target: (1.0 - 0.85 * a).clamp(0.10, 1.0),
             bpe_entropy: 0.6 + 1.4 * a,
-            ib_budget_ratio: (0.6 - 0.5 * a).clamp(0.10, 0.6),
         }
     }
 }
@@ -72,8 +68,6 @@ mod tests {
         assert!(mid.density_target > hi.density_target);
         assert!(lo.bpe_entropy < mid.bpe_entropy);
         assert!(mid.bpe_entropy < hi.bpe_entropy);
-        assert!(lo.ib_budget_ratio > mid.ib_budget_ratio);
-        assert!(mid.ib_budget_ratio > hi.ib_budget_ratio);
     }
 
     #[test]

@@ -71,8 +71,10 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
         return exit_code;
     }
 
-    crate::outln!("{BOLD}Fixed context overhead per session{RST}");
-    crate::outln!("{DIM}What every session pays before any compression saves a token.{RST}\n");
+    crate::outln!("{BOLD}Fixed context overhead of the MCP server{RST}");
+    crate::outln!(
+        "{DIM}What every request carries while sobre's MCP server is connected; a host that loads tool definitions on demand carries less.{RST}\n"
+    );
 
     // 1. Tool schemas
     crate::outln!(
@@ -90,7 +92,7 @@ pub(super) fn run_overhead(json: bool, gate: bool) -> i32 {
     crate::outln!();
     let total = report.total_tokens();
     let color = if report.over_budget { YELLOW } else { GREEN };
-    crate::outln!("  {BOLD}Total fixed cost{RST}      {color}{total:>6} tok / session{RST}");
+    crate::outln!("  {BOLD}Total fixed cost{RST}      {color}{total:>6} tok / request{RST}");
     if report.over_budget {
         // Machine-readable so CI/log scrapers can key on a stable token.
         crate::outln!(

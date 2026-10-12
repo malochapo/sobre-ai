@@ -252,16 +252,9 @@ mod tests {
             bt.record_read(&path, "full", 500, 500);
         }
         assert_eq!(bt.total_bounces(), 0);
-        for (i, first) in [
-            "map",
-            "signatures",
-            "aggressive",
-            "entropy",
-            "task",
-            "density:0.40",
-        ]
-        .into_iter()
-        .enumerate()
+        for (i, first) in ["map", "signatures", "aggressive", "entropy", "density:0.40"]
+            .into_iter()
+            .enumerate()
         {
             let path = format!("src/g{i}.rs");
             bt.seq_counter = 100 + (i as u64) * 10;
@@ -269,7 +262,7 @@ mod tests {
             bt.seq_counter += 1;
             bt.record_read(&path, "full", 500, 500);
         }
-        assert_eq!(bt.total_bounces(), 6);
+        assert_eq!(bt.total_bounces(), 5);
     }
 
     /// Files without an extension are not grouped by a fragment of their

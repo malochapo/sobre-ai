@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use super::{compact_score, display_user_path, print_compact_status};
+use super::{compact_score, print_compact_status};
 
 pub(super) struct DoctorFixOptions {
     pub json: bool,
@@ -134,8 +134,6 @@ fn build_fix_report(quiet: bool) -> Result<crate::core::setup_report::SetupRepor
     });
     steps.push(startup_step);
 
-    steps.push(orphaned_knowledge_step());
-
     let mut verify_step = SetupStepReport {
         name: "verify".to_string(),
         ok: true,
@@ -242,29 +240,6 @@ fn repair_agents(home: &std::path::Path) -> crate::core::setup_report::SetupStep
             .push("no agent has sobre yet; connect one with `sobre init`".to_string());
     }
     agents_step
-}
-
-/// Knowledge stores whose project root is not on disk, listed and never
-/// deleted: the project may have moved, or sit on an unmounted drive.
-fn orphaned_knowledge_step() -> crate::core::setup_report::SetupStepReport {
-    let warnings = crate::core::knowledge::maintenance::find_orphaned_stores()
-        .into_iter()
-        .map(|orphan| {
-            format!(
-                "kept knowledge store {} ({}): its project is not on disk (moved, deleted, or \
-                 on an unmounted drive); delete it by hand if the project is gone",
-                display_user_path(&orphan.dir),
-                super::common::human_bytes(orphan.size_bytes)
-            )
-        })
-        .collect();
-    crate::core::setup_report::SetupStepReport {
-        name: "orphaned_knowledge".to_string(),
-        ok: true,
-        items: Vec::new(),
-        warnings,
-        errors: Vec::new(),
-    }
 }
 
 pub(super) struct PruneResult {
@@ -382,7 +357,7 @@ fn dir_size(path: &std::path::Path) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{orphaned_knowledge_step, prune_bm25_caches, prune_graph_caches, repair_agents};
+    use super::{prune_bm25_caches, prune_graph_caches, repair_agents};
 
     /// The hooks are refreshed everywhere, the MCP entry and the skill where
     /// the entry is, and an MCP entry is added nowhere.
@@ -413,25 +388,6 @@ mod tests {
         assert!(!home.path().join(".cursor/skills/sobre").exists());
         let hooks = std::fs::read_to_string(home.path().join(".cursor/hooks.json")).unwrap();
         assert!(!hooks.contains("/old/sobre"), "{hooks}");
-    }
-
-    /// A knowledge store whose project is not on disk is reported and kept.
-    #[test]
-    fn knowledge_of_a_missing_project_is_kept() {
-        let data = crate::core::data_dir::isolated_data_dir();
-        let store = data.path().join("knowledge/abc");
-        std::fs::create_dir_all(&store).unwrap();
-        let knowledge = crate::core::knowledge::ProjectKnowledge::new("/nonexistent/sobre-moved");
-        std::fs::write(
-            store.join("knowledge.json"),
-            serde_json::to_string(&knowledge).unwrap(),
-        )
-        .unwrap();
-
-        let step = orphaned_knowledge_step();
-        assert!(store.join("knowledge.json").exists());
-        assert_eq!(step.warnings.len(), 1, "{:?}", step.warnings);
-        assert!(step.warnings[0].starts_with("kept knowledge store"));
     }
 
     #[test]

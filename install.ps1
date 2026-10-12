@@ -15,7 +15,7 @@ whose checksum does not match, copies sobre.exe into
 It runs only `sobre --version` once installed.
 
 .PARAMETER Version
-The release to install, e.g. v0.1.0-rc.1. Default: the latest release, or the
+The release to install, e.g. v0.1.0-rc.3. Default: the latest release, or the
 newest pre-release while there is no release yet.
 
 .PARAMETER Dense

@@ -188,8 +188,8 @@ mod tests {
         let registry = crate::server::registry::build_registry();
         assert_eq!(
             registry.len(),
-            15,
-            "registry tool count drift — the surface is 15 and capped at 20 \
+            13,
+            "registry tool count drift — the surface is 13 and capped at 20 \
              (invariant 1). Update this test AND the docs when it moves."
         );
     }

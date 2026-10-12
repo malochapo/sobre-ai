@@ -11,14 +11,12 @@ pub mod sobre_graph_calls;
 pub mod sobre_graph_diagram;
 pub mod sobre_graph_impact;
 pub mod sobre_graph_primitives;
-pub mod sobre_knowledge;
 pub mod sobre_outline;
 pub mod sobre_patch;
 pub mod sobre_read;
 pub mod sobre_refactor;
 pub mod sobre_review;
 pub mod sobre_search;
-pub mod sobre_session;
 pub mod sobre_shell;
 pub mod sobre_tree;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.
@@ -35,7 +33,6 @@ pub(crate) mod walk_guard;
 
 mod server;
 mod server_lifecycle;
-mod server_metrics;
 mod server_paths;
 pub(crate) mod startup;
 
@@ -225,79 +222,20 @@ mod resolve_path_tests {
 
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn a_new_server_starts_an_empty_session() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let _data = tempfile::tempdir().unwrap();
-        let _tmp = tempfile::tempdir().unwrap();
+    async fn startup_roots_the_session_and_preserves_subdir_cwd() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("repo");
+        let repo_src = repo.join("src");
+        let root = create_git_root(&repo);
+        std::fs::create_dir_all(&repo_src).unwrap();
+        let repo_src_value = canonicalize_path(&repo_src);
 
-        crate::test_env::set_var("SOBRE_DATA_DIR", _data.path());
-
-        let repo_a = _tmp.path().join("repo-a");
-        let repo_b = _tmp.path().join("repo-b");
-        let root_a = create_git_root(&repo_a);
-        let root_b = create_git_root(&repo_b);
-
-        let mut session_b = crate::core::session::SessionState::new();
-        session_b.project_root = Some(root_b.clone());
-        session_b.shell_cwd = Some(root_b.clone());
-        session_b.set_task("repo-b task", None);
-        session_b.save().unwrap();
-
-        std::thread::sleep(std::time::Duration::from_millis(50));
-
-        let mut session_a = crate::core::session::SessionState::new();
-        session_a.project_root = Some(root_a.clone());
-        session_a.shell_cwd = Some(root_a.clone());
-        session_a.set_task("repo-a latest task", None);
-        session_a.save().unwrap();
-
-        let server = SobreServer::new_with_startup(None, Some(repo_b.as_path()));
-        crate::test_env::remove_var("SOBRE_DATA_DIR");
-
-        // The saved sessions stay on disk for `load`; the new
-        // process starts empty, rooted where it was started.
-        let session = server.session.read().await;
-        assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
-        assert_eq!(session.shell_cwd.as_deref(), Some(root_b.as_str()));
-        assert!(session.task.is_none());
-        assert_ne!(session.id, session_b.id);
-    }
-
-    #[tokio::test]
-    #[allow(clippy::await_holding_lock)]
-    async fn startup_creates_fresh_session_for_new_workspace_and_preserves_subdir_cwd() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let _data = tempfile::tempdir().unwrap();
-        let _tmp = tempfile::tempdir().unwrap();
-
-        crate::test_env::set_var("SOBRE_DATA_DIR", _data.path());
-
-        let repo_a = _tmp.path().join("repo-a");
-        let repo_b = _tmp.path().join("repo-b");
-        let repo_b_src = repo_b.join("src");
-        let root_a = create_git_root(&repo_a);
-        let root_b = create_git_root(&repo_b);
-        std::fs::create_dir_all(&repo_b_src).unwrap();
-        let repo_b_src_value = canonicalize_path(&repo_b_src);
-
-        let mut session_a = crate::core::session::SessionState::new();
-        session_a.project_root = Some(root_a.clone());
-        session_a.shell_cwd = Some(root_a.clone());
-        session_a.set_task("repo-a latest task", None);
-        let old_id = session_a.id.clone();
-        session_a.save().unwrap();
-
-        let server = SobreServer::new_with_startup(None, Some(repo_b_src.as_path()));
-        crate::test_env::remove_var("SOBRE_DATA_DIR");
+        let server = SobreServer::new_with_startup(None, Some(repo_src.as_path()));
 
         let session = server.session.read().await;
-        assert_eq!(session.project_root.as_deref(), Some(root_b.as_str()));
-        assert_eq!(
-            session.shell_cwd.as_deref(),
-            Some(repo_b_src_value.as_str())
-        );
-        assert!(session.task.is_none());
-        assert_ne!(session.id, old_id);
+        assert_eq!(session.project_root.as_deref(), Some(root.as_str()));
+        assert_eq!(session.shell_cwd.as_deref(), Some(repo_src_value.as_str()));
     }
 
     #[tokio::test]

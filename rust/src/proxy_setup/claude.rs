@@ -61,8 +61,8 @@ fn warn_claude_subscription_skip() {
     eprintln!("    The proxy forwards your credential upstream but never injects one, and a");
     eprintln!("    subscription token only authenticates against api.anthropic.com directly.");
     eprintln!("    Leaving ANTHROPIC_BASE_URL untouched so Claude Code keeps working.");
-    eprintln!("    Savings on a subscription: use the sobre MCP tools (sobre_read /");
-    eprintln!("    sobre_search / sobre_shell). Pay-as-you-go? Set ANTHROPIC_API_KEY, then run:");
+    eprintln!("    The hooks compress shell output either way. To measure billed usage");
+    eprintln!("    through the proxy, set ANTHROPIC_API_KEY (pay-as-you-go), then run:");
     eprintln!("      sobre proxy enable");
 }
 

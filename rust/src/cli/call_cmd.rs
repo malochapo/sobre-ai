@@ -87,11 +87,10 @@ fn oneshot_ctx(
     resolved_paths: HashMap<String, String>,
     path_errors: HashMap<String, String>,
 ) -> ToolContext {
-    // An empty session and a fresh file cache, as a starting MCP server has
-    //: the tools that track reads or memory (`sobre_read`,
-    // `sobre_shell`, `sobre_session`, `sobre_knowledge`) refuse to run without
-    // them. The session is stamped with the canonical root so a later load
-    // matches it.
+    // An empty session and a fresh file cache, as a starting MCP server has:
+    // the tools that track reads or the shell's directory (`sobre_read`,
+    // `sobre_shell`) refuse to run without them. The session is stamped with
+    // the canonical root, which relative paths resolve against.
     let mut session = SessionState::new();
     session.project_root = Some(
         crate::core::pathutil::safe_canonicalize_or_self(Path::new(&project_root))
@@ -169,28 +168,13 @@ pub(crate) fn run_call(args: &CallArgs) -> Result<Called, CallError> {
         .get_arc(&parsed.tool)
         .ok_or_else(|| CallError::UnknownTool(parsed.tool.clone()))?;
 
-    // The process exits after this call, so what `sobre_session` recorded (a
-    // task, a finding, a decision) is saved now, as the server would save it.
-    // Other tools' session bookkeeping (files read, an inferred task) says what
-    // an agent has seen; a shell call is not the agent, so it is dropped.
-    let save_session = parsed.tool == "sobre_session";
     let tool_name = parsed.tool.clone();
     let reports_failures = tool.text_reports_failures();
 
     // Run the synchronous handler on the blocking pool of a runtime, as the
     // server does: handlers that lock the session block on it there.
     let output = super::dispatch::run_async(async move {
-        tokio::task::spawn_blocking(move || {
-            let output = tool.handle(&args_map, &ctx);
-            if save_session && let Some(session) = &ctx.session {
-                let mut session = session.blocking_write();
-                if session.stats.unsaved_changes > 0 {
-                    let _ = session.save();
-                }
-            }
-            output
-        })
-        .await
+        tokio::task::spawn_blocking(move || tool.handle(&args_map, &ctx)).await
     })
     .map_err(|e| e.to_string())
     .and_then(|r| r.map_err(|e| e.to_string()))
@@ -349,28 +333,5 @@ mod tests {
         ))
         .expect("the call itself works");
         assert!(!fine.is_error, "{}", fine.text);
-    }
-
-    /// Each call starts an empty session; what one call saved, `load`
-    /// restores.
-    #[test]
-    fn a_saved_session_is_loaded_on_request() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let project = tempfile::tempdir().unwrap();
-        let root = project.path().to_string_lossy().to_string();
-        let call = |json: &str| {
-            run_call(&call_args("sobre_session", Some(&root), Some(json)))
-                .expect("sobre_session call")
-                .text
-        };
-
-        call(r#"{"action": "task", "value": "wire the parser"}"#);
-        let status = call(r#"{"action": "status"}"#);
-        assert!(!status.contains("wire the parser"), "{status}");
-        let loaded = call(r#"{"action": "load"}"#);
-        assert!(
-            loaded.contains("wire the parser"),
-            "the task saved by the first call is lost:\n{loaded}"
-        );
     }
 }

@@ -135,42 +135,17 @@ pub fn entropy_compress_with_threshold(
     entropy_compress_with_thresholds(content, bpe_entropy, thresholds.jaccard, force_keep)
 }
 
-/// Task-conditioned entropy compression: lines that would normally be dropped
-/// for low entropy are kept if they contain task-relevant keywords.  This is
-/// the Information Bottleneck proxy: we compress away only what is neither
-/// surprising (high H) *nor* task-relevant (mentions goal concepts).
-/// Falls back to pure entropy when `task_keywords` is empty.
-pub fn entropy_compress_task_conditioned(
-    content: &str,
-    path: &str,
-    task_keywords: &[String],
-    force_keep: &[String],
-) -> EntropyResult {
-    let thresholds = super::adaptive_thresholds::adaptive_thresholds(path, content);
-
-    entropy_compress_inner(
-        content,
-        thresholds.bpe_entropy,
-        thresholds.jaccard,
-        task_keywords,
-        force_keep,
-    )
-}
-
-fn entropy_compress_inner(
+fn entropy_compress_with_thresholds(
     content: &str,
     entropy_threshold: f64,
     jaccard_threshold: f64,
-    task_keywords: &[String],
     force_keep: &[String],
 ) -> EntropyResult {
     let original_tokens = count_tokens(content);
     let mut lines: Vec<&str> = content.lines().collect();
     let mut techniques = Vec::new();
 
-    let kw_lower: Vec<String> = task_keywords.iter().map(|k| k.to_lowercase()).collect();
     let original_count = lines.len();
-    let mut task_rescued = 0usize;
     lines.retain(|line| {
         let trimmed = line.trim();
         // Explicit protect tokens win over every lossy heuristic: a line
@@ -178,26 +153,13 @@ fn entropy_compress_inner(
         if super::protect::line_is_protected(line, force_keep) {
             return true;
         }
-        if super::surprise::should_keep_line(trimmed, entropy_threshold) {
-            return true;
-        }
-        // Task-conditioned rescue: keep low-entropy lines that mention task keywords.
-        if !kw_lower.is_empty() {
-            let lower = trimmed.to_lowercase();
-            if kw_lower.iter().any(|kw| lower.contains(kw.as_str())) {
-                task_rescued += 1;
-                return true;
-            }
-        }
-        false
+        super::surprise::should_keep_line(trimmed, entropy_threshold)
     });
     let removed = original_count - lines.len();
-    if removed > 0 || task_rescued > 0 {
-        let mut msg = format!("⊘ {removed} low-entropy lines (BPE H<{entropy_threshold:.2})");
-        if task_rescued > 0 {
-            msg.push_str(&format!(" [+{task_rescued} task-rescued]"));
-        }
-        techniques.push(msg);
+    if removed > 0 {
+        techniques.push(format!(
+            "⊘ {removed} low-entropy lines (BPE H<{entropy_threshold:.2})"
+        ));
     }
 
     let blocks = extract_blocks(&lines);
@@ -264,21 +226,6 @@ fn entropy_compress_inner(
         original_tokens,
         techniques,
     }
-}
-
-fn entropy_compress_with_thresholds(
-    content: &str,
-    entropy_threshold: f64,
-    jaccard_threshold: f64,
-    force_keep: &[String],
-) -> EntropyResult {
-    entropy_compress_inner(
-        content,
-        entropy_threshold,
-        jaccard_threshold,
-        &[],
-        force_keep,
-    )
 }
 
 /// Walk kept lines in source order; when a kept line has unclosed
@@ -534,12 +481,11 @@ mod tests {
         for _ in 0..15 {
             content.push_str("boilerplate noise line\n");
         }
-        let baseline = entropy_compress_inner(&content, BPE_ENTROPY_THRESHOLD, 0.7, &[], &[]);
-        let protected = entropy_compress_inner(
+        let baseline = entropy_compress_with_thresholds(&content, BPE_ENTROPY_THRESHOLD, 0.7, &[]);
+        let protected = entropy_compress_with_thresholds(
             &content,
             BPE_ENTROPY_THRESHOLD,
             0.7,
-            &[],
             &["boilerplate".to_string()],
         );
         let baseline_hits = baseline.output.matches("boilerplate").count();
@@ -565,7 +511,7 @@ mod tests {
         let b = "let beta_value = compute_beta(request.payload, config.limits);";
         let c = "const GAMMA_LIMIT: usize = 4096;";
         let content = format!("{a}\n{b}\n\n{a}\n{b}\n\n{c}\n");
-        let out = entropy_compress_inner(&content, 0.0, 0.7, &[], &[]).output;
+        let out = entropy_compress_with_thresholds(&content, 0.0, 0.7, &[]).output;
         assert_eq!(out.matches("alpha_handler").count(), 1, "{out}");
         assert_eq!(out.matches("compute_beta").count(), 1, "{out}");
         assert!(out.contains(c), "{out}");

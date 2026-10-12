@@ -470,7 +470,6 @@ fn locked_edit(
 
         // Heavy disk I/O — no global cache lock held here.
         let (output, effect) = edit(&last_mode);
-        let wrote = matches!(effect, CacheEffect::Invalidate);
 
         if !matches!(effect, CacheEffect::None) {
             match rt.block_on(tokio::time::timeout(
@@ -485,16 +484,6 @@ fn locked_edit(
                         "sobre_patch: cache write-lock timeout (5s) applying post-edit cache effect for {path}"
                     );
                 }
-            }
-        }
-
-        if wrote && let Some(session_lock) = ctx.session.as_ref() {
-            let guard = rt.block_on(tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                session_lock.write(),
-            ));
-            if let Ok(mut session) = guard {
-                session.mark_modified(path);
             }
         }
 

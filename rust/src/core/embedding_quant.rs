@@ -1,11 +1,8 @@
 //! int8 scalar quantization + SIMD-friendly scoring for embedding vectors.
 //!
 //! Symmetric per-vector (absmax) quantization: data-oblivious, training-free
-//! and single-pass. For the embedding and knowledge indexes the win is twofold:
-//!   1. **4× smaller** on disk (`i8` codes vs `f32`).
-//!   2. **Faster scoring** — the full-precision query is accumulated directly
-//!      over the `i8` codes and scaled once per vector, so the `f32` document
-//!      vector is never reconstructed.
+//! and single-pass. It keeps the embedding index **4× smaller** on disk (`i8`
+//! codes vs `f32`).
 //!
 //! No heavy SIMD crate is pulled in: the chunked-lane accumulators below are
 //! shaped so the autovectorizer emits NEON/AVX automatically, with a scalar tail
@@ -31,8 +28,7 @@ pub struct QuantizedVector {
 }
 
 impl QuantizedVector {
-    /// Reconstruct the approximate `f32` vector, for tests; the hot path
-    /// scores against the codes directly via [`dot_quant`].
+    /// Reconstruct the approximate `f32` vector, for tests.
     #[must_use]
     #[cfg(test)]
     pub fn dequantize(&self) -> Vec<f32> {
@@ -46,7 +42,7 @@ impl QuantizedVector {
 /// Symmetric, per-vector quantization: `scale = max|x| / 127`, `code = round(x / scale)`.
 ///
 /// Data-oblivious (no codebook training) and single-pass. A zero vector maps to
-/// all-zero codes with `scale = 0.0`, which [`dot_quant`] treats as a zero result.
+/// all-zero codes with `scale = 0.0`.
 #[must_use]
 pub fn quantize(v: &[f32]) -> QuantizedVector {
     let max_abs = v.iter().fold(0.0f32, |m, &x| m.max(x.abs()));
@@ -67,36 +63,6 @@ pub fn quantize(v: &[f32]) -> QuantizedVector {
         })
         .collect();
     QuantizedVector { code, scale }
-}
-
-/// Asymmetric dot product: full-precision `query` · quantized `doc`.
-///
-/// Computes `Σ query[i] · code[i] · scale` without ever reconstructing the doc
-/// vector. For L2-normalized inputs this approximates cosine similarity; the
-/// quantization error is well within embedding-ranking tolerance.
-#[must_use]
-pub fn dot_quant(query: &[f32], doc: &QuantizedVector) -> f32 {
-    debug_assert_eq!(query.len(), doc.code.len(), "dim mismatch");
-    if doc.scale == 0.0 {
-        return 0.0;
-    }
-
-    let mut lanes = [0.0f32; LANES];
-    let (q_chunks, q_tail) = query.as_chunks::<LANES>();
-    let (c_chunks, c_tail) = doc.code.as_chunks::<LANES>();
-
-    for (q, c) in q_chunks.iter().zip(c_chunks) {
-        for i in 0..LANES {
-            lanes[i] += q[i] * f32::from(c[i]);
-        }
-    }
-
-    let mut tail = 0.0f32;
-    for (q, c) in q_tail.iter().zip(c_tail) {
-        tail += q * f32::from(*c);
-    }
-
-    (lanes.iter().sum::<f32>() + tail) * doc.scale
 }
 
 /// SIMD-friendly `f32` dot product with chunked lane accumulators.
@@ -159,7 +125,7 @@ mod tests {
         let q = quantize(&[0.0, 0.0, 0.0]);
         assert_eq!(q.scale, 0.0);
         assert_eq!(q.code, vec![0, 0, 0]);
-        assert_eq!(dot_quant(&[1.0, 1.0, 1.0], &q), 0.0);
+        assert_eq!(q.dequantize(), vec![0.0, 0.0, 0.0]);
     }
 
     #[test]
@@ -173,31 +139,32 @@ mod tests {
     }
 
     #[test]
-    fn dot_quant_approximates_cosine_for_normalized_vectors() {
-        // Two similar L2-normalized vectors: quantized dot must track the true dot.
+    fn quantized_vectors_approximate_cosine_for_normalized_vectors() {
+        // Two similar L2-normalized vectors: the dot against a quantized one
+        // must track the true dot.
         let mut a: Vec<f32> = (0..384).map(|i| (i as f32 * 0.011).sin() + 0.3).collect();
         let mut b: Vec<f32> = a.iter().map(|x| x + 0.02).collect();
         l2_normalize(&mut a);
         l2_normalize(&mut b);
 
         let exact = naive_dot(&a, &b);
-        let approx = dot_quant(&a, &quantize(&b));
+        let approx = dot_f32(&a, &quantize(&b).dequantize());
         assert!(
             (exact - approx).abs() < 5e-3,
             "exact={exact} approx={approx}"
         );
         // Self-similarity stays ~1.0 after quantization.
-        let self_sim = dot_quant(&a, &quantize(&a));
+        let self_sim = dot_f32(&a, &quantize(&a).dequantize());
         assert!(self_sim > 0.99, "self_sim={self_sim}");
     }
 
     #[test]
-    fn dot_quant_preserves_ranking() {
+    fn quantization_preserves_ranking() {
         // The most similar doc must still score highest after quantization.
         let query = normalized(vec![1.0, 0.2, 0.0, 0.1]);
-        let near = quantize(&normalized(vec![0.9, 0.3, 0.0, 0.1]));
-        let far = quantize(&normalized(vec![-0.5, 0.8, 0.2, 0.0]));
-        assert!(dot_quant(&query, &near) > dot_quant(&query, &far));
+        let near = quantize(&normalized(vec![0.9, 0.3, 0.0, 0.1])).dequantize();
+        let far = quantize(&normalized(vec![-0.5, 0.8, 0.2, 0.0])).dequantize();
+        assert!(dot_f32(&query, &near) > dot_f32(&query, &far));
     }
 
     fn l2_normalize(v: &mut [f32]) {

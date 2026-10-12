@@ -44,14 +44,14 @@ impl McpTool for SobreReadTool {
                     "paths": { "type": "array", "items": { "type": "string" }, "description": "Batch read" },
                     "mode": {
                         "type": "string",
-                        "description": "Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via sobre_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive|entropy|task=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:N is one line, lines:N- runs to the end, lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens"
+                        "description": "Defaults to auto (sobre picks). full=whole file, edit-ready; secret-like values show as [REDACTED:…] anchored=full with N:hh anchors to edit via sobre_patch raw=the bytes on disk: no framing, no redaction signatures=API map=structure aggressive|entropy=lossy summaries diff=what changed since this session last read the file reference=one line: size and type lines:N-M=window (lines:N is one line, lines:N- runs to the end, lines:5,10-20 multi-selects) anchored:N-M=anchored window density:0.NN=target share of tokens"
                     },
                     "raw": { "type": "boolean", "description": "Same as mode=raw" },
                     "start_line": { "type": "integer", "description": "1-based" },
                     "offset": { "type": "integer", "description": "start_line alias" },
                     "limit": { "type": "integer", "description": "Max lines" },
                     "fresh": { "type": "boolean", "description": "Bypass cache" },
-                    "aggressiveness": { "type": "number", "description": "0.0–1.0 density (entropy/task)" },
+                    "aggressiveness": { "type": "number", "description": "0.0–1.0 density (entropy)" },
                     "protect": { "type": "array", "items": { "type": "string" }, "description": "Symbols kept verbatim" }
                 },
                 "required": []
@@ -107,25 +107,6 @@ impl SobreReadTool {
             .as_ref()
             .ok_or_else(|| ErrorData::internal_error("cache not available", None))?;
 
-        let current_task = {
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
-            let mut attempt = 0u32;
-            loop {
-                // Use try_read_owned instead of Handle::block_on to avoid
-                // the async-runtime-saturation anti-pattern on Windows.
-                if let Ok(guard) = session_lock.clone().try_read_owned() {
-                    break guard.task.as_ref().map(|t| t.description.clone());
-                }
-                attempt += 1;
-                if std::time::Instant::now() >= deadline {
-                    tracing::warn!(
-                        "session read-lock timeout after {attempt} attempts in sobre_read for {path}"
-                    );
-                    break None;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(25));
-            }
-        };
         // `raw=true` is the intuitive "give me the exact bytes" escape an
         // agent reaches for. Alias it to mode="raw" (verbatim, unframed) and
         // force a fresh disk read below so a re-read never collapses to an
@@ -164,7 +145,7 @@ impl SobreReadTool {
         let protect = get_str_array(args, "protect").unwrap_or_default();
         // One-knob UX: when the caller sets aggressiveness without pinning a mode,
         // route through the proven density path at the mapped target. An explicit
-        // mode (incl. entropy/task) instead has the knob tune it via ReadTuning.
+        // mode (incl. entropy) instead has the knob tune it via ReadTuning.
         if !explicit_mode && let Some(a) = aggressiveness {
             // SSOT mode construction via the typed `ReadMode`: the typed
             // `Density` Display emits the same `density:0.NN` the pipeline parses.
@@ -313,13 +294,12 @@ impl SobreReadTool {
             return Ok(ToolOutput::simple(content));
         }
 
-        let (output, resolved_mode, original, file_ref) = read_through_cache(
+        let (output, resolved_mode, original) = read_through_cache(
             cache_lock,
             path,
             &mode,
             fresh,
             ctx.crp_mode,
-            current_task.as_deref(),
             aggressiveness,
             &protect,
         )
@@ -341,7 +321,8 @@ impl SobreReadTool {
             };
         let saved = replaced_tokens.saturating_sub(output_tokens);
 
-        // Session updates (bounded lock — 10s timeout, read already succeeded)
+        // A session without a project root takes the one around the file read
+        // (bounded lock — 10s timeout, read already succeeded).
         {
             let rt = tokio::runtime::Handle::current();
             let session_guard = rt.block_on(tokio::time::timeout(
@@ -349,11 +330,6 @@ impl SobreReadTool {
                 session_lock.write(),
             ));
             if let Ok(mut session) = session_guard {
-                session.touch_file(path, file_ref.as_deref(), &resolved_mode, original);
-                let file_summary = extract_file_summary(&output, path);
-                if !file_summary.is_empty() {
-                    session.set_file_summary(path, &file_summary);
-                }
                 let root_missing = session
                     .project_root
                     .as_deref()
@@ -421,19 +397,16 @@ fn write_lock_within(
 ///   that lock does not come within 5 s.
 ///
 /// Same-file reads are serialized by the per-file lock. Returns `(output,
-/// resolved mode, original tokens, file ref)`; `Err` when a lock does not
-/// come in time.
-#[allow(clippy::too_many_arguments)]
+/// resolved mode, original tokens)`; `Err` when a lock does not come in time.
 fn read_through_cache(
     cache_lock: &Arc<tokio::sync::RwLock<crate::core::cache::SessionCache>>,
     path: &str,
     mode: &str,
     fresh: bool,
     crp_mode: crate::tools::CrpMode,
-    task: Option<&str>,
     aggressiveness: Option<f64>,
     protect: &[String],
-) -> Result<(String, String, usize, Option<String>), String> {
+) -> Result<(String, String, usize), String> {
     use crate::tools::sobre_read::{
         Prepared, ReadTuning, finish, prepare, record_read, render, settle,
     };
@@ -460,8 +433,7 @@ fn read_through_cache(
         && let Some(out) = crate::tools::sobre_read::try_stub_hit_readonly(&cache, path)
     {
         let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-        let file_ref = cache.file_ref_map().get(path).cloned();
-        return Ok((out.content, out.resolved_mode, orig, file_ref));
+        return Ok((out.content, out.resolved_mode, orig));
     }
 
     let tuning = ReadTuning::resolve(aggressiveness, protect);
@@ -473,25 +445,24 @@ fn read_through_cache(
     let job = {
         let mut cache = write_lock_within(cache_lock, std::time::Duration::from_secs(10))
             .ok_or_else(contention)?;
-        match prepare(&mut cache, path, mode, fresh, crp_mode, task, tuning, None) {
+        match prepare(&mut cache, path, mode, fresh, crp_mode, tuning, None) {
             Prepared::Done(out) => {
                 let out = settle(&mut cache, path, out);
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                let file_ref = cache.file_ref_map().get(path).cloned();
                 drop(cache);
                 record_read(path, &out, orig);
-                return Ok((out.content, out.resolved_mode, orig, file_ref));
+                return Ok((out.content, out.resolved_mode, orig));
             }
             Prepared::Render(job) => job,
         }
     };
 
-    let rendered = render(&job, path, crp_mode, task, tuning);
+    let rendered = render(&job, path, crp_mode, tuning);
 
     let Some(mut cache) = write_lock_within(cache_lock, std::time::Duration::from_secs(5)) else {
         tracing::warn!("sobre_read: store-lock timeout (5s) for {path}, returning without caching");
         let out = crate::core::redaction::redact_text(&rendered);
-        return Ok((out, job.resolved_mode, job.original_tokens, None));
+        return Ok((out, job.resolved_mode, job.original_tokens));
     };
     let out = finish(
         &mut cache,
@@ -499,15 +470,13 @@ fn read_through_cache(
         &job.resolved_mode,
         rendered,
         crp_mode,
-        task,
         tuning,
     );
     let out = settle(&mut cache, path, out);
     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-    let file_ref = cache.file_ref_map().get(path).cloned();
     drop(cache);
     record_read(path, &out, orig);
-    Ok((out.content, out.resolved_mode, orig, file_ref))
+    Ok((out.content, out.resolved_mode, orig))
 }
 
 /// Resolve the `start_line`/`offset`/`limit` arguments into `(start, limit)`.
@@ -591,23 +560,6 @@ fn resolve_raw_alias(arg_raw: bool, mode_arg: Option<String>) -> Option<String> 
         Some("raw".to_string())
     } else {
         mode_arg
-    }
-}
-
-fn extract_file_summary(output: &str, path: &str) -> String {
-    let hint = crate::core::auto_findings::extract_content_hint(output);
-    if !hint.is_empty() {
-        return hint;
-    }
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let line_count = output.lines().count();
-    if line_count > 5 {
-        format!("{ext} file, {line_count} lines")
-    } else {
-        String::new()
     }
 }
 

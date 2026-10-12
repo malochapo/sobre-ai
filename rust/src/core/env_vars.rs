@@ -65,7 +65,7 @@ pub(crate) const VARS: &[EnvVar] = &[
     var(
         "SOBRE_DATA_DIR",
         Kind::Location,
-        "Usage ledger, sessions, knowledge, indexes, checkpoints, models (default \
+        "Usage ledger, indexes, checkpoints, the managed ONNX Runtime (default \
          `$XDG_DATA_HOME/sobre`, else `~/.local/share/sobre`)",
     ),
     var(
@@ -302,7 +302,7 @@ pub(crate) const VARS: &[EnvVar] = &[
         Kind::Build,
         "The version a release build reports (`--version`, `doctor`, the MCP server \
          info): the release workflow sets it to the tag's version, for example \
-         `0.1.0-rc.2`. Without it, sobre reports the crate version",
+         `0.1.0-rc.3`. Without it, sobre reports the crate version",
     ),
 ];
 

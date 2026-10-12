@@ -23,7 +23,6 @@ accessor function.
 | L22 | `BACKENDS` | `lsp/router.rs` | `LazyLock<Mutex<HashMap<String, Box<dyn LspBackend>>>>` | Language-server clients, one per language and project root; on a miss the client is started from the built-in server table while the lock is held, and each request runs under it. Independent leaf lock |
 | L33 | `CACHE` (search) | `core/search_index.rs` | `OnceLock<Mutex<HashMap<String, CacheEntry>>>` | Search index query cache |
 | L38 | `GLOBAL_TRACKER` | `core/bounce_tracker.rs` | `OnceLock<Mutex<BounceTracker>>` | Tracks repeated tool-call bounces |
-| L41 | `KNOWLEDGE_LOCKS` | `core/knowledge/persist.rs` (fn-local) | `OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>>` | Per-project knowledge.json read-modify-write serialization (same outer/inner pattern as L1/L2) |
 | L42 | `LAST_PARSE_ERROR` | `core/config/loader.rs` | `Mutex<Option<String>>` | Most recent global `config.toml` parse error (surfaced by doctor/diagnostics); never held together with L4 |
 | L57 | `SEEN` | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Vec<(String, Instant)>>>` | Recent sightings of distinct conversation ids feeding the multi-conversation detector; capacity-pruned, independent leaf lock |
 | L58 | `STORE` (conversation) | `core/conversation.rs` (fn-local) | `OnceLock<RwLock<Option<Cached>>>` | Cached current conversation id with its refresh instant; independent leaf lock, never held together with L57 |
@@ -42,7 +41,6 @@ accessor function.
 | # | Lock | File | Type | Purpose |
 |---|------|------|------|---------|
 | E4 | `LOCK` (data dir) | `core/data_dir.rs` (fn-local in `test_env_lock`) | `OnceLock<Mutex<()>>` | Serializes tests that mutate data-dir environment variables |
-| E6 | `LOCK` (knowledge cwd) | `tools/sobre_knowledge/tests.rs` (fn-local in `CurrentDirGuard::enter`) | `OnceLock<Mutex<()>>` | Serializes `sobre_knowledge` tests that change the process working directory |
 
 Locks declared inside `#[cfg(test)]` items are test-only and are not listed here.
 
@@ -57,16 +55,14 @@ dies, so none outlives its holder. Files are in the data directory unless noted;
 | # | Lock file | Taken in | Wait, then | Purpose |
 |---|-----------|----------|------------|---------|
 | F1 | `.mcp-startup.lock` | `cli/dispatch/server.rs` | 3 s, then starts without it | Spreads simultaneous MCP server starts |
-| F2 | `.startup-maintenance.lock` | `server/server_handler.rs` | 2 s, then skips the pruning | One process prunes old sessions and indexes at a time |
+| F2 | `.startup-maintenance.lock` | `server/server_handler.rs` | 2 s, then skips the pruning | One process prunes quarantined indexes at a time |
 | F3 | `.graph-idx-<hash>.lock` | `core/graph_index/mod.rs` | up to 2 min, then reuses the winner's index when current | One graph scan per project |
 | F4 | `.bm25-idx-<hash>.lock` | `core/index_orchestrator.rs` | 800 ms, then loads the shared index | One BM25 build per project |
 | F5 | `.search-idx-<hash>.lock` | `core/search_index.rs` | 200 ms, then defers the pre-warm | One search-index walk per project |
-| F6 | `knowledge/<hash>/.knowledge.lock` | `core/knowledge/persist.rs` | blocks | Knowledge read-modify-write across processes; taken inside L41 |
 | F7 | `usage.jsonl` itself | `core/usage/mod.rs` | blocks | One appended line at a time |
 
-F1–F5 wait a bounded time and then go on without the lock, so they cannot deadlock. F6 and F7
-block, but only around a short file read-modify-write or append; F6 is the one taken while a
-static lock (L41's inner mutex) is held.
+F1–F5 wait a bounded time and then go on without the lock, so they cannot deadlock. F7 blocks,
+but only around a short append.
 
 ---
 
@@ -102,7 +98,7 @@ L1 (REGISTRY outer map)
 
 `entry_for()` in `core/index_orchestrator.rs` enforces this: it locks L1, clones the
 `Arc<Mutex<ProjectBuild>>`, **drops** L1, then the caller locks L2 independently. L1 and L2 are
-never held simultaneously. L41 (`KNOWLEDGE_LOCKS`) follows the same pattern.
+never held simultaneously.
 
 ### Per-file Path Lock (L17)
 
@@ -121,16 +117,14 @@ independently.
 TOCTOU recheck, atomic rename — *without* holding the session cache lock. The cache lock is
 taken only twice, each briefly and with a 5s timeout: a shared `read()` to fetch the recorded
 read mode before the I/O, and an exclusive `write()` to apply the deferred `CacheEffect`
-(invalidate / store-full) after the I/O. After a write, the session lock is taken (5s timeout)
-to mark the file modified. Same-file edit correctness is guaranteed by the TOCTOU preimage
-guard plus the atomic temp-file rename inside `run_io`, not by the cache lock.
+(invalidate / store-full) after the I/O. Same-file edit correctness is guaranteed by the TOCTOU
+preimage guard plus the atomic temp-file rename inside `run_io`, not by the cache lock.
 
 **Symbol edits (`lsp/edit_apply.rs`):** hold the per-file lock with a blocking `lock()` for the
 read-check-write of one range; no cache or session lock is taken there.
 
-**Read path (`sobre_read`, `read_through_cache`):** before it, the session lock is read
-(`try_read_owned()` loop, 8s deadline) for the session's task and released. Then, on the
-blocking pool where the handler runs:
+**Read path (`sobre_read`, `read_through_cache`):** on the blocking pool where the handler
+runs:
 
 1. **Per-file lock:** `try_lock()` loop, 25s deadline.
 2. **Shared cache lock:** try the `[unchanged]` stub under `cache.try_read()`; on a hit, return
@@ -142,9 +136,10 @@ blocking pool where the handler runs:
    returned without caching.
 
 After the per-file and cache locks are released, the session lock is taken for writing (10s
-timeout) to record the read. The bounce tracker (L38) is advanced before the cache lock is taken
-and the read recorded after it is released; the batch read (`registered/batch_read.rs`) still
-takes L38 under the cache write lock, which is safe because L38 is a leaf lock.
+timeout) to set the project root when the session has none. The bounce tracker (L38) is
+advanced before the cache lock is taken and the read recorded after it is released; the batch
+read (`registered/batch_read.rs`) still takes L38 under the cache write lock, which is safe
+because L38 is a leaf lock.
 
 ```
 L17 outer (FILE_LOCKS map)        — held briefly to clone Arc, then dropped
@@ -162,7 +157,7 @@ thread pool is `worker_threads * 4`, clamped to `[8, 32]` (`cli/dispatch/server.
 
 ### Independent Static Locks
 
-All static locks other than the L1 → L2 and L17 / L41 outer → inner pairs are **independent
+All static locks other than the L1 → L2 and L17 outer → inner pairs are **independent
 singletons**: they protect isolated subsystem state and are never nested inside each other.
 Each is acquired in isolation:
 
@@ -175,7 +170,7 @@ Each is acquired in isolation:
 Session-scoped locks on `SobreServer` are logically independent:
 
 - Acquire at most **one session lock per tool handler** at a time, except the sequences
-  documented above (per-file lock → cache lock; cache lock released → session lock in the edit
+  documented above (per-file lock → cache lock; cache lock released → session lock in the read
   path).
 - If you must hold two, acquire in field-declaration order (cache → session → …).
 - **Never hold a session `RwLock` while locking a global static Mutex** — this risks priority

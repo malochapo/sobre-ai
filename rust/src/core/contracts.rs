@@ -61,12 +61,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Stable,
         ),
-        doc(
-            "memory-boundary",
-            "memory-boundary-contract-v1.md",
-            1,
-            Stable,
-        ),
     ]
 }
 

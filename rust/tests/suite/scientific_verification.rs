@@ -1,6 +1,5 @@
 //! Properties of the scoring functions behind compression: the Kolmogorov
-//! proxy, the information-bottleneck budget and filter, and the safeguard that
-//! refuses over-compression.
+//! proxy and the safeguard that refuses over-compression.
 
 use sobre::core::entropy::kolmogorov_proxy;
 
@@ -46,59 +45,7 @@ fn kolmogorov_invariant_under_repetition() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// 2. INFORMATION BOTTLENECK — task relevance filtering
-// ═══════════════════════════════════════════════════════════════════
-
-#[test]
-fn ib_filter_preserves_task_relevant_lines() {
-    use sobre::core::task_relevance::information_bottleneck_filter;
-
-    let mut lines = Vec::new();
-    for i in 0..100 {
-        if i == 10 || i == 50 {
-            lines.push(format!(
-                "pub fn validate_token(t: &str) -> bool {{ /* line {i} */ }}"
-            ));
-        } else {
-            lines.push(format!("let unrelated_{i} = compute_{i}(x);"));
-        }
-    }
-    let content = lines.join("\n");
-    let result = information_bottleneck_filter(&content, &["validate_token".to_string()], 0.3, &[]);
-
-    assert!(
-        result.contains("validate_token"),
-        "IB filter must preserve task-relevant lines"
-    );
-    let result_lines = result.lines().count();
-    assert!(
-        result_lines < 100,
-        "IB filter should reduce lines: {result_lines} < 100"
-    );
-}
-
-#[test]
-fn ib_budget_is_lower_for_repetitive_content() {
-    use sobre::core::task_relevance::adaptive_ib_budget;
-
-    let repetitive = "let x = compute(a);\n".repeat(100);
-    let diverse = (0..100).fold(String::new(), |mut s, i| {
-        use std::fmt::Write;
-        let _ = writeln!(s, "let var_{i} = func_{i}(arg_{i});");
-        s
-    });
-
-    let budget_rep = adaptive_ib_budget(&repetitive, 0.5);
-    let budget_div = adaptive_ib_budget(&diverse, 0.5);
-
-    assert!(
-        budget_rep < budget_div,
-        "repetitive content should get lower IB budget: {budget_rep:.3} < {budget_div:.3}"
-    );
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// 3. SAFEGUARD RATIO — rate-distortion boundary
+// 2. SAFEGUARD RATIO — rate-distortion boundary
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]

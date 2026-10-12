@@ -344,16 +344,6 @@ pub fn handle(task: &str, project_root: &str, crp_mode: CrpMode) -> (String, usi
         }
     }
 
-    // 4. Pitfalls recorded with `sobre_knowledge action=gotcha`, or learned
-    //    from a failed command and its fix, that match the task.
-    let pitfalls = crate::core::prospective_memory::reminders_for_task(project_root, task);
-    if !pitfalls.is_empty() {
-        out.push_str("\n## Known pitfalls\n");
-        for pitfall in pitfalls {
-            out.push_str(&format!("- {pitfall}\n"));
-        }
-    }
-
     let sent = count_tokens(&out);
     (out, sent)
 }
@@ -467,30 +457,6 @@ mod tests {
         // but handle() must not panic.
         assert!(tokens > 0);
         assert!(output.contains("TASK:"));
-    }
-
-    /// A pitfall recorded with `sobre_knowledge action=gotcha` comes back
-    /// when a task matches it.
-    #[test]
-    fn a_matching_gotcha_is_recalled_for_the_task() {
-        let _dir = crate::core::data_dir::isolated_data_dir();
-        let project = tempfile::tempdir().unwrap();
-        let root = project.path().to_string_lossy().to_string();
-        let mut store = crate::core::gotcha_tracker::GotchaStore::load(&root);
-        store.report_gotcha(
-            "migration lock timeout",
-            "run the migrations one by one",
-            "convention",
-            "warning",
-        );
-        store.save(&root).unwrap();
-
-        let (out, _) = handle("fix the migration lock timeout", &root, CrpMode::Off);
-        assert!(out.contains("## Known pitfalls"), "{out}");
-        assert!(out.contains("run the migrations one by one"), "{out}");
-
-        let (unrelated, _) = handle("render sidebar", &root, CrpMode::Off);
-        assert!(!unrelated.contains("## Known pitfalls"), "{unrelated}");
     }
 
     #[test]

@@ -102,7 +102,6 @@ impl SobreServer {
 
             // Image/binary content blocks bypass all text processing.
             if output.content_blocks.is_some() {
-                self.record_call(name, 0).await;
                 return Ok((
                     String::new(),
                     0,
@@ -110,8 +109,6 @@ impl SobreServer {
                     output.content_blocks,
                 ));
             }
-
-            self.record_call(name, output.saved_tokens).await;
 
             let saved = output.saved_tokens;
             let raw_text = output.text;

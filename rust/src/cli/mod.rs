@@ -1,6 +1,6 @@
 pub(crate) mod args;
 mod call_cmd;
-mod common;
+pub(crate) mod common;
 mod config_cmd;
 pub mod dispatch;
 pub(crate) mod embeddings_cmd;

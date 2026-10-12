@@ -36,8 +36,8 @@ pub use proxy::{
 pub const DEFAULT_BM25_PERSIST_MB: u64 = 512;
 
 /// Fixed-context budget: the per-session footprint sobre adds — tool
-/// schemas + MCP instructions + auto-loaded rules files + the wakeup briefing —
-/// is checked against this in `doctor overhead` and `gain`.
+/// schemas + MCP instructions + auto-loaded rules files — is checked against
+/// this in `doctor overhead` and `gain`.
 pub const CONTEXT_BUDGET_TOKENS: usize = 8000;
 
 /// Graph indexes untouched for longer than this are purged.

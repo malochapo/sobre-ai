@@ -17,7 +17,7 @@ impl McpTool for SobreShellTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "sobre_shell",
-            "WORKFLOW: preferred — auto-compresses output (build/test/log).\n\
+            "Runs a shell command and compresses its output (build/test/log).\n\
              raw=true for verbatim output.\n\
              [exit:N] on errors (lossless).\n\
              Runs every command as given; the agent host decides what may run.\n\
