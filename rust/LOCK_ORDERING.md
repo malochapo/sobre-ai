@@ -55,7 +55,7 @@ dies, so none outlives its holder. Files are in the data directory unless noted;
 | # | Lock file | Taken in | Wait, then | Purpose |
 |---|-----------|----------|------------|---------|
 | F1 | `.mcp-startup.lock` | `cli/dispatch/server.rs` | 3 s, then starts without it | Spreads simultaneous MCP server starts |
-| F2 | `.startup-maintenance.lock` | `server/server_handler.rs` | 2 s, then skips the pruning | One process prunes old sessions and indexes at a time |
+| F2 | `.startup-maintenance.lock` | `server/server_handler.rs` | 2 s, then skips the pruning | One process prunes quarantined indexes at a time |
 | F3 | `.graph-idx-<hash>.lock` | `core/graph_index/mod.rs` | up to 2 min, then reuses the winner's index when current | One graph scan per project |
 | F4 | `.bm25-idx-<hash>.lock` | `core/index_orchestrator.rs` | 800 ms, then loads the shared index | One BM25 build per project |
 | F5 | `.search-idx-<hash>.lock` | `core/search_index.rs` | 200 ms, then defers the pre-warm | One search-index walk per project |
@@ -117,9 +117,8 @@ independently.
 TOCTOU recheck, atomic rename — *without* holding the session cache lock. The cache lock is
 taken only twice, each briefly and with a 5s timeout: a shared `read()` to fetch the recorded
 read mode before the I/O, and an exclusive `write()` to apply the deferred `CacheEffect`
-(invalidate / store-full) after the I/O. After a write, the session lock is taken (5s timeout)
-to mark the file modified. Same-file edit correctness is guaranteed by the TOCTOU preimage
-guard plus the atomic temp-file rename inside `run_io`, not by the cache lock.
+(invalidate / store-full) after the I/O. Same-file edit correctness is guaranteed by the TOCTOU
+preimage guard plus the atomic temp-file rename inside `run_io`, not by the cache lock.
 
 **Symbol edits (`lsp/edit_apply.rs`):** hold the per-file lock with a blocking `lock()` for the
 read-check-write of one range; no cache or session lock is taken there.
@@ -137,9 +136,10 @@ runs:
    returned without caching.
 
 After the per-file and cache locks are released, the session lock is taken for writing (10s
-timeout) to record the read. The bounce tracker (L38) is advanced before the cache lock is taken
-and the read recorded after it is released; the batch read (`registered/batch_read.rs`) still
-takes L38 under the cache write lock, which is safe because L38 is a leaf lock.
+timeout) to set the project root when the session has none. The bounce tracker (L38) is
+advanced before the cache lock is taken and the read recorded after it is released; the batch
+read (`registered/batch_read.rs`) still takes L38 under the cache write lock, which is safe
+because L38 is a leaf lock.
 
 ```
 L17 outer (FILE_LOCKS map)        — held briefly to clone Arc, then dropped
@@ -170,7 +170,7 @@ Each is acquired in isolation:
 Session-scoped locks on `SobreServer` are logically independent:
 
 - Acquire at most **one session lock per tool handler** at a time, except the sequences
-  documented above (per-file lock → cache lock; cache lock released → session lock in the edit
+  documented above (per-file lock → cache lock; cache lock released → session lock in the read
   path).
 - If you must hold two, acquire in field-declaration order (cache → session → …).
 - **Never hold a session `RwLock` while locking a global static Mutex** — this risks priority

@@ -100,9 +100,6 @@ impl ServerHandler for SobreServer {
                     }
                 }
             }
-            if let Err(e) = session.save() {
-                tracing::warn!("sobre: failed to persist session state: {e}");
-            }
         }
 
         // Indices are warmed lazily on first use of a tool that needs them,
@@ -119,8 +116,8 @@ impl ServerHandler for SobreServer {
                 std::time::Duration::from_secs(2),
             );
             if maintenance.is_some() {
-                // Prune quarantined BM25 indexes and week-old sessions. Silent
-                // (tracing only) so it never corrupts the MCP stdio protocol.
+                // Prune quarantined BM25 indexes. Silent (tracing only) so it
+                // never corrupts the MCP stdio protocol.
                 crate::core::storage_maintenance::run_quiet();
             }
             drop(maintenance);

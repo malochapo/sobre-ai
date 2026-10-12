@@ -21,12 +21,19 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{OnceLock, RwLock};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
 /// Max records retained (LRU by `updated_at`). Bounds disk + RAM (~200 KB).
 const MAX_RECORDS: usize = 1024;
+
+/// Unwritten changes that make a write of the index due at once.
+const FLUSH_BATCH: u32 = 5;
+
+/// How long an unwritten change may wait below [`FLUSH_BATCH`] before a write
+/// is due anyway, so a slow trickle of reads still reaches the disk.
+const FLUSH_INTERVAL: Duration = Duration::from_mins(1);
 
 /// Serializable mtime: exact `SystemTime` round-trip via (secs, nanos) since the
 /// Unix epoch, so the reconstructed value compares equal to a fresh `mtime()`.
@@ -109,12 +116,32 @@ struct IndexFile {
 struct ReadStubIndex {
     records: HashMap<String, StubRecord>,
     compaction_ts: u64,
+    /// Changes since the last write claimed by [`flush_due`].
+    unsaved: u32,
+    /// When [`flush_due`] last claimed a write; `None` before the first one.
+    last_flush: Option<Instant>,
 }
 
 impl ReadStubIndex {
     fn upsert(&mut self, rec: StubRecord) {
         self.records.insert(rec.path.clone(), rec);
         self.enforce_cap();
+        self.unsaved += 1;
+    }
+
+    /// Whether a write is due: the first change, [`FLUSH_BATCH`] changes, or
+    /// a change older than [`FLUSH_INTERVAL`]. Claiming it resets the count.
+    fn claim_flush(&mut self, now: Instant) -> bool {
+        let due = self.unsaved >= FLUSH_BATCH
+            || (self.unsaved > 0
+                && self
+                    .last_flush
+                    .is_none_or(|t| now.duration_since(t) >= FLUSH_INTERVAL));
+        if due {
+            self.unsaved = 0;
+            self.last_flush = Some(now);
+        }
+        due
     }
 
     fn enforce_cap(&mut self) {
@@ -150,6 +177,7 @@ impl ReadStubIndex {
                 .map(|r| (r.path.clone(), r))
                 .collect(),
             compaction_ts: file.compaction_ts,
+            ..Self::default()
         };
         idx.enforce_cap();
         idx
@@ -212,6 +240,14 @@ pub fn load_from_dir(data_dir: &Path) {
     }
 }
 
+/// Claims a due write of the global index (see `claim_flush`): `true` when
+/// the caller should now [`persist`] it. Called after every tool call.
+pub fn flush_due() -> bool {
+    global()
+        .write()
+        .is_ok_and(|mut g| g.claim_flush(Instant::now()))
+}
+
 /// Atomically persist the global index to the real data dir (call at save points).
 pub fn persist() {
     let Some(dir) = data_dir() else { return };
@@ -245,8 +281,10 @@ pub fn record(rec: StubRecord) {
 /// [`record`].
 pub fn forget(path: &str) {
     let key = crate::core::pathutil::normalize_tool_path(path);
-    if let Ok(mut g) = global().write() {
-        g.records.remove(&key);
+    if let Ok(mut g) = global().write()
+        && g.records.remove(&key).is_some()
+    {
+        g.unsaved += 1;
     }
 }
 
@@ -307,6 +345,35 @@ mod tests {
         let t = SystemTime::now();
         let back = SerMtime::from_system(t).unwrap().to_system();
         assert_eq!(t, back, "reconstructed mtime must equal the original");
+    }
+
+    /// A write is due on the first change, after a batch of changes, or once
+    /// a change has waited past the interval; claiming one resets the count.
+    #[test]
+    fn flush_is_due_on_first_change_batch_and_stale_change() {
+        let mut idx = ReadStubIndex::default();
+        let now = Instant::now();
+        assert!(!idx.claim_flush(now), "no change, no write");
+
+        idx.upsert(rec("/a.rs", Some("conv"), 1));
+        assert!(idx.claim_flush(now), "the first change is written at once");
+        assert!(!idx.claim_flush(now), "a claimed write resets the count");
+
+        idx.upsert(rec("/b.rs", Some("conv"), 2));
+        assert!(
+            !idx.claim_flush(now),
+            "one recent change waits for the batch"
+        );
+        for i in 0..4 {
+            idx.upsert(rec(&format!("/c{i}.rs"), Some("conv"), 3));
+        }
+        assert!(idx.claim_flush(now), "a full batch is written");
+
+        idx.upsert(rec("/d.rs", Some("conv"), 4));
+        assert!(
+            idx.claim_flush(now + FLUSH_INTERVAL),
+            "a change older than the interval is written"
+        );
     }
 
     #[test]

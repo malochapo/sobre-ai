@@ -699,8 +699,8 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
 /// provider-side prompt caching.
 #[test]
 fn process_mode_output_is_byte_stable_across_calls() {
-    // Fresh, empty data dir: session state left by parallel tests must not
-    // leak into the output.
+    // Fresh, empty data dir: what parallel tests left there must not leak
+    // into the output.
     let _iso = crate::core::data_dir::isolated_data_dir();
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))

@@ -65,7 +65,7 @@ pub(crate) const VARS: &[EnvVar] = &[
     var(
         "SOBRE_DATA_DIR",
         Kind::Location,
-        "Usage ledger, sessions, indexes, checkpoints, models (default \
+        "Usage ledger, indexes, checkpoints, models (default \
          `$XDG_DATA_HOME/sobre`, else `~/.local/share/sobre`)",
     ),
     var(

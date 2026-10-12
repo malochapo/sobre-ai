@@ -195,7 +195,7 @@ impl SobreServer {
             output_token_count,
         );
 
-        self.save_session_when_due().await;
+        post_dispatch::persist_stub_index_when_due();
 
         // A machine-readable invocation (e.g. sobre_outline format=json) must
         // return a byte-exact, parseable payload: the body captured before

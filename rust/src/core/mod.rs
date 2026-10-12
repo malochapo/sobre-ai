@@ -3,7 +3,6 @@
 // ---------------------------------------------------------------------------
 pub mod aggressiveness;
 pub mod artifacts_exec;
-pub mod auto_findings;
 pub mod compressor;
 pub mod entropy;
 pub mod json_crush;

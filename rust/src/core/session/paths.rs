@@ -1,21 +1,3 @@
-use chrono::Utc;
-use std::path::PathBuf;
-
-pub(crate) fn sessions_dir() -> Option<PathBuf> {
-    crate::core::data_dir::sobre_data_dir()
-        .ok()
-        .map(|d| d.join("sessions"))
-}
-
-pub(crate) fn generate_session_id() -> String {
-    static COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
-    let now = Utc::now();
-    let ts = now.format("%Y%m%d-%H%M%S").to_string();
-    let nanos = now.timestamp_subsec_micros();
-    let seq = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    format!("{ts}-{nanos:06}s{seq}")
-}
-
 /// Extracts the `cd` target from a command string.
 /// Handles patterns like `cd /foo`, `cd foo && bar`, `cd ../dir; cmd`,
 /// `cd "C:\Program Files\My Project" && build`, and Windows `cd /d D:\path`.
@@ -102,15 +84,6 @@ fn quote_aware_first_segment(command: &str) -> &str {
         }
     }
     command
-}
-
-pub(crate) fn shorten_path(path: &str) -> String {
-    let parts: Vec<&str> = path.split('/').collect();
-    if parts.len() <= 2 {
-        return path.to_string();
-    }
-    let last_two: Vec<&str> = parts.iter().rev().take(2).copied().collect();
-    format!("…/{}/{}", last_two[1], last_two[0])
 }
 
 #[cfg(test)]

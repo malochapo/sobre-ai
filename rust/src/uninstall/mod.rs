@@ -56,7 +56,7 @@ fn data_dirs() -> Vec<(PathBuf, &'static str)> {
     let mut dirs: Vec<(PathBuf, &'static str)> = Vec::new();
     for (dir, what) in [
         (crate::core::paths::config_dir(), "config"),
-        (crate::core::paths::data_dir(), "usage, sessions, indexes"),
+        (crate::core::paths::data_dir(), "usage, indexes"),
         (crate::core::paths::state_dir(), "logs, saved outputs"),
         (crate::core::paths::cache_dir(), "downloaded models"),
     ] {

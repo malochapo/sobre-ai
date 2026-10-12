@@ -16,7 +16,7 @@ pub fn sobre_data_dir() -> Result<PathBuf, String> {
     }
 
     // Test sandbox: without this, any unit test that triggers a
-    // store write (usage ledger, sessions, indexes, ...)
+    // store write (usage ledger, indexes, ...)
     // silently pollutes the developer's real data dir. Tests that
     // set SOBRE_DATA_DIR keep full control (handled above); everyone else
     // lands in a per-process temp dir and physically cannot touch real data.
@@ -100,7 +100,7 @@ pub fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
 /// the override into others. Use this instead of hand-rolled
 /// `set_var`/`remove_var` pairs whenever a test needs an empty, private
 /// data dir (the shared per-process sandbox is NOT empty: parallel tests
-/// write the usage ledger, sessions and indexes into it).
+/// write the usage ledger and indexes into it).
 #[cfg(test)]
 pub struct IsolatedDataDir {
     tmp: tempfile::TempDir,

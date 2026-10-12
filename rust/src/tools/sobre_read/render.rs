@@ -156,7 +156,6 @@ pub(crate) fn build_header(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn process_mode(
     content: &str,
     mode: &str,
@@ -181,7 +180,6 @@ pub(crate) fn process_mode(
 /// Renders `content` for `mode`, honouring the aggressiveness knob carried in
 /// `tuning`. `process_mode` is the unchanged-behaviour wrapper (`ReadTuning::
 /// default()`); the real read path threads a resolved `tuning` through here.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn process_mode_tuned(
     content: &str,
     mode: &str,

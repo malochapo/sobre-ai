@@ -294,7 +294,7 @@ impl SobreReadTool {
             return Ok(ToolOutput::simple(content));
         }
 
-        let (output, resolved_mode, original, file_ref) = read_through_cache(
+        let (output, resolved_mode, original) = read_through_cache(
             cache_lock,
             path,
             &mode,
@@ -321,7 +321,8 @@ impl SobreReadTool {
             };
         let saved = replaced_tokens.saturating_sub(output_tokens);
 
-        // Session updates (bounded lock — 10s timeout, read already succeeded)
+        // A session without a project root takes the one around the file read
+        // (bounded lock — 10s timeout, read already succeeded).
         {
             let rt = tokio::runtime::Handle::current();
             let session_guard = rt.block_on(tokio::time::timeout(
@@ -329,11 +330,6 @@ impl SobreReadTool {
                 session_lock.write(),
             ));
             if let Ok(mut session) = session_guard {
-                session.touch_file(path, file_ref.as_deref(), &resolved_mode, original);
-                let file_summary = extract_file_summary(&output, path);
-                if !file_summary.is_empty() {
-                    session.set_file_summary(path, &file_summary);
-                }
                 let root_missing = session
                     .project_root
                     .as_deref()
@@ -401,9 +397,7 @@ fn write_lock_within(
 ///   that lock does not come within 5 s.
 ///
 /// Same-file reads are serialized by the per-file lock. Returns `(output,
-/// resolved mode, original tokens, file ref)`; `Err` when a lock does not
-/// come in time.
-#[allow(clippy::too_many_arguments)]
+/// resolved mode, original tokens)`; `Err` when a lock does not come in time.
 fn read_through_cache(
     cache_lock: &Arc<tokio::sync::RwLock<crate::core::cache::SessionCache>>,
     path: &str,
@@ -412,7 +406,7 @@ fn read_through_cache(
     crp_mode: crate::tools::CrpMode,
     aggressiveness: Option<f64>,
     protect: &[String],
-) -> Result<(String, String, usize, Option<String>), String> {
+) -> Result<(String, String, usize), String> {
     use crate::tools::sobre_read::{
         Prepared, ReadTuning, finish, prepare, record_read, render, settle,
     };
@@ -439,8 +433,7 @@ fn read_through_cache(
         && let Some(out) = crate::tools::sobre_read::try_stub_hit_readonly(&cache, path)
     {
         let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-        let file_ref = cache.file_ref_map().get(path).cloned();
-        return Ok((out.content, out.resolved_mode, orig, file_ref));
+        return Ok((out.content, out.resolved_mode, orig));
     }
 
     let tuning = ReadTuning::resolve(aggressiveness, protect);
@@ -456,10 +449,9 @@ fn read_through_cache(
             Prepared::Done(out) => {
                 let out = settle(&mut cache, path, out);
                 let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-                let file_ref = cache.file_ref_map().get(path).cloned();
                 drop(cache);
                 record_read(path, &out, orig);
-                return Ok((out.content, out.resolved_mode, orig, file_ref));
+                return Ok((out.content, out.resolved_mode, orig));
             }
             Prepared::Render(job) => job,
         }
@@ -470,7 +462,7 @@ fn read_through_cache(
     let Some(mut cache) = write_lock_within(cache_lock, std::time::Duration::from_secs(5)) else {
         tracing::warn!("sobre_read: store-lock timeout (5s) for {path}, returning without caching");
         let out = crate::core::redaction::redact_text(&rendered);
-        return Ok((out, job.resolved_mode, job.original_tokens, None));
+        return Ok((out, job.resolved_mode, job.original_tokens));
     };
     let out = finish(
         &mut cache,
@@ -482,10 +474,9 @@ fn read_through_cache(
     );
     let out = settle(&mut cache, path, out);
     let orig = cache.get(path).map_or(0, |e| e.original_tokens);
-    let file_ref = cache.file_ref_map().get(path).cloned();
     drop(cache);
     record_read(path, &out, orig);
-    Ok((out.content, out.resolved_mode, orig, file_ref))
+    Ok((out.content, out.resolved_mode, orig))
 }
 
 /// Resolve the `start_line`/`offset`/`limit` arguments into `(start, limit)`.
@@ -569,23 +560,6 @@ fn resolve_raw_alias(arg_raw: bool, mode_arg: Option<String>) -> Option<String> 
         Some("raw".to_string())
     } else {
         mode_arg
-    }
-}
-
-fn extract_file_summary(output: &str, path: &str) -> String {
-    let hint = crate::core::auto_findings::extract_content_hint(output);
-    if !hint.is_empty() {
-        return hint;
-    }
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let line_count = output.lines().count();
-    if line_count > 5 {
-        format!("{ext} file, {line_count} lines")
-    } else {
-        String::new()
     }
 }
 
