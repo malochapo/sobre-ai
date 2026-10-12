@@ -1,5 +1,13 @@
 # sobre
 
+> **Archived, October 2026.** sobre set out to make coding agents cheaper by
+> giving them less to read. Measured on billed tokens with Claude Code, it did
+> not: its best build cost what Claude Code alone costs. The measurements, the
+> method and how the other tools compare are in
+> [trust-me-bro](https://github.com/malochapo/trust-me-bro). The release
+> candidates stay downloadable but are not supported, and this repository is
+> read-only.
+
 **Context tools for coding agents that run on your machine and nowhere else.**
 
 `sobre` sits between your coding agent and your repository. The agent runs a
