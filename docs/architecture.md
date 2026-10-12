@@ -275,12 +275,12 @@ project hash: a short hash of the canonical project root
 
 | Path | Holds | Kept |
 |---|---|---|
-| `usage.jsonl` | the usage ledger ([contract](contracts/usage-ledger-v1.md)) | until `gain --reset` |
+| `usage.jsonl` | the usage ledger ([contract](contracts/usage-ledger-v2.md)) | until `gain --reset` |
 | `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst` | the code graph | rebuilt when stale; removed when a server starts 48 hours after its last build, or by `doctor --fix` when the project is gone |
 | `vectors/<h>/bm25_index.bin.zst`, `embeddings.bin`, `project_root.txt` | BM25 and dense indexes | rebuilt when stale; removed by `doctor --fix` when the project is gone; BM25 is not saved above 512 MB |
 | `read_cache/stub_index.json` | which file versions a conversation has already received (no content) | 1024 entries |
 | `shadow/<h>/git/` | `sobre_checkpoint` snapshots, a git repository apart from yours | until uninstall |
-| `detected_model.json`, `active_transcript.json`, `last_compaction.json` | what `hook observe` recorded | overwritten |
+| `active_transcript.json`, `last_compaction.json` | what `hook observe` recorded | overwritten |
 | `diagnostics.json` | recent compiler and linter errors | 15 minutes, 200 entries |
 | `session_token` | the proxy token (0600) | until uninstall |
 | `logs/crash.log` | panics (0600) | rotated at 1 MB |

@@ -97,7 +97,7 @@ Exits 1 when a check fails. More checks: sobre doctor integrations, doctor
 overhead, doctor lint-context.")]
     Doctor(DoctorArgs),
 
-    /// Tokens saved, their value, real cost with the proxy, and overhead
+    /// Tokens removed, the measured cost with the proxy, and overhead
     #[command(after_help = "\
 Every figure comes from the usage ledger (usage.jsonl). Real cost needs the
 proxy; money figures are estimates.")]
@@ -294,9 +294,6 @@ pub(crate) struct GainArgs {
     /// Rows shown by --by-tool
     #[arg(long, value_name = "n", default_value_t = 10)]
     pub(crate) limit: usize,
-    /// Price saved tokens at this model's rate
-    #[arg(long, value_name = "model")]
-    pub(crate) model: Option<String>,
     /// Clear the usage ledger
     #[arg(long)]
     pub(crate) reset: bool,

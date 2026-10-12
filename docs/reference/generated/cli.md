@@ -135,10 +135,10 @@ sobre doctor lint-context [--json]
 
 ## `sobre gain`
 
-Tokens saved, their value, real cost with the proxy, and overhead.
+Tokens removed, the measured cost with the proxy, and overhead.
 
 ```text
-sobre gain [--by-tool] [--daily] [--json] [--period <all|today|Nd>] [--limit <n>] [--model <model>] [--reset]
+sobre gain [--by-tool] [--daily] [--json] [--period <all|today|Nd>] [--limit <n>] [--reset]
 ```
 
 | Argument | Meaning |
@@ -148,7 +148,6 @@ sobre gain [--by-tool] [--daily] [--json] [--period <all|today|Nd>] [--limit <n>
 | `--json` | Machine-readable output |
 | `--period <all\|today\|Nd>` | The period to cover (default: all) |
 | `--limit <n>` | Rows shown by --by-tool (default: 10) |
-| `--model <model>` | Price saved tokens at this model's rate |
 | `--reset` | Clear the usage ledger |
 
 Every figure comes from the usage ledger (usage.jsonl). Real cost needs the proxy; money figures are estimates.

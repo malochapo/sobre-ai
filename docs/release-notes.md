@@ -9,6 +9,7 @@ Each platform has up to two builds:
 
 - **`sobre_session` and `sobre_knowledge` are gone: 13 MCP tools.** Agents never called them on their own, and when asked to save findings for the next session they used Claude Code's own memory, which loads by itself. `sobre_compose` no longer adds a session briefing, and `sobre_read` has no `task` mode.
 - **The hook folds only log lines repeated but for their timestamp**, six or more in a row or eight anywhere in an output, and never a warning or an error. rc.3 folded the lines of one log statement whatever their numbers and could fold a run of warnings: it hid lines the agent had asked for.
+- **`sobre gain` prices no saving.** It shows the tokens sobre removed and, with the proxy, the measured cost of the calls, but no longer a dollar "gain" or a "cost without sobre": both were estimates against an output the agent may never have read in full. `--model` is gone with them, and the ledger contract is now `usage-ledger-v2.md` (same record format).
 - **Messages say what the MCP server costs where it applies.** `init`, `gain` and `doctor overhead` give the fixed cost of the MCP server as what it adds when connected: about 400 tokens per request in Claude Code, which loads tool definitions on demand, and about 3,800 in agents that load them all.
 
 ## Changes in v0.1.0-rc.3 (since rc.2)

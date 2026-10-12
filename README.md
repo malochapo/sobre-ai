@@ -193,9 +193,8 @@ entries were the only change. A file `sobre` creates gets an empty
 | Zed | `~/.config/zed/settings.json` (under `$XDG_CONFIG_HOME` on Linux when set, `%APPDATA%\Zed\` on Windows) | — | — |
 
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` move those agents' files, and `init`
-follows them. The session observer records which conversation and
-model are active, so that `sobre_read` can stub a file re-read in the same
-conversation and `sobre gain` can price savings.
+follows them. The session observer records which conversation is active, so
+that a file re-read in the same conversation can be stubbed.
 
 ### Shell output
 
@@ -348,22 +347,22 @@ GPU build of ONNX Runtime.
 
 Every compression `sobre` makes, on every path, is appended to one local file,
 `usage.jsonl`, in the OpenTelemetry log format
-([contract](docs/contracts/usage-ledger-v1.md)). Nothing sends it anywhere.
+([contract](docs/contracts/usage-ledger-v2.md)). Nothing sends it anywhere.
 `sobre gain` reads it:
 
 ```bash
-sobre gain                  # tokens saved, value, sobre's own overhead
+sobre gain                  # tokens removed, measured cost, sobre's own overhead
 sobre gain --by-tool        # per tool or command
 sobre gain --daily          # per day
 ```
 
-A saving is counted as the tokens of the output without compression (the whole
-file for a read, the full output for a command) minus the tokens `sobre` sent.
-That is a count against an assumed alternative, not a measurement of what the
-agent would otherwise have read. With the optional proxy between the agent and
-its provider, `gain` also shows the tokens each call was billed, as the
-provider reported them. Saved tokens are priced at a model's uncached input
-rate, and `gain` says that figure is an estimate.
+What `gain` counts as removed is the tokens of the output without compression
+(the whole file for a read, the full output for a command) minus the tokens
+`sobre` sent. That is a count against an assumed alternative, not a
+measurement of what the agent would otherwise have read, so `gain` puts no
+price on it. With the optional proxy between the agent and its provider,
+`gain` also shows the tokens each call was billed, as the provider reported
+them, and their cost from the price table.
 
 ## Proxy
 

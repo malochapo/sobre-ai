@@ -1,4 +1,4 @@
-# Usage ledger v1
+# Usage ledger v2
 
 The usage ledger is the one record of what sobre compressed and, when the proxy
 is in the path, of what each LLM call cost. Every path writes to it; `sobre
@@ -92,21 +92,20 @@ file again in full.
 
 `gain` computes these at read time:
 
-- **Net saved tokens**: the sum of `original − sent` over compressions, minus,
-  for each bounce, the larger of its `original` and `wasted`: the compressed
-  read saved nothing, and the full read sent the file again.
+- **Net removed tokens**: the sum of `original − sent` over compressions,
+  minus, for each bounce, the larger of its `original` and `wasted`: the
+  compressed read removed nothing, and the full read sent the file again.
 - **Real cost**: the price table applied to the tokens each LLM call
   reported, `0` for a call to a local upstream.
   Without the proxy there are no calls and no real cost.
-- **Saved value**: net saved tokens at the uncached input price of a model:
-  the one passed with `--model`, else the model that answered the most calls,
-  else the model a host hook last reported, else a blended fallback. It is an
-  estimate, not a bound: a removed tool result would have been re-sent on
-  later turns, mostly as cheaper cache reads, and the proxy re-compresses the
-  whole history on every request, so a result it shortened counts once per
-  request that carried it. When every call went to a local upstream, `gain`
-  shows no money figure.
-- **Cost without sobre**: real cost plus saved value.
+
+`gain` prices no saving. What an agent would have read and paid without sobre
+is not in the ledger: a removed tool result might never have been read in
+full, or would have been re-sent on later turns as cheaper cache reads.
+
+v2 changes only these derived figures: v1 also priced net saved tokens and
+added them to the real cost as a "cost without sobre". The record format is
+v1's.
 
 ## Stability
 
