@@ -17,7 +17,7 @@ The MCP tool surface is capped at **20 tools**. There is no exception, no
 "internal" tool that doesn't count, no meta-tool that fans out to a hidden
 registry.
 
-The surface currently stands at 15, leaving five slots. That margin is
+The surface currently stands at 13, leaving seven slots. That margin is
 deliberate: a cap you are already touching is a cap you will break.
 
 Adding a tool requires naming the tool it replaces, in the same PR. If nothing
@@ -102,7 +102,7 @@ mode, no per-person API keys, no storage quotas, no role hierarchy. If a feature
 only makes sense when several people point at the same process, it does not
 belong here.
 
-**No remote data store.** Indexes, memory and caches live in the user's own
+**No remote data store.** Indexes and caches live in the user's own
 filesystem or in-process. A remote vector database, a Postgres metering table,
 an admin console — all out. Local dense retrieval with an in-process HNSW index
 is fine, including GPU acceleration; the line is whether it needs a service
