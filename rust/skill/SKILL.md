@@ -11,9 +11,8 @@ keep working; prefer the sobre_* tools when they fit.
 
 ## Orient before reading
 
-- `sobre_compose` with no `task` returns the project overview: structure, markers,
-  the last task, recent decisions and facts from earlier sessions. Call it at
-  the start of a session.
+- `sobre_compose` with no `task` returns the project overview: structure,
+  markers and hotspots. Call it at the start of a session.
 - `sobre_compose(task="how does X work")` returns ranked files with the relevant
   symbol source inline. It replaces a search → read → symbol chain; do not
   re-read files whose source it already returned.
