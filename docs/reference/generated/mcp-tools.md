@@ -30,7 +30,7 @@ diff from=... to=... (compare checkpoints), restore ref=... (revert files).
 Call first to understand code (before editing, debugging, 'how does X work').
 Omit task at session start: returns the project overview — structure, hotspots.
 With a task: returns ranked files with relevant symbol source inline grouped by file.
-One call replaces a search→read→symbol chain; do not re-read files whose source it returned.
+Do not re-read files whose source it returned.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
@@ -218,7 +218,7 @@ Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | r
 
 ## `sobre_shell`
 
-WORKFLOW: preferred — auto-compresses output (build/test/log).
+Runs a shell command and compresses its output (build/test/log).
 raw=true for verbatim output.
 [exit:N] on errors (lossless).
 Runs every command as given; the agent host decides what may run.

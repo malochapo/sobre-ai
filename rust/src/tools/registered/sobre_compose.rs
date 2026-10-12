@@ -29,7 +29,7 @@ impl McpTool for SobreComposeTool {
             "Call first to understand code (before editing, debugging, 'how does X work').\n\
              Omit task at session start: returns the project overview — structure, hotspots.\n\
              With a task: returns ranked files with relevant symbol source inline grouped by file.\n\
-             One call replaces a search→read→symbol chain; do not re-read files whose source it returned.",
+             Do not re-read files whose source it returned.",
             json!({
                 "type": "object",
                 "properties": {

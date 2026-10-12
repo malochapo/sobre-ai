@@ -79,7 +79,9 @@ tool reports an error, 2 on a usage error.")]
 Without an agent: every installed agent. With agents (claude, codex, copilot,
 cursor, gemini, opencode, vscode, windsurf, zed): only those, installed or
 not. Each gets its hooks. The MCP server and the skill add about 400 tokens
-to every request: init connects them with --mcp or on a yes to its question
+to every request in Claude Code, which loads tool definitions on demand, and
+about 3,800 in agents that load them all (sobre doctor overhead): init
+connects them with --mcp or on a yes to its question
 (asked in a terminal while an agent lacks them), and refreshes them where an
 agent has them. Zed has no hooks, so without them it gets nothing. Without an
 agent named, init also asks once about the proxy and, in a build with

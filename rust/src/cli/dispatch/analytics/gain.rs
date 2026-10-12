@@ -177,7 +177,7 @@ fn print_summary(s: &Summary, quote: &ModelQuote, period: &str) {
     println!();
     println!("{bold}Overhead{rst}");
     println!(
-        "  sobre adds {} tokens to every request {dim}({} tool definitions and the instructions){rst}",
+        "  With its MCP server connected, sobre adds up to {} tokens to every request {dim}({} tool definitions and the instructions){rst}",
         fmt_tokens(overhead.total_tokens() as u64),
         overhead.tool_count
     );

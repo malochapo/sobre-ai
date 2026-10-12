@@ -7,9 +7,10 @@ pub(super) fn quickstart_text() -> String {
     format!(
         "sobre {version} — local context tools for coding agents
 
-Your agent starts sobre itself and talks to it over stdin/stdout (the MCP
-protocol); `sobre mcp` does the same by hand. From a terminal you probably
-want one of these:
+Your agent runs sobre through the hooks `sobre init` connects; after
+`sobre init --mcp` it also starts sobre as an MCP server over stdin/stdout
+(`sobre mcp` does the same by hand). From a terminal you probably want one
+of these:
 
   sobre init          Connect every detected agent
   sobre init claude   Connect one agent (claude, codex, cursor, ...)
@@ -28,7 +29,7 @@ pub(super) fn print_quickstart() {
 /// derived from the registry (single source of truth) so it can never drift.
 pub(super) fn capability_banner() -> String {
     format!(
-        "{} MCP tools | compressed shell, read and search | local, no telemetry",
+        "compressed shell output | {} MCP tools, opt-in | local, no telemetry",
         crate::server::registry::tool_count()
     )
 }
@@ -50,7 +51,7 @@ GETTING STARTED:
     sobre init <agent>          Connect one agent (claude, codex, copilot, cursor,
                                    gemini, opencode, vscode, windsurf, zed)
     sobre doctor                Check that everything is wired up correctly
-    sobre gain                  See how many tokens you have saved
+    sobre gain                  What sobre compressed, from its usage ledger
 
 EVERYDAY COMMANDS:
     sobre -c \"command\"          Run a shell command with compressed output

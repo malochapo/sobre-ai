@@ -9,9 +9,8 @@ with `~` or name a top-level file.
 ## 1. Scope
 
 `sobre` sits between a coding agent and a repository. The agent asks for a
-file, a search or a shell command, and `sobre` answers with the smallest
-output that still does the job. Every output it changes says so, and the
-original stays reachable.
+file, a search or a shell command, and `sobre` aims to answer with less.
+Every output it changes says so, and the original stays reachable.
 
 Six invariants ([INVARIANTS.md](../INVARIANTS.md)) define the project, and
 each one shows up in the code:
@@ -223,7 +222,9 @@ file read a labelled stub; the original is kept as above. It re-reads
 **`init`** (`setup/`) runs three steps for each agent:
 1. with `--mcp`, on a yes to its question, or where the agent already has
    them: writes the MCP entry (`core/editor_registry/`) and the skill
-   (`setup/skill.rs`), which add about 400 tokens to every request;
+   (`setup/skill.rs`), which add about 400 tokens to every request in a host
+   that loads tool definitions on demand (Claude Code), about 3,800 in one
+   that loads them all;
 2. installs the hooks (`hooks/`);
 3. points the agent at the proxy when it is enabled (`proxy_setup/`).
 

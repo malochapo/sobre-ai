@@ -68,7 +68,9 @@ fn ask_about_mcp(named: &[&str]) -> bool {
 
     crate::outln!();
     crate::outln!("  sobre's MCP tools (sobre_read, sobre_search, …) and its skill add");
-    crate::outln!("  about 400 tokens to every request. The hooks work without them.");
+    crate::outln!("  about 400 tokens to every request in Claude Code, which loads tool");
+    crate::outln!("  definitions on demand, and about 3,800 in agents that load them all.");
+    crate::outln!("  The hooks work without them.");
     crate::outln!();
     print!("  Connect them too? [y/N] ");
     let _ = std::io::stdout().flush();

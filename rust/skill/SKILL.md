@@ -14,8 +14,7 @@ keep working; prefer the sobre_* tools when they fit.
 - `sobre_compose` with no `task` returns the project overview: structure,
   markers and hotspots. Call it at the start of a session.
 - `sobre_compose(task="how does X work")` returns ranked files with the relevant
-  symbol source inline. It replaces a search → read → symbol chain; do not
-  re-read files whose source it already returned.
+  symbol source inline. Do not re-read files whose source it already returned.
 - `sobre_tree(path, depth)` for directory shape, `sobre_outline(path)` for the
   symbols of a file or folder before reading it.
 
@@ -97,7 +96,3 @@ editing from it:
 - a command → `sobre_shell(raw=true)`, or on the CLI `sobre raw "<command>"`.
 
 Never rebuild exact content from a compressed view in line-by-line chunks.
-
-## Output
-
-Never echo tool output back, no narration comments, show only changed code.

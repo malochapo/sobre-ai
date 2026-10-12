@@ -11,7 +11,7 @@ edition = "2024"
 # The toolchain pinned in rust-toolchain.toml; older compilers are untested.
 rust-version = "1.99"
 autobins = false
-description = "sobre: a local context layer for AI coding agents — 13 MCP tools that read, search and run commands with compressed, labelled output. Runs entirely on your machine."
+description = "sobre: a local context layer for AI coding agents — hooks that compress shell output, a CLI and 13 opt-in MCP tools that read, search and run commands with labelled output. Runs entirely on your machine."
 license = "Apache-2.0"
 repository = "https://github.com/malochapo/sobre-ai"
 # Distributed as release binaries from the repository only: never on crates.io.

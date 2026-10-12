@@ -153,7 +153,7 @@ jobs:
           # machine without the Visual C++ redistributable.
           RUSTFLAGS: ${{ contains(matrix.target, 'windows-msvc') && '-C target-feature=+crt-static' || '' }}
         run: |
-          # `sobre --version` reports the release's own version (0.1.0-rc.2).
+          # `sobre --version` reports the release's own version (0.1.0-rc.3, say).
           export SOBRE_RELEASE_VERSION="${TAG#v}"
           flags=(--release --locked)
           [[ -n "$FEATURES" ]] && flags+=(--features "$FEATURES")

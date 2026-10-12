@@ -2,9 +2,10 @@
 
 **Context tools for coding agents that run on your machine and nowhere else.**
 
-`sobre` sits between your coding agent and your repository. The agent asks for a
-file, a search or a shell command; `sobre` aims to answer with less: signatures
-instead of a whole file, a compressed build log instead of the full one, a
+`sobre` sits between your coding agent and your repository. The agent runs a
+shell command, reads a file or searches; `sobre` aims to answer with less: a
+compressed build log instead of the full one, through hooks on the agent's own
+shell, and, with its opt-in MCP server, signatures instead of a whole file or a
 one-line stub when the agent re-reads a file it already has. Every output it
 changes says so, and the original stays reachable.
 
@@ -45,7 +46,7 @@ downloads from GitHub only, and runs nothing but `sobre --version`: run
 
 | `install.sh` | `install.ps1` | |
 |---|---|---|
-| `--version v0.1.0-rc.1` | `-Version v0.1.0-rc.1` | install that release |
+| `--version v0.1.0-rc.3` | `-Version v0.1.0-rc.3` | install that release |
 | `--dense` | `-Dense` | the build with local embeddings (search by meaning) |
 | `--dir <path>` | `-Dir <path>` | install the binary there |
 
@@ -146,7 +147,9 @@ sobre init --check       # what init would change; writes nothing
 ```
 
 `init` connects the hooks. sobre's MCP tools and its skill add about 400
-tokens to every request, and the hooks work without them, so `init` connects
+tokens to every request in Claude Code, which loads tool definitions on demand,
+and about 3,800 in agents that load them all (`sobre doctor overhead`). The
+hooks work without them, so `init` connects
 them only with `--mcp` or when you say yes; an agent that already has sobre's
 MCP entry keeps it, refreshed. Zed has no hooks: without `--mcp`, `init`
 writes nothing for it.
@@ -201,7 +204,7 @@ commands:
 
 | Agent | Shell output compression |
 |---|---|
-| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy, only when a compressor made for that command owns it (git, test runners, builds, package managers, …). File content, diffs and search results stay whole, whichever command of the line printed them. The command itself is never changed. |
+| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy, by the compressor made for that command when one owns it (git, test runners, builds, package managers, …), else folded by shape (log lines repeated but for their timestamp; see `compression_level`). File content, diffs and search results stay whole, whichever command of the line printed them. The command itself is never changed. |
 | VS Code | The same, in Copilot (Agent Host) sessions, which run the Copilot CLI hooks. The Local agent runs them too but cannot replace a tool's output, so it gets none. |
 | Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `sobre -c`, only when none of the host's own command rules tells the two forms apart. |
 | Codex, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool (`sobre init --mcp`). |
@@ -233,15 +236,17 @@ With the MCP server connected, the agent's MCP server list shows `sobre` with
 ```bash
 sobre call sobre_compose --project-root "$PWD"   # the project overview the agent gets
 sobre -c "git status"                            # a command, compressed
-sobre gain                                       # what has been saved so far
+sobre gain                                       # what sobre has compressed so far
 ```
 
 ## Everyday use
 
 Keep working with your agent as before: its native tools keep working, and the
 hooks act on them where the host allows ([Shell output](#shell-output)). With
-the MCP server connected (`sobre init --mcp`), the agent also reaches for
-`sobre`'s tools when they fit. The 13 tools
+the MCP server connected (`sobre init --mcp`), the agent can also call
+`sobre`'s tools; in [sobre-bench](https://github.com/malochapo/sobre-bench)'s
+runs, Claude Code agents called them only when a CLAUDE.md told them to. The
+13 tools
 ([reference](docs/reference/generated/mcp-tools.md)):
 
 | Tool | What it does |
@@ -306,10 +311,10 @@ whatever it holds). [config-keys.md](docs/reference/generated/config-keys.md)
 documents each.
 
 `compression_level` runs from 0 to 1 and defaults to 0.3. Below 0.2 it is off;
-above, it condenses the prose in tool and shell output (each condensed output
-says so) and shortens the tool descriptions from 0.4. In the post-run hook,
+above, it condenses the prose in shell output (each condensed output says so)
+and shortens the tool descriptions from 0.4. In the post-run hook,
 output no dedicated compressor owns is folded by its shape: log lines repeated
-word for word but for their timestamp at every level (a warning or an error
+word for word but for their timestamp at every compressing level (a warning or an error
 always stays, and so does every line with a value of its own), a search
 result's repeated path from 0.4, and, from 0.8, long output that cannot
 hold source (no file content, diff, blame, search result or listing). Source

@@ -189,7 +189,7 @@ fn truncate_start_char_boundary(s: &str, max_tail_bytes: usize) -> usize {
 /// richer graph-based view will follow.
 fn partial_overview(project_root: &str) -> String {
     let mut out = Vec::new();
-    out.push("PROJECT OVERVIEW (partial — knowledge graph indexing in background)".to_string());
+    out.push("PROJECT OVERVIEW (partial — code graph indexing in background)".to_string());
     out.push(format!("Project: {project_root}"));
 
     let markers = detected_markers(project_root);
