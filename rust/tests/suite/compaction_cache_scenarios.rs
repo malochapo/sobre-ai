@@ -212,12 +212,12 @@ mod compaction_sync_scenarios {
 
 mod sobre_read_stub_behavior {
     use super::*;
-    use sobre::tools::sobre_read::handle_with_task_resolved;
+    use sobre::tools::sobre_read::handle_resolved;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
     fn read_full(cache: &mut SessionCache, path: &str) -> String {
-        let output = handle_with_task_resolved(cache, path, "full", CrpMode::Off, None);
+        let output = handle_resolved(cache, path, "full", CrpMode::Off);
         output.content
     }
 
@@ -300,12 +300,12 @@ mod sobre_read_stub_behavior {
         let path = f.path().to_str().unwrap();
 
         let mut cache = SessionCache::default();
-        let _ = handle_with_task_resolved(&mut cache, path, "full", CrpMode::Off, None);
-        let _ = handle_with_task_resolved(&mut cache, path, "full", CrpMode::Off, None); // stub
+        let _ = handle_resolved(&mut cache, path, "full", CrpMode::Off);
+        let _ = handle_resolved(&mut cache, path, "full", CrpMode::Off); // stub
 
         // fresh=true → invalidate → re-read
         cache.invalidate(path);
-        let output = handle_with_task_resolved(&mut cache, path, "full", CrpMode::Off, None);
+        let output = handle_resolved(&mut cache, path, "full", CrpMode::Off);
         assert!(
             !output.content.contains("unchanged"),
             "fresh read should deliver content, got: {}",

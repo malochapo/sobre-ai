@@ -124,9 +124,8 @@ guard plus the atomic temp-file rename inside `run_io`, not by the cache lock.
 **Symbol edits (`lsp/edit_apply.rs`):** hold the per-file lock with a blocking `lock()` for the
 read-check-write of one range; no cache or session lock is taken there.
 
-**Read path (`sobre_read`, `read_through_cache`):** before it, the session lock is read
-(`try_read_owned()` loop, 8s deadline) for the session's task and released. Then, on the
-blocking pool where the handler runs:
+**Read path (`sobre_read`, `read_through_cache`):** on the blocking pool where the handler
+runs:
 
 1. **Per-file lock:** `try_lock()` loop, 25s deadline.
 2. **Shared cache lock:** try the `[unchanged]` stub under `cache.try_read()`; on a hit, return

@@ -23,14 +23,7 @@ fn multi_read_respects_output_cap() {
     let (_dir, paths) = setup_test_files(20, CAP_BYTES / 10);
 
     let mut cache = SessionCache::new();
-    let output = impl_multi_read::handle_with_task_fresh(
-        &mut cache,
-        &paths,
-        "full",
-        false,
-        CrpMode::Off,
-        None,
-    );
+    let output = impl_multi_read::handle(&mut cache, &paths, "full", false, CrpMode::Off);
 
     assert!(
         output.contains("Output capped"),
@@ -54,14 +47,7 @@ fn multi_read_no_cap_when_under_limit() {
     let (_dir, paths) = setup_test_files(3, 100);
 
     let mut cache = SessionCache::new();
-    let output = impl_multi_read::handle_with_task_fresh(
-        &mut cache,
-        &paths,
-        "full",
-        false,
-        CrpMode::Off,
-        None,
-    );
+    let output = impl_multi_read::handle(&mut cache, &paths, "full", false, CrpMode::Off);
 
     assert!(
         !output.contains("Output capped"),
@@ -73,8 +59,7 @@ fn multi_read_no_cap_when_under_limit() {
 #[test]
 fn multi_read_empty_paths() {
     let mut cache = SessionCache::new();
-    let output =
-        impl_multi_read::handle_with_task_fresh(&mut cache, &[], "full", false, CrpMode::Off, None);
+    let output = impl_multi_read::handle(&mut cache, &[], "full", false, CrpMode::Off);
     assert!(output.contains("Read 0 files"));
 }
 
@@ -84,14 +69,7 @@ fn multi_read_single_large_file_passes() {
     let (_dir, paths) = setup_test_files(1, CAP_BYTES + 50_000);
 
     let mut cache = SessionCache::new();
-    let output = impl_multi_read::handle_with_task_fresh(
-        &mut cache,
-        &paths,
-        "full",
-        false,
-        CrpMode::Off,
-        None,
-    );
+    let output = impl_multi_read::handle(&mut cache, &paths, "full", false, CrpMode::Off);
 
     assert!(
         output.contains("Read 1 files"),

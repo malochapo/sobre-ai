@@ -54,7 +54,6 @@ fn disk_windowed_anchored_read_serves_file_over_the_size_cap() {
         "anchored:5-7",
         /* fresh */ true,
         CrpMode::Off,
-        None,
         ReadTuning::default(),
         None,
     );
@@ -114,7 +113,6 @@ fn windowed_anchored_read_via_preread_slow_path_stays_windowed() {
         "anchored:109-118",
         /* fresh */ true,
         CrpMode::Off,
-        None,
         ReadTuning::default(),
         Some(preread),
     );
@@ -168,7 +166,6 @@ fn disk_windows_survive_invalid_utf8_and_serve_comma_ranges() {
             mode,
             /* fresh */ true,
             CrpMode::Off,
-            None,
             ReadTuning::default(),
             None,
         )

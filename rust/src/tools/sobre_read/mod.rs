@@ -42,7 +42,7 @@ pub(crate) fn is_cacheable_mode(mode: &str) -> bool {
 }
 
 /// Anti-inflation capping applies to whole-file views (`full` and the
-/// lossy summaries `map`/`signatures`/`aggressive`/`entropy`/`task`/…), where the
+/// lossy summaries `map`/`signatures`/`aggressive`/`entropy`/…), where the
 /// raw file is a strict superset of the information and is therefore never a
 /// worse answer when the framing happens to inflate on a small file. `full` is
 /// included: an `auto` read can resolve to `full` and reach this path, and its
@@ -60,30 +60,17 @@ pub(crate) fn mode_allows_raw_cap(mode: &str) -> bool {
 pub(crate) fn compressed_cache_key(
     mode: &str,
     crp_mode: CrpMode,
-    task: Option<&str>,
     aggressiveness: Option<f64>,
     protect: &[String],
 ) -> String {
-    let base = if crp_mode.is_tdd() {
+    let mut key = if crp_mode.is_tdd() {
         format!("{mode}:tdd")
     } else {
         mode.to_string()
     };
-    // map/signatures output now embeds a task-relevant body, so task-aware and
-    // task-free variants must cache under distinct keys.
-    let keyed = match task.map(str::trim).filter(|t| !t.is_empty()) {
-        Some(t) => {
-            use std::hash::{Hash, Hasher};
-            let mut h = std::collections::hash_map::DefaultHasher::new();
-            t.hash(&mut h);
-            format!("{base}:t{:x}", h.finish())
-        }
-        None => base,
-    };
     // Aggressiveness and the explicit protect list both change lossy output, so
     // both must change the key. Empty fragments keep pre-feature keys
     // byte-identical, so unmodified reads still hit their existing cache entries.
-    let mut key = keyed;
     let aggr_frag = crate::core::aggressiveness::cache_fragment(aggressiveness);
     if !aggr_frag.is_empty() {
         key = format!("{key}:{aggr_frag}");
@@ -364,30 +351,17 @@ fn open_with_retry(path: &str) -> Result<std::fs::File, std::io::Error> {
 }
 
 /// Reads a file through the cache and applies the requested compression mode.
-#[cfg(any(test, feature = "test-support"))]
 pub fn handle(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
-    handle_with_options(cache, path, mode, false, crp_mode, None)
+    handle_with_options(cache, path, mode, false, crp_mode)
 }
 
-/// Reads a file with task-aware filtering to prioritize task-relevant content.
-pub fn handle_with_task(
-    cache: &mut SessionCache,
-    path: &str,
-    mode: &str,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-) -> String {
-    handle_with_options(cache, path, mode, false, crp_mode, task)
-}
-
-/// Like `handle_with_task`, also returns the resolved mode name and pre-counted tokens.
+/// Like `handle`, also returns the resolved mode name and pre-counted tokens.
 #[cfg(any(test, feature = "test-support"))]
-pub fn handle_with_task_resolved(
+pub fn handle_resolved(
     cache: &mut SessionCache,
     path: &str,
     mode: &str,
     crp_mode: CrpMode,
-    task: Option<&str>,
 ) -> ReadOutput {
     handle_with_options_resolved(
         cache,
@@ -395,30 +369,22 @@ pub fn handle_with_task_resolved(
         mode,
         false,
         crp_mode,
-        task,
         ReadTuning::resolve(None, &[]),
     )
 }
 
-/// Fresh read with task-aware filtering (invalidates cache first).
-pub fn handle_fresh_with_task(
-    cache: &mut SessionCache,
-    path: &str,
-    mode: &str,
-    crp_mode: CrpMode,
-    task: Option<&str>,
-) -> String {
-    handle_with_options(cache, path, mode, true, crp_mode, task)
+/// Fresh read (invalidates cache first).
+pub fn handle_fresh(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
+    handle_with_options(cache, path, mode, true, crp_mode)
 }
 
-/// Fresh read with task-aware filtering, also returns the resolved mode name and pre-counted tokens.
+/// Fresh read, also returns the resolved mode name and pre-counted tokens.
 #[cfg(test)]
-pub fn handle_fresh_with_task_resolved(
+pub fn handle_fresh_resolved(
     cache: &mut SessionCache,
     path: &str,
     mode: &str,
     crp_mode: CrpMode,
-    task: Option<&str>,
 ) -> ReadOutput {
     handle_with_options_resolved(
         cache,
@@ -426,7 +392,6 @@ pub fn handle_fresh_with_task_resolved(
         mode,
         true,
         crp_mode,
-        task,
         ReadTuning::resolve(None, &[]),
     )
 }
@@ -437,7 +402,6 @@ fn handle_with_options(
     mode: &str,
     fresh: bool,
     crp_mode: CrpMode,
-    task: Option<&str>,
 ) -> String {
     handle_with_options_resolved(
         cache,
@@ -445,7 +409,6 @@ fn handle_with_options(
         mode,
         fresh,
         crp_mode,
-        task,
         ReadTuning::resolve(None, &[]),
     )
     .content
@@ -457,10 +420,9 @@ fn handle_with_options_resolved(
     mode: &str,
     fresh: bool,
     crp_mode: CrpMode,
-    task: Option<&str>,
     tuning: ReadTuning<'_>,
 ) -> ReadOutput {
-    handle_with_options_resolved_preread(cache, path, mode, fresh, crp_mode, task, tuning, None)
+    handle_with_options_resolved_preread(cache, path, mode, fresh, crp_mode, tuning, None)
 }
 
 fn handle_with_options_resolved_preread(
@@ -469,26 +431,17 @@ fn handle_with_options_resolved_preread(
     mode: &str,
     fresh: bool,
     crp_mode: CrpMode,
-    task: Option<&str>,
     tuning: ReadTuning<'_>,
     preread: Option<String>,
 ) -> ReadOutput {
     if let Ok(mut bt) = crate::core::bounce_tracker::global().lock() {
         bt.next_seq();
     }
-    let result = match prepare(cache, path, mode, fresh, crp_mode, task, tuning, preread) {
+    let result = match prepare(cache, path, mode, fresh, crp_mode, tuning, preread) {
         Prepared::Done(out) => out,
         Prepared::Render(job) => {
-            let rendered = render(&job, path, crp_mode, task, tuning);
-            finish(
-                cache,
-                path,
-                &job.resolved_mode,
-                rendered,
-                crp_mode,
-                task,
-                tuning,
-            )
+            let rendered = render(&job, path, crp_mode, tuning);
+            finish(cache, path, &job.resolved_mode, rendered, crp_mode, tuning)
         }
     };
     let out = settle(cache, path, result);
@@ -517,7 +470,6 @@ pub(crate) fn render(
     job: &RenderJob,
     path: &str,
     crp_mode: CrpMode,
-    task: Option<&str>,
     tuning: ReadTuning<'_>,
 ) -> String {
     let short = protocol::shorten_path(path);
@@ -533,7 +485,6 @@ pub(crate) fn render(
         job.original_tokens,
         crp_mode,
         path,
-        task,
         tuning,
     );
     // Anti-inflation for lossy whole-file summaries (auto OR explicit):
@@ -562,14 +513,12 @@ pub(crate) fn finish(
     resolved_mode: &str,
     rendered: String,
     crp_mode: CrpMode,
-    task: Option<&str>,
     tuning: ReadTuning<'_>,
 ) -> ReadOutput {
     if is_cacheable_mode(resolved_mode) {
         let cache_key = compressed_cache_key(
             resolved_mode,
             crp_mode,
-            task,
             tuning.aggressiveness,
             tuning.protect,
         );
@@ -599,7 +548,7 @@ pub(crate) fn settle(cache: &mut SessionCache, path: &str, mut result: ReadOutpu
         // A partial/filtered read means the model's most recent view is NOT
         // the full content. Clear the delivery flag so a subsequent mode="full"
         // re-delivers real content instead of the [unchanged] stub. Without this,
-        // a task→full sequence returns an empty stub because the flag was set by an
+        // a map→full sequence returns an empty stub because the flag was set by an
         // earlier full delivery and never cleared by the intervening non-full read.
         if result.resolved_mode != "full" {
             entry.full_content_delivered = false;
@@ -832,12 +781,11 @@ pub(crate) fn prepare(
     mode: &str,
     fresh: bool,
     crp_mode: CrpMode,
-    task: Option<&str>,
     tuning: ReadTuning<'_>,
     preread: Option<String>,
 ) -> Prepared {
     Prepared::Done(
-        match prepare_inner(cache, path, mode, fresh, crp_mode, task, tuning, preread) {
+        match prepare_inner(cache, path, mode, fresh, crp_mode, tuning, preread) {
             Ok(out) => out,
             Err(job) => return Prepared::Render(job),
         },
@@ -851,7 +799,6 @@ fn prepare_inner(
     mode: &str,
     fresh: bool,
     crp_mode: CrpMode,
-    task: Option<&str>,
     tuning: ReadTuning<'_>,
     preread: Option<String>,
 ) -> Result<ReadOutput, RenderJob> {
@@ -932,11 +879,10 @@ fn prepare_inner(
             if let Some(out) = try_stub_hit_readonly(cache, path) {
                 return Ok(out);
             }
-            let (out, resolved_mode) =
-                match handle_full_with_auto_delta(cache, path, &short, ext, task) {
-                    Ok((out, _)) => (crate::core::redaction::redact_text(&out), "full"),
-                    Err(e) => (e, "error"),
-                };
+            let (out, resolved_mode) = match handle_full_with_auto_delta(cache, path, &short, ext) {
+                Ok((out, _)) => (crate::core::redaction::redact_text(&out), "full"),
+                Err(e) => (e, "error"),
+            };
             let sent = count_tokens(&out);
             return Ok(ReadOutput {
                 content: out,
@@ -949,7 +895,6 @@ fn prepare_inner(
             let cache_key = compressed_cache_key(
                 &resolved_mode,
                 crp_mode,
-                task,
                 tuning.aggressiveness,
                 tuning.protect,
             );
@@ -1001,7 +946,7 @@ fn prepare_inner(
     if mode == "full" {
         cache.mark_full_delivered(path);
 
-        let (output, _) = format_full_output(&short, ext, &content, store_result.line_count, task);
+        let (output, _) = format_full_output(&short, ext, &content, store_result.line_count);
         let framed_tokens = count_tokens(&output);
         let output = cap_to_raw(
             output,
@@ -1106,7 +1051,6 @@ fn handle_full_with_auto_delta(
     path: &str,
     short: &str,
     ext: &str,
-    task: Option<&str>,
 ) -> Result<(String, usize), String> {
     let disk_content = match read_file_lossy(path) {
         Ok(c) => c,
@@ -1139,7 +1083,6 @@ fn handle_full_with_auto_delta(
             ext,
             &disk_content,
             store_result.line_count,
-            task,
         ));
     }
 
@@ -1164,7 +1107,6 @@ fn handle_full_with_auto_delta(
         ext,
         &disk_content,
         store_result.line_count,
-        task,
     ))
 }
 

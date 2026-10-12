@@ -91,7 +91,6 @@ pub mod agent_runtime_env;
 // ---------------------------------------------------------------------------
 pub mod adaptive_thresholds;
 pub mod auto_mode_resolver;
-pub mod task_relevance;
 
 // ---------------------------------------------------------------------------
 // Domain: Diagnostics & Quality
@@ -148,8 +147,6 @@ pub mod index_orchestrator;
 pub mod index_paths;
 pub mod index_progress;
 pub mod ingestion;
-pub mod intent_engine;
-pub(crate) mod intent_lang;
 pub mod io_health;
 pub mod jsonc;
 pub mod language_capabilities;

@@ -266,54 +266,6 @@ pub fn diff_content(old_content: &str, new_content: &str) -> String {
     changes.join("\n")
 }
 
-/// Compresses content using the active task intent to preserve task-relevant sections.
-pub fn task_aware_compress(
-    content: &str,
-    ext: Option<&str>,
-    intent: &super::intent_engine::StructuredIntent,
-) -> String {
-    use super::intent_engine::{IntentScope, TaskType};
-
-    let budget_ratio = match intent.scope {
-        IntentScope::SingleFile => 0.7,
-        IntentScope::MultiFile => 0.5,
-        IntentScope::CrossModule => 0.35,
-        IntentScope::ProjectWide => 0.25,
-    };
-
-    match intent.task_type {
-        TaskType::FixBug | TaskType::Debug => {
-            let filtered = super::task_relevance::information_bottleneck_filter_typed(
-                content,
-                &intent.keywords,
-                budget_ratio,
-                Some(intent.task_type),
-                &[],
-            );
-            safeguard_ratio(content, &filtered)
-        }
-        TaskType::Refactor | TaskType::Review => {
-            let cleaned = lightweight_cleanup(content);
-            let filtered = super::task_relevance::information_bottleneck_filter_typed(
-                &cleaned,
-                &intent.keywords,
-                budget_ratio.max(0.5),
-                Some(intent.task_type),
-                &[],
-            );
-            safeguard_ratio(content, &filtered)
-        }
-        TaskType::Generate | TaskType::Test => {
-            let compressed = aggressive_compress(content, ext);
-            safeguard_ratio(content, &compressed)
-        }
-        TaskType::Explore | TaskType::Config | TaskType::Deploy => {
-            let cleaned = lightweight_cleanup(content);
-            safeguard_ratio(content, &cleaned)
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

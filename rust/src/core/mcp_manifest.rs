@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
-const READ_MODES: [&str; 10] = [
+const READ_MODES: [&str; 9] = [
     "auto",
     "full",
     "map",
@@ -11,7 +11,6 @@ const READ_MODES: [&str; 10] = [
     "diff",
     "aggressive",
     "entropy",
-    "task",
     "reference",
     "lines:N-M",
 ];

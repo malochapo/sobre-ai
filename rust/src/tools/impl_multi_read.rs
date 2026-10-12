@@ -6,13 +6,12 @@ use crate::tools::sobre_read;
 /// Bytes a batch read returns before the remaining files are left out.
 const MAX_MULTI_READ_BYTES: usize = 512 * 1024;
 
-pub fn handle_with_task_fresh(
+pub fn handle(
     cache: &mut SessionCache,
     paths: &[String],
     mode: &str,
     fresh: bool,
     crp_mode: CrpMode,
-    task: Option<&str>,
 ) -> String {
     let n = paths.len();
     if n == 0 {
@@ -41,9 +40,9 @@ pub fn handle_with_task_fresh(
             continue;
         }
         let chunk = if fresh {
-            sobre_read::handle_fresh_with_task(cache, path, effective_mode, crp_mode, task)
+            sobre_read::handle_fresh(cache, path, effective_mode, crp_mode)
         } else {
-            sobre_read::handle_with_task(cache, path, effective_mode, crp_mode, task)
+            sobre_read::handle(cache, path, effective_mode, crp_mode)
         };
         let chunk_bytes = chunk.len();
         if accumulated_bytes > 0 && accumulated_bytes + chunk_bytes > max_bytes {
@@ -99,13 +98,12 @@ mod tests {
             b.to_string_lossy().to_string(),
         ];
         let mut cache = crate::core::cache::SessionCache::new();
-        let out = super::handle_with_task_fresh(
+        let out = super::handle(
             &mut cache,
             &paths,
             "full",
             false,
             crate::tools::CrpMode::Off,
-            None,
         );
         assert!(out.contains("first.rs ===\nfn a() {}"), "{out}");
         assert!(out.contains("second.rs ===\nfn b() {}"), "{out}");
