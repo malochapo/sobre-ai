@@ -53,61 +53,6 @@ fn test_tdd_symbols_are_compact() {
 }
 
 #[test]
-fn test_task_mode_filters_content() {
-    // File must exceed TASK_MIN_LINES (250) to engage filtering.
-    let content = (0..300)
-        .map(|i| {
-            if i % 20 == 0 {
-                format!("fn validate_token(token: &str) -> bool {{ /* line {i} */ }}")
-            } else {
-                format!("fn unrelated_helper_{i}(x: i32) -> i32 {{ x + {i} }}")
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let full_tokens = count_tokens(&content);
-    let task = Some("fix bug in validate_token");
-    let (result, result_tokens) = process_mode(
-        &content,
-        "task",
-        "test.rs",
-        "rs",
-        full_tokens,
-        CrpMode::Off,
-        "test.rs",
-        task,
-    );
-    assert!(
-        result_tokens < full_tokens,
-        "task mode ({result_tokens} tok) should be less than full ({full_tokens} tok)"
-    );
-    assert!(
-        result.contains("task-filtered"),
-        "output should contain task-filtered marker"
-    );
-}
-
-#[test]
-fn test_task_mode_without_task_returns_full() {
-    let content = "fn main() {}\nfn helper() {}\n";
-    let tokens = count_tokens(content);
-    let (result, _sent) = process_mode(
-        content,
-        "task",
-        "test.rs",
-        "rs",
-        tokens,
-        CrpMode::Off,
-        "test.rs",
-        None,
-    );
-    assert!(
-        result.contains("no task set"),
-        "should indicate no task: {result}"
-    );
-}
-
-#[test]
 fn test_reference_mode_one_line() {
     let content = "fn main() {}\nfn helper() {}\nfn other() {}\n";
     let tokens = count_tokens(content);
@@ -119,7 +64,6 @@ fn test_reference_mode_one_line() {
         tokens,
         CrpMode::Off,
         "test.rs",
-        None,
     );
     let lines: Vec<&str> = result.lines().collect();
     assert!(
@@ -140,7 +84,7 @@ fn cached_lines_mode_invalidates_on_mtime_change() {
     std::fs::write(&path, "one\nsecond\n").unwrap();
     let mut cache = SessionCache::new();
 
-    let r1 = handle_with_task_resolved(&mut cache, &p, "lines:1-1", CrpMode::Off, None);
+    let r1 = handle_resolved(&mut cache, &p, "lines:1-1", CrpMode::Off);
     let l1: Vec<&str> = r1.content.lines().collect();
     let got1 = l1.get(1).copied().unwrap_or_default().trim();
     let got1 = got1.split_once('|').map_or(got1, |(_, s)| s.trim());
@@ -148,7 +92,7 @@ fn cached_lines_mode_invalidates_on_mtime_change() {
 
     crate::test_env::write_newer(&path, "two\nsecond\n");
 
-    let r2 = handle_with_task_resolved(&mut cache, &p, "lines:1-1", CrpMode::Off, None);
+    let r2 = handle_resolved(&mut cache, &p, "lines:1-1", CrpMode::Off);
     let l2: Vec<&str> = r2.content.lines().collect();
     let got2 = l2.get(1).copied().unwrap_or_default().trim();
     let got2 = got2.split_once('|').map_or(got2, |(_, s)| s.trim());
@@ -169,7 +113,7 @@ fn try_stub_hit_readonly_none_for_uncached_and_stale() {
     assert!(try_stub_hit_readonly(&cache, &p).is_none());
 
     // Populate the cache via a real full read.
-    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let _ = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
 
     // Modify the file so the cached entry is stale → must NOT serve a stub,
     // independent of cache policy (the write path re-reads instead).
@@ -181,11 +125,10 @@ fn try_stub_hit_readonly_none_for_uncached_and_stale() {
 }
 
 #[test]
-fn benchmark_task_conditioned_compression() {
+fn benchmark_summary_modes() {
     // Keep this reasonably small so the test stays fast.
     let content = generate_benchmark_code(300);
     let full_tokens = count_tokens(&content);
-    let task = Some("fix authentication in validate_token");
 
     let (_full_output, full_tok) = process_mode(
         &content,
@@ -195,17 +138,6 @@ fn benchmark_task_conditioned_compression() {
         full_tokens,
         CrpMode::Off,
         "server.rs",
-        task,
-    );
-    let (_task_output, task_tok) = process_mode(
-        &content,
-        "task",
-        "server.rs",
-        "rs",
-        full_tokens,
-        CrpMode::Off,
-        "server.rs",
-        task,
     );
     let (_sig_output, sig_tok) = process_mode(
         &content,
@@ -215,7 +147,6 @@ fn benchmark_task_conditioned_compression() {
         full_tokens,
         CrpMode::Off,
         "server.rs",
-        task,
     );
     let (_ref_output, ref_tok) = process_mode(
         &content,
@@ -225,16 +156,11 @@ fn benchmark_task_conditioned_compression() {
         full_tokens,
         CrpMode::Off,
         "server.rs",
-        task,
     );
 
-    eprintln!("\n=== Task-Conditioned Compression Benchmark ===");
-    eprintln!("Source: 200-line Rust file, task='fix authentication in validate_token'");
+    eprintln!("\n=== Summary Modes Benchmark ===");
+    eprintln!("Source: 300-line Rust file");
     eprintln!("  full:       {full_tok:>6} tokens (baseline)");
-    eprintln!(
-        "  task:       {task_tok:>6} tokens ({:.0}% savings)",
-        (1.0 - task_tok as f64 / full_tok as f64) * 100.0
-    );
     eprintln!(
         "  signatures: {sig_tok:>6} tokens ({:.0}% savings)",
         (1.0 - sig_tok as f64 / full_tok as f64) * 100.0
@@ -245,7 +171,6 @@ fn benchmark_task_conditioned_compression() {
     );
     eprintln!("================================================\n");
 
-    assert!(task_tok < full_tok, "task mode should save tokens");
     assert!(sig_tok < full_tok, "signatures should save tokens");
     assert!(ref_tok < sig_tok, "reference should be most compact");
 }
@@ -288,40 +213,6 @@ fn generate_benchmark_code(lines: usize) -> String {
     code.join("\n")
 }
 
-#[test]
-fn map_mode_inlines_task_relevant_body() {
-    let content = "pub fn alpha() {\n    let a = 1;\n}\n\npub fn validate_token(t: &str) -> bool {\n    let ok = check(t);\n    ok\n}\n";
-    let tokens = count_tokens(content);
-    let (with_task, _) = process_mode(
-        content,
-        "map",
-        "test.rs",
-        "rs",
-        tokens,
-        CrpMode::Off,
-        "test.rs",
-        Some("fix bug in validate_token"),
-    );
-    assert!(
-        with_task.contains("▸ body") && with_task.contains("validate_token"),
-        "map with task should inline the matching body: {with_task}"
-    );
-    let (no_task, _) = process_mode(
-        content,
-        "map",
-        "test.rs",
-        "rs",
-        tokens,
-        CrpMode::Off,
-        "test.rs",
-        None,
-    );
-    assert!(
-        !no_task.contains("▸ body"),
-        "map without a task must not inline a body: {no_task}"
-    );
-}
-
 // `lines:5,10-12` is multi-select (comma-separated lines/ranges), not a range.
 // Callers who meant a span get stray lines back — the output must say what
 // the comma did so the mistake is visible (limitations audit 2026-07-03).
@@ -340,7 +231,6 @@ fn lines_comma_multiselect_gets_hint() {
         tokens,
         CrpMode::Off,
         "t.txt",
-        None,
     );
     assert!(out.contains("line 5") && out.contains("line 10"), "{out}");
     assert!(
@@ -364,7 +254,6 @@ fn map_on_unsupported_language_carries_marker() {
         tokens,
         CrpMode::Off,
         "notes.txt",
-        None,
     );
     assert!(
         out.contains("no extractable structure"),
@@ -384,7 +273,6 @@ fn signatures_on_unsupported_language_carries_marker() {
         tokens,
         CrpMode::Off,
         "notes.txt",
-        None,
     );
     assert!(
         out.contains("no extractable structure"),
@@ -411,64 +299,53 @@ fn read_file_lossy_strips_utf8_bom() {
 }
 
 #[test]
-fn compressed_cache_key_distinguishes_task() {
-    let no_task = compressed_cache_key("map", CrpMode::Off, None, None, &[]);
-    let tdd_no_task = compressed_cache_key("map", CrpMode::Tdd, None, None, &[]);
-    let with_task = compressed_cache_key("map", CrpMode::Off, Some("fix login"), None, &[]);
-    let other_task = compressed_cache_key("map", CrpMode::Off, Some("refactor db"), None, &[]);
-    assert_eq!(no_task, "map");
-    assert_eq!(tdd_no_task, "map:tdd");
-    assert_ne!(with_task, no_task);
-    assert_ne!(with_task, other_task);
+fn compressed_cache_key_distinguishes_crp_mode() {
+    assert_eq!(compressed_cache_key("map", CrpMode::Off, None, &[]), "map");
+    assert_eq!(
+        compressed_cache_key("map", CrpMode::Tdd, None, &[]),
+        "map:tdd"
+    );
 }
 
 #[test]
 fn compressed_cache_key_distinguishes_aggressiveness() {
     // None → byte-identical to today's keys (must not shift existing cache).
-    let base = compressed_cache_key("map", CrpMode::Off, None, None, &[]);
+    let base = compressed_cache_key("map", CrpMode::Off, None, &[]);
     assert_eq!(base, "map");
     // Same aggressiveness → same key (determinism).
-    let a = compressed_cache_key("map", CrpMode::Off, None, Some(0.7), &[]);
-    assert_eq!(
-        a,
-        compressed_cache_key("map", CrpMode::Off, None, Some(0.7), &[])
-    );
+    let a = compressed_cache_key("map", CrpMode::Off, Some(0.7), &[]);
+    assert_eq!(a, compressed_cache_key("map", CrpMode::Off, Some(0.7), &[]));
     // Distinct buckets → distinct keys; jitter inside a 0.05 bucket collapses.
     assert_ne!(a, base);
-    assert_ne!(
-        a,
-        compressed_cache_key("map", CrpMode::Off, None, Some(0.2), &[])
-    );
+    assert_ne!(a, compressed_cache_key("map", CrpMode::Off, Some(0.2), &[]));
     assert_eq!(
         a,
-        compressed_cache_key("map", CrpMode::Off, None, Some(0.701), &[])
+        compressed_cache_key("map", CrpMode::Off, Some(0.701), &[])
     );
 }
 
 #[test]
 fn compressed_cache_key_distinguishes_protect() {
     // Empty protect → byte-identical to today's keys (must not shift cache).
-    let base = compressed_cache_key("entropy", CrpMode::Off, None, None, &[]);
+    let base = compressed_cache_key("entropy", CrpMode::Off, None, &[]);
     assert_eq!(base, "entropy");
     // A non-empty protect list changes the key (lossy output differs)…
-    let p = compressed_cache_key("entropy", CrpMode::Off, None, None, &["TODO".to_string()]);
+    let p = compressed_cache_key("entropy", CrpMode::Off, None, &["TODO".to_string()]);
     assert_ne!(p, base);
     // …deterministically, and independent of token order / duplicates.
     assert_eq!(
         p,
-        compressed_cache_key("entropy", CrpMode::Off, None, None, &["TODO".to_string()])
+        compressed_cache_key("entropy", CrpMode::Off, None, &["TODO".to_string()])
     );
     let multi_a = compressed_cache_key(
         "entropy",
         CrpMode::Off,
-        None,
         None,
         &["a".to_string(), "b".to_string()],
     );
     let multi_b = compressed_cache_key(
         "entropy",
         CrpMode::Off,
-        None,
         None,
         &["b".to_string(), "a".to_string(), "a".to_string()],
     );
@@ -499,7 +376,6 @@ fn aggressiveness_is_deterministic_and_monotonic() {
             count_tokens(&content),
             CrpMode::Off,
             "/tmp/f.txt",
-            None,
             ReadTuning {
                 aggressiveness: Some(a),
                 protect: &[],
@@ -542,7 +418,6 @@ fn aggressive_json_uses_lossless_crush_core() {
         original,
         CrpMode::Off,
         "/tmp/data.json",
-        None,
         ReadTuning {
             aggressiveness: None,
             protect: &[],
@@ -573,7 +448,6 @@ fn map_mode_includes_signature_line_ranges() {
         count_tokens(content),
         CrpMode::Off,
         "/tmp/lib.rs",
-        None,
     );
 
     assert!(
@@ -605,7 +479,6 @@ fn map_mode_omits_exports_already_in_api() {
         count_tokens(content),
         CrpMode::Off,
         "/tmp/lib.rs",
-        None,
     );
 
     // Both exported symbols stay discoverable via the API section …
@@ -633,7 +506,6 @@ fn tdd_map_output_carries_symbol_legend() {
         count_tokens(content),
         CrpMode::Tdd,
         "/tmp/lib.rs",
-        None,
     );
     assert!(
         result.contains("[λ=fn §=class +=pub]"),
@@ -648,7 +520,6 @@ fn tdd_map_output_carries_symbol_legend() {
         count_tokens(content),
         CrpMode::Tdd,
         "/tmp/lib.rs",
-        None,
     );
     assert!(
         sigs.contains("[λ=fn §=class +=pub]"),
@@ -700,7 +571,7 @@ fn anchored_mode_emits_line_hash_anchors() {
     std::fs::write(&path, content).unwrap();
 
     let mut cache = SessionCache::new();
-    let r = handle_with_task_resolved(&mut cache, &p, "anchored", CrpMode::Off, None);
+    let r = handle_resolved(&mut cache, &p, "anchored", CrpMode::Off);
     assert_eq!(r.resolved_mode, "anchored");
     assert!(
         r.content.contains("[anchored:"),
@@ -731,7 +602,7 @@ fn anchored_mode_is_not_capped_to_raw_on_small_files() {
     std::fs::write(&path, "a\n").unwrap();
 
     let mut cache = SessionCache::new();
-    let r = handle_with_task_resolved(&mut cache, &p, "anchored", CrpMode::Off, None);
+    let r = handle_resolved(&mut cache, &p, "anchored", CrpMode::Off);
     assert!(
         r.content.contains("|a"),
         "anchored output must keep anchors even on a tiny file: {}",
@@ -752,7 +623,6 @@ fn raw_mode_returns_exact_file_content() {
         100,
         CrpMode::Off,
         "/tmp/main.rs",
-        None,
     );
     assert_eq!(
         output, content,
@@ -797,7 +667,6 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
             count_tokens(&content),
             CrpMode::Off,
             "/tmp/math.test.ts",
-            None,
         );
         assert!(
             output.contains(sep_em) && output.contains(sep_dash),
@@ -825,13 +694,13 @@ fn verbatim_modes_preserve_decorative_comment_lines() {
 }
 
 /// Determinism contract: tool output must be a pure function of
-/// (content, mode, crp_mode, task). Timestamps, counters or random hints in
+/// (content, mode, crp_mode). Timestamps, counters or random hints in
 /// the body would make otherwise-identical outputs unique and defeat
 /// provider-side prompt caching.
 #[test]
 fn process_mode_output_is_byte_stable_across_calls() {
-    // Fresh, empty data dir: session state left by parallel tests must not
-    // leak into the output.
+    // Fresh, empty data dir: what parallel tests left there must not leak
+    // into the output.
     let _iso = crate::core::data_dir::isolated_data_dir();
     let content: String = (0..120)
         .map(|i| format!("pub fn handler_{i}(x: u32) -> u32 {{ x * {i} }}"))
@@ -858,7 +727,6 @@ fn process_mode_output_is_byte_stable_across_calls() {
                 tokens,
                 CrpMode::Off,
                 "/tmp/stable.rs",
-                None,
             )
             .0
         };
@@ -893,7 +761,6 @@ fn recovery_footer_is_compressed_only() {
             tokens,
             CrpMode::Off,
             "/tmp/rec.rs",
-            None,
         )
         .0
     };
@@ -976,7 +843,7 @@ fn auto_read_never_inflates_small_file() {
     std::fs::write(&path, content).unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_task_resolved(&mut cache, &p, "auto", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "auto", CrpMode::Off);
     assert!(
         out.output_tokens <= count_tokens(content),
         "auto cold read inflated a small file: {} output tok > {} raw tok\n{}",
@@ -995,7 +862,7 @@ fn full_read_never_inflates_tiny_file() {
     std::fs::write(&path, content).unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert!(
         out.output_tokens <= count_tokens(content),
         "full cold read inflated a tiny file: {} > {}\n{}",
@@ -1023,7 +890,7 @@ fn auto_read_still_compresses_large_file() {
     std::fs::write(&path, &content).unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_task_resolved(&mut cache, &p, "auto", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "auto", CrpMode::Off);
     assert!(
         out.output_tokens < count_tokens(&content),
         "auto read of a large file must still compress: {} >= {} (mode={})",
@@ -1044,7 +911,7 @@ fn explicit_compressed_mode_capped_on_tiny_file() {
     std::fs::write(&path, content).unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "signatures", CrpMode::Off);
     // The file itself, with the one line that says the view was replaced.
     assert_eq!(
         out.content,
@@ -1070,7 +937,7 @@ fn explicit_signatures_still_compresses_large_file() {
     std::fs::write(&path, &content).unwrap();
 
     let mut cache = SessionCache::new();
-    let out = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "signatures", CrpMode::Off);
     assert!(
         out.output_tokens < count_tokens(&content),
         "explicit signatures of a large file must compress: {} >= {}",
@@ -1092,10 +959,10 @@ fn cache_hit_stub_is_byte_stable_across_rereads() {
 
     let mut cache = SessionCache::new();
     // Prime: the first full read marks full content as delivered.
-    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
-    let r2 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
-    let r3 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
-    let r4 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let _ = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
+    let r2 = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
+    let r3 = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
+    let r4 = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert_eq!(
         r2.content, r3.content,
         "re-read drifted between reads 2 and 3"
@@ -1138,7 +1005,7 @@ fn gh775_full_then_ranged_returns_only_window() {
     let mut cache = SessionCache::new();
 
     // 1. Full read — delivers all 2000 lines, marks as fully delivered.
-    let full = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let full = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert!(
         full.content.contains("line 1"),
         "full read must include first line"
@@ -1149,8 +1016,7 @@ fn gh775_full_then_ranged_returns_only_window() {
     );
 
     // 2. Ranged read — must return ONLY lines 1480–1489.
-    let ranged =
-        handle_fresh_with_task_resolved(&mut cache, &p, "lines:1480-1489", CrpMode::Off, None);
+    let ranged = handle_fresh_resolved(&mut cache, &p, "lines:1480-1489", CrpMode::Off);
     assert!(
         ranged.content.contains("line 1480"),
         "ranged read must contain the first requested line:\n{}",
@@ -1177,11 +1043,10 @@ fn gh775_ranged_response_starts_at_requested_line() {
     let mut cache = SessionCache::new();
 
     // Full read to warm cache.
-    handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    handle_resolved(&mut cache, &p, "full", CrpMode::Off);
 
     // Ranged read.
-    let ranged =
-        handle_fresh_with_task_resolved(&mut cache, &p, "lines:500-504", CrpMode::Off, None);
+    let ranged = handle_fresh_resolved(&mut cache, &p, "lines:500-504", CrpMode::Off);
 
     // The first numbered output line must be line 500.
     // extract_line_range formats as " 500| line 500".
@@ -1217,7 +1082,7 @@ fn gh775_cold_ranged_read_returns_only_window() {
     let mut cache = SessionCache::new();
 
     // No prior full read — cold ranged read must still return only the window.
-    let ranged = handle_with_task_resolved(&mut cache, &p, "lines:100-109", CrpMode::Off, None);
+    let ranged = handle_resolved(&mut cache, &p, "lines:100-109", CrpMode::Off);
     assert!(
         ranged.content.contains("line 100"),
         "cold ranged read must contain start line"
@@ -1287,7 +1152,7 @@ fn a_density_read_rejected_by_the_gate_says_it_is_the_full_file() {
     std::fs::write(&path, &body).unwrap();
     let p = path.to_string_lossy().to_string();
     let mut cache = SessionCache::new();
-    let out = handle_with_task_resolved(&mut cache, &p, "density:0.10", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "density:0.10", CrpMode::Off);
     let header = out.content.lines().next().unwrap_or_default();
     let full = body.lines().all(|line| out.content.contains(line));
     assert!(

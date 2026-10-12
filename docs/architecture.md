@@ -9,16 +9,15 @@ with `~` or name a top-level file.
 ## 1. Scope
 
 `sobre` sits between a coding agent and a repository. The agent asks for a
-file, a search or a shell command, and `sobre` answers with the smallest
-output that still does the job. Every output it changes says so, and the
-original stays reachable.
+file, a search or a shell command, and `sobre` aims to answer with less.
+Every output it changes says so, and the original stays reachable.
 
 Six invariants ([INVARIANTS.md](../INVARIANTS.md)) define the project, and
 each one shows up in the code:
 
 | Invariant | Where it shows |
 |---|---|
-| 1. At most 20 tools | `server/registry.rs` registers 15; a test in `server/tool_visibility.rs` fails past 20 |
+| 1. At most 20 tools | `server/registry.rs` registers 13; a test in `server/tool_visibility.rs` fails past 20 |
 | 2. One config file, no cascade | `core/config/`: one `config.toml`, 11 keys pinned by `config::schema::key_cap`; no variable changes behaviour (`core/env_vars.rs` lists them all) |
 | 3. One `tools/list` per build | the list never depends on the client, the config or the session; the dense build adds one parameter |
 | 4. Local and personal | no account, telemetry or remote store; the network is reached only by the proxy and by `embeddings provision` |
@@ -44,7 +43,7 @@ One crate, one binary. The modules group into five layers:
    │ shell/ (exec, output policy), core/patterns/ (compression)   │
    │ core/ config, paths, read cache, compression, tee, redaction │
    │       search index, BM25, code graph, embeddings (dense)     │
-   │       session, knowledge, checkpoints (shadow git), usage    │
+   │       session, checkpoints (shadow git), usage               │
    │ lsp/ (language servers for sobre_refactor)                   │
    └──────────────────────────────────────────────────────────────┘
                   ▼
@@ -102,7 +101,7 @@ built when a tool first needs them.
    roots, skipping broad ones, and starts storage maintenance in the background.
    Only the protocol revisions that open with `initialize` are served (up to
    2025-11-25); a client opening without it is told the version is unsupported.
-3. `tools/list` returns the registry: 15 tools, descriptions condensed by
+3. `tools/list` returns the registry: 13 tools, descriptions condensed by
    `compression_level`, read-only and destructive hints added
    (`tool_defs/`). It never announces `listChanged`.
 4. `tools/call` → `server/call_tool.rs`:
@@ -119,12 +118,9 @@ built when a tool first needs them.
       (`sobre_shell` has its own timeouts).
    5. Re-read, re-run and `sobre_expand` signals may lower compression for two
       minutes, announced in the output (`core/refetch_signals.rs`).
-   6. `sobre_session` and `sobre_knowledge` output is condensed by
-      `server/post_process.rs`, unless the check in `core/output_verification.rs`
-      finds a path or identifier damaged.
-   7. The compression is appended to the usage ledger (`core/usage/`), and the
-      session is saved when enough has changed.
-   8. A failing tool sets `isError`, and `structuredContent.exitCode` where it
+   6. The compression is appended to the usage ledger (`core/usage/`), and the
+      read stub index is written when enough has changed.
+   7. A failing tool sets `isError`, and `structuredContent.exitCode` where it
       has one.
 
 ### A hook, per host
@@ -143,12 +139,15 @@ Codex, Windsurf and Zed get neither:
     with (terse, line dedup, head/tail truncation) never run here.
   - Output nothing owns, a chain of several commands included, is folded by
     its shape as far as `compression_level` allows (`shell/compress/fold.rs`):
-    four or more lines of one log statement keep their first and last line
-    (every level), consecutive search results of one file print its path once
-    (0.4 and up), and output over 150 lines keeps its first 60 and last 30
-    when no command of the line may print source: a file, a diff, blame,
-    search results or a listing (0.8 and up). No rule rewrites a line of
-    source. Below 0.2 the hook compresses nothing.
+    a log line repeated but for its timestamp folds to its first and last
+    occurrence when there are eight in the output or six in a row, so no
+    other value is hidden, and a line with a warning level or worse, or an
+    error word, never folds (every level); consecutive search
+    results of one file print its path once (0.4 and up), and output over
+    150 lines keeps its first 60 and last 30 when no command of the line may
+    print source: a file, a diff, blame, search results or a listing (0.8
+    and up). No rule rewrites a line of source. Below 0.2 the hook
+    compresses nothing.
   - The owner is the one command of the line that prints, once setup
     commands (`cd`, `export`, `source`, …) are set aside, optionally piped
     through `head`, `tail` or `tee`. Two printing commands or a heredoc
@@ -157,7 +156,7 @@ Codex, Windsurf and Zed get neither:
     command prints a file (`cat`, `head`, `sed -n`, `awk`, `nl`,
     `grep -A`/`-B`/`-C`, `git show <rev>:<path>`, `git blame`, …;
     `rewrite_registry.rs`), nor on diffs, blame and search results. Only
-    log runs and search paths fold there.
+    repeated log lines and search paths fold there.
   - A replacement saves at least 100 tokens, more than its label costs.
 - **Labelled pre-run rewrite** (`hook cursor`, `hook gemini`). A command is
   wrapped as `sobre -c '<command>'` only when all of these hold:
@@ -223,7 +222,9 @@ file read a labelled stub; the original is kept as above. It re-reads
 **`init`** (`setup/`) runs three steps for each agent:
 1. with `--mcp`, on a yes to its question, or where the agent already has
    them: writes the MCP entry (`core/editor_registry/`) and the skill
-   (`setup/skill.rs`), which add about 400 tokens to every request;
+   (`setup/skill.rs`), which add about 400 tokens to every request in a host
+   that loads tool definitions on demand (Claude Code), about 3,800 in one
+   that loads them all;
 2. installs the hooks (`hooks/`);
 3. points the agent at the proxy when it is enabled (`proxy_setup/`).
 
@@ -274,15 +275,12 @@ project hash: a short hash of the canonical project root
 
 | Path | Holds | Kept |
 |---|---|---|
-| `usage.jsonl` | the usage ledger ([contract](contracts/usage-ledger-v1.md)) | until `gain --reset` |
-| `sessions/<id>.json` | saved sessions | 7 days: older ones are deleted when a server starts |
-| `knowledge/<h>/knowledge.json`, `gotchas.json`, `embeddings.json` | facts and consolidation history, pitfalls, fact embeddings | 200 facts, 100 history entries; unused facts archived after 90 days |
-| `memory/archive/…` | archived facts and history | the newest 16 per store and project; `recall` brings back archived facts it finds nothing else for |
+| `usage.jsonl` | the usage ledger ([contract](contracts/usage-ledger-v2.md)) | until `gain --reset` |
 | `graphs/<h>/graph.db`, `graph.meta.json`, `call_graph.json.zst` | the code graph | rebuilt when stale; removed when a server starts 48 hours after its last build, or by `doctor --fix` when the project is gone |
 | `vectors/<h>/bm25_index.bin.zst`, `embeddings.bin`, `project_root.txt` | BM25 and dense indexes | rebuilt when stale; removed by `doctor --fix` when the project is gone; BM25 is not saved above 512 MB |
 | `read_cache/stub_index.json` | which file versions a conversation has already received (no content) | 1024 entries |
 | `shadow/<h>/git/` | `sobre_checkpoint` snapshots, a git repository apart from yours | until uninstall |
-| `detected_model.json`, `active_transcript.json`, `last_compaction.json` | what `hook observe` recorded | overwritten |
+| `active_transcript.json`, `last_compaction.json` | what `hook observe` recorded | overwritten |
 | `diagnostics.json` | recent compiler and linter errors | 15 minutes, 200 entries |
 | `session_token` | the proxy token (0600) | until uninstall |
 | `logs/crash.log` | panics (0600) | rotated at 1 MB |
@@ -325,9 +323,9 @@ the data and state directories:
 - **Locks.** A lock is an OS advisory lock (`flock`, `LockFileEx`) on a `.<name>.lock` file, taken with std's `File::try_lock` (`core/startup_guard.rs`). The OS releases it when its holder exits, crashed or not, so no lock outlives its process. `rust/LOCK_ORDERING.md` lists them.
   - Locks: server startup, startup maintenance, and each project's graph, BM25 and search builds.
   - The process that loses a build race reuses the winner's index (a graph scan waits up to 2 minutes for it, a BM25 build 800 ms) or, for the in-memory search index, builds it later.
-- **The usage ledger** is appended, and each project's knowledge rewritten, under an exclusive file lock of the same kind.
-- **Other writes** go to a temporary sibling, then a rename (`core/atomic_fs.rs`, `config_io.rs`, session and index writers). A reader sees the old file or the new one, never half of one.
-- **Per process:** the session, the read cache, the search index, background jobs and language servers. Every process starts an empty session; `sobre_session action=load` restores a saved one.
+- **The usage ledger** is appended under an exclusive file lock of the same kind.
+- **Other writes** go to a temporary sibling, then a rename (`core/atomic_fs.rs`, `config_io.rs`, index writers). A reader sees the old file or the new one, never half of one.
+- **Per process:** the session, the read cache, the search index, background jobs and language servers. Every process starts an empty session.
 
 ## 8. Configuration and builds
 
@@ -343,7 +341,7 @@ the data and state directories:
 | | Default build | Dense build (`--features dense`) |
 |---|---|---|
 | Semantic search | BM25 | hybrid once the model is installed, else BM25 (`sobre_search`'s `mode` picks one) |
-| `tools/list` | 15 tools | the same, plus `sobre_search`'s `mode` |
+| `tools/list` | 13 tools | the same, plus `sobre_search`'s `mode` |
 | ONNX Runtime | — | loaded at run time: `ORT_DYLIB_PATH`, else the copy `embeddings provision` installed, else the system's |
 | `init` | asks about the MCP server and the proxy | also asks about downloading the model |
 
@@ -393,7 +391,7 @@ points, and runs commands as written. The agent host decides what may run
   window that starts inside a key's body are not caught.
 - **Keeps its files private.**
   - Directories that exist are set to 0700 when resolved.
-  - The token, sessions, stored originals, the crash log and the captured variables are 0600.
+  - The token, stored originals, the crash log and the captured variables are 0600.
   - `usage.jsonl` gets the default mode inside its 0700 directory.
 - **Locks down the proxy.** It listens on loopback only, checks the Host header, and requires its token or a provider key. It never adds a key.
 - **Avoids macOS privacy prompts.** On macOS, the proxy started by its LaunchAgent, and a `sobre` process re-parented to launchd, run under `sandbox-exec` with `~/Documents`, `~/Desktop` and `~/Downloads` denied. A background process therefore never triggers a privacy prompt (`core/tcc_guard_sandbox.rs`).
@@ -443,7 +441,7 @@ Godot scenes in the graph.
 | [config-keys.md](reference/generated/config-keys.md) | every config key | `core/config/schema/` |
 | [cli.md](reference/generated/cli.md) | every command, flag and exit code | `cli/args.rs` |
 | [env-vars.md](reference/generated/env-vars.md) | every environment variable | `core/env_vars.rs` |
-| [contracts/](contracts/) | formats and guarantees: the usage ledger, graph output, the memory boundary | the contract files |
+| [contracts/](contracts/) | formats and guarantees: the usage ledger, graph output | the contract files |
 | [LOCK_ORDERING.md](../rust/LOCK_ORDERING.md) | every lock and its order | checked by a test |
 
 ## 13. Changing it

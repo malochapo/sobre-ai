@@ -1,8 +1,7 @@
 use crate::core::graph_provider::{self, GraphProvider};
 
-/// The session-start project overview: structure by directory, graph
-/// hotspots, and what earlier sessions left (facts, last task, recent
-/// decisions). While the graph is still being indexed, a partial overview
+/// The session-start project overview: structure by directory and graph
+/// hotspots. While the graph is still being indexed, a partial overview
 /// built from what is on disk now.
 pub(crate) fn handle(path: Option<&str>) -> String {
     let project_root = path.map_or_else(|| ".".to_string(), std::string::ToString::to_string);
@@ -81,12 +80,6 @@ pub(crate) fn handle(path: Option<&str>) -> String {
     }
 
     append_graph_hotspots_section(&mut output, &project_root, gp);
-
-    let wakeup = build_wakeup_briefing(&project_root);
-    if !wakeup.is_empty() {
-        output.push(String::new());
-        output.push(wakeup);
-    }
 
     output.join("\n")
 }
@@ -168,41 +161,6 @@ fn import_hotspots_from_edges(gp: &GraphProvider, limit: usize) -> Vec<(String, 
     v
 }
 
-fn build_wakeup_briefing(project_root: &str) -> String {
-    let mut parts = Vec::new();
-
-    if let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(project_root) {
-        let facts_line = knowledge.format_wakeup();
-        if !facts_line.is_empty() {
-            parts.push(facts_line);
-        }
-    }
-
-    if let Some(session) =
-        crate::core::session::SessionState::load_latest_for_project_root(project_root)
-    {
-        if let Some(ref task) = session.task {
-            parts.push(format!("LAST_TASK:{}", task.description));
-        }
-        if !session.decisions.is_empty() {
-            let recent: Vec<String> = session
-                .decisions
-                .iter()
-                .rev()
-                .take(3)
-                .map(|d| d.summary.clone())
-                .collect();
-            parts.push(format!("RECENT_DECISIONS:{}", recent.join("|")));
-        }
-    }
-
-    if parts.is_empty() {
-        return String::new();
-    }
-
-    format!("WAKE-UP BRIEFING:\n{}", parts.join("\n"))
-}
-
 fn short_path(path: &str) -> String {
     let parts: Vec<&str> = path.split('/').collect();
     if parts.len() <= 2 {
@@ -227,11 +185,11 @@ fn truncate_start_char_boundary(s: &str, max_tail_bytes: usize) -> usize {
 /// Builds an immediately-useful overview while the knowledge graph is still
 /// being indexed in the background. Instead of only telling the user to
 /// "try again in 1-2 minutes", we return what is already available: a shallow
-/// directory tree, the detected project markers, and persistent project
-/// knowledge — plus a note that the richer graph-based view will follow.
+/// directory tree and the detected project markers — plus a note that the
+/// richer graph-based view will follow.
 fn partial_overview(project_root: &str) -> String {
     let mut out = Vec::new();
-    out.push("PROJECT OVERVIEW (partial — knowledge graph indexing in background)".to_string());
+    out.push("PROJECT OVERVIEW (partial — code graph indexing in background)".to_string());
     out.push(format!("Project: {project_root}"));
 
     let markers = detected_markers(project_root);
@@ -251,20 +209,6 @@ fn partial_overview(project_root: &str) -> String {
         out.push("STRUCTURE (depth 2):".to_string());
         out.push(tree);
         out.push(String::new());
-    }
-
-    // Persistent knowledge is independent of the code graph and available now.
-    if let Some(knowledge) = crate::core::knowledge::ProjectKnowledge::load(project_root) {
-        let mut facts: Vec<_> = knowledge.facts.iter().filter(|f| f.is_current()).collect();
-        facts.sort_by_key(|f| std::cmp::Reverse(f.created_at));
-        if !facts.is_empty() {
-            out.push("KNOWN FACTS (from prior sessions):".to_string());
-            for f in facts.iter().take(5) {
-                let val: String = f.value.chars().take(80).collect();
-                out.push(format!("  • [{}] {}: {}", f.category, f.key, val));
-            }
-            out.push(String::new());
-        }
     }
 
     out.push(

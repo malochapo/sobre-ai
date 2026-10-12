@@ -11,12 +11,10 @@ keep working; prefer the sobre_* tools when they fit.
 
 ## Orient before reading
 
-- `sobre_compose` with no `task` returns the project overview: structure, markers,
-  the last task, recent decisions and facts from earlier sessions. Call it at
-  the start of a session.
+- `sobre_compose` with no `task` returns the project overview: structure,
+  markers and hotspots. Call it at the start of a session.
 - `sobre_compose(task="how does X work")` returns ranked files with the relevant
-  symbol source inline. It replaces a search → read → symbol chain; do not
-  re-read files whose source it already returned.
+  symbol source inline. Do not re-read files whose source it already returned.
 - `sobre_tree(path, depth)` for directory shape, `sobre_outline(path)` for the
   symbols of a file or folder before reading it.
 
@@ -32,7 +30,6 @@ keep working; prefer the sobre_* tools when they fit.
 | `anchored` | full text with `N:hash` anchors for `sobre_patch` |
 | `lines:N-M` | a window (`lines:5,10-20` for several) |
 | `diff` | what changed since this session last read the file |
-| `task` | the parts relevant to the session's task (`sobre_session action=task`) |
 | `raw=true` | the bytes on disk: no cache, framing or redaction |
 
 Re-reading an unchanged file returns a one-line `[unchanged]` stub; pass
@@ -99,16 +96,3 @@ editing from it:
 - a command → `sobre_shell(raw=true)`, or on the CLI `sobre raw "<command>"`.
 
 Never rebuild exact content from a compressed view in line-by-line chunks.
-
-## Memory
-
-- `sobre_session` — this session: `task`, `finding`, `decision` (value=text),
-  saved as they change; `status`; `load` (and `list`) to pick up an earlier
-  session; `resume` after the host compacts its context.
-- `sobre_knowledge` — facts that outlive the session: `remember value=...`,
-  `recall query=...`, `search`, `remove`, `consolidate` (this session's
-  findings and decisions), `gotcha trigger=... resolution=...` for pitfalls.
-
-## Output
-
-Never echo tool output back, no narration comments, show only changed code.

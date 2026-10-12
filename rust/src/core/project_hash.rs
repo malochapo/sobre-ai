@@ -1,7 +1,7 @@
 use std::path::Path;
 
-/// The key of every per-project store (knowledge, gotchas, graphs, search
-/// indexes, co-occurrence, checkpoints): a short hash of the project's
+/// The key of every per-project store (graphs, search indexes,
+/// co-occurrence, checkpoints): a short hash of the project's
 /// canonical root. Two clones are two projects, and adding or changing a git
 /// remote or a package name moves nothing.
 ///

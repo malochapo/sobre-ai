@@ -3,7 +3,7 @@
 //! Tests that verify explicit full/lines re-reads of changed cached files
 //! are served as diffs.
 
-use super::handle_with_task_resolved;
+use super::handle_resolved;
 use super::resolve_explicit_delta_mode;
 use super::try_stub_hit_readonly_scoped;
 use crate::core::cache::SessionCache;
@@ -18,7 +18,7 @@ use crate::tools::CrpMode;
 /// Prime the cache with a full read of the file already on disk at `p`.
 fn primed_full_cache(p: &str) -> SessionCache {
     let mut cache = SessionCache::new();
-    let _ = handle_with_task_resolved(&mut cache, p, "full", CrpMode::Off, None);
+    let _ = handle_resolved(&mut cache, p, "full", CrpMode::Off);
     debug_assert!(
         cache.is_full_delivered(p),
         "fixture must deliver full content"
@@ -38,7 +38,7 @@ fn a_deleted_file_is_an_error_not_its_cached_body() {
     std::fs::remove_file(&path).unwrap();
 
     for mode in ["full", "auto"] {
-        let out = handle_with_task_resolved(&mut cache, &p, mode, CrpMode::Off, None);
+        let out = handle_resolved(&mut cache, &p, mode, CrpMode::Off);
         assert_eq!(out.resolved_mode, "error", "{mode}: {}", out.content);
         assert!(!out.content.contains("old_body"), "{mode}: {}", out.content);
     }
@@ -66,7 +66,7 @@ fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
 
     // Cost of a full delivery, measured on a cold cache.
     let mut cold = SessionCache::new();
-    let full = handle_with_task_resolved(&mut cold, &p, "full", CrpMode::Off, None);
+    let full = handle_resolved(&mut cold, &p, "full", CrpMode::Off);
     assert!(
         !full.content.contains("[unchanged"),
         "cold full read must deliver the body, not a stub"
@@ -74,7 +74,7 @@ fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
 
     // Warm cache: full body already delivered, file unchanged on disk.
     let mut cache = primed_full_cache(&p);
-    let reread = handle_with_task_resolved(&mut cache, &p, "auto", CrpMode::Off, None);
+    let reread = handle_resolved(&mut cache, &p, "auto", CrpMode::Off);
     assert!(
         reread.content.contains("[unchanged"),
         "auto re-read of an unchanged fully-delivered file must serve the stub, got: {}",
@@ -88,8 +88,8 @@ fn auto_reread_of_fully_delivered_file_serves_unchanged_stub() {
     );
 }
 
-/// Regression: a full->task->full sequence must NOT serve the [unchanged]
-/// stub on the third read. The task read delivers partial content, so the
+/// Regression: a full->map->full sequence must NOT serve the [unchanged]
+/// stub on the third read. The map read delivers partial content, so the
 /// model's most recent view is NOT the full file -- re-delivering is mandatory.
 #[test]
 fn mode_change_clears_full_delivered_flag() {
@@ -121,7 +121,7 @@ Content for section {i}."
     let mut cache = SessionCache::new();
 
     // 1. Full read -- delivers everything, sets full_content_delivered.
-    let full1 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let full1 = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert!(
         !full1.content.contains("[unchanged"),
         "first full read must deliver the body"
@@ -133,17 +133,11 @@ Content for section {i}."
         full1.content.chars().take(300).collect::<String>()
     );
 
-    // 2. Task read -- partial/filtered content. The fix clears full_content_delivered.
-    let task = handle_with_task_resolved(
-        &mut cache,
-        &p,
-        "task",
-        CrpMode::Off,
-        Some("find section 42"),
-    );
+    // 2. Map read -- partial content. The fix clears full_content_delivered.
+    let map = handle_resolved(&mut cache, &p, "map", CrpMode::Off);
     assert!(
-        !task.content.contains("[unchanged"),
-        "task read must deliver filtered content, not a stub"
+        !map.content.contains("[unchanged"),
+        "map read must deliver the outline, not a stub"
     );
     assert!(
         !cache.is_full_delivered(&p),
@@ -151,10 +145,10 @@ Content for section {i}."
     );
 
     // 3. Full read -- must re-deliver actual content, NOT the [unchanged] stub.
-    let full2 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let full2 = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert!(
         !full2.content.contains("[unchanged"),
-        "full read after a task read must deliver the body, not stub: {}",
+        "full read after a map read must deliver the body, not stub: {}",
         full2.content
     );
     assert!(
@@ -189,14 +183,14 @@ fn full_reread_still_serves_stub_when_no_mode_change() {
     let mut cache = SessionCache::new();
 
     // 1. Full read.
-    let full1 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let full1 = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert!(
         !full1.content.contains("[unchanged"),
         "first read must deliver body"
     );
 
     // 2. Full re-read -- same mode, file unchanged -> stub.
-    let full2 = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let full2 = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert!(
         full2.content.contains("[unchanged"),
         "full->full re-read of unchanged file must serve the stub: {}",
@@ -265,7 +259,7 @@ fn full_read_fallback_never_serves_a_stub() {
     let mut cache = primed_full_cache(&p);
     // Same bytes on disk, so `store` reports a hit: the fallback must still
     // not decide stubbing from `full_content_delivered`.
-    let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, &p, "rs", None).unwrap();
+    let (out, _) = super::handle_full_with_auto_delta(&mut cache, &p, &p, "rs").unwrap();
     assert!(
         !out.contains("[unchanged"),
         "full-read fallback must not decide stubbing on its own: {out}"
@@ -431,7 +425,7 @@ fn delta_explicit_changed_file_diverts_full_reread_to_diff() {
     );
 
     // End-to-end: the engine renders the diff against the FULL cached content.
-    let out = handle_with_task_resolved(&mut cache, &p, "diff", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "diff", CrpMode::Off);
     assert_eq!(out.resolved_mode, "diff");
     assert!(
         out.content.contains("[diff]"),
@@ -487,10 +481,10 @@ fn a_diff_needs_the_full_content_as_the_latest_view() {
 
     std::fs::write(&path, &content).unwrap();
     let mut cache = SessionCache::new();
-    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
-    let _ = handle_with_task_resolved(&mut cache, &p, "map", CrpMode::Off, None);
+    let _ = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
+    let _ = handle_resolved(&mut cache, &p, "map", CrpMode::Off);
     crate::test_env::write_newer(&path, &changed);
-    let out = handle_with_task_resolved(&mut cache, &p, "diff", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "diff", CrpMode::Off);
     assert!(
         out.content.contains("nothing to diff against"),
         "no diff after a map view: {}",
@@ -499,9 +493,9 @@ fn a_diff_needs_the_full_content_as_the_latest_view() {
 
     std::fs::write(&path, &content).unwrap();
     let mut cache = SessionCache::new();
-    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let _ = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     crate::test_env::write_newer(&path, &changed);
-    let out = handle_with_task_resolved(&mut cache, &p, "diff", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "diff", CrpMode::Off);
     assert!(out.content.contains("[diff]"), "{}", out.content);
     assert!(out.content.contains("70707"), "{}", out.content);
     assert!(
@@ -646,12 +640,12 @@ fn a_full_read_after_a_partial_view_is_the_file_not_a_diff() {
     std::fs::write(&path, &content).unwrap();
 
     let mut cache = SessionCache::new();
-    let _ = handle_with_task_resolved(&mut cache, &p, "signatures", CrpMode::Off, None);
+    let _ = handle_resolved(&mut cache, &p, "signatures", CrpMode::Off);
     crate::test_env::write_newer(&path, content.replace("x + 7 }", "x + 777 }"));
 
     let decision = resolve_explicit_delta_mode(&cache, &p, "full", true, false);
     assert_eq!(decision.mode, "full", "no diff without a full read first");
-    let out = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let out = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     assert!(!out.content.contains("[auto-delta]"), "{}", out.content);
     assert!(out.content.contains("x + 777"), "{}", out.content);
     assert!(
@@ -671,7 +665,7 @@ fn a_bom_file_reread_is_unchanged() {
     let p = path.to_string_lossy().to_string();
     std::fs::write(&path, "\u{feff}fn a() {}\nfn b() {}\n").unwrap();
     let mut cache = SessionCache::new();
-    let _ = handle_with_task_resolved(&mut cache, &p, "full", CrpMode::Off, None);
+    let _ = handle_resolved(&mut cache, &p, "full", CrpMode::Off);
     let entry = cache.get(&p).unwrap();
     assert!(!crate::core::cache::is_cache_entry_stale_verified(
         &p,

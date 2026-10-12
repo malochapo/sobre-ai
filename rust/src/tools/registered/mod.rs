@@ -4,14 +4,12 @@ pub mod sobre_compose;
 pub mod sobre_expand;
 pub mod sobre_glob;
 pub mod sobre_graph;
-pub mod sobre_knowledge;
 pub mod sobre_outline;
 pub mod sobre_patch;
 pub mod sobre_read;
 pub mod sobre_refactor;
 pub mod sobre_review;
 pub mod sobre_search;
-pub mod sobre_session;
 pub mod sobre_shell;
 pub mod sobre_tree;
 

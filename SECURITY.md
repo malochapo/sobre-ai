@@ -18,7 +18,8 @@ issue; the advisory is then published. There is no guaranteed response time.
 
 A single binary that runs on your machine, as your user:
 
-- a local MCP server that your agent starts and talks to over stdio;
+- a local MCP server that your agent starts and talks to over stdio, when it
+  is connected (`sobre init --mcp`; opt-in);
 - a command-line tool;
 - hooks that your agent runs around its own tools;
 - an opt-in local proxy between your agent and its model provider.

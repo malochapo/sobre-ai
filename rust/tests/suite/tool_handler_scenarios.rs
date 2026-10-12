@@ -38,22 +38,10 @@ mod read_cache_hits {
         std::fs::write(&file, "fn v1() {}\n").unwrap();
         let path = file.to_str().unwrap();
 
-        sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
         super::write_newer(&file, "fn v2() { updated(); }\n");
 
-        let out = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        let out = sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
         // Should detect the change and show new content or delta
         assert!(
             out.content.contains("v2")
@@ -84,32 +72,14 @@ mod compressed_read_cache {
         let path = file.to_str().unwrap();
 
         // First read with full mode to populate cache
-        sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
 
         // First map read — processes and caches compressed output
-        let out1 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "map",
-            CrpMode::Off,
-            None,
-        );
+        let out1 = sobre::tools::sobre_read::handle_resolved(&mut cache, path, "map", CrpMode::Off);
         assert!(!out1.content.is_empty());
 
         // Second map read of the unchanged file
-        let out2 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "map",
-            CrpMode::Off,
-            None,
-        );
+        let out2 = sobre::tools::sobre_read::handle_resolved(&mut cache, path, "map", CrpMode::Off);
         assert!(!out2.content.is_empty());
         assert_eq!(out1.content, out2.content);
     }
@@ -125,12 +95,11 @@ mod error_data {
     #[test]
     fn scenario_nonexistent_file_returns_error_mode() {
         let mut cache = SessionCache::new();
-        let out = sobre::tools::sobre_read::handle_with_task_resolved(
+        let out = sobre::tools::sobre_read::handle_resolved(
             &mut cache,
             "/nonexistent/path/does_not_exist.rs",
             "full",
             CrpMode::Off,
-            None,
         );
         assert_eq!(out.resolved_mode, "error");
         assert!(out.content.contains("ERROR"));
@@ -194,13 +163,7 @@ mod diff_guard {
         std::fs::write(&file, "fn brand_new() {}\n").unwrap();
         let path = file.to_str().unwrap();
 
-        let out = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "diff",
-            CrpMode::Off,
-            None,
-        );
+        let out = sobre::tools::sobre_read::handle_resolved(&mut cache, path, "diff", CrpMode::Off);
         assert!(
             out.content.contains("no cached version for diff")
                 || out.content.contains("use mode=full first"),
@@ -223,25 +186,13 @@ mod diff_guard {
         let path = file.to_str().unwrap();
 
         // Read full first
-        sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
 
         // Modify file
         super::write_newer(&file, "fn version_two() { changed(); }\n");
 
         // Now diff should work
-        let out = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "diff",
-            CrpMode::Off,
-            None,
-        );
+        let out = sobre::tools::sobre_read::handle_resolved(&mut cache, path, "diff", CrpMode::Off);
         assert!(
             out.content.contains("diff") || out.content.contains("version_two"),
             "Expected diff content, got: {}",
@@ -615,37 +566,22 @@ mod integration_workflow {
         let path = file.to_str().unwrap();
 
         // 1. Agent reads file for the first time
-        let out1 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        let out1 =
+            sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
         assert!(out1.content.contains("original"));
         assert_ne!(out1.resolved_mode, "error");
 
         // 2. Agent reads same file again (cache hit, no disk I/O)
-        let out2 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        let out2 =
+            sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
         assert!(out2.content.contains("unchanged") || out2.content.contains("cached"));
 
         // 3. File is edited externally
         super::write_newer(&file, "fn edited_version() { new_logic(); }\n");
 
         // 4. Agent reads again — detects change
-        let out3 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        let out3 =
+            sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
         assert!(
             out3.content.contains("edited_version")
                 || out3.content.contains("delta")
@@ -717,43 +653,22 @@ mod integration_workflow {
         let path = file.to_str().unwrap();
 
         // 1. Read with full mode
-        let full = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "full",
-            CrpMode::Off,
-            None,
-        );
+        let full =
+            sobre::tools::sobre_read::handle_resolved(&mut cache, path, "full", CrpMode::Off);
         assert!(full.content.contains("Config"));
 
         // 2. Read with signatures mode (should use compressed cache on 2nd call)
-        let sig1 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "signatures",
-            CrpMode::Off,
-            None,
-        );
+        let sig1 =
+            sobre::tools::sobre_read::handle_resolved(&mut cache, path, "signatures", CrpMode::Off);
         assert!(!sig1.content.is_empty());
 
-        let sig2 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "signatures",
-            CrpMode::Off,
-            None,
-        );
+        let sig2 =
+            sobre::tools::sobre_read::handle_resolved(&mut cache, path, "signatures", CrpMode::Off);
         // Should be identical (compressed cache hit)
         assert_eq!(sig1.content, sig2.content);
 
         // 3. Read with map mode
-        let map1 = sobre::tools::sobre_read::handle_with_task_resolved(
-            &mut cache,
-            path,
-            "map",
-            CrpMode::Off,
-            None,
-        );
+        let map1 = sobre::tools::sobre_read::handle_resolved(&mut cache, path, "map", CrpMode::Off);
         assert!(!map1.content.is_empty());
     }
 }

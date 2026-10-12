@@ -1,5 +1,5 @@
 //! Output rendering: full-output framing, header building, per-mode
-//! processing, task-relevant filtering and line-range extraction.
+//! processing and line-range extraction.
 //! Split out of `sobre_read/mod.rs`; `use super::*` re-imports parent items.
 
 #[allow(clippy::wildcard_imports)]
@@ -73,7 +73,6 @@ pub(crate) fn format_full_output(
     ext: &str,
     content: &str,
     line_count: usize,
-    _task: Option<&str>,
 ) -> (String, usize) {
     let metadata = build_header(short, ext, content, line_count, true);
 
@@ -157,7 +156,6 @@ pub(crate) fn build_header(
 }
 
 #[cfg(test)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn process_mode(
     content: &str,
     mode: &str,
@@ -166,7 +164,6 @@ pub(crate) fn process_mode(
     original_tokens: usize,
     crp_mode: CrpMode,
     file_path: &str,
-    task: Option<&str>,
 ) -> (String, usize) {
     process_mode_tuned(
         content,
@@ -176,7 +173,6 @@ pub(crate) fn process_mode(
         original_tokens,
         crp_mode,
         file_path,
-        task,
         ReadTuning::default(),
     )
 }
@@ -184,7 +180,6 @@ pub(crate) fn process_mode(
 /// Renders `content` for `mode`, honouring the aggressiveness knob carried in
 /// `tuning`. `process_mode` is the unchanged-behaviour wrapper (`ReadTuning::
 /// default()`); the real read path threads a resolved `tuning` through here.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn process_mode_tuned(
     content: &str,
     mode: &str,
@@ -193,7 +188,6 @@ pub(crate) fn process_mode_tuned(
     original_tokens: usize,
     crp_mode: CrpMode,
     file_path: &str,
-    task: Option<&str>,
     tuning: ReadTuning<'_>,
 ) -> (String, usize) {
     let line_count = content.lines().count();
@@ -204,7 +198,6 @@ pub(crate) fn process_mode_tuned(
         original_tokens,
         crp_mode,
         line_count,
-        task,
     };
 
     match mode {
@@ -227,11 +220,10 @@ pub(crate) fn process_mode_tuned(
                 original_tokens,
                 crp_mode,
                 file_path,
-                task,
                 tuning,
             )
         }
-        "full" => format_full_output(short, ext, content, line_count, task),
+        "full" => format_full_output(short, ext, content, line_count),
         "anchored" => format_anchored_output(short, content, line_count),
         mode if mode.starts_with("anchored:") => {
             let range_str = &mode[9..];
@@ -243,7 +235,6 @@ pub(crate) fn process_mode_tuned(
         "map" => render_map(content, ctx),
         "aggressive" => render_aggressive(content, ctx),
         "entropy" => render_entropy(content, ctx, &tuning),
-        "task" => render_task_mode(content, ctx, &tuning),
         "reference" => {
             let tok = count_tokens(content);
             let output = format!("{short}: {line_count} lines, {tok} tok ({ext})");
@@ -313,89 +304,6 @@ pub(crate) fn process_mode_tuned(
             (out, sent)
         }
     }
-}
-
-/// When a task is active, find the symbol whose name best matches a task
-/// keyword and return its body as numbered source lines (capped).
-///
-/// `map`/`signatures` stay compact but include the one symbol body the agent is
-/// most likely about to read, avoiding a follow-up full read. Uses the
-/// tree-sitter chunk extractor (which carries spans + body across languages); a
-/// no-op when tree-sitter is unavailable.
-#[cfg(not(feature = "tree-sitter"))]
-pub(crate) fn task_relevant_body(
-    _content: &str,
-    _file_path: &str,
-    _ext: &str,
-    _task: Option<&str>,
-) -> Option<String> {
-    None
-}
-
-#[cfg(feature = "tree-sitter")]
-pub(crate) fn task_relevant_body(
-    content: &str,
-    file_path: &str,
-    ext: &str,
-    task: Option<&str>,
-) -> Option<String> {
-    const MAX_BODY_LINES: usize = 80;
-
-    let task = task.map(str::trim).filter(|t| !t.is_empty())?;
-    let (_files, keywords) = crate::core::task_relevance::parse_task_hints(task);
-    if keywords.is_empty() {
-        return None;
-    }
-    let kw_lower: Vec<String> = keywords.iter().map(|k| k.to_lowercase()).collect();
-
-    let chunks = crate::core::chunks_ts::extract_chunks_ts(file_path, content, ext)?;
-
-    // Score: exact name match (2) beats substring overlap (1).
-    let mut best_idx: Option<usize> = None;
-    let mut best_score = 0u8;
-    for (i, ch) in chunks.iter().enumerate() {
-        if ch.symbol_name.is_empty() {
-            continue;
-        }
-        let name_l = ch.symbol_name.to_lowercase();
-        let substr = kw_lower
-            .iter()
-            .any(|k| k.len() >= 3 && (name_l.contains(k.as_str()) || k.contains(name_l.as_str())));
-        let score = if kw_lower.contains(&name_l) {
-            2
-        } else {
-            u8::from(substr)
-        };
-        if score > best_score {
-            best_score = score;
-            best_idx = Some(i);
-        }
-    }
-
-    let ch = &chunks[best_idx?];
-    let body_lines: Vec<&str> = ch.content.lines().collect();
-    let total = body_lines.len();
-    let shown = total.min(MAX_BODY_LINES);
-    let body: String = body_lines[..shown]
-        .iter()
-        .enumerate()
-        .map(|(i, l)| format!("{:>4}|{l}", ch.start_line + i))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let truncated = if shown < total {
-        format!(
-            "\n  … +{} lines — sobre_read(mode=\"lines:{}-{}\")",
-            total - shown,
-            ch.start_line + shown,
-            ch.end_line
-        )
-    } else {
-        String::new()
-    };
-    Some(format!(
-        "  ▸ body {} L{}-{}:\n{body}{truncated}",
-        ch.symbol_name, ch.start_line, ch.end_line
-    ))
 }
 
 /// One-line explainer appended whenever a `lines:` payload uses a comma —
@@ -513,7 +421,6 @@ struct RenderCtx<'a> {
     original_tokens: usize,
     crp_mode: CrpMode,
     line_count: usize,
-    task: Option<&'a str>,
 }
 
 fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
@@ -524,7 +431,6 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         original_tokens: _,
         crp_mode,
         line_count,
-        task,
     } = ctx;
     let sigs = signatures::extract_signatures(content, ext);
     let dep_info = deps::extract_deps(content, ext);
@@ -567,10 +473,6 @@ fn render_signatures(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     if sigs.is_empty() && dep_info.imports.is_empty() {
         output.push_str(&no_structure_marker(ext));
     }
-    if let Some(body) = task_relevant_body(content, file_path, ext, task) {
-        output.push('\n');
-        output.push_str(&body);
-    }
     // JIT disclosure: signatures carry L-spans, so point at the
     // targeted range expansion before the full-read escalation.
     if !sigs.is_empty() {
@@ -592,7 +494,6 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         original_tokens: _,
         crp_mode,
         line_count,
-        task,
     } = ctx;
     if ext == "php"
         && let Some(php_map) = crate::core::patterns::php::compress_php_map(content, short)
@@ -677,10 +578,6 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         output.push_str(&no_structure_marker(ext));
     }
 
-    if let Some(body) = task_relevant_body(content, file_path, ext, task) {
-        output.push('\n');
-        output.push_str(&body);
-    }
     // Located symbols are addressable as stable handles.
     if !key_sigs.is_empty() {
         output.push_str(&format!("\n  {}", crate::core::handle::USAGE_HINT));
@@ -697,7 +594,6 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
         file_path,
         original_tokens,
         line_count,
-        task,
         ..
     } = ctx;
     // Structured JSON: a redundant array-of-objects compacts far
@@ -752,15 +648,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
 
     let base = ast_pruned.as_deref().unwrap_or(content);
 
-    // Only a task the agent stated conditions the compression.
-    let task_intent = task
-        .filter(|t| !t.trim().is_empty())
-        .map(crate::core::intent_engine::StructuredIntent::from_query);
-    let raw = if let Some(ref intent) = task_intent {
-        compressor::task_aware_compress(base, Some(ext), intent)
-    } else {
-        compressor::aggressive_compress(base, Some(ext))
-    };
+    let raw = compressor::aggressive_compress(base, Some(ext));
     let compressed = compressor::safeguard_ratio(content, &raw);
     let header = build_header(short, ext, content, line_count, true);
 
@@ -777,32 +665,17 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         ext,
         file_path,
         line_count,
-        task,
         ..
     } = ctx;
-    // Query-conditioned IB: only a task the agent stated conditions
-    // the compression.
-    let task_kws: Vec<String> = task
-        .filter(|t| !t.trim().is_empty())
-        .map(|t| crate::core::task_relevance::parse_task_hints(t).1)
-        .unwrap_or_default();
-    let result = match (task_kws.is_empty(), tuning.aggressiveness) {
-        // Aggressiveness overrides the adaptive BPE-entropy threshold for
-        // the plain (no task keywords) path; task-conditioned entropy
-        // keeps its own relevance-aware thresholds.
-        (true, Some(a)) => entropy::entropy_compress_with_threshold(
+    // Aggressiveness overrides the adaptive BPE-entropy threshold.
+    let result = match tuning.aggressiveness {
+        Some(a) => entropy::entropy_compress_with_threshold(
             content,
             file_path,
             AggressivenessProfile::from_level(a).bpe_entropy,
             tuning.protect,
         ),
-        (true, None) => entropy::entropy_compress_adaptive(content, file_path, tuning.protect),
-        (false, _) => entropy::entropy_compress_task_conditioned(
-            content,
-            file_path,
-            &task_kws,
-            tuning.protect,
-        ),
+        None => entropy::entropy_compress_adaptive(content, file_path, tuning.protect),
     };
     let avg_h = entropy::average_line_entropy(content);
     let header = build_header(short, ext, content, line_count, false);
@@ -813,64 +686,4 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
     );
     let sent = count_tokens(&output);
     (append_compressed_hint(&output, file_path), sent)
-}
-
-fn render_task_mode(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) -> (String, usize) {
-    let RenderCtx {
-        short,
-        ext,
-        file_path,
-        original_tokens: _,
-        line_count,
-        task,
-        ..
-    } = ctx;
-    let task_str = task.unwrap_or("");
-    if task_str.is_empty() {
-        let header = build_header(short, ext, content, line_count, true);
-        let out = format!("{header}\n{content}\n[task mode: no task set — returned full]");
-        let sent = count_tokens(&out);
-        return (out, sent);
-    }
-    let (_files, keywords) = crate::core::task_relevance::parse_task_hints(task_str);
-    if keywords.is_empty() {
-        let header = build_header(short, ext, content, line_count, true);
-        let out =
-            format!("{header}\n{content}\n[task mode: no keywords extracted — returned full]");
-        let sent = count_tokens(&out);
-        return (out, sent);
-    }
-    // Small files save too few tokens to justify the risk of dropping
-    // relevant content. Degrade to full — the agent gets the complete file
-    // for a negligible token cost and avoids the "had to retry with mode=full"
-    // round-trip that the issue reported.
-    const TASK_MIN_LINES: usize = 250;
-    if line_count < TASK_MIN_LINES {
-        let header = build_header(short, ext, content, line_count, true);
-        let out = format!(
-            "{header}\n{content}\n[task mode: file below {TASK_MIN_LINES}L threshold — returned full]"
-        );
-        let sent = count_tokens(&out);
-        return (out, sent);
-    }
-    // Aggressiveness tightens the IB keep-budget; default 0.3 preserved
-    // when the knob is unset.
-    let ib_budget = tuning.aggressiveness.map_or(0.3, |a| {
-        AggressivenessProfile::from_level(a).ib_budget_ratio
-    });
-    let is_markdown = matches!(ext, "md" | "markdown" | "mdx" | "rst");
-    let filtered = crate::core::task_relevance::information_bottleneck_filter_with_headers(
-        content,
-        &keywords,
-        ib_budget,
-        tuning.protect,
-        is_markdown,
-    );
-    let filtered_lines = filtered.lines().count();
-    let header = format!("{short} {line_count}L [task-filtered: {line_count}→{filtered_lines}]");
-    let sent = count_tokens(&filtered) + count_tokens(&header);
-    (
-        append_compressed_hint(&format!("{header}\n{filtered}"), file_path),
-        sent,
-    )
 }

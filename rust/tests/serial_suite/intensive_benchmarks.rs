@@ -517,7 +517,6 @@ fn guard_essential_instructions_present() {
         "sobre_search",
         "sobre_tree",
         "sobre_compose",
-        "sobre_session",
     ];
     for tool in &required {
         assert!(
@@ -1021,94 +1020,4 @@ fn generate_git_log_stat(n: usize) -> String {
         ));
     }
     output
-}
-
-// ---------------------------------------------------------------------------
-// Session save
-// ---------------------------------------------------------------------------
-
-#[test]
-fn bench_session_prepare_save_is_cpu_only() {
-    use sobre::core::session::SessionState;
-
-    let mut session = SessionState::new();
-    session.set_task("benchmark task for save split", None);
-    for _ in 0..20 {
-        session.record_tool_call(100);
-        session.stats.unsaved_changes = 0;
-    }
-
-    let start = std::time::Instant::now();
-    for _ in 0..100 {
-        session.stats.unsaved_changes = 5;
-        if let Ok(prepared) = session.prepare_save() {
-            std::mem::drop(prepared);
-        }
-    }
-    let prepare_us = start.elapsed().as_micros();
-
-    eprintln!("\n{}", "=".repeat(70));
-    eprintln!("  SESSION PREPARE_SAVE BENCHMARK (100 iters)");
-    eprintln!("{}", "=".repeat(70));
-    eprintln!("  100x prepare_save (serialize only): {prepare_us:>6} us");
-    eprintln!(
-        "  Per call:                           {:>6} us",
-        prepare_us / 100
-    );
-    eprintln!("  Note: write_to_disk() I/O runs in background thread.");
-    eprintln!("{}", "=".repeat(70));
-
-    assert!(
-        prepare_us / 100 < 5000,
-        "prepare_save should take <5ms per call, got {} us",
-        prepare_us / 100
-    );
-
-    assert_eq!(
-        session.stats.unsaved_changes, 0,
-        "prepare_save must reset unsaved_changes"
-    );
-}
-
-#[test]
-fn bench_session_save_semantics() {
-    use sobre::core::session::SessionState;
-
-    let mut session = SessionState::new();
-    for _ in 0..6 {
-        session.increment();
-    }
-    assert!(session.should_save(), "should_save after 6 mutations");
-
-    let prepared = session.prepare_save().expect("prepare_save");
-    assert_eq!(
-        session.stats.unsaved_changes, 0,
-        "prepare_save must reset counter immediately (for async path)"
-    );
-    assert!(
-        !session.should_save(),
-        "should_save must be false after prepare_save"
-    );
-
-    let write_result = prepared.write_to_disk();
-    assert!(
-        write_result.is_ok(),
-        "write_to_disk to valid dir should succeed"
-    );
-
-    for _ in 0..6 {
-        session.increment();
-    }
-    assert!(session.should_save());
-
-    let result = session.save();
-    assert!(result.is_ok(), "synchronous save should succeed");
-    assert_eq!(
-        session.stats.unsaved_changes, 0,
-        "save must reset counter on success"
-    );
-    assert!(
-        !session.should_save(),
-        "should_save must be false after save"
-    );
 }

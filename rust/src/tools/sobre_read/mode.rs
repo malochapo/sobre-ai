@@ -77,8 +77,6 @@ pub(crate) enum ReadMode {
     Aggressive,
     /// Entropy-pruned summary — `"entropy"`.
     Entropy,
-    /// Task-focused summary — `"task"`.
-    Task,
     /// One-line pointer/quote — `"reference"`.
     Reference,
     /// sobre picks the mode — `"auto"`.
@@ -142,7 +140,7 @@ impl ParseModeError {
             }
             ParseModeError::Malformed(s) | ParseModeError::Unknown(s) => format!(
                 "invalid read mode \"{s}\": expected one of auto, full, raw, \
-                 map, signatures, aggressive, entropy, task, reference, diff, anchored, \
+                 map, signatures, aggressive, entropy, reference, diff, anchored, \
                  lines:N-M, anchored:N-M, density:0.NN"
             ),
         }
@@ -205,7 +203,6 @@ impl FromStr for ReadMode {
             "map" => ReadMode::Map,
             "aggressive" => ReadMode::Aggressive,
             "entropy" => ReadMode::Entropy,
-            "task" => ReadMode::Task,
             "reference" => ReadMode::Reference,
             "auto" => ReadMode::Auto,
             "diff" => ReadMode::Diff,
@@ -242,7 +239,6 @@ impl fmt::Display for ReadMode {
             ReadMode::Map => "map",
             ReadMode::Aggressive => "aggressive",
             ReadMode::Entropy => "entropy",
-            ReadMode::Task => "task",
             ReadMode::Reference => "reference",
             ReadMode::Auto => "auto",
             ReadMode::Diff => "diff",
@@ -291,17 +287,13 @@ impl ReadMode {
     pub(crate) fn is_lossy_summary(&self) -> bool {
         matches!(
             self,
-            ReadMode::Map
-                | ReadMode::Signatures
-                | ReadMode::Aggressive
-                | ReadMode::Entropy
-                | ReadMode::Task
+            ReadMode::Map | ReadMode::Signatures | ReadMode::Aggressive | ReadMode::Entropy
         )
     }
 
     /// Precise, pinned reads: the caller asked for an exact byte-window
     /// or delta and must get exactly that back. Context-gate overrides
-    /// (bounce-prevention, pressure-downgrade, graph/knowledge heuristics)
+    /// (bounce-prevention, pressure-downgrade, graph heuristics)
     /// must never silently reinterpret one of these to e.g. `full` — that
     /// discards the window/anchors/delta the caller explicitly asked for.
     /// Kept as an enum match (not a string-prefix check) so a future mode
@@ -329,7 +321,6 @@ mod tests {
         "map",
         "aggressive",
         "entropy",
-        "task",
         "reference",
         "auto",
         "diff",
@@ -535,7 +526,7 @@ mod tests {
                 "'{mode}' must be a precise pinned read"
             );
         }
-        for mode in ["full", "map", "signatures", "auto", "task"] {
+        for mode in ["full", "map", "signatures", "auto", "entropy"] {
             let parsed: ReadMode = mode.parse().expect("canonical mode parses");
             assert!(
                 !parsed.is_precise_pinned_read(),

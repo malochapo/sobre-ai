@@ -1,10 +1,19 @@
 # sobre
 
+> **Archived, October 2026.** sobre set out to make coding agents cheaper by
+> giving them less to read. Measured on billed tokens with Claude Code, it did
+> not: its best build cost what Claude Code alone costs. The measurements, the
+> method and how the other tools compare are in
+> [trust-me-bro](https://github.com/malochapo/trust-me-bro). The release
+> candidates stay downloadable but are not supported, and this repository is
+> read-only.
+
 **Context tools for coding agents that run on your machine and nowhere else.**
 
-`sobre` sits between your coding agent and your repository. The agent asks for a
-file, a search or a shell command; `sobre` aims to answer with less: signatures
-instead of a whole file, a compressed build log instead of the full one, a
+`sobre` sits between your coding agent and your repository. The agent runs a
+shell command, reads a file or searches; `sobre` aims to answer with less: a
+compressed build log instead of the full one, through hooks on the agent's own
+shell, and, with its opt-in MCP server, signatures instead of a whole file or a
 one-line stub when the agent re-reads a file it already has. Every output it
 changes says so, and the original stays reachable.
 
@@ -45,7 +54,7 @@ downloads from GitHub only, and runs nothing but `sobre --version`: run
 
 | `install.sh` | `install.ps1` | |
 |---|---|---|
-| `--version v0.1.0-rc.1` | `-Version v0.1.0-rc.1` | install that release |
+| `--version v0.1.0-rc.3` | `-Version v0.1.0-rc.3` | install that release |
 | `--dense` | `-Dense` | the build with local embeddings (search by meaning) |
 | `--dir <path>` | `-Dir <path>` | install the binary there |
 
@@ -129,7 +138,7 @@ cargo install --path . --locked --root ~/.local --features dense
 6. **Use what exists.** What a maintained library already does, `sobre` uses
    rather than rewrites, copies or vendors.
 
-Today: 15 tools, one fixed surface per build; one config file with 11 keys and
+Today: 13 tools, one fixed surface per build; one config file with 11 keys and
 no per-project files, profiles or behaviour-changing environment variables; no
 network request you did not ask for; and no gate, approval or hidden transform
 of sobre's own. [Issue #69](https://github.com/malochapo/sobre-ai/issues/69)
@@ -146,7 +155,9 @@ sobre init --check       # what init would change; writes nothing
 ```
 
 `init` connects the hooks. sobre's MCP tools and its skill add about 400
-tokens to every request, and the hooks work without them, so `init` connects
+tokens to every request in Claude Code, which loads tool definitions on demand,
+and about 3,800 in agents that load them all (`sobre doctor overhead`). The
+hooks work without them, so `init` connects
 them only with `--mcp` or when you say yes; an agent that already has sobre's
 MCP entry keeps it, refreshed. Zed has no hooks: without `--mcp`, `init`
 writes nothing for it.
@@ -190,9 +201,8 @@ entries were the only change. A file `sobre` creates gets an empty
 | Zed | `~/.config/zed/settings.json` (under `$XDG_CONFIG_HOME` on Linux when set, `%APPDATA%\Zed\` on Windows) | — | — |
 
 `CLAUDE_CONFIG_DIR` and `CODEX_HOME` move those agents' files, and `init`
-follows them. The session observer records which conversation and
-model are active, so that `sobre_read` can stub a file re-read in the same
-conversation and `sobre gain` can price savings.
+follows them. The session observer records which conversation is active, so
+that a file re-read in the same conversation can be stubbed.
 
 ### Shell output
 
@@ -201,7 +211,7 @@ commands:
 
 | Agent | Shell output compression |
 |---|---|
-| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy, only when a compressor made for that command owns it (git, test runners, builds, package managers, …). File content, diffs and search results stay whole, whichever command of the line printed them. The command itself is never changed. |
+| Claude Code, Copilot CLI, OpenCode | After the command ran: the output the model sees is replaced by a compressed copy, by the compressor made for that command when one owns it (git, test runners, builds, package managers, …), else folded by shape (log lines repeated but for their timestamp; see `compression_level`). File content, diffs and search results stay whole, whichever command of the line printed them. The command itself is never changed. |
 | VS Code | The same, in Copilot (Agent Host) sessions, which run the Copilot CLI hooks. The Local agent runs them too but cannot replace a tool's output, so it gets none. |
 | Cursor, Gemini CLI | Before the command runs: a single known command (`git`, `cargo`, `npm`, …) is wrapped in `sobre -c`, only when none of the host's own command rules tells the two forms apart. |
 | Codex, Windsurf, Zed | None: these hosts would need sobre to approve the command, can only block it, or have no hooks. Use the `sobre_shell` tool (`sobre init --mcp`). |
@@ -222,28 +232,28 @@ sobre doctor --fix            # repair the agents sobre is connected to, prune s
 `doctor --fix` repairs what sobre wrote in your user configuration, for the
 agents sobre is already connected to (`init` connects new ones), and lists
 what it changed. It adds the MCP server to no agent: `sobre init --mcp` does.
-It never deletes knowledge: a store whose project is not on disk is listed, and
-you delete it by hand if the project is gone. It never edits files in a
-repository: when a project's own MCP file (`.vscode/mcp.json`,
-`.cursor/mcp.json`, `.github/mcp.json`, `.zed/settings.json`) also registers
-`sobre`, `doctor` names the file, and you remove the entry if you do not want
-it there.
+It never edits files in a repository: when a project's own MCP file
+(`.vscode/mcp.json`, `.cursor/mcp.json`, `.github/mcp.json`,
+`.zed/settings.json`) also registers `sobre`, `doctor` names the file, and you
+remove the entry if you do not want it there.
 
 With the MCP server connected, the agent's MCP server list shows `sobre` with
-15 tools (`/mcp` in Claude Code). From a shell, without an agent:
+13 tools (`/mcp` in Claude Code). From a shell, without an agent:
 
 ```bash
 sobre call sobre_compose --project-root "$PWD"   # the project overview the agent gets
 sobre -c "git status"                            # a command, compressed
-sobre gain                                       # what has been saved so far
+sobre gain                                       # what sobre has compressed so far
 ```
 
 ## Everyday use
 
 Keep working with your agent as before: its native tools keep working, and the
 hooks act on them where the host allows ([Shell output](#shell-output)). With
-the MCP server connected (`sobre init --mcp`), the agent also reaches for
-`sobre`'s tools when they fit. The 15 tools
+the MCP server connected (`sobre init --mcp`), the agent can also call
+`sobre`'s tools; in [sobre-bench](https://github.com/malochapo/sobre-bench)'s
+runs, Claude Code agents called them only when a CLAUDE.md told them to. The
+13 tools
 ([reference](docs/reference/generated/mcp-tools.md)):
 
 | Tool | What it does |
@@ -259,14 +269,11 @@ the MCP server connected (`sobre init --mcp`), the agent also reaches for
 | `sobre_shell` | Shell commands with compressed output, in the background if long |
 | `sobre_expand` | The full original behind a compressed output |
 | `sobre_checkpoint` | Snapshots of the agent's changes, kept apart from your git history |
-| `sobre_session`, `sobre_knowledge` | The session's task and decisions; facts kept across sessions |
 
-Each server process starts an empty session: a saved session comes back only
-when the agent asks (`sobre_session action=load`), and neither the session nor
-the knowledge store changes how `sobre_read` picks a mode. One thing does: a
-file a compiler or linter reported an error in, through `sobre -c` or
-`sobre_shell`, in the last 15 minutes is read in full until that tool next
-succeeds.
+`sobre_read` picks a mode from the file and from this conversation's reads
+and edits, and from one thing more: a file a compiler or linter reported an
+error in, through `sobre -c` or `sobre_shell`, in the last 15 minutes is read
+in full until that tool next succeeds.
 
 Each build has one fixed list of tools and parameters: the build with
 embeddings adds a single parameter, `sobre_search`'s `mode`. The reference
@@ -311,16 +318,18 @@ whatever it holds). [config-keys.md](docs/reference/generated/config-keys.md)
 documents each.
 
 `compression_level` runs from 0 to 1 and defaults to 0.3. Below 0.2 it is off;
-above, it condenses the prose in tool and shell output (each condensed output
-says so) and shortens the tool descriptions from 0.4. In the post-run hook,
-output no dedicated compressor owns is folded by its shape: runs of one log
-statement at every level, a search result's repeated path from 0.4, and, from
-0.8, long output that cannot hold source (no file content, diff, blame, search
-result or listing). Source text is never reshaped. It never changes the MCP
-instructions or asks the agent to write its own replies differently. When the
-agent keeps re-reading or re-running to get back what was cut (three such calls
-in two minutes), `sobre` lowers compression, says so, and goes back to the
-configured level once two minutes pass without one.
+above, it condenses the prose in shell output (each condensed output says so)
+and shortens the tool descriptions from 0.4. In the post-run hook,
+output no dedicated compressor owns is folded by its shape: log lines repeated
+word for word but for their timestamp at every compressing level (a warning or an error
+always stays, and so does every line with a value of its own), a search
+result's repeated path from 0.4, and, from 0.8, long output that cannot
+hold source (no file content, diff, blame, search result or listing). Source
+text is never reshaped. It never changes the MCP instructions or asks the
+agent to write its own replies differently. When the agent keeps re-reading or
+re-running to get back what was cut (three such calls in two minutes), `sobre`
+lowers compression, says so, and goes back to the configured level once two
+minutes pass without one.
 
 ## Local embeddings
 
@@ -346,22 +355,22 @@ GPU build of ONNX Runtime.
 
 Every compression `sobre` makes, on every path, is appended to one local file,
 `usage.jsonl`, in the OpenTelemetry log format
-([contract](docs/contracts/usage-ledger-v1.md)). Nothing sends it anywhere.
+([contract](docs/contracts/usage-ledger-v2.md)). Nothing sends it anywhere.
 `sobre gain` reads it:
 
 ```bash
-sobre gain                  # tokens saved, value, sobre's own overhead
+sobre gain                  # tokens removed, measured cost, sobre's own overhead
 sobre gain --by-tool        # per tool or command
 sobre gain --daily          # per day
 ```
 
-A saving is counted as the tokens of the output without compression (the whole
-file for a read, the full output for a command) minus the tokens `sobre` sent.
-That is a count against an assumed alternative, not a measurement of what the
-agent would otherwise have read. With the optional proxy between the agent and
-its provider, `gain` also shows the tokens each call was billed, as the
-provider reported them. Saved tokens are priced at a model's uncached input
-rate, and `gain` says that figure is an estimate.
+What `gain` counts as removed is the tokens of the output without compression
+(the whole file for a read, the full output for a command) minus the tokens
+`sobre` sent. That is a count against an assumed alternative, not a
+measurement of what the agent would otherwise have read, so `gain` puts no
+price on it. With the optional proxy between the agent and its provider,
+`gain` also shows the tokens each call was billed, as the provider reported
+them, and their cost from the price table.
 
 ## Proxy
 
@@ -428,7 +437,7 @@ The same layout on every platform, under your home directory:
 | Directory | Holds | Override |
 |---|---|---|
 | `~/.config/sobre` | `config.toml` | `SOBRE_CONFIG_DIR`, `XDG_CONFIG_HOME` |
-| `~/.local/share/sobre` | the usage ledger, sessions, knowledge, search and graph indexes, checkpoints, the proxy token, the crash log (`logs/crash.log`), the managed ONNX Runtime | `SOBRE_DATA_DIR`, `XDG_DATA_HOME` |
+| `~/.local/share/sobre` | the usage ledger, search and graph indexes, checkpoints, the proxy token, the crash log (`logs/crash.log`), the managed ONNX Runtime | `SOBRE_DATA_DIR`, `XDG_DATA_HOME` |
 | `~/.local/state/sobre` | the full outputs behind compressed ones (`tee/`, kept 24 hours), the hooks' shared state (`hooks/`), the debug log, the proxy's log, port and wiring record (`proxy_wiring.json`) | `SOBRE_STATE_DIR`, `XDG_STATE_HOME` |
 | `~/.cache/sobre` | embedding models | `SOBRE_CACHE_DIR`, `XDG_CACHE_HOME` |
 
@@ -463,8 +472,8 @@ sobre uninstall
   changed in it;
 - the proxy, its login service and the addresses it wrote into agent
   configurations;
-- the config, data, state and cache directories — usage history, sessions,
-  memory, indexes and models included;
+- the config, data, state and cache directories — usage history, indexes
+  and models included;
 - the binary, unless it sits in a build directory or under `~/.cargo` (run
   `cargo uninstall sobre` then).
 

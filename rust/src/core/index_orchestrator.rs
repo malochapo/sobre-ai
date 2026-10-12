@@ -984,13 +984,7 @@ mod tests {
     #[test]
     fn warm_need_classifies_tools() {
         // Lightweight tools must never trigger a project scan.
-        for light in [
-            "sobre_read",
-            "sobre_shell",
-            "sobre_tree",
-            "sobre_knowledge",
-            "unknown_tool",
-        ] {
+        for light in ["sobre_read", "sobre_shell", "sobre_tree", "unknown_tool"] {
             assert_eq!(warm_need_for_tool(light), WarmNeed::None, "{light}");
         }
         // sobre_search only needs the cheap trigram index.

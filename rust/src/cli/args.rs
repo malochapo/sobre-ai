@@ -79,7 +79,9 @@ tool reports an error, 2 on a usage error.")]
 Without an agent: every installed agent. With agents (claude, codex, copilot,
 cursor, gemini, opencode, vscode, windsurf, zed): only those, installed or
 not. Each gets its hooks. The MCP server and the skill add about 400 tokens
-to every request: init connects them with --mcp or on a yes to its question
+to every request in Claude Code, which loads tool definitions on demand, and
+about 3,800 in agents that load them all (sobre doctor overhead): init
+connects them with --mcp or on a yes to its question
 (asked in a terminal while an agent lacks them), and refreshes them where an
 agent has them. Zed has no hooks, so without them it gets nothing. Without an
 agent named, init also asks once about the proxy and, in a build with
@@ -95,7 +97,7 @@ Exits 1 when a check fails. More checks: sobre doctor integrations, doctor
 overhead, doctor lint-context.")]
     Doctor(DoctorArgs),
 
-    /// Tokens saved, their value, real cost with the proxy, and overhead
+    /// Tokens removed, the measured cost with the proxy, and overhead
     #[command(after_help = "\
 Every figure comes from the usage ledger (usage.jsonl). Real cost needs the
 proxy; money figures are estimates.")]
@@ -292,9 +294,6 @@ pub(crate) struct GainArgs {
     /// Rows shown by --by-tool
     #[arg(long, value_name = "n", default_value_t = 10)]
     pub(crate) limit: usize,
-    /// Price saved tokens at this model's rate
-    #[arg(long, value_name = "model")]
-    pub(crate) model: Option<String>,
     /// Clear the usage ledger
     #[arg(long)]
     pub(crate) reset: bool,

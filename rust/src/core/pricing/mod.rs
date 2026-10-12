@@ -26,15 +26,6 @@ pub enum PricingMatchKind {
     Fallback,
 }
 
-impl PricingMatchKind {
-    /// True when the priced figure is an estimate (no exact price for the
-    /// model) and must be surfaced as such, never as a precise number.
-    #[must_use]
-    pub fn is_estimated(self) -> bool {
-        !matches!(self, Self::Exact)
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelQuote {
     pub model_key: String,
@@ -311,19 +302,6 @@ impl ModelPricing {
         );
 
         Self { models }
-    }
-
-    /// The priced models, sorted, without the blended fallback.
-    #[must_use]
-    pub fn known_models(&self) -> Vec<&str> {
-        let mut names: Vec<&str> = self
-            .models
-            .keys()
-            .map(String::as_str)
-            .filter(|k| *k != "fallback-blended")
-            .collect();
-        names.sort_unstable();
-        names
     }
 
     pub fn quote(&self, model: Option<&str>) -> ModelQuote {

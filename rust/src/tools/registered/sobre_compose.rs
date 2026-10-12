@@ -27,9 +27,9 @@ impl McpTool for SobreComposeTool {
         tool_def(
             "sobre_compose",
             "Call first to understand code (before editing, debugging, 'how does X work').\n\
-             Omit task at session start: returns the project overview — structure, hotspots, last task, recent decisions, facts from previous sessions.\n\
-             With a task: returns ranked files with relevant symbol source inline grouped by file, and the recorded pitfalls it matches.\n\
-             One call replaces a search→read→symbol chain; do not re-read files whose source it returned.",
+             Omit task at session start: returns the project overview — structure, hotspots.\n\
+             With a task: returns ranked files with relevant symbol source inline grouped by file.\n\
+             Do not re-read files whose source it returned.",
             json!({
                 "type": "object",
                 "properties": {
@@ -48,7 +48,7 @@ impl McpTool for SobreComposeTool {
     ) -> Result<ToolOutput, ErrorData> {
         let path = project_path(ctx)?;
         // No task: the caller is orienting, not asking. The session-start
-        // overview: structure, hotspots, and what earlier sessions left.
+        // overview: structure and hotspots.
         let Some(task) = get_str(args, "task") else {
             let root = (!path.is_empty()).then_some(path.as_str());
             return Ok(ToolOutput::simple(crate::tools::impl_overview::handle(

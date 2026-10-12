@@ -53,17 +53,11 @@ pub fn contract_docs() -> Vec<ContractDoc> {
     };
     vec![
         // ── Frozen: the usage ledger's on-disk format ─────────────────────
-        doc("usage-ledger", "usage-ledger-v1.md", 1, Frozen),
+        doc("usage-ledger", "usage-ledger-v2.md", 2, Frozen),
         // ── Stable: additive evolution allowed ──────────────────────────────
         doc(
             "graph-reproducibility",
             "graph-reproducibility-contract-v1.md",
-            1,
-            Stable,
-        ),
-        doc(
-            "memory-boundary",
-            "memory-boundary-contract-v1.md",
             1,
             Stable,
         ),

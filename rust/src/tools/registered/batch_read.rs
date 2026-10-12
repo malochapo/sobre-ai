@@ -69,10 +69,9 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
     let cap = crate::core::limits::max_read_bytes() as u64;
 
-    // Resolve + filter paths and capture the active task under one short read
-    // lock. `bounded_lock` waits with `Handle::block_on`: the handler already
-    // runs on the blocking pool.
-    let (paths, current_task, skipped) = {
+    // Resolve + filter paths under one short read lock. `bounded_lock` waits
+    // with `Handle::block_on`: the handler already runs on the blocking pool.
+    let (paths, skipped) = {
         let Some(session) = crate::server::bounded_lock::read(session_lock, "batch_read:session")
         else {
             return Err(ErrorData::internal_error(
@@ -100,8 +99,7 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
             }
             paths.push(resolved);
         }
-        let current_task = session.task.as_ref().map(|t| t.description.clone());
-        (paths, current_task, skipped)
+        (paths, skipped)
     };
 
     if paths.is_empty() {
@@ -125,14 +123,8 @@ fn handle_inner(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
             None,
         ));
     };
-    let output = crate::tools::impl_multi_read::handle_with_task_fresh(
-        &mut cache,
-        &paths,
-        &mode,
-        fresh,
-        ctx.crp_mode,
-        current_task.as_deref(),
-    );
+    let output =
+        crate::tools::impl_multi_read::handle(&mut cache, &paths, &mode, fresh, ctx.crp_mode);
     let mut total_original: usize = 0;
     for path in &paths {
         total_original =

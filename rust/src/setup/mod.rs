@@ -93,8 +93,9 @@ impl TestHome {
 }
 
 /// Whether `connect_agents` writes the MCP entry and the skill, besides the
-/// hooks. Together they add about 400 tokens to every request, and agents
-/// rarely call the tools, so they are opt-in.
+/// hooks. Together they add about 400 tokens to every request in a host that
+/// loads tool definitions on demand (Claude Code), about 3,800 in one that
+/// loads them all, and agents rarely call the tools, so they are opt-in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mcp {
     /// Write them for every agent connected: `init --mcp`, or a yes to its

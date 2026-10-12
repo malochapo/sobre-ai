@@ -32,8 +32,7 @@ impl SobreServer {
         crate::core::graph_index::ProjectIndex::purge_stale_indices();
 
         let startup = detect_startup_context(project_root, startup_cwd);
-        // Every process starts an empty session; `sobre_session load` restores
-        // a saved one when the agent asks.
+        // Every process starts an empty session, rooted where it was started.
         let mut session = SessionState::new();
         if let Some(ref root) = startup.project_root {
             session.project_root = Some(root.clone());
@@ -92,16 +91,12 @@ impl SobreServer {
         }
     }
 
-    /// Clears the cache and saves the session after
+    /// Clears the cache and writes the stub index after
     /// [`IDLE_CACHE_TTL_SECS`](crate::core::config::IDLE_CACHE_TTL_SECS) idle.
     pub async fn check_idle_expiry(&self) {
         let ttl = crate::core::config::IDLE_CACHE_TTL_SECS;
         let last = *self.last_call.read().await;
         if last.elapsed().as_secs() >= ttl {
-            {
-                let mut session = self.session.write().await;
-                let _ = session.save();
-            }
             let mut cache = self.cache.write().await;
             let count = cache.clear();
             // The persisted stub index outlives the warm-cache clear, so a
@@ -115,12 +110,8 @@ impl SobreServer {
         *self.last_call.write().await = Instant::now();
     }
 
-    /// Cleanup on connection drop: save the session, clear the caches.
+    /// Cleanup on connection drop: write the stub index, clear the caches.
     pub async fn shutdown(&self) {
-        {
-            let mut session = self.session.write().await;
-            let _ = session.save();
-        }
         // Flush the persistent stub index so an unchanged re-read survives
         // this restart as a cheap stub instead of a full re-delivery.
         crate::core::read_stub_index::persist();
