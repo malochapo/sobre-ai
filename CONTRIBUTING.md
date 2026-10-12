@@ -63,7 +63,7 @@ macOS and Windows. A failure is a real failure: fix it, never skip it.
 ## Contracts
 
 Each file in `docs/contracts/` is listed, with its status, in
-`core::contracts::contract_docs()`. A frozen one (`usage-ledger-v1.md`) does
+`core::contracts::contract_docs()`. A frozen one (`usage-ledger-v2.md`) does
 not change: a new version goes in a new `-v2.md` file. A typo fix in a frozen
 file updates `docs/contracts/frozen-hashes.json`:
 

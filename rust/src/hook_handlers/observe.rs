@@ -1,12 +1,12 @@
 //! Observe hook handler: reads every host hook event and keeps what sobre
-//! uses from it: the detected model, the active transcript and session id,
-//! and a marker when the host compacts the conversation.
+//! uses from it: the active transcript and session id, and a marker when the
+//! host compacts the conversation.
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
 /// Unified observe handler for all IDE hook events.
-/// Reads JSON from stdin, records the model and transcript it names, handles
+/// Reads JSON from stdin, records the transcript it names, handles
 /// compaction, and exits immediately.
 pub fn handle_observe() {
     let Some(input) = read_stdin_with_timeout(HOOK_STDIN_TIMEOUT) else {
@@ -41,9 +41,6 @@ fn non_empty_str<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
 }
 
 fn record_session_context(v: &serde_json::Value) {
-    if let Some(model) = non_empty_str(v, "model") {
-        persist_detected_model(model);
-    }
     // Claude Code / Codex carry a per-session `session_id` but no
     // `conversation_id`. Persisting it lets the read-cache scope a session's
     // deliveries the same way Cursor's `conversation_id` does, so a new session
@@ -70,34 +67,6 @@ fn is_compaction(v: &serde_json::Value) -> bool {
         || v.get("event")
             .and_then(|e| e.as_str())
             .is_some_and(|e| e == "compaction" || e == "compact")
-}
-
-/// A small background model (`gpt-4o-mini`, `claude-haiku-4`,
-/// `gemini-2.5-flash`), matched on whole name parts so `gemini` is not `mini`.
-fn is_background_model(model: &str) -> bool {
-    const SMALL: &[&str] = &["flash", "mini", "haiku", "fast", "nano", "small"];
-    model
-        .to_lowercase()
-        .split(|c: char| !c.is_ascii_alphanumeric())
-        .any(|part| SMALL.contains(&part))
-}
-
-fn persist_detected_model(model: &str) {
-    if is_background_model(model) {
-        return;
-    }
-
-    let Ok(data_dir) = crate::core::data_dir::sobre_data_dir() else {
-        return;
-    };
-    let path = data_dir.join("detected_model.json");
-    let payload = serde_json::json!({ "model": model });
-    if let Ok(json) = serde_json::to_string_pretty(&payload) {
-        let tmp = path.with_extension("tmp");
-        if std::fs::write(&tmp, &json).is_ok() {
-            let _ = std::fs::rename(&tmp, &path);
-        }
-    }
 }
 
 fn persist_transcript_path(path: &str, conversation_id: Option<&str>, session_id: Option<&str>) {
@@ -169,16 +138,6 @@ fn write_compaction_marker(data_dir: &std::path::Path, ts: u64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// `gemini` is a model name, not a `mini` background model.
-    #[test]
-    fn background_models_are_matched_on_name_parts() {
-        assert!(is_background_model("gpt-4o-mini"));
-        assert!(is_background_model("gemini-2.5-flash"));
-        assert!(is_background_model("claude-haiku-4"));
-        assert!(!is_background_model("gemini-2.5-pro"));
-        assert!(!is_background_model("claude-opus-4"));
-    }
 
     /// Real Claude Code PreCompact payload (code.claude.com/docs/en/hooks):
     /// carries `session_id` like every Claude hook.
