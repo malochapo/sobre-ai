@@ -605,39 +605,6 @@ mod tests {
         });
     }
 
-    /// A fact archived in one project is never brought back into another.
-    #[test]
-    fn archived_facts_stay_in_their_project() {
-        with_temp_data_dir(|| {
-            let policy = crate::core::memory_policy::MemoryPolicy::default();
-            let mut a = crate::core::knowledge::ProjectKnowledge::new("/tmp/sobre-archive-proj-a");
-            a.remember("architecture", "db", "PostgreSQL", "s1", 0.1, &policy);
-            a.run_memory_lifecycle(&policy).expect("lifecycle succeeds");
-            assert!(a.facts.is_empty(), "the low-confidence fact is archived");
-
-            let mut b = crate::core::knowledge::ProjectKnowledge::new("/tmp/sobre-archive-proj-b");
-            let found = crate::tools::sobre_knowledge::rehydrate_from_archives(
-                &mut b,
-                None,
-                Some("postgresql"),
-                "s2",
-                &policy,
-            );
-            assert!(!found, "project B must not see project A's archive");
-            assert!(b.facts.is_empty());
-
-            let mut a_again =
-                crate::core::knowledge::ProjectKnowledge::new("/tmp/sobre-archive-proj-a");
-            assert!(crate::tools::sobre_knowledge::rehydrate_from_archives(
-                &mut a_again,
-                None,
-                Some("postgresql"),
-                "s3",
-                &policy,
-            ));
-        });
-    }
-
     /// When the archive cannot be written, the facts it would have held stay.
     #[test]
     fn a_failed_archive_keeps_the_facts() {

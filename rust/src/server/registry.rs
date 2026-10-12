@@ -89,8 +89,6 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::sobre_checkpoint::SobreCheckpointTool));
     registry.register(Box::new(registered::sobre_compose::SobreComposeTool));
     registry.register(Box::new(registered::sobre_graph::SobreGraphTool));
-    registry.register(Box::new(registered::sobre_session::SobreSessionTool));
-    registry.register(Box::new(registered::sobre_knowledge::SobreKnowledgeTool));
 
     registry
 }

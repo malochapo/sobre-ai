@@ -11,14 +11,12 @@ pub mod sobre_graph_calls;
 pub mod sobre_graph_diagram;
 pub mod sobre_graph_impact;
 pub mod sobre_graph_primitives;
-pub mod sobre_knowledge;
 pub mod sobre_outline;
 pub mod sobre_patch;
 pub mod sobre_read;
 pub mod sobre_refactor;
 pub mod sobre_review;
 pub mod sobre_search;
-pub mod sobre_session;
 pub mod sobre_shell;
 pub mod sobre_tree;
 // Stays `pub`: driven from outside the crate by tests/quality_loop_golden.rs and tests/suite/edit_reliability.rs.

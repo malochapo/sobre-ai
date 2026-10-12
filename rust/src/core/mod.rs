@@ -134,7 +134,6 @@ pub mod budgets;
 pub mod cache;
 pub mod cloud_files;
 pub mod config;
-pub mod consolidation_engine;
 pub mod conversation;
 pub mod crash_log;
 pub mod data_dir;

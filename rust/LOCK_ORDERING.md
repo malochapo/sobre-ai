@@ -42,7 +42,6 @@ accessor function.
 | # | Lock | File | Type | Purpose |
 |---|------|------|------|---------|
 | E4 | `LOCK` (data dir) | `core/data_dir.rs` (fn-local in `test_env_lock`) | `OnceLock<Mutex<()>>` | Serializes tests that mutate data-dir environment variables |
-| E6 | `LOCK` (knowledge cwd) | `tools/sobre_knowledge/tests.rs` (fn-local in `CurrentDirGuard::enter`) | `OnceLock<Mutex<()>>` | Serializes `sobre_knowledge` tests that change the process working directory |
 
 Locks declared inside `#[cfg(test)]` items are test-only and are not listed here.
 

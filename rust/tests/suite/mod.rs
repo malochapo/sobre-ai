@@ -15,7 +15,6 @@ mod broad_project_roots;
 mod cli_anti_inflation;
 mod cli_characterization;
 mod compaction_cache_scenarios;
-mod compaction_survival_tests;
 mod compression_properties;
 mod config_path_parity;
 mod contracts_frozen;

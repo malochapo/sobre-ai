@@ -517,7 +517,6 @@ fn guard_essential_instructions_present() {
         "sobre_search",
         "sobre_tree",
         "sobre_compose",
-        "sobre_session",
     ];
     for tool in &required {
         assert!(

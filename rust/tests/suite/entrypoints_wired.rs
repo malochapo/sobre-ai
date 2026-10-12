@@ -54,8 +54,6 @@ fn mcp_entrypoint_tools_are_advertised() {
         "sobre_search",
         "sobre_compose",
         "sobre_graph",
-        "sobre_knowledge",
-        "sobre_session",
         "sobre_patch",
     ];
     for tool in required {
