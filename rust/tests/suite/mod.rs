@@ -54,7 +54,6 @@ mod scientific_verification;
 mod secret_scan_artifacts;
 mod security_hardening;
 mod security_resolve_path_guard;
-mod sensitivity_floor;
 mod session_lock_timeout_scenarios;
 mod shell_and_agent_tests;
 mod shell_hook_wrapper;

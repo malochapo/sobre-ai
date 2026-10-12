@@ -154,10 +154,6 @@ fn collect_matches(content: &str) -> Vec<SecretMatch> {
     matches
 }
 
-pub fn detect_secrets(content: &str) -> Vec<SecretMatch> {
-    collect_matches(content)
-}
-
 /// Detects secrets in `content` and masks them: everything
 /// [`crate::core::redaction::redact_text`] masks, then the guarded key/value
 /// patterns as `[REDACTED:<pattern>]`.
@@ -188,49 +184,49 @@ mod tests {
     #[test]
     fn detects_aws_key() {
         let input = "aws_key = AKIAIOSFODNN7EXAMPLE";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "aws_key"));
     }
 
     #[test]
     fn detects_private_key_header() {
         let input = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIB...";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "private_key"));
     }
 
     #[test]
     fn detects_github_token() {
         let input = "export GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "github_token"));
     }
 
     #[test]
     fn detects_anthropic_key() {
         let input = "ANTHROPIC_API_KEY=sk-ant-api03-abcdef1234567890ABCD";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "anthropic_key"));
     }
 
     #[test]
     fn detects_openai_key() {
         let input = "OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwx";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "openai_key"));
     }
 
     #[test]
     fn detects_gitlab_pat() {
         let input = "token = glpat-xxxxxxxxxxxxxxxxxxxx";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "gitlab_pat"));
     }
 
     #[test]
     fn detects_generic_api_key() {
         let input = "api_key = abcdefghijklmnopqrstuvwxyz1234567890";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(
             |m| m.pattern_name == "generic_api_key" || m.pattern_name == "high_entropy_secret"
         ));
@@ -239,49 +235,49 @@ mod tests {
     #[test]
     fn clean_content_returns_empty() {
         let input = "fn main() { println!(\"hello world\"); }";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.is_empty());
     }
 
     #[test]
     fn detects_jwt() {
         let input = "token = eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkw";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "jwt"));
     }
 
     #[test]
     fn detects_slack_token() {
         let input = "SLACK_TOKEN=xoxb-1234567890-abcdefghij";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "slack_token"));
     }
 
     #[test]
     fn detects_stripe_key() {
         let input = "stripe_key = sk_live_abcdefghij1234567890";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "stripe_key"));
     }
 
     #[test]
     fn detects_db_url() {
         let input = "DATABASE_URL=postgres://user:password@localhost:5432/db";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "db_url"));
     }
 
     #[test]
     fn detects_npm_token() {
         let input = "NPM_TOKEN=npm_abcdefghij1234567890";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "npm_token"));
     }
 
     #[test]
     fn detects_github_fine_grained() {
         let input = "token = github_pat_ABCDEFGHIJKLMNOPQRSTuvwx";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(
             matches
                 .iter()
@@ -301,7 +297,7 @@ mod tests {
     #[test]
     fn multiple_secrets_on_different_lines() {
         let input = "AKIAIOSFODNN7EXAMPLE\nclean\nsk-abcdefghijklmnopqrstuvwx";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.len() >= 2);
         assert!(matches.iter().any(|m| m.pattern_name == "aws_key"));
         assert!(matches.iter().any(|m| m.pattern_name == "openai_key"));
@@ -322,21 +318,21 @@ mod tests {
     #[test]
     fn token_prefixes_need_a_word_boundary() {
         let input = "kiosk-internationalization and task-abcdefghijklmnopqrstuvwxyz";
-        assert!(detect_secrets(input).is_empty(), "{input}");
+        assert!(collect_matches(input).is_empty(), "{input}");
         assert_eq!(scan_and_redact(input).0, input);
     }
 
     #[test]
     fn ec_private_key_detected() {
         let input = "-----BEGIN EC PRIVATE KEY-----";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "private_key"));
     }
 
     #[test]
     fn openssh_private_key_detected() {
         let input = "-----BEGIN OPENSSH PRIVATE KEY-----";
-        let matches = detect_secrets(input);
+        let matches = collect_matches(input);
         assert!(matches.iter().any(|m| m.pattern_name == "private_key"));
     }
 }

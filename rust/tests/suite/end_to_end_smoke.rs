@@ -1,5 +1,5 @@
 //! Smoke tests: a session survives a serde round trip and builds its resume
-//! block, `sobre config` lists the keys, and knowledge recalls what it stored.
+//! block, and `sobre config` lists the keys.
 
 use std::process::Command;
 
@@ -73,88 +73,5 @@ mod cli_commands {
         assert!(out.status.success());
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(stdout.contains("passthrough_commands"));
-    }
-}
-
-mod knowledge_system {
-    use sobre::core::knowledge::ProjectKnowledge;
-    use sobre::core::memory_policy::MemoryPolicy;
-
-    #[test]
-    fn remember_recall_roundtrip() {
-        let policy = MemoryPolicy::default();
-        let mut kb = ProjectKnowledge::new("/projects/knowledge-roundtrip");
-        kb.remember(
-            "architecture",
-            "auth_jwt",
-            "Auth uses JWT tokens",
-            "test-session",
-            0.9,
-            &policy,
-        );
-        kb.remember(
-            "architecture",
-            "db_postgres",
-            "Database is PostgreSQL",
-            "test-session",
-            0.9,
-            &policy,
-        );
-        kb.remember(
-            "testing",
-            "prop_based",
-            "Use property-based testing for parsers",
-            "test-session",
-            0.8,
-            &policy,
-        );
-
-        let arch_facts = kb.recall_by_category("architecture");
-        assert!(arch_facts.len() >= 2, "must recall architecture facts");
-
-        let query_results = kb.recall("JWT");
-        assert!(
-            !query_results.is_empty(),
-            "must find JWT-related facts by query"
-        );
-    }
-
-    #[test]
-    fn knowledge_multi_category_recall() {
-        let policy = MemoryPolicy::default();
-        let mut kb = ProjectKnowledge::new("/projects/knowledge-categories");
-        kb.remember(
-            "security",
-            "cors_policy",
-            "CORS allows only trusted origins",
-            "s1",
-            0.9,
-            &policy,
-        );
-        kb.remember(
-            "security",
-            "auth_flow",
-            "OAuth2 with PKCE for public clients",
-            "s1",
-            0.9,
-            &policy,
-        );
-        kb.remember(
-            "performance",
-            "caching",
-            "Redis cache with 5min TTL",
-            "s1",
-            0.8,
-            &policy,
-        );
-
-        let security = kb.recall_by_category("security");
-        assert_eq!(security.len(), 2, "2 security facts");
-
-        let perf = kb.recall_by_category("performance");
-        assert_eq!(perf.len(), 1, "1 performance fact");
-
-        let empty = kb.recall_by_category("nonexistent");
-        assert!(empty.is_empty(), "no facts for nonexistent category");
     }
 }

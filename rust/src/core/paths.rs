@@ -82,8 +82,8 @@ pub fn config_dir() -> Result<PathBuf, String> {
     category_dir("SOBRE_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
 }
 
-/// Data directory — the usage ledger, sessions, knowledge, indexes,
-/// checkpoints, the proxy token, crash log and ONNX Runtime.
+/// Data directory — the usage ledger, sessions, indexes, checkpoints, the
+/// proxy token, crash log and ONNX Runtime.
 ///
 /// Delegates to [`sobre_data_dir`]: `SOBRE_DATA_DIR`, else
 /// `$XDG_DATA_HOME/sobre`.

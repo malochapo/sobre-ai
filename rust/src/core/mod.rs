@@ -20,12 +20,7 @@ pub mod yaml_crush;
 // Domain: Memory
 // ---------------------------------------------------------------------------
 pub mod interrupt;
-pub mod memory_archive;
-pub mod memory_capacity;
 pub mod memory_guard;
-pub mod memory_lifecycle;
-pub mod memory_policy;
-pub mod prospective_memory;
 
 // ---------------------------------------------------------------------------
 // Domain: Graph
@@ -40,17 +35,6 @@ pub mod property_graph;
 // ---------------------------------------------------------------------------
 pub mod context_lint;
 pub mod context_overhead;
-
-// ---------------------------------------------------------------------------
-// Domain: Knowledge
-// ---------------------------------------------------------------------------
-pub mod knowledge;
-// Without `dense` the engine still compiles these modules — their
-// entry points are internally cfg-gated and fall back — but their helpers
-// go uncalled. That is honest unused code, not dead code, so it is silenced
-// only in that configuration.
-#[cfg_attr(not(feature = "dense"), allow(dead_code))]
-pub mod knowledge_embedding;
 
 // ---------------------------------------------------------------------------
 // Domain: Search & Retrieval
@@ -145,7 +129,6 @@ pub mod extractors;
 pub mod git;
 pub mod git_util;
 pub mod godot;
-pub mod gotcha_tracker;
 pub mod handle;
 pub mod hasher;
 #[cfg(feature = "dense")]
@@ -189,10 +172,8 @@ pub mod recovery;
 pub mod redaction;
 #[cfg(any(test, feature = "test-support"))]
 pub mod reference_docs;
-pub mod sanitize;
 pub mod search_index;
 pub mod secret_detection;
-pub mod sensitivity;
 pub mod session_token;
 pub mod startup_guard;
 pub mod syntax_validate;
@@ -202,7 +183,6 @@ pub mod syntax_validate;
 #[cfg(target_os = "macos")]
 pub mod tcc_guard_sandbox;
 pub mod terse;
-pub mod text_similarity;
 pub mod theme;
 pub mod tokens;
 pub mod tool_lifecycle;

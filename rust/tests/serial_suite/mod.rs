@@ -11,7 +11,6 @@ mod crash_loop_guard;
 mod engine_tool_calls;
 mod index_status;
 mod intensive_benchmarks;
-mod knowledge_concurrent_writes;
 mod multi_read_cap_scenarios;
 mod proxy_stale_env_scenarios;
 mod read_cache_stub;

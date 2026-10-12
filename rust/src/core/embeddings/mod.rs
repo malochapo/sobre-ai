@@ -721,7 +721,6 @@ static SHARED_ENGINE: std::sync::OnceLock<anyhow::Result<EmbeddingEngine>> =
 /// Global singleton embedding engine. Loaded once, shared across all consumers.
 /// Returns None if the dense feature is disabled or the model fails to load.
 /// NOTE: This function BLOCKS on first call while loading the ONNX model.
-/// For non-blocking access, use `try_shared_engine()` instead.
 #[cfg(feature = "dense")]
 pub fn shared_engine() -> Option<&'static EmbeddingEngine> {
     shared_engine_result().ok()
@@ -735,63 +734,6 @@ pub fn shared_engine_result() -> anyhow::Result<&'static EmbeddingEngine> {
         .get_or_init(EmbeddingEngine::load_default)
         .as_ref()
         .map_err(|e| anyhow::anyhow!("{e}"))
-}
-
-/// Non-blocking variant: returns the engine ONLY if already loaded.
-/// Never triggers model loading or download. Safe to call on hot paths.
-#[cfg(feature = "dense")]
-pub fn try_shared_engine() -> Option<&'static EmbeddingEngine> {
-    SHARED_ENGINE.get()?.as_ref().ok()
-}
-
-/// Whether this process may load the ONNX model on a **detached background
-/// thread**.
-///
-/// ONNX Runtime registers its op schemas in global C++ static state while a
-/// model is loading. If a detached loader thread is still mid-load when the
-/// process returns from `main`, it races `libonnxruntime`'s static-destructor
-/// teardown — a use-after-free SIGSEGV inside `onnx::OpSchema` on an ORT worker
-/// thread. The shipped `sobre` MCP server is long-lived, so its
-/// warmup always finishes well before exit; short-lived processes (`cargo test`/
-/// bench/doctest binaries, build-time generators) can exit mid-load, so we
-/// refuse the background spawn for them. Their semantic features simply stay
-/// cold — blocking, on-thread loads still work and always complete before exit,
-/// which is race-free.
-///
-/// Note: blocking [`shared_engine`] loads are intentionally NOT gated — they
-/// finish on the caller's thread before the process exits, so no worker is ever
-/// active during teardown.
-#[cfg(feature = "dense")]
-pub fn background_load_allowed() -> bool {
-    // Unit tests compile with cfg(test): a cheap, unambiguous short-circuit.
-    // Integration/bench/doctest binaries link the lib in its normal config
-    // (cfg(test) is false), so they are caught by the executable-path probe.
-    if cfg!(test) {
-        return false;
-    }
-    !current_exe_is_test_artifact()
-}
-
-/// `true` when the running executable is a Cargo test/bench/doctest artifact.
-#[cfg(feature = "dense")]
-fn current_exe_is_test_artifact() -> bool {
-    std::env::current_exe()
-        .ok()
-        .as_deref()
-        .is_some_and(exe_path_is_test_artifact)
-}
-
-/// Pure predicate (unit-testable): Cargo places test, bench and doctest binaries
-/// directly inside `…/target/<profile>/deps/`. The shipped binary lives in a
-/// package `bin` directory (`/usr/bin`, `~/.local/bin`, `…/Homebrew/bin`, …) and
-/// is never a direct child of a `deps/` directory, so the parent-dir name is an
-/// install-location-independent signal (survives renames of the binary).
-#[cfg(feature = "dense")]
-fn exe_path_is_test_artifact(path: &Path) -> bool {
-    path.parent()
-        .and_then(Path::file_name)
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name == "deps")
 }
 
 #[cfg(test)]
@@ -873,44 +815,6 @@ mod tests {
         std::fs::remove_dir_all(&tmp).ok();
     }
 
-    /// Cargo test/bench/doctest binaries live under `…/deps/`; the shipped
-    /// binary lives in a `bin` directory. The parent-dir probe must distinguish
-    /// them so background ORT loads are refused only in short-lived processes.
-    #[test]
-    #[cfg(feature = "dense")]
-    fn exe_path_test_artifact_detection() {
-        // Cargo test/bench/doctest artifacts: parent dir is `deps`.
-        assert!(exe_path_is_test_artifact(Path::new(
-            "/repo/rust/target/debug/deps/conformance_suite-0a1b2c3d4e5f6789"
-        )));
-        assert!(exe_path_is_test_artifact(Path::new(
-            "/repo/rust/target/release/deps/sobre-deadbeefcafef00d"
-        )));
-        // Shipped/installed binary: never a direct child of `deps`.
-        assert!(!exe_path_is_test_artifact(Path::new(
-            "/usr/local/bin/sobre"
-        )));
-        assert!(!exe_path_is_test_artifact(Path::new(
-            "/Users/x/.local/bin/sobre"
-        )));
-        // A renamed shipped binary is still allowed (rename-independent signal).
-        assert!(!exe_path_is_test_artifact(Path::new("/opt/tools/sbr")));
-        // The plain target dir build (e.g. `target/debug/sobre`) is not under
-        // `deps/` — treated as a product binary, not a test artifact.
-        assert!(!exe_path_is_test_artifact(Path::new(
-            "/repo/rust/target/debug/sobre"
-        )));
-    }
-
-    /// In the unit-test binary `background_load_allowed` must be false via the
-    /// `cfg!(test)` short-circuit — no detached ORT load may ever be spawned
-    /// from a test process (the teardown race).
-    #[test]
-    #[cfg(feature = "dense")]
-    fn background_load_disallowed_in_tests() {
-        assert!(!background_load_allowed());
-    }
-
     /// The EmbeddingBag detection is purely name-based — exactly two
     /// inputs with the second named `offsets`. Everything else (classic 2-/
     /// 3-input transformers, unnamed graphs) must stay on the transformer path.
@@ -940,12 +844,6 @@ mod tests {
             "extra".to_string()
         ]));
     }
-
-    // NOTE: `try_shared_engine_returns_none_when_not_initialized` lives in
-    // `tests/embeddings_shared_engine.rs` (own process). SHARED_ENGINE is a
-    // process-wide OnceLock: in the unit-test suite any sibling test that
-    // legitimately loads the engine (or the background activation) would
-    // initialize it first and make the assertion order-dependent/flaky.
 
     /// Live proof: loads a real HuggingFace repo through the
     /// `org/repo@rev` spec (download → SHA-256 lockfile → tokenizer.json →
