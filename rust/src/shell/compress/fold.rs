@@ -8,14 +8,15 @@
 //!   the optional `path:` and line number `grep` prints, with a timestamp:
 //!   ISO (`2025-08-03 12:00:01`, also after a level, as in `[INFO]
 //!   [2025-08-03T12:00:01Z]`), syslog (`Aug  3 12:00:01`) or glog and klog
-//!   (`I0803 12:00:01.123456`); or it is a JSON object with a time key. Its
-//!   template is what follows the timestamp (a JSON line's whole text) with
-//!   numbers, hex ids and UUIDs masked. A line with a warning level or worse,
-//!   or an error word (`warning`, `error`, `exception`, `failed`, …), never
-//!   folds. Of the others, a template seen eight times or more in the output
-//!   keeps its first and last line, wherever the others were; a rarer one
-//!   folds six or more lines in a row to their first and last. A marker says
-//!   how many lines were folded.
+//!   (`I0803 12:00:01.123456`); or it is a JSON object with a time key. Only
+//!   lines that are the same but for their timestamp fold together: an id, a
+//!   count, an amount or a duration that differs keeps a line apart, since
+//!   it may be what the agent is reading the log for. A line with a warning
+//!   level or worse, or an error word (`warning`, `error`, `exception`,
+//!   `failed`, …), never folds. Of the others, a line seen eight times or more
+//!   in the output keeps its first and last occurrence, wherever the others
+//!   were; a rarer one folds six or more in a row to their first and last. A
+//!   marker says how many lines were folded.
 //! - **Search headings**, from `Standard` (0.4) up. Consecutive
 //!   `path:line:text` lines of one file print the path once, above them, as
 //!   `rg --heading` does. No text is lost.
@@ -36,9 +37,9 @@ use regex::Regex;
 use crate::core::config::CompressionLevel;
 use crate::core::tokens::count_tokens;
 
-/// The fewest lines of one log statement in a row worth folding.
+/// The fewest repeats of one log line in a row worth folding.
 const LOG_RUN_MIN: usize = 6;
-/// The fewest lines of one log statement in an output worth folding to their
+/// The fewest repeats of one log line in an output worth folding to their
 /// first and last, wherever the others are.
 const LOG_REPEAT_MIN: usize = 8;
 const LONG_OUTPUT_LINES: usize = 150;
@@ -67,8 +68,9 @@ pub(crate) fn fold(text: &str, level: CompressionLevel, prints_source: bool) -> 
 }
 
 /// A log line: `grep`'s optional path and line number, then what the logger
-/// printed (`log`), from its timestamp. `signal` is glog's level letter for a
-/// warning or worse; `json` opens a JSON line.
+/// printed (`log`), from its timestamp. `iso`, `syslog` and `glog` are the
+/// timestamp; `signal` is glog's level letter for a warning or worse; `json`
+/// opens a JSON line, whose timestamp is read by [`json_time`].
 fn log_line() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -78,11 +80,11 @@ fn log_line() -> &'static Regex {
             // `[INFO] [2025-08-03T12:00:01Z]`; then a space or a colon, since
             // after a comma or a pipe it is a table's first cell.
             r"(?:\[?(?i:trace|debug|info|notice|warn(?:ing)?|err(?:or)?|fatal|crit(?:ical)?|severe|alert|emerg|panic)\]?[ \t]+)?",
-            r"\[?\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?\]?[\s:]",
+            r"\[?(?P<iso>\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:?\d{2})?)\]?[\s:]",
             // syslog: `Aug  3 12:00:01 host app[123]:`
-            r"|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \d]\d \d{2}:\d{2}:\d{2}(?:\.\d+)? ",
+            r"|(?P<syslog>(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) [ \d]\d \d{2}:\d{2}:\d{2}(?:\.\d+)?) ",
             // glog and klog: `I0803 12:00:01.123456  1234 file.go:12]`
-            r"|(?:I|(?P<signal>[WEF]))\d{4} \d{2}:\d{2}:\d{2}\.\d{6}[ \t]+\d+ [\w.-]+:\d+\]",
+            r"|(?:I|(?P<signal>[WEF]))(?P<glog>\d{4} \d{2}:\d{2}:\d{2}\.\d{6})[ \t]+\d+ [\w.-]+:\d+\]",
             // a JSON object with a time key
             r#"|(?P<json>\{)\s*(?:".*)?"(?:ts|time|timestamp|@timestamp|t)"\s*:"#,
             ")",
@@ -107,33 +109,45 @@ fn signal() -> &'static Regex {
     })
 }
 
-/// What differs between two lines one log statement printed: numbers, hex ids, UUIDs.
-fn variable_part() -> &'static Regex {
+/// A JSON log line's timestamp: the value of its time key.
+fn json_time() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        Regex::new(r"(?i)0x[0-9a-f]+|\b[0-9a-f]{7,}\b|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|\d+(?:\.\d+)?(?:e-?\d+)?")
-            .expect("valid variable-part regex")
+        Regex::new(
+            r#"(?P<key>"(?:ts|time|timestamp|@timestamp|t)"\s*:\s*)(?:"[^"]*"|-?\d+(?:\.\d+)?)"#,
+        )
+        .expect("valid JSON time regex")
     })
 }
 
-/// The statement a routine log line comes from: what follows its timestamp (a
-/// JSON line's whole text) without its variable parts. `None` for a line that
-/// is not a log line, and for a [`signal`] line, which never folds.
+/// What a routine log line says: what the logger printed, its timestamp
+/// masked, so that its repeats compare equal and nothing else does. `None` for
+/// a line that is not a log line, and for a [`signal`] line, which never folds.
 fn log_template(line: &str) -> Option<String> {
     let caps = log_line().captures(line)?;
     let log = caps.name("log")?;
-    if caps.name("signal").is_some() || signal().is_match(&line[log.start()..]) {
+    let logged = &line[log.start()..];
+    if caps.name("signal").is_some() || signal().is_match(logged) {
         return None;
     }
-    let body = caps.name("json").map_or(log.end(), |json| json.start());
-    Some(variable_part().replace_all(&line[body..], "#").into_owned())
+    if caps.name("json").is_some() {
+        return Some(json_time().replace_all(logged, "${key}#").into_owned());
+    }
+    let time = ["iso", "syslog", "glog"]
+        .into_iter()
+        .find_map(|name| caps.name(name))?;
+    Some(format!(
+        "{}#{}",
+        &line[log.start()..time.start()],
+        &line[time.end()..]
+    ))
 }
 
-/// Routine log lines folded, every other line kept in its place. A template
-/// with [`LOG_REPEAT_MIN`] lines keeps its first and last, and the marker
-/// after the first counts the others, wherever they were; a rarer one folds
-/// a run of [`LOG_RUN_MIN`] lines in a row to its first and last. The first
-/// rule owns every line of its templates, so no line is folded twice.
+/// Routine log lines folded, every other line kept in its place. A line
+/// repeated [`LOG_REPEAT_MIN`] times keeps its first and last occurrence, and
+/// the marker after the first counts the others, wherever they were; a rarer
+/// one folds a run of [`LOG_RUN_MIN`] repeats in a row to its first and last.
+/// The first rule owns every repeat of its lines, so none is folded twice.
 fn fold_log_lines(lines: &[String]) -> Vec<String> {
     let templates: Vec<Option<String>> = lines.iter().map(|l| log_template(l)).collect();
     // Each template's first line, last line and number of lines.
@@ -265,25 +279,23 @@ mod tests {
         (0..n)
             .map(|i| {
                 format!(
-                    "2025-07-28T{:02}:{:02}:34.{:03}Z scheduler-46x2cb2h2-dq7xn DEBUG:function.elapsed.time.dispatch.report.scheduled.incident_report_delayed_reminders: 0.0{}8234:/usr/local/lib/python3.11/site-packages/dispatch/decorators.py:wrapper:147",
+                    "2025-07-28T{:02}:{:02}:34.{:03}Z scheduler-46x2cb2h2-dq7xn DEBUG:dispatch.scheduler: no delayed incident reports to remind",
                     i / 12,
                     (i % 12) * 5,
-                    i * 7 % 1000,
-                    i
+                    i * 7 % 1000
                 )
             })
             .collect::<Vec<_>>()
             .join("\n")
     }
 
-    /// One routine statement, `i` its `i`th line.
+    /// One routine line, `i` its `i`th repeat.
     fn heartbeat(i: usize) -> String {
         format!(
-            "2025-08-03T12:{:02}:{:02}.{:03}Z worker-7f9c2 INFO health: heartbeat ok, queue depth {}",
+            "2025-08-03T12:{:02}:{:02}.{:03}Z worker-7f9c2 INFO health: heartbeat ok, queue empty",
             i / 60,
             i % 60,
-            i * 37 % 1000,
-            i % 5
+            i * 37 % 1000
         )
     }
 
@@ -301,7 +313,7 @@ mod tests {
     }
 
     #[test]
-    fn a_run_of_one_log_statement_keeps_its_first_and_last_line() {
+    fn a_run_of_one_log_line_keeps_its_first_and_last_repeat() {
         let log = scheduler_log(40);
         let folded = fold(&log, CompressionLevel::Lite, false).expect("folds");
         let lines: Vec<&str> = folded.lines().collect();
@@ -409,39 +421,32 @@ mod tests {
         let formats: [fn(usize) -> String; 6] = [
             |i| {
                 format!(
-                    "Aug  3 12:00:{i:02} web01 CRON[{}]: (root) CMD (run-parts /etc/cron.hourly)",
-                    4100 + i
+                    "Aug  3 12:00:{i:02} web01 CRON[4100]: (root) CMD (run-parts /etc/cron.hourly)"
                 )
             },
             |i| {
                 format!(
-                    "I0803 12:00:{i:02}.{:06}    4242 reflector.go:{}] Watch close - *v1.Pod total {i} items received",
-                    i * 7919,
-                    300 + i
+                    "I0803 12:00:{i:02}.{:06}    4242 reflector.go:300] Watch close - *v1.Pod total 12 items received",
+                    i * 7919
                 )
             },
             |i| {
                 format!(
-                    r#"{{"level":"info","time":"2025-08-03T12:00:{i:02}.{:03}Z","msg":"request served","status":200,"duration_ms":{}}}"#,
-                    i * 7,
-                    i * 3
-                )
-            },
-            |i| {
-                format!(
-                    "INFO 2025-08-03 12:00:{i:02},{:03} uvicorn.access: 10.0.0.{i} - \"GET /health HTTP/1.1\" 200",
+                    r#"{{"level":"info","time":"2025-08-03T12:00:{i:02}.{:03}Z","msg":"request served","status":200}}"#,
                     i * 7
                 )
             },
             |i| {
                 format!(
-                    "[INFO] [2025-08-03T12:00:{i:02}Z] sync: pulled {} records",
-                    i * 3
+                    "INFO 2025-08-03 12:00:{i:02},{:03} uvicorn.access: 10.0.0.7 - \"GET /health HTTP/1.1\" 200",
+                    i * 7
                 )
             },
+            |i| format!("[INFO] [2025-08-03T12:00:{i:02}Z] sync: nothing to pull"),
+            // The line number `grep` prints is not part of the line.
             |i| {
                 format!(
-                    "/var/log/syslog:{}:Aug  3 12:00:{i:02} web01 systemd[1]: Started session {i} of user deploy.",
+                    "/var/log/syslog:{}:Aug  3 12:00:{i:02} web01 systemd[1]: Started session 4 of user deploy.",
                     100 + i * 4
                 )
             },
@@ -459,6 +464,36 @@ mod tests {
                 lines[0]
             );
         }
+    }
+
+    /// Lines one statement printed with different values are different lines:
+    /// the value may be what the agent searched the log for, as when it lists
+    /// a sync's changes to find the first wrong one.
+    #[test]
+    fn lines_that_differ_by_more_than_their_timestamp_never_fold() {
+        let diffs = log(30, |i| {
+            format!(
+                "[2025-09-02T18:20:04.{:03}+00:00] INFO costsync.diff - case {} classic {} -> {}",
+                i * 13,
+                5200 + i,
+                15000 + i * 7,
+                15100 + i * 11
+            )
+        });
+        assert_eq!(fold_log_lines(&diffs), diffs);
+        let served = log(30, |i| {
+            format!(
+                r#"{{"time":"2025-08-03T12:00:{i:02}Z","msg":"request served","duration_ms":{}}}"#,
+                i * 3
+            )
+        });
+        assert_eq!(fold_log_lines(&served), served);
+        let watches = log(30, |i| {
+            format!(
+                "I0803 12:00:{i:02}.000000    4242 reflector.go:300] Watch close - *v1.Pod total {i} items received"
+            )
+        });
+        assert_eq!(fold_log_lines(&watches), watches);
     }
 
     #[test]

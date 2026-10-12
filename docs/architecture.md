@@ -143,9 +143,10 @@ Codex, Windsurf and Zed get neither:
     with (terse, line dedup, head/tail truncation) never run here.
   - Output nothing owns, a chain of several commands included, is folded by
     its shape as far as `compression_level` allows (`shell/compress/fold.rs`):
-    the lines of one log statement fold to their first and last when there
-    are eight in the output or six in a row, and a line with a warning level
-    or worse, or an error word, never folds (every level); consecutive search
+    a log line repeated but for its timestamp folds to its first and last
+    occurrence when there are eight in the output or six in a row, so no
+    other value is hidden, and a line with a warning level or worse, or an
+    error word, never folds (every level); consecutive search
     results of one file print its path once (0.4 and up), and output over
     150 lines keeps its first 60 and last 30 when no command of the line may
     print source: a file, a diff, blame, search results or a listing (0.8
