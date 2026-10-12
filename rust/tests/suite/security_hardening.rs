@@ -4,15 +4,15 @@
 
 /// Reads the full `SobreServer` dispatch source across its split submodules
 /// (`mod.rs`, `call_tool.rs`, `server_handler.rs`, plus the extracted
-/// `post_process.rs` / `post_dispatch.rs` stages) so that the security-invariant
-/// checks below stay robust to internal module structure.
+/// `post_dispatch.rs` stage) so that the security-invariant checks below stay
+/// robust to internal module structure. `post_process.rs` is left out: it
+/// holds the condensing `sobre_shell` runs on its own output.
 fn server_dispatch_src() -> String {
     format!(
-        "{}\n{}\n{}\n{}\n{}",
+        "{}\n{}\n{}\n{}",
         include_str!("../../src/server/mod.rs"),
         include_str!("../../src/server/call_tool.rs"),
         include_str!("../../src/server/server_handler.rs"),
-        include_str!("../../src/server/post_process.rs"),
         include_str!("../../src/server/post_dispatch.rs"),
     )
 }
@@ -60,12 +60,12 @@ fn mcp_stdio_has_bounded_max_length() {
 // ---------------------------------------------------------------------------
 #[test]
 fn raw_shell_skips_all_postprocessing() {
-    let src = crate::suite::security_hardening::server_dispatch_src().replace("\r\n", "\n");
-    // The dispatch-level terse stage never sees shell output: sobre_shell
-    // condenses its own, and only outside the raw branch.
+    // Dispatch condenses no tool's output: sobre_shell condenses its own, and
+    // only outside the raw branch.
+    let src = crate::suite::security_hardening::server_dispatch_src();
     assert!(
-        src.contains("const TERSE_TOOLS: [&str; 2] = [\"sobre_knowledge\", \"sobre_session\"];"),
-        "the dispatch terse stage must not reach sobre_shell"
+        !src.contains("condense") && !src.contains("terse::"),
+        "the dispatch path must not condense a tool's output"
     );
     let shell = include_str!("../../src/tools/registered/sobre_shell.rs").replace("\r\n", "\n");
     let raw_branch = shell
@@ -81,17 +81,6 @@ fn raw_shell_skips_all_postprocessing() {
     assert!(
         condense > else_branch,
         "condensing must happen outside the raw branch"
-    );
-    assert!(
-        src.contains("post_process::final_token_count(&result_text, pre_terse_len, output_tokens)")
-            && src.contains("skip_terse"),
-        "the sent count must be taken after terse"
-    );
-    // Verification only runs on text terse changed, and terse never touches
-    // raw shell output.
-    assert!(
-        src.contains("result_text != pre_compression") && src.contains("verify_output"),
-        "output verification must only run on condensed text"
     );
 }
 

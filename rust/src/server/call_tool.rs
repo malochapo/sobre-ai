@@ -23,10 +23,8 @@ impl SobreServer {
         let args = tool_args.as_ref();
 
         // A machine-readable invocation (e.g. sobre_outline format=json)
-        // must reach the client byte-exact and parseable, so every prose
-        // decoration and terse compression is suppressed and the pure
-        // pre-decoration body is restored at the end (see the
-        // `machine_readable` guard near the end of this function).
+        // must reach the client byte-exact and parseable, so no compression
+        // notice is appended to it.
         let machine_readable = self
             .registry
             .get_arc(name)
@@ -55,7 +53,7 @@ impl SobreServer {
             return Ok(result);
         }
 
-        let pre_terse_len = result_text.len();
+        let tool_text_len = result_text.len();
         let output_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
 
         // Re-fetch feedback: re-reads, re-runs and `sobre_expand` mean the
@@ -108,25 +106,13 @@ impl SobreServer {
             })
         };
 
-        let pre_compression = result_text.clone();
-        result_text = post_process::compress_terse(result_text, name, &config);
-
-        // A condensed text that lost a path, an identifier or structure is
-        // not sent: the agent gets the tool's own output instead.
-        if result_text != pre_compression
-            && !crate::core::output_verification::verify_output(&pre_compression, &result_text)
-                .warnings
-                .is_empty()
-        {
-            result_text.clone_from(&pre_compression);
-        }
-
         // `raw` is the bytes on disk: nothing is appended to it.
         let raw_read = name == "sobre_read"
             && (helpers::get_bool(args, "raw") == Some(true)
                 || helpers::get_str(args, "mode").as_deref() == Some("raw"));
         if let Some(note) = degrade_note
             && !raw_read
+            && !machine_readable
         {
             result_text = format!("{result_text}\n\n{note}");
         }
@@ -185,9 +171,8 @@ impl SobreServer {
         }
 
         let output_token_count =
-            post_process::final_token_count(&result_text, pre_terse_len, output_tokens);
-        // The tool's own savings plus whatever terse removed afterwards: the
-        // original is the pre-terse count plus what the tool already saved.
+            post_process::final_token_count(&result_text, tool_text_len, output_tokens);
+        // The original is what the tool returned plus what it already saved.
         crate::core::usage::record_compression(
             crate::core::usage::Surface::Mcp,
             name,
@@ -196,13 +181,6 @@ impl SobreServer {
         );
 
         post_dispatch::persist_stub_index_when_due();
-
-        // A machine-readable invocation (e.g. sobre_outline format=json) must
-        // return a byte-exact, parseable payload: the body captured before
-        // terse compression and the compression notice, as the tool returned it.
-        if machine_readable {
-            result_text = pre_compression;
-        }
 
         Ok(finalize_call_result(&result_text, shell_outcome))
     }
