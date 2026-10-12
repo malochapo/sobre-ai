@@ -9,9 +9,10 @@
 //!   (`sed -n`, `cat`, `grep -A`, …), since the agent may edit against what it
 //!   reads;
 //! - otherwise by folding what has a known shape whatever printed it, as far
-//!   as `compression_level` allows (`shell::compress::fold`): runs of one log
-//!   statement, then repeated paths in search results, then long output that
-//!   is not file content. Source text is never reshaped.
+//!   as `compression_level` allows (`shell::compress::fold`): the repeated
+//!   lines of one log statement, never a warning or an error, then repeated
+//!   paths in search results, then long output that is not file content.
+//!   Source text is never reshaped.
 //!
 //! `compression_level` below 0.2 turns the hook off. Every replaced output
 //! ends with a `[sobre: …]` line that says so and where the full output was
@@ -456,18 +457,18 @@ mod tests {
     }
 
     /// Output no dedicated compressor owns is only folded by shape: a run of
-    /// one log statement keeps its first and last lines; anything else stays
-    /// as it is, and the generic fallbacks of `sobre -c` never run here.
+    /// one log line, repeated but for its timestamp, keeps its first and last;
+    /// anything else stays as it is, and the generic fallbacks of `sobre -c`
+    /// never run here.
     #[test]
     fn output_without_a_dedicated_compressor_is_only_folded_by_shape() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let log = (0..300)
             .map(|i| {
                 format!(
-                    "2026-01-01 10:{:02}:{:02} INFO worker: processed batch {}\n",
+                    "2026-01-01 10:{:02}:{:02} INFO worker: queue empty, waiting\n",
                     i / 60,
-                    i % 60,
-                    i % 7
+                    i % 60
                 )
             })
             .collect::<Vec<_>>()
@@ -488,7 +489,7 @@ mod tests {
                 .as_str()
                 .unwrap();
             assert!(
-                stdout.starts_with("2026-01-01 10:00:00 INFO worker: processed batch 0\n"),
+                stdout.starts_with("2026-01-01 10:00:00 INFO worker: queue empty, waiting\n"),
                 "{cmd}: {stdout}"
             );
             assert!(
@@ -497,7 +498,7 @@ mod tests {
             );
             assert!(
                 stdout.contains(
-                    "2026-01-01 10:04:59 INFO worker: processed batch 5\n[sobre: output compressed"
+                    "2026-01-01 10:04:59 INFO worker: queue empty, waiting\n[sobre: output compressed"
                 ),
                 "{cmd}: {stdout}"
             );

@@ -143,12 +143,15 @@ Codex, Windsurf and Zed get neither:
     with (terse, line dedup, head/tail truncation) never run here.
   - Output nothing owns, a chain of several commands included, is folded by
     its shape as far as `compression_level` allows (`shell/compress/fold.rs`):
-    four or more lines of one log statement keep their first and last line
-    (every level), consecutive search results of one file print its path once
-    (0.4 and up), and output over 150 lines keeps its first 60 and last 30
-    when no command of the line may print source: a file, a diff, blame,
-    search results or a listing (0.8 and up). No rule rewrites a line of
-    source. Below 0.2 the hook compresses nothing.
+    a log line repeated but for its timestamp folds to its first and last
+    occurrence when there are eight in the output or six in a row, so no
+    other value is hidden, and a line with a warning level or worse, or an
+    error word, never folds (every level); consecutive search
+    results of one file print its path once (0.4 and up), and output over
+    150 lines keeps its first 60 and last 30 when no command of the line may
+    print source: a file, a diff, blame, search results or a listing (0.8
+    and up). No rule rewrites a line of source. Below 0.2 the hook
+    compresses nothing.
   - The owner is the one command of the line that prints, once setup
     commands (`cd`, `export`, `source`, …) are set aside, optionally piped
     through `head`, `tail` or `tee`. Two printing commands or a heredoc
@@ -157,7 +160,7 @@ Codex, Windsurf and Zed get neither:
     command prints a file (`cat`, `head`, `sed -n`, `awk`, `nl`,
     `grep -A`/`-B`/`-C`, `git show <rev>:<path>`, `git blame`, …;
     `rewrite_registry.rs`), nor on diffs, blame and search results. Only
-    log runs and search paths fold there.
+    repeated log lines and search paths fold there.
   - A replacement saves at least 100 tokens, more than its label costs.
 - **Labelled pre-run rewrite** (`hook cursor`, `hook gemini`). A command is
   wrapped as `sobre -c '<command>'` only when all of these hold:
